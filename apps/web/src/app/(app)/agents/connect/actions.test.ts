@@ -1,16 +1,19 @@
 import type { OwnerPort } from "@team-31/broker-client";
 import type { ActivityEvent, ActivityItem, RequestStatus } from "@team-31/protocol";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { readPingStatus } from "./actions";
+import { readPingStatus, saveWake } from "./actions";
 
-const { activity } = vi.hoisted(() => ({ activity: vi.fn<OwnerPort["activity"]>() }));
-vi.mock("./connections", () => ({
-  connectContext: async () => ({ owner: { userId: "ana" }, broker: { activity } }),
+const { activity, setWake, agents, sendPing, emit } = vi.hoisted(() => ({
+  activity: vi.fn<OwnerPort["activity"]>(), setWake: vi.fn<OwnerPort["setWake"]>(),
+  agents: vi.fn(), sendPing: vi.fn<OwnerPort["ping"]>(), emit: vi.fn(),
 }));
-vi.mock("../../../../lib/telemetry", () => ({
-  observeWebRequest: (_method: string, _route: string, run: () => unknown) => run(),
-  getTelemetry: () => ({ identify: vi.fn(), emit: vi.fn() }),
+vi.mock("./connections", () => ({
+  connectContext: async () => ({ owner: { userId: "ana" }, broker: { activity, setWake, agents, ping: sendPing } }),
+}));
+vi.mock("@/lib/telemetry", () => ({
+  observeWebRequest: (_method: string, _route: string, run: (span: { setErrorId: () => void }) => unknown) => run({ setErrorId: vi.fn() }),
+  getTelemetry: () => ({ identify: vi.fn(), emit, error: () => "error-1" }),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
@@ -70,5 +73,54 @@ describe("readPingStatus", () => {
     activity.mockResolvedValue([]);
 
     expect(await readPingStatus("ping-1")).toBeUndefined();
+  });
+});
+
+describe("Grok Bot wake setup", () => {
+  const agentId = "grok-test";
+  const owner = { userId: "ana" };
+  const url = "https://example.test/routine";
+  const key = "local-test-credential";
+
+  function fields(secret = key) {
+    const form = new FormData();
+    form.set("url", url);
+    form.set("secret", secret);
+    return form;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agents.mockResolvedValue([{ agentId, wakeKind: "grokbot_routine" }]);
+    sendPing.mockResolvedValue({ requestId: "ping-1" });
+  });
+
+  it("saves the owner's routine and returns the ping to follow", async () => {
+    expect(await saveWake("grokbot", agentId, {}, fields())).toEqual({ requestId: "ping-1" });
+    expect(setWake).toHaveBeenCalledWith(owner, agentId, { kind: "grokbot_routine", url, key });
+    expect(sendPing).toHaveBeenCalledWith(owner, agentId);
+    expect(emit).toHaveBeenCalledWith("web.agent.wake_configured", {
+      userId: "ana", agentId, attrs: { kind: "grokbot_routine" },
+    });
+  });
+
+  it("rejects a copied authorization header before changing the existing wake", async () => {
+    expect(await saveWake("grokbot", agentId, {}, fields("Authorization: Bearer " + key))).toHaveProperty("error");
+    expect(setWake).not.toHaveBeenCalled();
+    expect(sendPing).not.toHaveBeenCalled();
+  });
+
+  it("keeps the saved routine when the probe fails and offers a retry", async () => {
+    sendPing.mockRejectedValueOnce(new Error());
+    expect(await saveWake("grokbot", agentId, {}, fields())).toMatchObject({ error: expect.stringContaining("quedó guardado"), errorId: "error-1" });
+    expect(setWake).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes the wake without requiring its credential or sending a ping", async () => {
+    const form = new FormData();
+    form.set("operation", "remove");
+    expect(await saveWake("grokbot", agentId, {}, form)).toHaveProperty("message");
+    expect(setWake).toHaveBeenCalledWith(owner, agentId, { kind: "none" });
+    expect(sendPing).not.toHaveBeenCalled();
   });
 });

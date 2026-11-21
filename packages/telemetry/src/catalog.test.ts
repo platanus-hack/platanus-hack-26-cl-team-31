@@ -9,7 +9,7 @@ describe("catálogo", () => {
       "auth.token.verified", "auth.token.rejected", "auth.service_jwt.rejected", "auth.oauth.consent", "auth.scope.denied",
       "message.interpret", "message.interpreted", "message.recipients.resolved", "message.turn.saved", "message.turn.completed",
       "broker.ask.receipt", "broker.ask.relation_checked", "broker.profiles.searched",
-      "web.invite.progress", "web.agent.ping",
+      "web.invite.progress", "web.agent.ping", "web.agent.wake_configured",
       "mcp.tool.call", "broker.policy.evaluated", "broker.request.created", "broker.request.status_changed",
       "broker.request.closed", "broker.reply.rejected", "broker.reply.sanitized", "broker.owner.decided", "broker.grant.set", "broker.grant.revoked",
       "broker.contact.connected", "broker.contact.removed", "broker.contact.tagged", "broker.channel.set", "broker.tag.changed",

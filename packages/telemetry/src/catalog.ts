@@ -130,6 +130,11 @@ export const catalog = [
     attrs: { step: z.enum(["opened", "sign_in", "claim_address", "address_claimed", "connect"]) },
   }),
   defineEvent({
+    name: "web.agent.wake_configured", kind: "lifecycle",
+    description: "Tipo de aviso guardado para el agente desde la web.",
+    attrs: { kind: z.enum(["grokbot_routine", "openclaw_hooks", "none"]) },
+  }),
+  defineEvent({
     name: "web.agent.ping",
     kind: "lifecycle",
     description: "Inicio o resultado de una prueba de conexión desde la app web.",

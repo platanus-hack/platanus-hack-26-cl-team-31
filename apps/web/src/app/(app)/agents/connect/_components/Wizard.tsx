@@ -86,20 +86,23 @@ export async function Wizard({ kind, agentId, install, login, wake }: WizardProp
           {kind === "dot" ? (
             <p className={secondaryText}>Después de que Dot se suscriba, <a href={refreshUrl} className={textLink}>actualiza las conexiones</a> para confirmar el aviso.</p>
           ) : selected ? (
-            <WakeForm key={selected.agentId} kind={kind} agentId={selected.agentId} />
+            <WakeForm key={selected.agentId} kind={kind} agentId={selected.agentId}
+              configuredAddress={kind === "grokbot" && wakeReady ? await requireAddress() : undefined} />
           ) : (
             <p className={secondaryText}>Selecciona tu agente autorizado en el paso anterior para guardar el aviso.</p>
           )}
         </Step>
 
-        <Step number={4} title="Probar la conexión">
-          <p className={secondaryText}>Envía una solicitud de prueba y comprueba aquí que el agente la recibió.</p>
-          {selected && wakeReady ? (
-            <PingButton key={selected.agentId} agentId={selected.agentId} kind={kind} address={await requireAddress()} />
-          ) : (
-            <p className={secondaryText}>El botón Probar aparece cuando el agente seleccionado tiene el aviso configurado.</p>
-          )}
-        </Step>
+        {kind !== "grokbot" && (
+          <Step number={4} title="Probar la conexión">
+            <p className={secondaryText}>Envía una solicitud de prueba y comprueba aquí que el agente la recibió.</p>
+            {selected && wakeReady ? (
+              <PingButton key={selected.agentId} agentId={selected.agentId} kind={kind} address={await requireAddress()} />
+            ) : (
+              <p className={secondaryText}>El botón Probar aparece cuando el agente seleccionado tiene el aviso configurado.</p>
+            )}
+          </Step>
+        )}
       </Steps>
     </div>
   );

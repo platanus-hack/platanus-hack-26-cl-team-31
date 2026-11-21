@@ -124,6 +124,7 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | `auth.oauth.consent` | auth | clientId, granted |
 | `auth.scope.denied` | auth | scope, operation |
 | `web.invite.progress` | lifecycle | step (`opened`, `sign_in`, `claim_address`, `address_claimed` o `connect`) |
+| `web.agent.wake_configured` | lifecycle | kind (`grokbot_routine`, `openclaw_hooks` o `none`) |
 | `web.agent.ping` | lifecycle | stage (`started` o `finished`), outcome, verified |
 | `message.interpret`, `message.interpreted` | http, tool | duración de la interpretación y acción elegida |
 | `message.recipients.resolved` | tool | ámbito y cantidad de direcciones |
