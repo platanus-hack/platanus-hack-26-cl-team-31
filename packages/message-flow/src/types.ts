@@ -24,6 +24,7 @@ const argumentsDraft = z.object({
 export const Intent = z.discriminatedUnion("action", [
   z.object({ action: z.literal("ask"), selector, tool: z.enum(["availability", "interest_check", "question", "connect"]), args: argumentsDraft }),
   z.object({ action: z.literal("vault"), selector, categoryName: literal.optional() }),
+  z.object({ action: z.literal("own_vault"), categoryName: literal.optional() }),
   z.object({ action: z.literal("profiles"), query: literal.optional() }),
   z.object({ action: z.literal("status"), recipient: literal.optional(), requestId: literal.optional() }),
   z.object({ action: z.literal("contacts") }),
@@ -41,6 +42,8 @@ export interface TurnOperations {
   ask(input: AskInput): Promise<RequesterView>;
   status(requestId: string): Promise<RequesterView>;
   queryVault?(input: VaultQuery): Promise<VaultResult>;
+  // The holder's own categories. Entries come only when a single category is requested.
+  ownVault?(categoryId?: string): Promise<VaultCatalog>;
   searchProfiles?(query: string): Promise<PublicProfile[]>;
   recentSent?(): Promise<ReceiptRef[]>;
 }
@@ -53,6 +56,7 @@ export type MessageReply =
   | { kind: "contacts"; data: AgentContacts }
   | { kind: "profiles"; items: PublicProfile[] }
   | { kind: "vault"; data: VaultResult }
+  | { kind: "own_vault"; data: VaultCatalog }
   | { kind: "unavailable"; reason: "unsupported" | "expired" | "empty_selection" };
 
 export type Relation = RequiredRelation;
@@ -60,7 +64,8 @@ export type RoutedAsk = AskInput & { idempotencyKey: string };
 export type Field = "invitationTag" | "intent" | "scope" | "person" | "circle" | "categoryId" | "requestId" | "query"
   | keyof z.infer<typeof argumentsDraft>;
 export type ReadPlan = { action: "contacts" } | { action: "profiles"; query: string }
-  | { action: "vault"; selector: Selector; circleId?: string; categoryId?: string; empty?: true };
+  | { action: "vault"; selector: Selector; circleId?: string; categoryId?: string; empty?: true }
+  | { action: "own_vault"; categoryId?: string };
 export type TurnState =
   | { phase: "read"; plan: ReadPlan }
   | { phase: "clarify"; at: string; intent: Intent; field: Field; choices?: Choice[]; refs?: ReceiptRef[]; circleId?: string; invitationTag?: string | null; timezone?: string; relativeDays?: number }

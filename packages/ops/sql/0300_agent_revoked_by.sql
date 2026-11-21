@@ -2,7 +2,7 @@
 -- conexión de un agente. La del titular es reversible —el agente vuelve pasando otra vez por el
 -- consentimiento OAuth—; la del admin es terminal. Sin ese dato, el operador no puede distinguir
 -- una revocación que todavía se deshace de una que no. null en las filas anteriores a la columna:
--- valen como del titular (ver la migración 0017 del broker).
+-- valen como del titular (ver la migración 0301 del broker).
 -- Copia completa de 0011 con ese cambio, como pide su encabezado: cualquier cambio a una vista de
 -- refresh_views va en una migración nueva que la redefine entera.
 

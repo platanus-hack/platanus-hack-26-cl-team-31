@@ -1,5 +1,6 @@
-import { Address, type OwnerVault, type VaultCatalog, type VaultDocumentQuery } from "@team-31/protocol";
-import { and, DrizzleQueryError, eq, exists, inArray, sql } from "drizzle-orm";
+import { Address, defaultVaultCategories, type OwnerVault, type VaultCatalog, type VaultDocumentQuery } from "@team-31/protocol";
+import { and, DrizzleQueryError, eq, inArray, sql, type SQLWrapper } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import { BrokerError } from "../../errors.js";
 import type { StoreTx } from "../store.js";
@@ -21,13 +22,26 @@ export async function insertWithParents(db: Tx, insert: (tx: Tx) => Promise<unkn
   }
 }
 
+// An empty description is stored as "" and left out of the answer.
+function categoryInfo<T extends { description: string }>({ description, ...category }: T) {
+  return { ...category, ...(description ? { description } : {}) };
+}
+
 export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "putVaultDocument" | "sharedVaultDocument"> {
+  const info = { id: c.id, name: c.name, description: c.description, visibility: c.visibility };
   // Serialize name resolution (including an absent name) with category creation, rename and deletion.
   const lockNames = (owner: string) => db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}, 417))`);
+  // The flag keeps a default category the holder deleted from coming back.
+  async function seedDefaults(owner: string) {
+    const [first] = await db.update(users).set({ vaultSeeded: true })
+      .where(and(eq(users.userId, owner), eq(users.vaultSeeded, false))).returning({ userId: users.userId });
+    if (first) await db.insert(c).values(defaultVaultCategories.map(category => ({ owner, ...category }))).onConflictDoNothing();
+  }
   async function vaultCatalog(owner: string, forNameResolution = false): Promise<VaultCatalog> {
     if (forNameResolution) await lockNames(owner);
-    const rows = await db.select({ id: c.id, name: c.name }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
-    const categories: VaultCatalog["categories"] = rows.map(row => ({ ...row, tags: [] }));
+    await seedDefaults(owner);
+    const rows = await db.select(info).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
+    const categories: VaultCatalog["categories"] = rows.map(row => ({ ...categoryInfo(row), tags: [] }));
     if (!categories.length) return { categories };
     const byId = new Map(categories.map(category => [category.id, category]));
     const permissions = await db.select({ id: p.id, tagId: p.tagId }).from(p).where(eq(p.owner, owner)).orderBy(sql`${p.tagId} collate "C"`);
@@ -35,20 +49,27 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     return { categories };
   }
 
-  // Both the roster and the data read apply this predicate to a (category, accepted contact) pair.
-  const canRead = sql<boolean>`coalesce(
-    (select ${r.allowed} from ${r} where ${r.owner} = ${c.owner} and ${r.id} = ${c.id} and ${r.address} = ${friends.address}),
-    exists(select 1 from ${p} join ${t} on ${t.userId} = ${p.owner} and ${t.tagId} = ${p.tagId}
-      where ${p.owner} = ${c.owner} and ${p.id} = ${c.id} and ${t.address} = ${friends.address}))`;
+  // The roster, the listing and the data read apply this one predicate to a (category, reader) pair.
+  // The holder's decision about a contact wins. Without one, a public category is read by any
+  // Sideband user and a private one by an accepted contact that carries an allowed tag.
+  // Aliased so the roster can join friends on the outside and still ask whether the reader is a contact.
+  const contact = alias(friends, "reader_contact");
+  const canRead = (reader: SQLWrapper) => sql<boolean>`coalesce(
+    (select ${r.allowed} from ${r} where ${r.owner} = ${c.owner} and ${r.id} = ${c.id} and ${r.address} = ${reader}),
+    ${c.visibility} = 'public' or exists(select 1 from ${p}
+      join ${t} on ${t.userId} = ${p.owner} and ${t.tagId} = ${p.tagId}
+      join ${friends} as ${sql.identifier("reader_contact")} on ${contact.userId} = ${t.userId} and ${contact.address} = ${t.address}
+      where ${p.owner} = ${c.owner} and ${p.id} = ${c.id} and ${t.address} = ${reader}))`;
 
   function memberRows(owner: string, categoryId?: string) {
     return db.select({ id: c.id, address: friends.address }).from(c)
-      .leftJoin(friends, and(eq(friends.userId, c.owner), canRead))
+      .leftJoin(friends, and(eq(friends.userId, c.owner), canRead(friends.address)))
       .where(and(eq(c.owner, owner), categoryId ? eq(c.id, categoryId) : undefined)).orderBy(friends.address);
   }
 
   return {
     async vaultMembers(owner, categoryId) {
+      await seedDefaults(owner);
       const rows = await memberRows(owner, categoryId);
       return rows.length ? rows.flatMap(({ address }) => address ? [Address.parse(address)] : []) : null;
     },
@@ -68,6 +89,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     },
     async changeVault(owner, id, change) {
       if (change.action === "create" || change.action === "rename" || change.action === "delete") await lockNames(owner);
+      await seedDefaults(owner);
       const category = and(eq(c.owner, owner), eq(c.id, id));
       if (change.action === "create") {
         await db.insert(c).values({ owner, id, name: change.name });
@@ -76,6 +98,8 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       if (!(await db.select({ id: c.id }).from(c).where(category).for("update")).length) return false;
       switch (change.action) {
         case "rename": await db.update(c).set({ name: change.name }).where(category); break;
+        case "describe": await db.update(c).set({ description: change.description }).where(category); break;
+        case "set_visibility": await db.update(c).set({ visibility: change.visibility }).where(category); break;
         case "delete": await db.delete(c).where(category); break;
         case "set_member":
           return insertWithParents(db, async tx => tx.insert(r).values({ owner, id, address: change.address, allowed: change.allowed })
@@ -98,12 +122,21 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     },
     async sharedVault(reader, to, id) {
       // Authorization is part of the same SELECT that reads entries. A tag from an outgoing
-      // invitation is insufficient: the reader must also be an accepted contact.
+      // invitation is insufficient for a private category: the reader must also be an accepted contact.
       const owner = db.select({ owner: users.userId }).from(users).where(eq(users.address, to));
-      const visible = and(inArray(c.owner, owner), exists(db.select({ address: friends.address }).from(friends)
-        .where(and(eq(friends.userId, c.owner), eq(friends.address, reader), canRead))));
-      if (!id) return { categories: await db.select({ id: c.id, name: c.name }).from(c).where(visible).orderBy(c.name, c.id) };
-      const rows = await db.select({ name: c.name, entry: { label: e.label, value: e.value } }).from(c)
+      const readable = canRead(sql`${reader}`);
+      const visible = and(inArray(c.owner, owner), readable);
+      if (!id) {
+        // The catalog is open to any Sideband user, so a holder who never opened the vault still shows the defaults.
+        const [holder] = await db.select({ userId: users.userId }).from(users).where(eq(users.address, to));
+        if (holder) await seedDefaults(holder.userId);
+        // Drizzle drops the table name from columns written directly in a single-table selection.
+        // Nesting the predicate keeps them qualified, which the correlated subqueries need.
+        const rows = await db.select({ ...info, canRead: sql<boolean>`${readable}` }).from(c)
+          .where(inArray(c.owner, owner)).orderBy(c.name, c.id);
+        return { categories: rows.map(categoryInfo) };
+      }
+      const rows = await db.select({ ...info, entry: { label: e.label, value: e.value } }).from(c)
         .leftJoin(e, and(eq(e.owner, c.owner), eq(e.id, c.id))).where(and(visible, eq(c.id, id))).orderBy(e.label);
       if (!rows[0]) return { categories: [] };
       const documents = await db.select({
@@ -111,9 +144,11 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       }).from(d).innerJoin(c, and(eq(c.owner, d.owner), eq(c.id, d.categoryId)))
         .where(and(visible, eq(d.categoryId, id)))
         .orderBy(d.createdAt, d.id);
+      const { entry: _, ...category } = rows[0];
       return {
         categories: [{
-          id, name: rows[0].name,
+          ...categoryInfo(category),
+          canRead: true,
           entries: rows.flatMap(row => row.entry ? [row.entry] : []),
           ...(documents.length ? {
             documents: documents.map(document => ({
@@ -129,6 +164,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       };
     },
     async putVaultDocument(row) {
+      await seedDefaults(row.owner);
       if (!(await db.select({ id: c.id }).from(c).where(and(eq(c.owner, row.owner), eq(c.id, row.categoryId)))).length) return null;
       await db.insert(d).values({
         ...row,
@@ -146,10 +182,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     },
     async sharedVaultDocument(reader, to, query: VaultDocumentQuery) {
       const owner = db.select({ owner: users.userId }).from(users).where(eq(users.address, to));
-      const allowed = reader === to
-        ? sql<boolean>`true`
-        : exists(db.select({ address: friends.address }).from(friends)
-          .where(and(eq(friends.userId, c.owner), eq(friends.address, reader), canRead)));
+      const allowed = reader === to ? sql<boolean>`true` : canRead(sql`${reader}`);
       const [document] = await db.select({
         id: d.id, owner: d.owner, categoryId: d.categoryId, fileName: d.fileName, mimeType: d.mimeType,
         sizeBytes: d.sizeBytes, sha256: d.sha256, content: d.content, idempotencyKey: d.idempotencyKey, createdAt: d.createdAt,

@@ -1,4 +1,4 @@
-import { Address, type OwnerVault, type Tag } from "@team-31/protocol";
+import { Address, defaultVaultCategories, type OwnerVault, type Tag } from "@team-31/protocol";
 import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit, seededTags, sortTags } from "./directory.js";
 import { activeAgentConflict, BrokerError, notFound } from "../errors.js";
 import { wakeClaim } from "./store.js";
@@ -40,10 +40,11 @@ function transaction(state: State): StoreTx {
   }
 
   function canRead(owner: string, c: OwnerVault["categories"][number], reader: Address) {
-    if (!state.contacts.get(owner)?.has(reader)) return false;
+    // An individual decision exists only for a contact, and it wins. A public category is read by any user.
     const rule = state.memberRules.get(pairKey(owner, c.id))?.get(reader);
     if (rule !== undefined) return rule;
-    return (state.contactTags.get(owner)?.get(reader) ?? []).some(tag => c.tags.includes(tag));
+    if (c.visibility === "public") return true;
+    return !!state.contacts.get(owner)?.has(reader) && (state.contactTags.get(owner)?.get(reader) ?? []).some(tag => c.tags.includes(tag));
   }
 
   function listRecipientRequests(address: Address, status: "awaiting_agent" | "awaiting_owner"): RequestRow[] {
@@ -52,6 +53,14 @@ function transaction(state: State): StoreTx {
     return structuredClone([...state.requests.values()]
       .filter((row) => row.toAddress === address && row.toUserId === ownerId && row.status === status)
       .sort(byCreatedAt));
+  }
+
+  // Every holder starts with the default categories. A deleted default stays deleted.
+  function vaultOf(owner: string): OwnerVault {
+    if (!state.vaults.has(owner) && state.users.has(owner)) {
+      state.vaults.set(owner, { categories: defaultVaultCategories.map(category => ({ ...category, visibility: "private", entries: [], tags: [] })) });
+    }
+    return state.vaults.get(owner) ?? { categories: [] };
   }
 
   function categoryMembers(owner: string, category: OwnerVault["categories"][number]) {
@@ -90,15 +99,15 @@ function transaction(state: State): StoreTx {
         address && connected.has(userId) && (!after || address > after) && (!q || address.includes(q)) ? [address] : []).sort().slice(0, limit);
     },
     async vaultCatalog(owner) {
-      return { categories: (state.vaults.get(owner)?.categories ?? []).map(({ id, name, tags }) =>
-        structuredClone({ id, name, tags: [...tags].sort() })) };
+      return { categories: vaultOf(owner).categories.map(({ id, name, description, visibility, tags }) =>
+        structuredClone({ id, name, ...(description ? { description } : {}), visibility, tags: [...tags].sort() })) };
     },
     async vaultMembers(owner, categoryId) {
-      const category = state.vaults.get(owner)?.categories.find(c => c.id === categoryId);
+      const category = vaultOf(owner).categories.find(c => c.id === categoryId);
       return category ? categoryMembers(owner, category) : null;
     },
     async ownerVault(owner) {
-      const vault = structuredClone(state.vaults.get(owner) ?? { categories: [] });
+      const vault = structuredClone(vaultOf(owner));
       for (const category of vault.categories) {
         category.members = categoryMembers(owner, category);
         category.tags.sort();
@@ -106,9 +115,9 @@ function transaction(state: State): StoreTx {
       return vault;
     },
     async changeVault(owner, id, change) {
-      const vault = state.vaults.get(owner) ?? { categories: [] };
+      const vault = vaultOf(owner);
       if (change.action === "create") {
-        vault.categories.push({ id, name: change.name, entries: [], tags: [] });
+        vault.categories.push({ id, name: change.name, visibility: "private", entries: [], tags: [] });
         state.vaults.set(owner, vault);
         return true;
       }
@@ -116,6 +125,11 @@ function transaction(state: State): StoreTx {
       if (!c) return false;
       switch (change.action) {
         case "rename": c.name = change.name; break;
+        case "describe":
+          if (change.description) c.description = change.description;
+          else delete c.description;
+          break;
+        case "set_visibility": c.visibility = change.visibility; break;
         case "delete":
           state.memberRules.delete(pairKey(owner, id));
           for (const document of state.documents.values()) {
@@ -149,7 +163,8 @@ function transaction(state: State): StoreTx {
     async sharedVault(reader, to, id) {
       const owner = findUserByAddress(to)?.userId;
       if (!owner) return { categories: [] };
-      return { categories: (state.vaults.get(owner)?.categories ?? []).filter(c => (!id || id === c.id) && canRead(owner, c, reader))
+      // Listing shows every category. Opening one requires the read.
+      return { categories: vaultOf(owner).categories.filter(c => !id || id === c.id && canRead(owner, c, reader))
         .map(c => {
           const documents = id
             ? [...state.documents.values()]
@@ -167,6 +182,9 @@ function transaction(state: State): StoreTx {
           return {
             id: c.id,
             name: c.name,
+            ...(c.description ? { description: c.description } : {}),
+            visibility: c.visibility,
+            canRead: canRead(owner, c, reader),
             ...(id ? { entries: structuredClone(c.entries) } : {}),
             ...(documents.length ? { documents } : {}),
           };
@@ -184,7 +202,7 @@ function transaction(state: State): StoreTx {
         }
         throw new BrokerError("conflict", "La clave de idempotencia ya fue usada para otro archivo.");
       }
-      if (!state.vaults.get(row.owner)?.categories.some(category => category.id === row.categoryId)) return null;
+      if (!vaultOf(row.owner).categories.some(category => category.id === row.categoryId)) return null;
       state.documents.set(row.id, structuredClone(row));
       state.documentKeys.set(key, row.id);
       return structuredClone(row);

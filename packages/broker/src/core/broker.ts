@@ -487,7 +487,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (change.action === "set_tag") await tags.knownTags(tx, userId, [change.tagId]);
     if (!await tx.changeVault(userId, categoryId, change)) throw notFound();
     record(tx, "broker.vault.changed", { userId, agentId, attrs: { action: change.action,
-      ...(change.action === "set_tag" || change.action === "set_member" ? { allowed: change.allowed } : {}) } });
+      ...(change.action === "set_tag" || change.action === "set_member" ? { allowed: change.allowed } : {}),
+      ...(change.action === "set_visibility" ? { visibility: change.visibility } : {}) } });
     return { categoryId };
   }
 
@@ -580,11 +581,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           return tags.changeByAgent(tx, p, input);
         });
       },
-      async vaultCatalog(p) {
+      async vaultCatalog(p, categoryId) {
         requireScope(p, "vaultCatalog");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
-          return tx.vaultCatalog(p.userId);
+          if (!categoryId) return tx.vaultCatalog(p.userId);
+          const category = (await tx.ownerVault(p.userId)).categories.find(c => c.id === categoryId);
+          if (!category) throw notFound();
+          return { categories: [category] };
         });
       },
       async vaultMembers(p, categoryId) {

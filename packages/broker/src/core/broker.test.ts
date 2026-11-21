@@ -77,20 +77,24 @@ it("solo el titular concede lectura individual; rechazar no crea ni modifica cat
   const declined = await broker.agent.ask(alice, input);
   expect(declined).toMatchObject({ waitingFor: "owner" });
   expect(await broker.agent.inbox(bruno, true)).toEqual([]);
+  const before = await broker.owner.vault(bruno);
   await broker.owner.decide(bruno, declined.requestId, { kind: "deny" });
-  expect(await broker.owner.vault(bruno)).toEqual({ categories: [] });
+  expect(await broker.owner.vault(bruno)).toEqual(before);
   const pending = await broker.agent.ask(alice, input);
   const grant = { kind: "grant_vault_read" } as const;
   await expect(broker.owner.decide(alice, pending.requestId, grant)).rejects.toMatchObject({ code: "not_found" });
   await expect(broker.owner.decide(bruno, pending.requestId, { kind: "approve_once" })).rejects.toMatchObject({ code: "invalid_input" });
-  expect(await broker.agent.queryVault(alice, { to: input.to })).toEqual({ categories: [] });
+  const readable = async (p: Principal) => (await broker.agent.queryVault(p, { to: input.to })).categories.filter(c => c.canRead);
+  expect(await readable(alice)).toEqual([]);
   await broker.owner.decide(bruno, pending.requestId, grant);
-  const { categories: visible } = await broker.agent.queryVault(alice, { to: input.to });
-  expect(visible).toEqual([{ id: expect.any(String), name: input.args.categoryName }]);
+  const visible = await readable(alice);
+  expect(visible).toEqual([{ id: expect.any(String), name: input.args.categoryName, visibility: "private", canRead: true }]);
   const existing = await broker.agent.ask(alice, input);
   await broker.owner.decide(bruno, existing.requestId, grant);
-  expect((await broker.agent.queryVault(alice, { to: input.to })).categories).toEqual(visible);
-  expect(await broker.agent.queryVault(carla, { to: input.to })).toEqual({ categories: [] });
+  expect(await readable(alice)).toEqual(visible);
+  expect(await readable(carla)).toEqual([]);
+  // Any Sideband user sees the name of the category without being able to open it.
+  expect((await broker.agent.queryVault(carla, { to: input.to })).categories.map(c => c.name)).toContain(input.args.categoryName);
   await expect(broker.owner.decide(bruno, pending.requestId, grant)).rejects.toMatchObject({ code: "conflict" });
 });
 
@@ -103,7 +107,7 @@ it("mantiene privada la etiqueta de la invitación y activa su permiso solo al a
   await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "forbidden" });
   const invitation = await broker.agent.ask(p, input);
   expect((await broker.owner.tags(alice)).tags.find(tag => tag.id === tagId)).toMatchObject({ categories: [], members: [] });
-  expect((await broker.owner.vault(alice)).categories).toMatchObject([{ id: categoryId, tags: [tagId] }]);
+  expect((await broker.owner.vault(alice)).categories.find(c => c.id === categoryId)).toMatchObject({ tags: [tagId] });
   expect(await broker.agent.vaultMembers(p, categoryId)).toEqual({ members: [] });
   expect(JSON.stringify(await broker.agent.inbox(bruno))).not.toContain(tagId);
   await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
@@ -154,7 +158,15 @@ it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de
   const { categoryId } = await broker.agent.changeVault(p, { action: "create", name: "Deseos" });
   const put = { action: "put_entry", categoryId, label: "Regalo", value: "Cafetera" } as const;
   await broker.agent.changeVault(p, put);
-  expect((await broker.owner.vault(bruno)).categories[0]).toMatchObject({ tags: [], entries: [{ label: "Regalo", value: "Cafetera" }] });
+  await broker.agent.changeVault(p, { action: "describe", categoryId, description: "Regalos que quiero." });
+  expect((await broker.owner.vault(bruno)).categories.find(c => c.id === categoryId))
+    .toMatchObject({ tags: [], entries: [{ label: "Regalo", value: "Cafetera" }] });
+  expect((await broker.agent.vaultCatalog(p)).categories.map(({ id, description, entries }) => ({ id, described: !!description, entries })))
+    .toEqual(expect.arrayContaining([{ id: "health", described: true }, { id: categoryId, described: true }]));
+  expect((await broker.agent.vaultCatalog(p, categoryId)).categories)
+    .toEqual([{ id: categoryId, name: "Deseos", description: "Regalos que quiero.", visibility: "private", tags: [], entries: [{ label: "Regalo", value: "Cafetera" }], members: [] }]);
+  await expect(broker.agent.vaultCatalog(p, "interests")).resolves.toMatchObject({ categories: [{ name: "Intereses", entries: [] }] });
+  await expect(broker.agent.vaultCatalog(bruno, categoryId)).rejects.toMatchObject({ code: "forbidden" });
   for (const [recipient, tag] of [[alice, "friend"], [carla, "family"]] as const) {
     const invite = await broker.owner.connect(bruno, { to: `${recipient.userId}@sideband.app`, share: [], tags: [tag] });
     await broker.owner.answerInvitation(recipient, invite.requestId, { accept: true, share: [] });

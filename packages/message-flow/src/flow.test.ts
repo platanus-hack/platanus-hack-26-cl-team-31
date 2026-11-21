@@ -125,7 +125,7 @@ describe("turnos del titular", () => {
     const { run, context, ask } = harness(interpret);
     expect((await run("Busca el perfil público de Ana")).kind).toBe("profiles");
     const id1 = randomUUID(), id2 = randomUUID();
-    const query = vi.fn(async () => ({ categories: [{ id: id1, name: "Talleres" }, { id: id2, name: "Talleres" }] }));
+    const query = vi.fn(async () => ({ categories: [id1, id2, randomUUID()].map((id, index) => ({ id, name: "Talleres", visibility: "private" as const, canRead: index < 2 })) }));
     context.ops.queryVault = query;
     const selection = await run("Lee Talleres de la bóveda de " + ana);
     if (selection.kind !== "clarification") throw new Error("expected categories");
@@ -172,7 +172,7 @@ describe("turnos del titular", () => {
     });
     const { context } = harness();
     const categoryId = randomUUID();
-    context.ops.queryVault = vi.fn(async q => ({ categories: [{ id: categoryId, name: "Recetas",
+    context.ops.queryVault = vi.fn(async q => ({ categories: [{ id: categoryId, name: "Recetas", visibility: "private" as const, canRead: true,
       ...(q.categoryId ? { entries: [{ label: "sal", value: 3 }] } : {}) }] }));
     const flow = createMessageFlow({ interpret, store });
     const input = { text: "Lee Recetas de la bóveda de mi amiga " + ana };
@@ -184,6 +184,38 @@ describe("turnos del titular", () => {
     expect(interpret).toHaveBeenCalledTimes(1);
     expect(context.ops.queryVault).toHaveBeenCalledTimes(2);
     expect(context.ops.ask).not.toHaveBeenCalled();
+  });
+
+  it("lista las bóvedas propias, abre una por nombre y pregunta cuál si el nombre no calza", async () => {
+    const health = { id: "health", name: "Salud", description: "Alergias y tratamientos.", visibility: "private" as const, tags: [] };
+    const wishes = { id: randomUUID(), name: "Deseos", visibility: "public" as const, tags: [] };
+    const opened = { ...health, entries: [{ label: "Alergia", value: "Maní" }], members: [] };
+    const interpret = vi.fn<InterpretMessage>()
+      .mockResolvedValueOnce({ action: "own_vault" })
+      .mockResolvedValueOnce({ action: "own_vault", categoryName: "salud" })
+      .mockResolvedValueOnce({ action: "own_vault", categoryName: "viajes" })
+      .mockResolvedValueOnce({ action: "own_vault", categoryName: "finanzas" })
+      .mockResolvedValueOnce({ action: "own_vault" });
+    const { run, context, ask } = harness(interpret);
+    const ownVault = vi.fn(async (id?: string) => ({ categories: id ? [opened] : [health, wishes] }));
+    context.ops.ownVault = ownVault;
+
+    expect(await run("dime las bóvedas que tengo")).toEqual({ kind: "own_vault", data: { categories: [health, wishes] } });
+    expect(await run("¿Qué guardo en mi bóveda de salud?")).toEqual({ kind: "own_vault", data: { categories: [opened] } });
+    expect(ownVault).toHaveBeenLastCalledWith("health");
+
+    const choice = await run("abre mi bóveda de viajes");
+    if (choice.kind !== "clarification") throw new Error("expected own categories");
+    expect(choice.choices).toEqual([{ label: "Salud", value: "health" }, { label: "Deseos", value: wishes.id }]);
+    expect(await run("la primera", choice.continuationId)).toEqual({ kind: "own_vault", data: { categories: [opened] } });
+
+    // A category name the holder did not write falls back to the list.
+    expect(await run("¿qué tengo guardado?")).toEqual({ kind: "own_vault", data: { categories: [health, wishes] } });
+    // Without vault words the reading is not trusted.
+    expect((await run("¿cómo estás?")).kind).toBe("clarification");
+    expect(interpret).toHaveBeenCalledTimes(5);
+    expect(ask).not.toHaveBeenCalled();
+    expect(context.ops.contacts).not.toHaveBeenCalled();
   });
 
   it("repite el recibo de un envío ya completado con el scope ask", async () => {

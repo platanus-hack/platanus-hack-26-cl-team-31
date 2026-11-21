@@ -17,7 +17,7 @@ const questions: Partial<Record<Field, string>> = {
   durationMinutes: "¿Cuántos minutos duraría?", timezone: "¿En qué zona horaria?",
   interest: "¿Qué interés quieres consultar?", text: "¿Qué pregunta quieres enviar?",
   category: "¿Sobre qué categoría quieres preguntar?", share: "¿Qué categorías quieres compartir?",
-  intent: "¿Quieres consultar a una persona, revisar una solicitud, buscar un perfil o leer algo de tu bóveda compartida?",
+  intent: "¿Quieres consultar a una persona, revisar una solicitud, buscar un perfil, leer la bóveda de un contacto o ver la tuya?",
 };
 type Step = "interpret" | "read" | "resolve" | "prepare" | "dispatch" | "done";
 type AskDraft = Extract<Intent, { action: "ask" }>;
@@ -107,9 +107,11 @@ class Turn {
   // broker reconstructs the result from the current directory and permissions.
   private async readPlan(plan: ReadPlan): Promise<Step> {
     const ops = this.context.ops;
-    if (plan.action === "profiles" && !ops.searchProfiles || plan.action === "vault" && !ops.queryVault) return this.unavailable("unsupported");
+    if (plan.action === "profiles" && !ops.searchProfiles || plan.action === "vault" && !ops.queryVault ||
+      plan.action === "own_vault" && !ops.ownVault) return this.unavailable("unsupported");
     await this.session.save({ phase: "read", plan });
     if (plan.action === "contacts") return this.finish({ kind: "contacts", data: await ops.contacts() });
+    if (plan.action === "own_vault") return this.finish({ kind: "own_vault", data: await ops.ownVault!(plan.categoryId) });
     if (plan.action === "profiles") return this.finish({ kind: "profiles", items: await ops.searchProfiles!(plan.query) });
     if (plan.empty) return this.finish({ kind: "vault", data: { categories: [] } });
     if (this.session.replay) {
@@ -119,10 +121,25 @@ class Turn {
     return this.finish({ kind: "vault", data: await ops.queryVault!({ to: plan.selector.person!, categoryId: plan.categoryId }) });
   }
 
+  // The single category named or chosen by the holder, or the options to ask about.
+  private matchCategory(categories: { id: string; name: string }[], name?: string) {
+    const matches = categories.filter(c => this.categoryId ? c.id === this.categoryId : normalized(c.name) === normalized(name!));
+    return matches.length === 1 ? matches[0]!.id : (matches.length ? matches : categories).map(c => ({ label: c.name, value: c.id }));
+  }
+
   async read(): Promise<Step> {
     const ops = this.context.ops;
     const intent = this.intent;
     if (intent.action === "contacts") return this.readPlan(intent);
+    if (intent.action === "own_vault") {
+      if (!ops.ownVault) return this.unavailable("unsupported");
+      if (!this.categoryId && !intent.categoryName) return this.readPlan({ action: "own_vault" });
+      const { categories } = await ops.ownVault();
+      if (!categories.length) return this.readPlan({ action: "own_vault" });
+      const match = this.matchCategory(categories, intent.categoryName);
+      if (typeof match !== "string") return this.clarify({ field: "categoryId", question: "¿Cuál de tus bóvedas quieres abrir?", choices: match });
+      return this.readPlan({ action: "own_vault", categoryId: match });
+    }
     if (intent.action === "profiles") {
       if (!ops.searchProfiles) return this.unavailable("unsupported");
       const query = ProfileSearch.safeParse({ query: intent.query });
@@ -165,17 +182,15 @@ class Turn {
       const query = this.context.ops.queryVault!;
       const plan: ReadPlan = { action: "vault", selector: intent.selector, circleId: this.circleId };
       if (!this.categoryId && !intent.categoryName) return this.readPlan(plan);
-      const catalog = await query({ to });
-      if (!catalog.categories.length) {
+      // The catalog lists every category of the contact. Only the readable ones can be opened.
+      const readable = (await query({ to })).categories.filter(c => c.canRead);
+      if (!readable.length) {
         // A missing named category stays empty on replay, even if a new category is later shared.
         return this.readPlan({ ...plan, empty: true });
       }
-      const matches = catalog.categories.filter(c => this.categoryId ? c.id === this.categoryId : normalized(c.name) === normalized(intent.categoryName!));
-      if (matches.length !== 1) {
-        return this.clarify({ field: "categoryId", question: "¿Qué categoría compartida quieres leer?", choices:
-          (matches.length ? matches : catalog.categories).map(c => ({ label: c.name, value: c.id })) });
-      }
-      return this.readPlan({ ...plan, categoryId: matches[0]!.id });
+      const match = this.matchCategory(readable, intent.categoryName);
+      if (typeof match !== "string") return this.clarify({ field: "categoryId", question: "¿Qué categoría compartida quieres leer?", choices: match });
+      return this.readPlan({ ...plan, categoryId: match });
     }
     if (intent.action !== "ask") throw new Error("Invalid ask transition");
     const args = this.validateArgs(intent);

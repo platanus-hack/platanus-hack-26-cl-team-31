@@ -33,18 +33,22 @@ export function contactPrincipal(id) {
   return { userId, agentId: userId + "-bot", scopes: ["sideband:inbox", "sideband:reply"] };
 }
 
-export function contactWakeUrl(id) {
+// `route` names the web receiver: `contact-wake` for Ana's contacts, `cast-wake` for the WhatsApp cast.
+export function demoWakeUrl(route, id) {
   const port = Number(process.env.WEB_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("WEB_PORT inválido.");
-  return `http://127.0.0.1:${port}/api/demo/contact-wake/${LocalPart.parse(id)}`;
+  return `http://127.0.0.1:${port}/api/demo/${route}/${LocalPart.parse(id)}`;
 }
 
-export function contactWakeSecret(id) {
+export function demoWakeSecret(route, id) {
   const key = Buffer.from(process.env.WAKE_SECRETS_KEY ?? "", "base64");
   if (key.length !== 32) throw new Error("Revisa WAKE_SECRETS_KEY con pnpm bootstrap.");
-  const mac = createHmac("sha256", key).update("sideband/demo/contact-wake/v1/" + LocalPart.parse(id));
+  const mac = createHmac("sha256", key).update(`sideband/demo/${route}/v1/` + LocalPart.parse(id));
   return "whsec_" + mac.digest("base64");
 }
+
+export const contactWakeUrl = (id) => demoWakeUrl("contact-wake", id);
+export const contactWakeSecret = (id) => demoWakeSecret("contact-wake", id);
 
 export function contactAgent() {
   const privateKey = JSON.parse(process.env.MCP_SERVICE_PRIVATE_KEY);

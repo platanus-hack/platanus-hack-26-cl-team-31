@@ -68,8 +68,8 @@ const agents: AgentConnection[] = [
 
 const vault: OwnerVault = {
   categories: [
-    { id: "11111111-1111-4111-8111-111111111111", name: "Lista de regalos", tags: ["family"], entries: [{ label: "Libro", value: "Cualquiera de Ursula K. Le Guin" }], members: ["carla@sideband.app"] },
-    { id: "22222222-2222-4222-8222-222222222222", name: "Talla de ropa", tags: [], entries: [{ label: "Polera", value: "M" }] },
+    { id: "11111111-1111-4111-8111-111111111111", name: "Lista de regalos", visibility: "private", tags: ["family"], entries: [{ label: "Libro", value: "Cualquiera de Ursula K. Le Guin" }], members: ["carla@sideband.app"] },
+    { id: "22222222-2222-4222-8222-222222222222", name: "Talla de ropa", visibility: "private", tags: [], entries: [{ label: "Polera", value: "M" }] },
   ],
 };
 

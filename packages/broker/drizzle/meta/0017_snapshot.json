@@ -1,6 +1,6 @@
 {
-  "id": "af93d866-c9a6-4cbf-9b59-bb2069b712dc",
-  "prevId": "f9a195de-f7af-4a81-981f-f2dc3e38aff1",
+  "id": "e7dd6042-9672-432c-88e3-326cdb3ca308",
+  "prevId": "2b12b472-1434-492a-98c0-7a3f61347c64",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -62,12 +62,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "revoked_by": {
-          "name": "revoked_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -121,13 +115,9 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "agent_connections_revoked_by_check": {
-          "name": "agent_connections_revoked_by_check",
-          "value": "\"sideband\".\"agent_connections\".\"revoked_by\" is null or \"sideband\".\"agent_connections\".\"revoked_by\" in ('owner', 'admin')"
-        },
         "agent_connections_wake_secret_check": {
           "name": "agent_connections_wake_secret_check",
-          "value": "(\"sideband\".\"agent_connections\".\"wake_kind\" in ('none', 'polling')) = (\"sideband\".\"agent_connections\".\"wake_secret\" is null)"
+          "value": "(\"sideband\".\"agent_connections\".\"wake_kind\" = 'none') = (\"sideband\".\"agent_connections\".\"wake_secret\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -276,7 +266,7 @@
         },
         "channels_wake_secret_check": {
           "name": "channels_wake_secret_check",
-          "value": "(\"sideband\".\"channels\".\"wake_kind\" in ('none', 'polling')) = (\"sideband\".\"channels\".\"wake_secret\" is null)"
+          "value": "(\"sideband\".\"channels\".\"wake_kind\" = 'none') = (\"sideband\".\"channels\".\"wake_secret\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -1400,6 +1390,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "vault_seeded": {
+          "name": "vault_seeded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},
@@ -1439,6 +1436,20 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'private'"
         }
       },
       "indexes": {},

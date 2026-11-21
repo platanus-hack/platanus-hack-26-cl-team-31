@@ -238,7 +238,7 @@ export const catalog = [
   defineEvent({ name: "broker.grant.revoked", kind: "policy", description: "El dueño revocó un permiso.", attrs: { grantId: id() } }),
   defineEvent({ name: "broker.contact.connected", kind: "policy", description: "Dos titulares quedaron conectados al aceptar una invitación.", attrs: {} }),
   defineEvent({ name: "broker.vault.changed", kind: "policy", description: "Cambio de la bóveda personal, sin nombres ni valores.",
-    attrs: { action: code(), allowed: z.boolean().optional() } }),
+    attrs: { action: code(), allowed: z.boolean().optional(), visibility: z.enum(["public", "private"]).optional() } }),
   defineEvent({ name: "broker.vault.queried", kind: "policy", description: "Consulta a categorías compartidas, sin contenido.",
     attrs: { lookup: z.enum(["entries", "categories"]), visible: z.boolean() } }),
   defineEvent({

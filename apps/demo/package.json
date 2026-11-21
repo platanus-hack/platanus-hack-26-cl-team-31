@@ -11,6 +11,14 @@
     "./contact-wake": {
       "types": "./src/contact-wake.d.mts",
       "default": "./src/contact-wake.mjs"
+    },
+    "./cast": {
+      "types": "./src/cast.d.mts",
+      "default": "./src/cast.mjs"
+    },
+    "./cast-wake": {
+      "types": "./src/cast-wake.d.mts",
+      "default": "./src/cast-wake.mjs"
     }
   },
   "scripts": {
