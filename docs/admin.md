@@ -66,25 +66,28 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 | `ops.v_requests` | `nexo.requests` + `nexo.wake_jobs` | id, tool, from_address, to_address, from_user_id, to_user_id, status, outcome, rule, escalated, target_agent_id, answered_by_agent_id, allowed_fields, dropped_fields, decision_reason, internal_reason, args_keys, result_keys, has_purpose, response_signed, created_at, expires_at, closed_at, duration_ms, stuck, wake_attempts, last_wake_ok | Sin `args`, `result`, `purpose`, firmas ni nonce. Solo las llaves de args y result. |
 | `ops.v_request_payloads` | `nexo.requests` | id, args, purpose, result | **Solo** rol `nexo_admin_reveal`. Se usa únicamente en `POST /requests/:id/reveal`. |
 | `ops.v_request_events` | `nexo.request_events` | request_id, id, at, kind, status, code | `detail` se reduce a status y code. |
-| `ops.v_wake_jobs` | `nexo.wake_jobs` + conexión | id, request_id, attempt, state, run_at, kind, ok, http_status, code | Sin cuerpo de respuesta. |
+| `ops.v_wake_jobs` | `nexo.wake_jobs` + conexión | id, request_id, attempt, state, run_at, kind, ok, http_status, code, latency_ms, user_id, agent_id | Sin cuerpo de respuesta. `code` es `ok`, `retryable`, `failed` o un código `[a-z_]` del adaptador. |
 | `ops.v_agent_connections` | `nexo.agent_connections` | user_id, agent_id, label, wake_kind, wake_host, verified_at, last_wake_at, revoked_at, created_at | Solo el host de la URL. Nunca `wake_secret`. |
 | `ops.v_users` | `nexo.users` + `nexo.sharing_rules` | user_id, address, display_name, created_at, rules | |
-| `ops.v_identities` | tablas de Better Auth (`user`, `session`) | user_id, email, name, created_at, active_sessions | Sin tokens de sesión. Verifica los nombres reales de tablas con `pnpm nexo:auth:migrate`. |
-| `ops.v_oauth_clients` | tablas OAuth del plugin MCP | client_id, name, user_id, redirect_hosts, created_at, last_token_at, active_tokens | Sin `client_secret` ni tokens. |
+| `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions | Sin tokens de sesión. `user.id` es el mismo `user_id` de `nexo.users`. |
+| `ops.v_oauth_clients` | `public."oauthClient"`, `"oauthAccessToken"`, `"oauthRefreshToken"` | client_id, name, user_id, redirect_hosts, created_at, last_token_at, active_tokens | Sin `client_secret` ni tokens. Token activo: sin revocar y sin vencer (access o refresh). |
+| `ops.v_oauth_grants` | mismas tablas OAuth | user_id, client_id, client_name, last_token_at, active_tokens | Clientes que autorizó cada persona (los del registro dinámico no tienen dueño). Alimenta `UserDetail.identity.oauthClients`. |
 | `ops.v_events` | `ops.events` | todas | Ya viene redactada. |
 | `ops.v_service_health` | `ops.events` (`service.heartbeat`) | service, instance, version, last_seen_at, state (`up` < 60 s, `stale` < 5 min, `down`) | |
-| `ops.v_errors` | `ops.events` kind=`error` | service, operation, type, count, first_at, last_at, sample_error_id (agrupable por ventana) | |
-| `ops.v_coordination_people` | `people` + `memberships` | person_id, groups, can_ask, can_share | Sin `token_hash`. Crea la vista solo si existen las tablas. |
+| `ops.v_errors` | `ops.events` kind=`error` | service, operation, type, bucket (minuto), count, first_at, last_at, sample_error_id | Para una ventana se suman los buckets. |
+| `ops.v_coordination_people` | `people` + `memberships` | person_id, groups, can_ask, can_share (arreglos de grupos) | Sin `token_hash`. Crea la vista solo si existen las tablas. |
 
 Roles (`NOLOGIN`, los crea ADM-02 de forma idempotente):
 
 | Rol | Permisos |
 | --- | --- |
 | `nexo_telemetry_writer` | `INSERT` en `ops.events` y uso de su secuencia. |
-| `nexo_admin_ro` | `USAGE` en `ops` y `SELECT` en todas las `ops.v_*` excepto `v_request_payloads`. |
+| `nexo_admin_ro` | `USAGE` en `ops` y `SELECT` en todas las `ops.v_*` excepto `v_request_payloads`. Si existe la bitácora del servidor admin, también `USAGE` en `admin` y `SELECT` solo en `admin.audit` (`AdminQueries.audit`, sin leer `meta`). |
 | `nexo_admin_reveal` | `SELECT` en `ops.v_request_payloads`. |
 
 Toda lectura del admin corre en `BEGIN READ ONLY; SET LOCAL ROLE nexo_admin_ro; SET LOCAL statement_timeout = '3s'`. En dev la conexión es el superusuario local, que puede asumir el rol; en producción el usuario de `ADMIN_DATABASE_URL_RO` es miembro del rol. Las vistas usan los privilegios de su dueño, así que el rol no necesita acceso a las tablas base.
+
+Las vistas se crean en `ops.refresh_views()` (0002), que solo crea las que tienen sus tablas de origen (`to_regclass`) y reaplica los permisos de 0003 (`ops.apply_view_grants()`). Si ops migra antes que el broker, Better Auth o la coordinación, el dueño del esquema ejecuta `SELECT ops.refresh_views();` después de crearlas (es idempotente). `ops.prune_events(interval)` (0004) exige una retención de al menos 1 hora y no tiene `EXECUTE` para los roles del admin: la ejecuta el dueño o un usuario al que ADM-08 se lo otorgue. El payload se lee solo con `createPgRevealer` (`apps/admin/server/queries/reveal.ts`, rol `nexo_admin_reveal`).
 
 ## 3. Telemetría (`@team-31/telemetry`, ADM-01)
 
