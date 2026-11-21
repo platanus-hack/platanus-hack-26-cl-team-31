@@ -61,11 +61,13 @@ function layout(spans: Span[]): { rows: Row[]; t0: number; total: number } {
     // Un padre que no está en la traza (otro servicio sin instrumentar) se trata como raíz.
     const parent =
       span.parentSpanId && ids.has(span.parentSpanId) ? span.parentSpanId : null
-    byParent.set(parent, [...(byParent.get(parent) ?? []), span])
+    const siblings = byParent.get(parent)
+    if (siblings) siblings.push(span)
+    else byParent.set(parent, [span])
   }
   const rows: Row[] = []
   const visit = (parent: string | null, depth: number) => {
-    const children = [...(byParent.get(parent) ?? [])].sort((a, b) =>
+    const children = (byParent.get(parent) ?? []).sort((a, b) =>
       a.startAt.localeCompare(b.startAt)
     )
     for (const child of children) {

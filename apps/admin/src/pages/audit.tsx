@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { LoadMore } from "@/components/load-more"
 import { cursorPagination, usePageItems } from "@/lib/queries"
 import { DataTable } from "@/components/data-table"
-import { QueryError, Muted, Page, PageHeader, Panel } from "@/components/page"
+import { Muted, Page, PageHeader, QueryPanel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { ToneBadge } from "@/components/status"
 import { api } from "@/lib/api"
@@ -104,8 +104,7 @@ export function AuditPage() {
         description="Cada login, revelación, acción de operador, token y llamada al MCP admin, con su motivo."
         actions={<Badge variant="outline">admin.audit</Badge>}
       />
-      <QueryError query={query} />
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={columns}
           data={rows}
@@ -114,7 +113,7 @@ export function AuditPage() {
           empty={{ title: "Sin registros" }}
         />
         <LoadMore query={query} />
-      </Panel>
+      </QueryPanel>
     </Page>
   )
 }

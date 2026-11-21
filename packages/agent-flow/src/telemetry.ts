@@ -92,24 +92,6 @@ const channelLabels: Record<string, string> = {
 
 export const channelLabel = (kind?: string | null) => (kind ? (channelLabels[kind] ?? kind) : undefined);
 
-/** Eventos del catálogo que el mapeo convierte en pasos; el resto se ignora. */
-export const flowEventNames: ReadonlySet<string> = new Set([
-  "broker.policy.evaluated",
-  "broker.request.created",
-  "broker.request.status_changed",
-  "broker.request.closed",
-  "broker.reply.rejected",
-  "broker.reply.sanitized",
-  "broker.owner.decided",
-  "wake.attempt",
-  "wake.exhausted",
-  "mcp.tool.call",
-  "coordination.tool.call",
-  "whatsapp.link",
-  "broker.agent.connected",
-  "broker.agent.revoked",
-]);
-
 /**
  * Atributos que el mapeo lee de cada evento. El servidor del admin recorta `attrs` a esta lista
  * antes de enviar una fila al navegador (`projectFlowRow`): lo que no está aquí nunca sale.
@@ -130,6 +112,9 @@ export const flowAttrKeys: Readonly<Record<string, readonly string[]>> = {
   "broker.agent.connected": ["kind"],
   "broker.agent.revoked": ["by"],
 };
+
+/** Eventos del catálogo que se proyectan al flujo. */
+export const flowEventNames: ReadonlySet<string> = new Set(Object.keys(flowAttrKeys));
 
 const askTools = new Set(["sideband_ask", "ask_contact"]);
 const checkTools = new Set(["sideband_check", "await_contact"]);

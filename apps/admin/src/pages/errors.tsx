@@ -29,7 +29,7 @@ import {
   KeyValues,
   Page,
   PageHeader,
-  Panel,
+  QueryPanel,
 } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { api } from "@/lib/api"
@@ -250,8 +250,7 @@ export function ErrorsPage() {
           }}
         />
       </FilterBar>
-      <QueryError query={query} />
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={columns}
           data={query.data?.items}
@@ -264,7 +263,7 @@ export function ErrorsPage() {
             description: `Nada registrado en ${windowPhrase[window]}.`,
           }}
         />
-      </Panel>
+      </QueryPanel>
       <ErrorSheet id={id} onClose={() => navigate("/errores")} />
     </Page>
   )

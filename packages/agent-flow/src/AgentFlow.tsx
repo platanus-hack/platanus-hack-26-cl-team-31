@@ -8,9 +8,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { ChannelIcon, SidebandMark } from "./icons.js";
 import { categoryLabel, describeEvent, endpointLabel, outcomeLabel, rowStepLabels, ruleLabel, statusLabels, stepDetail, stepLabels, toolLabel } from "./labels.js";
 import { edgeCurve, layoutFlow, pointOnCurve, stageHeightFor, type LayoutInput } from "./layout.js";
-import { BROKER, type FlowActor, type FlowEvent, type FlowOwner, type FlowStatus } from "./model.js";
+import { BROKER, type FlowActor, type FlowEvent, type FlowStatus } from "./model.js";
 import { EDGE_MS, LABEL_MS, PULSE_MS } from "./schedule.js";
 import { activities, eventEndpoints, resolveId, type ActorEntry, type Activity, type AppliedEvent, type FlowState } from "./state.js";
+import { flowVisibility } from "./flow-visibility.js";
 import { useFlowViewport } from "./use-flow-viewport.js";
 import { useFlowPlayback } from "./use-flow-playback.js";
 import { css, statusColor, statusTone } from "./styles.js";
@@ -25,11 +26,9 @@ export type AgentFlowProps = Playback & {
   toolbar?: ReactNode;
   /** Titulares visibles al inicio: dirección, nombre o la parte antes de @ (sin distinguir mayúsculas). */
   defaultOwners?: readonly string[];
-  /** Texto cuando todavía no hay pasos. */
   emptyText?: string;
   /** Muestra la barra de controles (pausa, velocidad, filtro, pantalla completa). */
   controls?: boolean;
-  /** Empieza reproduciendo. */
   autoPlay?: boolean;
   /** Velocidad inicial (0.25–4). */
   speed?: number;
@@ -165,27 +164,7 @@ export function AgentFlow({
   // ---------- Filtro ----------
   const ownerList = useMemo(() => [...flow.owners.values()].sort((a, b) => a.order - b.order).map((o) => o.owner), [flow.owners]);
   const actorList = useMemo(() => [...flow.actors.values()].sort((a, b) => a.order - b.order), [flow.actors]);
-  const ownerShown = (owner: FlowOwner) => {
-    if (shownOwners) return shownOwners.has(owner.key);
-    if (!ownerQuery) return true;
-    const key = owner.key.toLowerCase();
-    return ownerQuery.some((q) => q === key || q === owner.label.toLowerCase() || q === key.split("@")[0]);
-  };
-  const actorVisibleIn = (state: FlowState, id: string) => {
-    if (id === BROKER) return true;
-    const entry = state.actors.get(id);
-    if (!entry) return false;
-    return ownerShown(entry.actor.owner) && !hiddenActors.has(id);
-  };
-  const eventVisibleIn = (state: FlowState, event: FlowEvent) => {
-    const { fromId, toId } = eventEndpoints(state, event);
-    if (!actorVisibleIn(state, fromId) || !actorVisibleIn(state, toId)) return false;
-    const track = event.requestId ? state.requests.get(event.requestId) : undefined;
-    if (track) {
-      for (const id of [track.requester, track.recipient, track.human]) if (id && !actorVisibleIn(state, resolveId(state, id))) return false;
-    }
-    return true;
-  };
+  const { ownerShown, actorVisibleIn, eventVisibleIn } = flowVisibility(shownOwners, ownerQuery, hiddenActors);
   const actorVisible = (id: string) => actorVisibleIn(flow, id);
 
   // ---------- Layout ----------
