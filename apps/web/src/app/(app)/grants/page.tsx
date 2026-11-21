@@ -1,13 +1,20 @@
+import { Suspense } from "react";
+
 import { readGrants } from "../actions";
 import { Heading } from "../ui";
 import { GrantsEditor } from "./grants-editor";
 
-export default async function GrantsPage() {
-  const grants = await readGrants();
+async function FriendPermissions() {
+  return <GrantsEditor grants={await readGrants()} />;
+}
+
+export default function GrantsPage() {
   return (
     <div className="max-w-4xl">
-      <Heading title="Permisos">Decide quién puede preguntarle qué a tus agentes y qué datos recibe.</Heading>
-      <GrantsEditor grants={grants} />
+      <Heading title="Amigos y permisos">Elige qué puede preguntarte cada amigo a través de su agente y qué datos tuyos puede recibir.</Heading>
+      <Suspense fallback={<p role="status">Cargando permisos…</p>}>
+        <FriendPermissions />
+      </Suspense>
     </div>
   );
 }
