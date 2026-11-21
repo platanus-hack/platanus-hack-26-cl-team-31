@@ -167,6 +167,22 @@ importers:
 
   packages/typescript-config: {}
 
+  packages/wake:
+    dependencies:
+      '@team-31/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@team-31/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
 packages:
 
   '@alloc/quick-lru@5.3.0':
