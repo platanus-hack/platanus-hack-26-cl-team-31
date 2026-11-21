@@ -40,7 +40,7 @@ import {
 } from "@/components/page"
 import { ReasonActionDialog } from "@/components/reason-action-dialog"
 import { RelativeTime } from "@/components/relative-time"
-import { RevealDialog } from "@/components/reveal-dialog"
+import { RevealDialog } from "@/features/requests/reveal-dialog"
 import { RequestStatusBadge, StatusDot, ToneBadge } from "@/components/status"
 import { Timeline } from "@/components/timeline"
 import { api } from "@/lib/api"

@@ -17,7 +17,7 @@ import {
   SelectFilter,
 } from "@/components/filters"
 import { QueryError, Page, PageHeader, Panel } from "@/components/page"
-import { requestColumns } from "@/components/request-columns"
+import { requestColumns } from "@/features/requests/request-columns"
 import { StatusDot } from "@/components/status"
 import { api } from "@/lib/api"
 import { formatNumber } from "@/lib/format"

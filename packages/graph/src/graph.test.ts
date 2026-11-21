@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hubPenalty } from "./cost.js";
-import { MinHeap } from "./heap.js";
+import { MinHeap } from "./search/heap.js";
 import { MemoryGraphIndex } from "./memory.js";
 import { kindOf, topicId, type Arc, type GraphMutation, type NodeId } from "./model.js";
 import { interestMutation, membershipMutation, projectCore } from "./projection.js";

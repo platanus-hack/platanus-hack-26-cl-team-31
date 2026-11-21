@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { agentColumns } from "@/components/agent-columns"
+import { agentColumns } from "@/features/agents/agent-columns"
 import { CopyButton, CopyId } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
 import {
@@ -33,8 +33,8 @@ import {
   Panel,
 } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
-import { requestColumns } from "@/components/request-columns"
-import { RevokeAgentDialog } from "@/components/revoke-agent-dialog"
+import { requestColumns } from "@/features/requests/request-columns"
+import { RevokeAgentDialog } from "@/features/agents/revoke-agent-dialog"
 import { userQuery } from "@/lib/queries"
 import { useSession } from "@/lib/session"
 
