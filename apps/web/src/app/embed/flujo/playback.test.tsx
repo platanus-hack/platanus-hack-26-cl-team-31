@@ -23,8 +23,8 @@ afterEach(async () => {
 });
 
 const timeline = () => [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Línea de tiempo"] .af-item')];
-const render = (mode: "live" | "replay", items: readonly FlowEvent[]) =>
-  act(() => root.render(<AgentFlow mode={mode} events={items} />));
+const render = (mode: "live" | "replay", items: readonly FlowEvent[], autoPlay = true) =>
+  act(() => root.render(<AgentFlow mode={mode} events={items} autoPlay={autoPlay} />));
 const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms); });
 
 it("resets playback when the replay is replaced", async () => {
@@ -48,4 +48,19 @@ it("returns to live playback when the host trims the event under inspection", as
   await advance(1_000);
   expect(host.textContent).not.toContain("Volver al vivo");
   expect(timeline().map((button) => button.getAttribute("aria-label"))).toEqual(events.map(describeEvent).reverse());
+});
+
+it.each([true, false])("restores playback after replacing inspected history (autoPlay=%s)", async (autoPlay) => {
+  await render("live", events.slice(0, 1), autoPlay);
+  await advance(1_000);
+  await act(() => timeline()[0]!.click());
+  expect(host.textContent).toContain("Volver al vivo");
+
+  const replacement = events.slice(1);
+  await render("live", replacement, autoPlay);
+  await advance(1_000);
+
+  expect(host.textContent).not.toContain("Volver al vivo");
+  const expected = autoPlay ? replacement : replacement.slice(0, 1);
+  expect(timeline().map((button) => button.getAttribute("aria-label"))).toEqual(expected.map(describeEvent).reverse());
 });
