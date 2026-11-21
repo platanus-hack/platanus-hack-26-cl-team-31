@@ -28,14 +28,15 @@ import {
   type ToolResult,
 } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import { filterResult } from "../policy/index.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
+import { sanitizeReply } from "../sanitize/pipeline.js";
+import { SanitizeBlockedError, type SanitizeFlag } from "../sanitize/types.js";
 import type { CircleRow, GrantRow, RequestRow, StoreTx } from "../store/store.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
 import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
 import {
-  toActivityItem, toAgentConnection, toGrant, toInboxItem, toOwnerPendingItem, toRequesterView,
+  senderMessage, toActivityItem, toAgentConnection, toGrant, toInboxItem, toOwnerPendingItem, toRequesterView,
 } from "./views.js";
 import { createLifecycleEvents } from "./events.js";
 import { createWorker } from "./worker.js";
@@ -83,6 +84,7 @@ type Actor = "agent" | "owner" | "broker" | "admin";
 
 // Code of a rejected reply for broker.reply.rejected (never the message).
 function rejectionCode(error: BrokerError) {
+  if (error instanceof SanitizeBlockedError) return "leak_blocked";
   switch (error.code) {
     case "forbidden": return "nonce";
     case "expired": return "expired";
@@ -90,6 +92,11 @@ function rejectionCode(error: BrokerError) {
     case "not_found": return "not_recipient";
     default: return "closed";
   }
+}
+
+// Telemetry-safe flag codes (`stage:code`); never the matched text.
+function flagCodes(flags: readonly SanitizeFlag[]) {
+  return [...new Set(flags.map((flag) => `${flag.stage}:${flag.code}`))].slice(0, 32).join(",");
 }
 
 export function createBroker(deps: BrokerDeps): BrokerCore {
@@ -172,7 +179,18 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
   async function prepareAgentReply(row: RequestRow, reply: ReplyInput, agentId: string, now: Date) {
     const { outcome, internalReason } = reply;
-    const filtered = outcome === "answered" ? filterResult(row.tool, reply.result, row.allowedFields) : null;
+    // The reply only travels after sanitizeReply: strict parse, canonicalization, the grant's field
+    // filter, the optional redactor and the deterministic leak-guard. A blocked reply throws
+    // SanitizeBlockedError and the request stays awaiting_agent, like a schema error.
+    const filtered = outcome === "answered"
+      ? await sanitizeReply(reply.result, {
+        ...deps.sanitize,
+        tool: row.tool,
+        allowedFields: row.allowedFields,
+        guidance: row.guidance,
+        senderMessage: senderMessage(row),
+      })
+      : null;
     const changed = outcome === "needs_owner"
       ? await seal(escalate(row, deadline(now)))
       : await finalize(transition(row, outcome), outcome, now, filtered?.result);
@@ -186,6 +204,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       receipt: {
         requestId: row.id, status: changed.status, deliveredFields: filtered?.delivered ?? [], droppedFields,
       },
+      flags: filtered?.flags ?? [],
     };
   }
 
@@ -497,7 +516,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const now = clock.now();
           async function reject(error: BrokerError): Promise<BrokerError> {
             await tx.appendEvent({ requestId, at: now, kind: "response", code: error.code });
-            record(tx, "broker.reply.rejected", { requestId, attrs: { code: rejectionCode(error) } });
+            const flags = error instanceof SanitizeBlockedError ? flagCodes(error.flags) : "";
+            record(tx, "broker.reply.rejected", {
+              requestId, attrs: { code: rejectionCode(error), ...(flags && { flags }) },
+            });
             return error;
           }
           if (row.status !== "awaiting_agent") return reject(closed());
@@ -518,9 +540,18 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             if (error instanceof BrokerError) return reject(error);
             throw error;
           }
-          const { changed, receipt } = response;
+          const { changed, receipt, flags } = response;
           if (!await saveTransition(tx, row, changed)) return reject(closed());
           recordTransition(tx, row, changed, "agent");
+          if (flags.length > 0 || changed.droppedFields.length > 0) {
+            record(tx, "broker.reply.sanitized", {
+              requestId,
+              attrs: {
+                ...(flags.length > 0 && { flags: flagCodes(flags) }),
+                ...(changed.droppedFields.length > 0 && { dropped: changed.droppedFields.join(",") }),
+              },
+            });
+          }
           await tx.appendEvent({ requestId: row.id, at: now, kind: "response", status: changed.status });
           if (changed.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
           if (row.targetAgentId !== undefined) await tx.upsertAgentConnection({ ...connection, verifiedAt: now });

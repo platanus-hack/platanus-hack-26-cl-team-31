@@ -47,6 +47,8 @@ export function defineEvent<const N extends string, S extends AttrShape>(definit
 const code = () => z.string().min(1).max(128).regex(/^[\w.:/@*-]+$/);
 /** Identificador opaco (ids de usuario, agente, cliente, request). */
 const id = () => z.string().min(1).max(128);
+/** Lista de códigos separada por comas (p. ej. `leak-guard:private_hint,policy:dropped`), nunca texto libre. */
+const codes = () => z.string().min(1).max(1024).regex(/^[\w.:/@*-]+(,[\w.:/@*-]+)*$/);
 const int = () => z.number().int();
 const bool = () => z.boolean();
 
@@ -154,7 +156,17 @@ export const catalog = [
     kind: "lifecycle",
     level: "warn",
     description: "Respuesta de agente rechazada.",
-    attrs: { code: z.enum(["nonce", "expired", "schema", "not_recipient", "closed"]) },
+    // leak_blocked: sanitizeReply bloqueó la respuesta; flags lleva solo códigos `etapa:código`, nunca texto.
+    attrs: {
+      code: z.enum(["nonce", "expired", "schema", "not_recipient", "closed", "leak_blocked"]),
+      flags: codes(),
+    },
+  }),
+  defineEvent({
+    name: "broker.reply.sanitized",
+    kind: "lifecycle",
+    description: "sanitizeReply aceptó la respuesta del agente pero descartó campos o marcó hallazgos.",
+    attrs: { flags: codes(), dropped: codes() },
   }),
   defineEvent({ name: "broker.owner.decided", kind: "lifecycle", description: "El dueño decidió una solicitud escalada.", attrs: { decision: code() } }),
   defineEvent({

@@ -125,7 +125,8 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `broker.request.created` | lifecycle | tool, rule, targetAgentId |
 | `broker.request.status_changed` | lifecycle | from, to, by (`agent` \| `owner` \| `broker` \| `admin`) |
 | `broker.request.closed` | lifecycle | outcome, escalated |
-| `broker.reply.rejected` | lifecycle | code (`nonce` \| `expired` \| `schema` \| `not_recipient` \| `closed`) |
+| `broker.reply.rejected` | lifecycle | code (`nonce` \| `expired` \| `schema` \| `not_recipient` \| `closed` \| `leak_blocked`), flags (códigos `etapa:código` de sanitizeReply, solo en `leak_blocked`) |
+| `broker.reply.sanitized` | lifecycle | flags, dropped (códigos `etapa:código` y campos del protocolo descartados por sanitizeReply; nunca el texto) |
 | `broker.owner.decided` | lifecycle | decision |
 | `broker.grant.set` / `broker.grant.revoked` | policy | grantId, category |
 | `broker.contact.connected` / `broker.contact.removed` | policy | sin atributos; `requestId` y `userId` en el sobre |
