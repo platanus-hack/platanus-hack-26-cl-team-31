@@ -24,7 +24,7 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "agents:up": "bash scripts/agents-up.sh",
     "agents:demo": "node apps/mcp/scripts/demo.mjs",
-    "agents:seed": "./scripts/with-env.sh node apps/server/scripts/seed.mjs",
+    "agents:seed": "./scripts/with-env.sh node apps/server/scripts/schema.mjs && ./scripts/with-env.sh node apps/server/scripts/seed.mjs",
     "agents:runtime-demo": "node \"$npm_execpath\" --filter @team-31/broker... --filter @team-31/wake... build && node packages/broker/scripts/runtime-demo.mjs"
   },
   "devDependencies": {

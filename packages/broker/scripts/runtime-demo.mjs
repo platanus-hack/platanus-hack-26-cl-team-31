@@ -4,17 +4,36 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
+import pg from "pg";
+import { LocalPart } from "@team-31/protocol";
 
 const [question, bobFile, janeFile, ...extra] = process.argv.slice(2);
 if (extra.length) throw new Error('Uso: corepack pnpm agents:runtime-demo "pregunta de Ana" [archivo de Bob] [archivo de Jane]');
 function source(file, id) {
   return file ? resolve(file) : fileURLToPath(new URL(`../../../.agents-local/${id}-interests.json`, import.meta.url));
 }
+// Load only Ana's saved demo contacts and their individual grants. The owner tools read the interests.
+if (!process.env.DATABASE_URL) throw new Error("Ejecuta agents:runtime-demo con pnpm with-env.");
+const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+await db.connect();
+let contacts;
+try {
+  const { rows } = await db.query(`
+    SELECT p.person_id AS id, p.display_name AS name, c.owner_id = ANY(p.interest_readers) AS allowed
+    FROM contacts c JOIN demo_profiles p ON p.person_id = c.contact_id
+    WHERE c.owner_id = $1 ORDER BY p.person_id`, ["ana"]);
+  const overrides = new Map([["bob", bobFile], ["jane", janeFile]]);
+  contacts = rows.map(({ id, name, allowed }) => ({
+    id, name, allowsInterest: allowed, source: source(overrides.get(id), LocalPart.parse(id)),
+  }));
+} finally {
+  await db.end();
+}
 const toolScript = fileURLToPath(new URL("../../../apps/mcp/scripts/ana-runtime-tools.mjs", import.meta.url));
 const dir = await mkdtemp(join(tmpdir(), "nexo-ana-"));
 const receipt = join(dir, "broker-responses.jsonl");
 const config = { mcpServers: { ana: {
-  command: process.execPath, args: [toolScript, source(bobFile, "bob"), source(janeFile, "jane"), receipt],
+  command: process.execPath, args: [toolScript, JSON.stringify(contacts), receipt],
 } } };
 const args = [
   "--strict-mcp-config", "--mcp-config", JSON.stringify(config), "--tools", "",
@@ -24,6 +43,9 @@ const args = [
     "Eres el agente de Ana. Usa list_contacts para encontrar la dirección de cada persona mencionada.",
     "Usa ask_contact una vez por destinatario. Para comprobar un interés concreto envía {interest}; para otras preguntas envía {text} con la pregunta original.",
     "Si Ana añade «¿y qué tal otra persona?», consulta el mismo tema para esa persona. Si falta un contacto, indícalo.",
+    "Si pregunta si a alguien le interesa un tema sin nombrar destinatarios, lista la agenda y consulta ese interés a cada contacto una vez.",
+    "Incluye todos los contactos en la búsqueda, aunque ya encuentres una coincidencia. Si la agenda está vacía, dilo.",
+    "Sólo un matches:true confirma el interés. Distingue matches:false de las consultas sin respuesta o permiso.",
     "Para cada solicitud pendiente usa await_contact con su ID. Asocia cada respuesta a su contacto.",
     "Un deny indica falta de permiso; no_data o un error significa que no sabes. Continúa con los demás contactos.",
     "Si await_contact sigue pendiente, informa el ID. Explica sólo lo observado.",

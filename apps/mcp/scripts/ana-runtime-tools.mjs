@@ -5,8 +5,8 @@ import { Address, ToolArgs } from "@team-31/protocol";
 import { z } from "zod";
 import { startDemoBroker } from "../../../packages/broker/scripts/demo-broker.mjs";
 
-const [bobSource, janeSource, receipt] = process.argv.slice(2);
-const demo = await startDemoBroker(bobSource, janeSource);
+const [directoryJson, receipt] = process.argv.slice(2);
+const demo = await startDemoBroker(JSON.parse(directoryJson));
 const server = new McpServer({ name: "ana", version: "1" });
 async function observed(value) {
   const text = JSON.stringify(value);
