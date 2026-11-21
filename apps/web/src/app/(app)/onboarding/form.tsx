@@ -1,0 +1,33 @@
+"use client";
+
+import { useActionState, useState } from "react";
+
+import { claimAddress } from "../actions";
+import { Feedback, input, primaryButton } from "../ui";
+
+export function AddressForm() {
+  const [localPart, setLocalPart] = useState("");
+  const [state, submit, pending] = useActionState(claimAddress, {});
+
+  return (
+    <form action={submit} className="mt-7 space-y-5">
+      <div>
+        <label htmlFor="localPart" className="mb-2 block text-sm font-semibold">Nombre de tu dirección</label>
+        <div className="flex flex-wrap items-center gap-3">
+          <input id="localPart" name="localPart" className={`${input} w-auto min-w-0 flex-1`}
+            value={localPart} onChange={(event) => setLocalPart(event.target.value)}
+            pattern="[a-z0-9][a-z0-9._\-]{1,30}" minLength={2} maxLength={31} required
+            autoCapitalize="none" autoComplete="off" spellCheck={false} placeholder="tu-nombre" aria-describedby="address-help address-preview" />
+          <span aria-hidden="true" className="font-mono text-sm font-medium text-[#3c5638]">@nexo.app</span>
+        </div>
+        <p id="address-help" className="mt-2 text-sm text-[#525e50]">Usa de 2 a 31 caracteres. Empieza con una letra minúscula o un número.</p>
+      </div>
+      <div id="address-preview" className="rounded-xl border border-[#dbe6d5] bg-[#edf2e9] px-4 py-3">
+        <p className="text-xs font-semibold text-[#435940]">Vista previa</p>
+        <p className="mt-1 break-all font-mono text-sm text-[#28513b]">{localPart || "tu-nombre"}@nexo.app</p>
+      </div>
+      <Feedback {...state} />
+      <button disabled={pending} className={primaryButton}>{pending ? "Guardando…" : "Guardar dirección"}</button>
+    </form>
+  );
+}
