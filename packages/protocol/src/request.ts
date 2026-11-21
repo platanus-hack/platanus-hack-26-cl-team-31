@@ -16,6 +16,7 @@ export function withToolArgs<Shape extends z.ZodRawShape>(shape: Shape) {
 
 export const AskInput = withToolArgs({ to: Address, purpose: z.string().max(200).optional() });
 export type AskInput = z.infer<typeof AskInput>;
+export type AskArguments = z.input<typeof AskInput>;
 
 export const BotOutcome = z.enum(["answered", "no_data", "needs_owner", "declined"]);
 export type BotOutcome = z.infer<typeof BotOutcome>;

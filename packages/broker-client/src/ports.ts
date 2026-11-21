@@ -10,7 +10,7 @@ import type {
   AgentConnection,
   PublicAgent,
   AgentContacts,
-  AskInput,
+  AskArguments,
   ChannelName,
   ContactsView,
   ContactTag,
@@ -27,6 +27,8 @@ import type {
   WakeTarget,
 } from "@team-31/protocol";
 
+// A first authorized call registers the agent and emits presence, including reads of
+// capabilities, inbox, status and contacts when they succeed with no items.
 export interface AgentPort {
   networkUsers(p: Principal, after?: Address): Promise<{ addresses: Address[]; nextCursor?: Address }>;
   connect(p: Principal): Promise<void>;
@@ -37,7 +39,7 @@ export interface AgentPort {
   changeVault(p: Principal, change: VaultChange): Promise<VaultReceipt>;
   queryVault(p: Principal, query: VaultQuery): Promise<VaultResult>;
   capabilities(p: Principal, to: Address): Promise<{ tools: Capability[] }>;
-  ask(p: Principal, input: AskInput): Promise<RequesterView>;
+  ask(p: Principal, input: AskArguments): Promise<RequesterView>;
   inbox(p: Principal, includeInvitations?: boolean): Promise<InboxItem[]>;
   reply(p: Principal, input: ReplyInput): Promise<ReplyReceipt>;
   status(p: Principal, requestId: string): Promise<RequesterView>;
@@ -60,7 +62,7 @@ export interface OwnerPort {
   activity(o: Owner, limit?: number): Promise<ActivityItem[]>;
   // A channel marks where the owner wrote the request: the broker notifies it when the request
   // waits for the recipient's owner or closes.
-  ask(o: Owner, input: AskInput, channel?: ChannelName): Promise<RequesterView>;
+  ask(o: Owner, input: AskArguments, channel?: ChannelName): Promise<RequesterView>;
   status(o: Owner, requestId: string): Promise<RequesterView>;
   decide(o: Owner, requestId: string, decision: OwnerDecision): Promise<void>;
   agentDirectory(o: Owner): Promise<PublicAgent[]>;

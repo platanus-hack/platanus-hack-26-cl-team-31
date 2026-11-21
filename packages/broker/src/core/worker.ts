@@ -33,17 +33,24 @@ type ClosePending = (tx: StoreTx, row: RequestRow, status: "expired" | "delivery
 type WorkerDeps = Pick<BrokerDeps, "store" | "waker" | "clock" | "telemetry"> & { wakeRetryDelaysMs: readonly number[] };
 
 export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs }: WorkerDeps, closePending: ClosePending) {
+  function exhaustedAttempts(job: WakeClaim): number | undefined {
+    return job.recovered && job.attempt > Math.max(1, wakeRetryDelaysMs.length) ? job.attempt - 1 : undefined;
+  }
+
   async function deliver(job: WakeClaim, target: WakeTarget, event: WakeNotice["event"],
     owner: { userId: string; agentId?: string }): Promise<WakeResult> {
+    const final = wakeRetryDelaysMs[job.attempt] === undefined;
     try {
       const { ok, retryable, ms, status } = await waker.wake(target, { requestId: job.requestId, event }, {
         queueWaitMs: Math.max(0, clock.now().getTime() - job.dueAt.getTime()),
-        attempt: job.attempt, final: wakeRetryDelaysMs[job.attempt] === undefined, ...owner,
+        attempt: job.attempt, final, ...owner,
       });
       // Adapters may return diagnostic text. Persist only structured metadata.
       return { ok, retryable, ms, status };
     } catch (error) {
       telemetry?.error?.("wake.deliver", error, { requestId: job.requestId, ...owner });
+      if (final) telemetry?.emit("wake.exhausted", { requestId: job.requestId, ...owner,
+        attrs: { kind: target.kind, attempts: job.attempt } });
       return { ok: false, retryable: true, ms: 0 };
     }
   }
@@ -54,7 +61,7 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     if (job.leaseUntil <= clock.now()) return;
     const fields = { requestId: job.requestId, userId: channel?.userId };
     if (job.recovered) telemetry?.emit("wake.lease_recovered", { ...fields, attrs: { attempt: job.attempt } });
-    const exhausted = job.recovered && job.attempt > Math.max(1, wakeRetryDelaysMs.length);
+    const exhausted = exhaustedAttempts(job);
     const result: WakeResult = exhausted ? { ok: false, retryable: false, ms: 0, detail: "lease_exhausted" }
       : !channel || channel.wakeTarget.kind === "none" ? { ok: false, retryable: false, ms: 0, detail: "skipped" }
       : await deliver(job, channel.wakeTarget, WAKE_UPDATE_EVENT, { userId: channel.userId });
@@ -62,8 +69,8 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     const delay = result.retryable ? wakeRetryDelaysMs[job.attempt] : undefined;
     const retryAt = delay === undefined ? null : new Date(completedAt.getTime() + delay);
     const recorded = await store.tx((tx) => tx.recordWakeAttempt(job, completedAt, result, retryAt));
-    if (recorded && channel && !result.ok && !retryAt) {
-      telemetry?.emit("wake.exhausted", { ...fields, attrs: { kind: channel.wakeTarget.kind, attempts: job.attempt } });
+    if (recorded && channel && exhausted !== undefined) {
+      telemetry?.emit("wake.exhausted", { ...fields, attrs: { kind: channel.wakeTarget.kind, attempts: exhausted } });
     }
   }
 
@@ -78,7 +85,7 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     const target = candidate && candidate.expiresAt > now ? candidate.target : undefined;
     const fields = { requestId: job.requestId, userId: candidate?.userId, agentId: target?.agentId };
     if (job.recovered) telemetry?.emit("wake.lease_recovered", { ...fields, attrs: { attempt: job.attempt } });
-    const exhausted = job.recovered && job.attempt > Math.max(1, wakeRetryDelaysMs.length);
+    const exhausted = exhaustedAttempts(job);
     const deliverTo = target?.wakeTarget.kind !== "none" ? target : undefined;
     const attempted = exhausted ? undefined : deliverTo;
     const result: WakeResult = attempted
@@ -108,7 +115,7 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
       return await closePending(tx, row, "delivery_failed", completedAt) ? "wakesFailed" : undefined;
     });
     if (outcome === "wakesFailed" && exhausted) {
-      telemetry?.emit("wake.exhausted", { ...fields, attrs: { kind: target?.wakeTarget.kind, attempts: job.attempt - 1 } });
+      telemetry?.emit("wake.exhausted", { ...fields, attrs: { kind: target?.wakeTarget.kind, attempts: exhausted } });
     }
     return outcome;
   }

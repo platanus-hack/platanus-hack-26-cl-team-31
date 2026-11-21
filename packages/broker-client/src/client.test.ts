@@ -100,6 +100,14 @@ async function broker(
   };
 }
 
+it("accepts a question without a category on either ask port", async () => {
+  const { agent, ownerClient, requests } = await broker((response) => send(response, 200, requesterView));
+  const input = { ...askInput, args: { text: askInput.args.text } };
+  await ownerClient.ask(owner, input);
+  await agent.ask(principal, input);
+  expect(requests.map(({ body }) => body)).toEqual([askInput, askInput]);
+});
+
 it("implements the agent port over the contracted HTTP routes", async () => {
   const inboxItem = {
     requestId,

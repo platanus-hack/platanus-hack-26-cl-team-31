@@ -266,7 +266,8 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
     },
 
     async insertCircle(row) {
-      await db.insert(circles).values(row);
+      const inserted = await db.insert(circles).values(row).onConflictDoNothing({ target: circles.id }).returning({ id: circles.id });
+      if (!inserted.length) throw new BrokerError("conflict", "El círculo ya existe.");
     },
 
     async getCircle(id) {

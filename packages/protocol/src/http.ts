@@ -357,3 +357,7 @@ export const routes = {
     port: null,
   },
 } as const;
+
+export type RouteInput<Route> = {
+  [Key in keyof Route & ("params" | "query" | "body")]: z.input<Route[Key]>;
+};

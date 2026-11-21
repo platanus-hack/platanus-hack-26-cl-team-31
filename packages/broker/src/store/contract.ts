@@ -391,6 +391,13 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("conserva el círculo original si se repite su id", async () => {
+      const circle = { id: randomUUID(), ownerUserId: "alice", name: "Fútbol", createdAt: now };
+      await store.tx((tx) => tx.insertCircle(circle));
+      await expect(store.tx((tx) => tx.insertCircle({ ...circle, name: "Otro" }))).rejects.toMatchObject({ code: "conflict" });
+      expect(await store.tx((tx) => tx.getCircle(circle.id))).toEqual(circle);
+    });
+
     it("shares a circle only between addresses that joined it", async () => {
       const circle = { id: randomUUID(), ownerUserId: "alice", name: "Fútbol", createdAt: now };
       await store.tx(async (tx) => {

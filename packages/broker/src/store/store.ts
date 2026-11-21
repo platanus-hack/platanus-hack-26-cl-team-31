@@ -161,6 +161,7 @@ export interface StoreTx {
   // Pending connect requests sent or received by the user, oldest first.
   listOpenInvitations(userId: string): Promise<RequestRow[]>;
 
+  // A duplicate ID raises conflict and preserves the existing circle.
   insertCircle(row: CircleRow): Promise<void>;
   getCircle(id: string): Promise<CircleRow | null>;
   // Also deletes its members and invitations.

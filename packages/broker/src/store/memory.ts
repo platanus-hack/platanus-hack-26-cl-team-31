@@ -238,6 +238,7 @@ function transaction(state: State): StoreTx {
         .sort(byCreatedAt));
     },
     async insertCircle(row) {
+      if (state.circles.has(row.id)) throw new BrokerError("conflict", "El círculo ya existe.");
       state.circles.set(row.id, structuredClone(row));
     },
     async getCircle(id) {

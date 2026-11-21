@@ -406,20 +406,22 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     record(tx, "broker.contact.tagged", { userId, attrs: { tag } });
   }
 
-  async function listContacts(tx: StoreTx, userId: string) {
-    const me = (await tx.getUser(userId))?.address;
+
+  async function outgoingContacts(tx: StoreTx, userId: string) {
     const mine = await tx.listGrants(userId);
     const tags = await tx.listContactTags(userId);
-    return Promise.all((await tx.listFriends(userId)).map(async (address) => {
-      const other = await tx.getUserByAddress(address);
+    return (await tx.listFriends(userId)).map((address) => ({
+      address, ...(tags.has(address) ? { tag: tags.get(address)! } : {}),
+      gives: categoriesOf(mine.filter((grant) => grant.granteeAddress === address)),
+    }));
+  }
+
+  async function listContacts(tx: StoreTx, userId: string) {
+    const me = (await tx.getUser(userId))?.address;
+    return Promise.all((await outgoingContacts(tx, userId)).map(async (contact) => {
+      const other = await tx.getUserByAddress(contact.address);
       const theirs = other && me ? (await tx.listGrants(other.userId)).filter((grant) => grant.granteeAddress === me) : [];
-      const tag = tags.get(address);
-      return {
-        address,
-        ...(tag ? { tag } : {}),
-        gives: categoriesOf(mine.filter((grant) => grant.granteeAddress === address)),
-        receives: categoriesOf(theirs),
-      };
+      return { ...contact, receives: categoriesOf(theirs) };
     }));
   }
 
@@ -919,7 +921,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const previous = (await presetsOf(tx, o.userId))[label.data];
           await tx.putTagPreset(o.userId, label.data, parsed.data);
           record(tx, "broker.tag.preset_set", { userId: o.userId, attrs: { tag: label.data, categories: parsed.data.length } });
-          for (const contact of await listContacts(tx, o.userId)) {
+          for (const contact of await outgoingContacts(tx, o.userId)) {
             if (contact.tag !== label.data || !sameSharing(contact.gives, previous)) continue;
             await grants.applySharing(tx, o.userId, contact.address, parsed.data);
           }

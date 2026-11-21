@@ -15,6 +15,8 @@ import {
   type WakeTarget,
   type Waker,
 } from "@team-31/protocol";
+import { createTelemetry, memorySink } from "@team-31/telemetry";
+import { createWaker } from "@team-31/wake";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
 import { createOwnerRuntime, localQuestionSource, localReadTool } from "../client/runtime.js";
@@ -986,6 +988,27 @@ describe("avisos al canal de origen", () => {
     }
     expect(channelNotices()).toHaveLength(3);
     await expectFinal(alice, view.requestId, "allow", "answered", { answer: "Sí" });
+  });
+
+  it.each(["recovered", "attempted", "threw"] as const)("reports one exhausted origin notice (%s)", async (mode) => {
+    const sink = memorySink();
+    const telemetry = createTelemetry({ service: "worker", sink, lifecycle: false });
+    // An insecure callback is rejected locally by the real adapter.
+    await broker.owner.setChannel(alice, "whatsapp", { ...channelHook, url: "http://127.0.0.1/notice" });
+    const view = await broker.owner.ask(alice, question, "whatsapp");
+    await broker.tick(now);
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, view.requestId), outcome: "answered", result: { answer: "Sí" } });
+    const waker = mode === "attempted" ? createWaker({ allowInsecure: false, telemetry }) : deps.waker;
+    broker = createBroker({ ...deps, waker, telemetry, config: { ...deps.config, wakeRetryDelaysMs: [0] } });
+    if (mode === "recovered") {
+      const lease = new Date(now.getTime() + 60_000);
+      const jobs = await deps.store.tx((tx) => tx.claimDueWakes(now, lease, 1));
+      expect(jobs).toMatchObject([{ audience: "origin", attempt: 1 }]);
+      advance(60_000);
+    }
+    if (mode === "threw") wake.mockRejectedValueOnce(new Error("adapter unavailable"));
+    await broker.tick(now);
+    expect(sink.find("wake.exhausted")).toMatchObject([{ requestId: view.requestId, attrs: { attempts: 1 } }]);
   });
 
   it("rechaza un canal o un aviso inválido", async () => {
