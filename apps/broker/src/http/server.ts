@@ -29,6 +29,8 @@ async function parseBody<S extends z.ZodType>(c: HttpContext, schema: S): Promis
 
 async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, { agent, owner }: BrokerCore) {
   switch (route.port) {
+    case "agent.capabilities":
+      return agent.capabilities(c.get("mcp"), parseInput(route.query, c.req.query()).to);
     case "agent.ask":
       return agent.ask(c.get("mcp"), await parseBody(c, route.body));
     case "agent.inbox":

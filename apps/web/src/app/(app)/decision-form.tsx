@@ -28,6 +28,12 @@ export function DecisionForm({ id, tool, escalated }: { id: string; tool: ToolNa
             <button className={button} name="decision" value="no" disabled={pending}>No puedo</button>
           </>
         )}
+        {escalated && tool === "interest_check" && (
+          <>
+            <button className={primaryButton} name="decision" value="yes" disabled={pending}>Sí me interesa</button>
+            <button className={button} name="decision" value="no" disabled={pending}>No me interesa</button>
+          </>
+        )}
         {isQuestion && <button className={primaryButton} name="decision" value="answer" disabled={pending || !answer.trim()}>Responder</button>}
         <button className={button} name="decision" value="deny" disabled={pending}>{escalated ? "Prefiero no compartir" : "Rechazar"}</button>
       </div>

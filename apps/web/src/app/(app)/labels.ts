@@ -4,6 +4,7 @@ export const toolLabels = {
   profile: "Perfil",
   availability: "Disponibilidad",
   question: "Pregunta",
+  interest_check: "Interés",
 } satisfies Record<ToolName, string>;
 
 export const statusLabels = {
@@ -39,6 +40,7 @@ export const fieldLabels: Partial<Record<string, string>> = {
   available: "Si está disponible",
   freeSlots: "Horarios libres",
   answer: "Respuesta",
+  matches: "Coincide con su interés",
 };
 
 const dateTime = new Intl.DateTimeFormat("es-CL", {

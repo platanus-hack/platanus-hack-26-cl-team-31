@@ -20,6 +20,7 @@ export default async function HomePage() {
             <ul className="space-y-3">
               {pending.map((item) => {
                 const slot = item.tool === "availability" ? ToolArgs.availability.parse(item.args) : undefined;
+                const interest = item.tool === "interest_check" ? ToolArgs.interest_check.parse(item.args).interest : undefined;
                 return (
                   <li key={item.requestId} className={`${card} p-5`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -28,6 +29,7 @@ export default async function HomePage() {
                     </div>
                     <p className="mt-2 text-xs text-[#525e50]">Vence el <Stamp value={item.expiresAt} /></p>
                     {slot && <p className="mt-3 text-sm text-[#344630]">{slot.date} · {slot.start} ({slot.timezone}) · {slot.durationMinutes} min</p>}
+                    {interest && <p className="mt-3 break-words text-sm text-[#344630]">Interés consultado · {interest}</p>}
                     <div className="mt-3 rounded-lg bg-[#f2f3ed] p-3 text-sm">
                       <p className="font-semibold text-[#525e50]">Mensaje de un tercero</p>
                       {item.senderMessage.text || item.senderMessage.purpose ? (

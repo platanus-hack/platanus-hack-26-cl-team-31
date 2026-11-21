@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
 
 import { getSession } from "@/lib/auth";
+import { getGoogleOptions } from "@/lib/auth-env.mjs";
 import { getOAuthRequest } from "@/lib/auth-request";
 
 import { GoogleButton } from "./google-button";
+
+export const instant = false;
 
 export default async function SignInPage({ searchParams }: PageProps<"/sign-in">) {
   const params = await searchParams;
@@ -37,7 +40,13 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
           No se pudo completar el inicio de sesión. Intenta de nuevo.
         </p>
       )}
-      <GoogleButton signedQuery={request?.signedQuery} />
+      {getGoogleOptions() ? (
+        <GoogleButton signedQuery={request?.signedQuery} />
+      ) : (
+        <p className="mt-4 text-sm text-[#525a4c]" role="status">
+          Configura las credenciales de Google en el entorno local para iniciar sesión.
+        </p>
+      )}
     </>
   );
 }

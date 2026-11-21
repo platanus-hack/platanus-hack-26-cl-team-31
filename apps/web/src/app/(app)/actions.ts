@@ -113,6 +113,9 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
     if ((kind === "yes" || kind === "no") && item.escalated && item.tool === "availability") {
       decision = { kind: "answer", result: { available: kind === "yes" } };
     }
+    if ((kind === "yes" || kind === "no") && item.escalated && item.tool === "interest_check") {
+      decision = { kind: "answer", result: { matches: kind === "yes" } };
+    }
 
     const parsed = OwnerDecision.safeParse(decision);
     if (!parsed.success || (kind === "approve_once" && item.escalated)) {

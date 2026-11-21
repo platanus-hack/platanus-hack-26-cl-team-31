@@ -121,6 +121,10 @@ describe("HTTP interno del broker", () => {
     const rules = { circles: { amigos: ["alice@nexo.app"] }, grants: { amigos: [{ tool: "question", fields: ["answer"] }] } };
     await call(app, routes.ownerSetRules, { token: bruno, body: rules });
     expect(await call(app, routes.ownerGetRules, { token: bruno })).toMatchObject(rules);
+    const capabilityPath = `${routes.agentCapabilities.path}?to=bruno@nexo.app`;
+    expect((await call(app, routes.agentCapabilities, { token: aliceBot, path: capabilityPath })).tools)
+      .toContainEqual(expect.objectContaining({ tool: "question", allowedFields: ["answer"] }));
+    await expectError(await request(app, routes.agentCapabilities, { token: bruno, path: capabilityPath }), 401, "unauthorized");
     expect(await call(app, routes.agentConnectWake, { token: brunoBot, body: mcpEvents }))
       .toMatchObject({ agentId: "bruno-agent", wakeKind: "mcp_events" });
     expect(waker.verifyCallback).toHaveBeenCalledWith(mcpEvents);
