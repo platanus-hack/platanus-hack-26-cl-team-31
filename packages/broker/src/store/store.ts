@@ -1,6 +1,6 @@
 import type {
   ActivityEvent, AgentContacts, Contact,
-  OwnerVault, VaultCatalog, VaultChange, VaultResult,
+  OwnerVault, VaultCatalog, VaultChange, VaultResult, VaultDocumentQuery,
   Address,
   Category,
   ChannelName,
@@ -126,6 +126,19 @@ export type CircleRow = { id: string; ownerUserId: string; name: string; created
 // An invitation until the invited address joins.
 export type CircleMemberRow = { circleId: string; address: Address; joinedAt?: Date };
 
+export type VaultDocumentRow = {
+  id: string;
+  owner: string;
+  categoryId: string;
+  fileName: string;
+  mimeType?: string;
+  sizeBytes: number;
+  sha256: string;
+  content: Buffer;
+  idempotencyKey: string;
+  createdAt: Date;
+};
+
 export interface Store {
   // A rejected callback rolls back all its writes. Keep external I/O outside it.
   tx<T>(fn: (tx: StoreTx) => Promise<T>): Promise<T>;
@@ -138,6 +151,8 @@ export interface StoreTx {
   ownerVault(owner: string): Promise<OwnerVault>;
   changeVault(owner: string, id: string, change: VaultChange): Promise<boolean>;
   sharedVault(reader: Address, to: Address, categoryId?: string): Promise<VaultResult>;
+  putVaultDocument(row: VaultDocumentRow): Promise<VaultDocumentRow | null>;
+  sharedVaultDocument(reader: Address, to: Address, query: VaultDocumentQuery): Promise<VaultDocumentRow | null>;
   searchPublicProfiles(query: string): Promise<PublicProfile[]>;
   getUser(userId: string): Promise<UserRow | null>;
   getUserByAddress(address: Address): Promise<UserRow | null>;

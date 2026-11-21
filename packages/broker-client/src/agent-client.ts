@@ -16,6 +16,8 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
     changeTag: (p, body) => request(routes.agentChangeTag, p, { body }),
     changeVault: (p, body) => request(routes.agentChangeVault, p, { body }),
     queryVault: (p, body) => request(routes.agentQueryVault, p, { body }),
+    uploadVaultDocument: (p, body) => request(routes.agentVaultUpload, p, { body }),
+    downloadVaultDocument: (p, body) => request(routes.agentVaultDownload, p, { body }),
     capabilities: (principal, to) => request(routes.agentCapabilities, principal, { query: { to } }),
     ask: (principal, body) => request(routes.agentAsk, principal, { body: encodeAsk(body) }),
     inbox: async (principal, includeInvitations) => (await request(routes.agentInbox, principal, {

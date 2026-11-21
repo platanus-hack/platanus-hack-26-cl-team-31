@@ -1,8 +1,8 @@
 import { createRateLimiter } from "@team-31/auth/rate-limit";
 import { BrokerError } from "@team-31/broker";
 
-type Bucket = "ask" | "reply" | "other";
-const limits = { ask: 30, reply: 120, other: 300 };
+type Bucket = "ask" | "reply" | "vault" | "other";
+const limits = { ask: 30, reply: 120, vault: 10, other: 300 };
 
 export interface RateLimiter {
   consume(userId: string, bucket: Bucket): Promise<{ retryAfter: number } | undefined>;
@@ -10,7 +10,9 @@ export interface RateLimiter {
 
 export function createMemoryRateLimiter(now = Date.now): RateLimiter {
   const perMinute = (limit: number) => createRateLimiter({ limit, windowMs: 60_000, now });
-  const buckets = { ask: perMinute(limits.ask), reply: perMinute(limits.reply), other: perMinute(limits.other) };
+  const buckets = {
+    ask: perMinute(limits.ask), reply: perMinute(limits.reply), vault: perMinute(limits.vault), other: perMinute(limits.other),
+  };
   return {
     async consume(userId, bucket) {
       return buckets[bucket].consume(userId);

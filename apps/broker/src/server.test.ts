@@ -391,7 +391,7 @@ describe("HTTP interno del broker", () => {
     await expectError(await request(app, routes.agentAsk, { token: brunoBot, body: {} }), 400, "invalid_input");
     expect(await call(app, routes.agentInbox, { token: aliceBot })).toEqual({ items: [] });
 
-    for (const [bucket, limit] of [["reply", 120], ["other", 300]] as const) {
+    for (const [bucket, limit] of [["reply", 120], ["vault", 10], ["other", 300]] as const) {
       for (let i = 0; i < limit; i++) expect(await limiter.consume("unrelated-user", bucket)).toBeUndefined();
       expect(await limiter.consume("unrelated-user", bucket)).toEqual({ retryAfter: 60 });
     }

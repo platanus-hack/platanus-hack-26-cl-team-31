@@ -9,7 +9,10 @@ import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, type AskArguments, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
 import { ChannelName, WakeTarget } from "./wake.js";
-import { TagChange, TagReceipt, TagsView, OwnerVault, VaultCatalog, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult, VaultChange, VaultReceipt } from "./vault.js";
+import {
+  TagChange, TagReceipt, TagsView, OwnerVault, VaultCatalog, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult,
+  VaultChange, VaultReceipt, VaultDocumentDownload, VaultDocumentQuery, VaultDocumentMetadata, VaultDocumentUpload,
+} from "./vault.js";
 
 // A pre-routing broker accepts an unwrapped AskInput and would strip unfamiliar optional
 // fields. The envelope makes old replicas reject conditional sends before any side effect.
@@ -53,6 +56,8 @@ export const routes = {
   agentVaultMembers: { method: "GET", path: "/v1/agent/vault/members", query: VaultMembersQuery, response: VaultMembers, iss: "mcp", port: "agent.vaultMembers" },
   agentChangeVault: { method: "POST", path: "/v1/agent/vault", body: VaultChange, response: VaultReceipt, iss: "mcp", port: "agent.changeVault" },
   agentQueryVault: { method: "POST", path: "/v1/agent/vault/query", body: VaultQuery, response: VaultResult, iss: "mcp", port: "agent.queryVault" },
+  agentVaultUpload: { method: "POST", path: "/v1/agent/vault/documents", body: VaultDocumentUpload, response: VaultDocumentMetadata, iss: "mcp", port: "agent.uploadVaultDocument" },
+  agentVaultDownload: { method: "POST", path: "/v1/agent/vault/documents/download", body: VaultDocumentQuery, response: VaultDocumentDownload, iss: "mcp", port: "agent.downloadVaultDocument" },
   agentCapabilities: {
     method: "GET", path: "/v1/agent/capabilities", query: z.object({ to: Address }),
     response: z.object({ tools: z.array(Capability) }), iss: "mcp", port: "agent.capabilities",

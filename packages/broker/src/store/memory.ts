@@ -3,7 +3,7 @@ import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit
 import { activeAgentConflict, BrokerError } from "../errors.js";
 import { wakeClaim } from "./store.js";
 import type {
-  AgentConnectionRow, AskReceipt, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
+  AgentConnectionRow, AskReceipt, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, VaultDocumentRow, WakeJob,
 } from "./store.js";
 
 type State = {
@@ -22,6 +22,8 @@ type State = {
   wakes: Map<string, WakeJob>;
   agents: Map<string, AgentConnectionRow>;
   channels: Map<string, ChannelRow>;
+  documents: Map<string, VaultDocumentRow>;
+  documentKeys: Map<string, string>;
 };
 
 function pairKey(userId: string, name: string): string {
@@ -116,6 +118,12 @@ function transaction(state: State): StoreTx {
         case "rename": c.name = change.name; break;
         case "delete":
           state.memberRules.delete(pairKey(owner, id));
+          for (const document of state.documents.values()) {
+            if (document.owner === owner && document.categoryId === id) {
+              state.documents.delete(document.id);
+              state.documentKeys.delete(pairKey(owner, document.idempotencyKey));
+            }
+          }
           vault.categories = vault.categories.filter(item => item !== c);
           break;
         case "set_member": {
@@ -142,7 +150,53 @@ function transaction(state: State): StoreTx {
       const owner = findUserByAddress(to)?.userId;
       if (!owner) return { categories: [] };
       return { categories: (state.vaults.get(owner)?.categories ?? []).filter(c => (!id || id === c.id) && canRead(owner, c, reader))
-        .map(c => ({ id: c.id, name: c.name, ...(id ? { entries: structuredClone(c.entries) } : {}) })) };
+        .map(c => {
+          const documents = id
+            ? [...state.documents.values()]
+              .filter(document => document.owner === owner && document.categoryId === c.id)
+              .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
+              .map(document => ({
+                id: document.id,
+                fileName: document.fileName,
+                ...(document.mimeType ? { mimeType: document.mimeType } : {}),
+                sizeBytes: document.sizeBytes,
+                sha256: document.sha256,
+                createdAt: document.createdAt.toISOString(),
+              }))
+            : [];
+          return {
+            id: c.id,
+            name: c.name,
+            ...(id ? { entries: structuredClone(c.entries) } : {}),
+            ...(documents.length ? { documents } : {}),
+          };
+        }) };
+    },
+    async putVaultDocument(row) {
+      const key = pairKey(row.owner, row.idempotencyKey);
+      const existingId = state.documentKeys.get(key);
+      if (existingId) {
+        const existing = state.documents.get(existingId);
+        if (existing && existing.categoryId === row.categoryId && existing.fileName === row.fileName &&
+            existing.mimeType === row.mimeType && existing.sha256 === row.sha256 && existing.sizeBytes === row.sizeBytes &&
+            Buffer.from(existing.content).equals(Buffer.from(row.content))) {
+          return structuredClone(existing);
+        }
+        throw new BrokerError("conflict", "La clave de idempotencia ya fue usada para otro archivo.");
+      }
+      if (!state.vaults.get(row.owner)?.categories.some(category => category.id === row.categoryId)) return null;
+      state.documents.set(row.id, structuredClone(row));
+      state.documentKeys.set(key, row.id);
+      return structuredClone(row);
+    },
+    async sharedVaultDocument(reader, to, query) {
+      const owner = findUserByAddress(to)?.userId;
+      if (!owner) return null;
+      const category = state.vaults.get(owner)?.categories.find(item => item.id === query.categoryId);
+      if (!category || (reader !== to && !canRead(owner, category, reader))) return null;
+      const document = state.documents.get(query.documentId);
+      if (!document || document.owner !== owner || document.categoryId !== query.categoryId) return null;
+      return structuredClone(document);
     },
     async searchPublicProfiles(query) {
       const term = normalizeSearch(query);
@@ -433,7 +487,7 @@ function transaction(state: State): StoreTx {
 export function createMemoryStore(): Store {
   let state: State = {
     vaults: new Map(), memberRules: new Map(), users: new Map(), grants: [], contacts: new Map(), contactTags: new Map(), tags: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
-    askReceipts: new Map(), events: [], wakes: new Map(), agents: new Map(), channels: new Map(),
+    askReceipts: new Map(), events: [], wakes: new Map(), agents: new Map(), channels: new Map(), documents: new Map(), documentKeys: new Map(),
   };
   let previous = Promise.resolve();
 
