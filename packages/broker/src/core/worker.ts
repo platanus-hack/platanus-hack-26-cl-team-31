@@ -58,7 +58,9 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     if (job.recovered) telemetry?.emit("wake.lease_recovered", { ...fields, attrs: { attempt: job.attempt } });
     const exhausted = job.recovered && job.attempt > Math.max(1, wakeRetryDelaysMs.length);
     const result: WakeResult = exhausted ? { ok: false, retryable: false, ms: 0, detail: "lease_exhausted" }
-      : !channel || channel.wakeTarget.kind === "none" ? { ok: false, retryable: false, ms: 0, detail: "skipped" }
+      // Nadie le escribe a un canal de sondeo: se omite el aviso igual que con "none".
+      : !channel || channel.wakeTarget.kind === "none" || channel.wakeTarget.kind === "polling"
+        ? { ok: false, retryable: false, ms: 0, detail: "skipped" }
       : await deliver(job, channel.wakeTarget, WAKE_UPDATE_EVENT, { userId: channel.userId });
     const completedAt = clock.now();
     const delay = result.retryable ? wakeRetryDelaysMs[job.attempt] : undefined;

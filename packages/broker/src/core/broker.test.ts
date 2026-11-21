@@ -960,6 +960,18 @@ describe("avisos al canal de origen", () => {
     await expectFinal(alice, view.requestId, "allow", "answered", { answer: "Sí" });
   });
 
+  it("omite el aviso a un canal de sondeo en vez de darlo por entregado", async () => {
+    await broker.owner.setChannel(alice, "whatsapp", { kind: "polling" });
+    const view = await broker.owner.ask(alice, question, "whatsapp");
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, view.requestId), outcome: "answered", result: { answer: "Sí" } });
+    await broker.tick(now);
+    await broker.tick(now);
+    expect(wake).not.toHaveBeenCalled();
+    // Nadie lee ese canal: el intento queda omitido, no entregado.
+    expect(await deps.store.tx((tx) => tx.getWakeForUpdate(view.requestId, 1)))
+      .toMatchObject({ audience: "origin", lastResult: { ok: false, detail: "skipped" } });
+  });
+
   it("rechaza un canal o un aviso inválido", async () => {
     await expect(broker.owner.setChannel(alice, "sms" as "whatsapp", channelHook)).rejects.toMatchObject({ code: "invalid_input" });
     await expect(broker.owner.setChannel(alice, "whatsapp", { kind: "standard_webhook" } as WakeTarget))
