@@ -1,0 +1,30 @@
+.sideband-demo.cast-page {
+  display: block;
+  height: auto;
+  min-height: 100dvh;
+  padding: clamp(24px, 5vw, 56px) clamp(16px, 4vw, 48px);
+
+  .cast-intro { max-width: 720px; margin-bottom: 28px; }
+  .cast-intro h1 { font: 500 clamp(28px, 4vw, 40px)/1.1 var(--serif); letter-spacing: -.03em; }
+  .cast-intro p { margin-top: 10px; color: var(--muted); }
+  .cast-intro ul { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; list-style: none; }
+  .cast-intro li { padding: 6px 12px; border-radius: 50px; background: var(--soft); color: var(--ink); font-size: 13px; }
+  .notice { margin: 0 0 20px; }
+  .cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 14px; }
+  .cast-card { display: grid; gap: 14px; align-content: start; padding: 16px; border-radius: 18px; background: var(--card); box-shadow: inset 0 0 0 1px rgba(196, 196, 196, .07); }
+  .cast-card header { display: flex; align-items: center; gap: 10px; }
+  .cast-card header > div { min-width: 0; flex: 1; }
+  .cast-card h2 { font-size: 15px; font-weight: 500; }
+  .cast-card header code { color: var(--muted); font-size: 11px; }
+  .cast-card .avatar { width: 32px; height: 32px; border-radius: 9px; font-size: 13px; }
+  .cast-public { display: grid; gap: 2px; }
+  .cast-card small, .cast-card dt { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .cast-card dl { display: grid; gap: 8px; }
+  .cast-card dl > div { padding: 10px 12px; border-radius: 12px; background: var(--stage); box-shadow: inset 0 0 0 1px rgba(191, 192, 203, .08); }
+  .cast-card dd { margin-top: 3px; }
+  .cast-card .line { display: block; }
+  .cast-card .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cast-card .chips span { padding: 2px 8px; border-radius: 50px; background: var(--soft); font-size: 12px; }
+  .cast-card .readers { font: 11px/1.4 var(--mono); color: #767676; }
+  .cast-card .shared .readers { color: #7ddba3; }
+}
