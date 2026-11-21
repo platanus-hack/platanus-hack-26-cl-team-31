@@ -687,6 +687,15 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     }
   })
 
+  it("requestRefs limita a 200 solicitudes distintas antes de buscar las referencias", async () => {
+    const missing = Array.from({ length: 199 }, (_, i) => `missing-${i}`)
+    const idsToRead = [missing[0]!, ...missing, ids.answered, ids.open]
+
+    const refs = await queries.requestRefs(idsToRead)
+
+    expect(refs.map((ref) => ref.id)).toEqual([ids.answered])
+  })
+
   it("audit pagina la bitácora del admin sin meta", async () => {
     const audit = page(AuditEntry).parse(await queries.audit())
     expect(audit.items.map((entry) => entry.action).sort()).toEqual([
