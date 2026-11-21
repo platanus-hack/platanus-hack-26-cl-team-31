@@ -6,6 +6,8 @@
 
 Track: 🔗 Multiplayer
 
+**Demo local de coordinación.** Corre `pnpm agents:up 3` en una terminal y `pnpm agents:demo 3` en otra. [Instrucciones para dos o más asistentes](apps/mcp/README.md).
+
 team-31
 
 - Adolfo Manuel Villalobos Vega ([@adolfovillalobos](https://github.com/adolfovillalobos))

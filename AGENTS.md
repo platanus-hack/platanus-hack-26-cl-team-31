@@ -22,6 +22,7 @@ Al terminar con un worktree: `pnpm teardown` (borra sus contenedores/datos y lib
 | Servicio | Variable        | Puerto          |
 | -------- | --------------- | --------------- |
 | web      | `WEB_PORT`      | `3000 + SLOT`   |
+| agentes (HTTP local) | `COORDINATION_PORT` | `4310 + SLOT` |
 | postgres | `POSTGRES_PORT` | `54320 + SLOT`  |
 
 - Secretos/API keys: `.env.local` (gitignored). Declara cada variable nueva en `.env.local.example`.
@@ -35,6 +36,16 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 - Dev: `DATABASE_URL` (db `app`). Tests: `TEST_DATABASE_URL` (db `app_test`, separada).
 - `pnpm infra:up` / `pnpm infra:down` / `pnpm infra:reset` (borra datos y re-crea).
 - Scripts SQL de init en `infra/postgres/init/` (solo corren al crear el volumen).
+
+## Coordinación local entre N asistentes
+
+1. Desde la raíz con Node 24, pnpm 10 y Docker, ejecuta `pnpm agents:up 3`. Déjalo abierto. Prepara el esquema, crea las identidades faltantes e inicia la API del worktree. Usa 2 para Ana y Bob o aumenta N para sumar participantes.
+2. En otra terminal ejecuta `pnpm agents:demo 3`. Usa el mismo N o uno menor. Cada participante abre un proceso MCP y Eva, una identidad externa al grupo, comprueba la denegación.
+3. Para ampliar un servicio que ya está corriendo, ejecuta `pnpm agents:seed 5`. Para usar clientes interactivos, sigue [las instrucciones de MCP](apps/mcp/README.md).
+
+El servidor usa `DATABASE_URL`. Cada adaptador MCP recibe `COORDINATION_API_URL` y su propio `AGENT_TOKEN` de un archivo privado en `.agents-local/`. Conserva esa carpeta junto a la base para volver a abrir las sesiones. PostgreSQL guarda permisos, disponibilidad, publicaciones y encuentros. La política bilateral de `apps/broker` se ejecuta en el servidor. `pnpm test` usa la base separada `app_test`.
+
+Ctrl+C detiene la API del host y `pnpm infra:down` detiene PostgreSQL conservando el volumen. Después de preparar el esquema, las cuentas y el build, también puedes iniciar la API en segundo plano con `docker compose --profile agents up -d coordination` con el puerto del host libre. Para detener ese stack usa `docker compose --profile agents down`.
 
 ## Comandos
 

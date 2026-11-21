@@ -20,7 +20,10 @@
     "test:workspace": "./scripts/with-env.sh --optional-env vitest run --config vitest.workspace.ts",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "agents:up": "bash scripts/agents-up.sh",
+    "agents:demo": "node apps/mcp/scripts/demo.mjs",
+    "agents:seed": "./scripts/with-env.sh node apps/server/scripts/seed.mjs"
   },
   "devDependencies": {
     "turbo": "^2.11.13",
