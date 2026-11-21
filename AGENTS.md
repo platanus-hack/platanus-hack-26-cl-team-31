@@ -73,7 +73,7 @@ El dashboard de desarrollo en `/demo` usa Ollama por loopback (`DEMO_MODEL_URL`)
 
 ## Consultas resueltas por el runtime del titular
 
-Con Claude Code autenticado y las listas privadas en `.agents-local/bob-interests.json` y `.agents-local/jane-interests.json`, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica? ¿Qué tal Jane?"`. Ana descubre las direcciones con `list_contacts` y usa `ask_contact` para cada destinatario. El broker verifica los permisos y entrega cada resultado con su ID de solicitud. La cola de esta demo es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md) para preparar las listas o conversar con Ana.
+Con PostgreSQL del worktree activo, `corepack pnpm agents:seed` prepara 15 perfiles de prueba con contactos y archivos privados de intereses en `.agents-local/`. Con Claude Code autenticado, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A alguien le interesa la cerámica?"`. Ana carga su agenda de PostgreSQL y pregunta a los agentes con `list_contacts`, `ask_contact` y `await_contact`. El broker aplica el permiso de cada persona. La cola de esta demo es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md#buscar-entre-los-agentes-de-la-agenda) para ver las relaciones, modificar los datos o iniciar una sesión interactiva.
 
 ## Pruebas de punta a punta de Nexo
 

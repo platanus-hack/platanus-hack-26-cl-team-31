@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { fixtureArgs, outsider } from "../../../scripts/coordination-fixture.mjs";
+import { contactsOf, fixtureArgs, outsider } from "../../../scripts/coordination-fixture.mjs";
 
 async function readOrCreateToken(path) {
   try {
@@ -48,10 +48,25 @@ await db.connect();
 try {
   await db.query("BEGIN");
   await db.query("SELECT pg_advisory_xact_lock(hashtext('coordination.demo.seed'))");
-  for (const person of [...people, outsider]) {
+  const roster = [...people, outsider];
+  const newProfiles = new Set();
+  for (const person of roster) {
     const path = join(configDir, `${person.id}.json`);
     const token = await readOrCreateToken(path);
     await seedPerson(db, person, token);
+    const readers = person.privateInterests ? [] : contactsOf(person.id);
+    const profile = await db.query(`
+      INSERT INTO demo_profiles(person_id, display_name, interest_readers) VALUES ($1,$2,$3)
+      ON CONFLICT (person_id) DO NOTHING RETURNING person_id`, [person.id, person.name, readers]);
+    if (profile.rowCount) {
+      newProfiles.add(person.id);
+      try {
+        await writeFile(join(configDir, `${person.id}-interests.json`), JSON.stringify(person.interests) + "\n",
+          { mode: 0o600, flag: "wx" });
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
+    }
     const config = { mcpServers: { coordination: {
       command: process.execPath, args: [adapter], env: { COORDINATION_API_URL, AGENT_TOKEN: token },
     } } };
@@ -59,6 +74,15 @@ try {
     const temp = `${path}.${process.pid}.tmp`;
     await writeFile(temp, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
     await rename(temp, path);
+  }
+  // Add fixture edges when either endpoint first joins. Preserve later removals on reseed.
+  const ids = new Set(roster.map(person => person.id));
+  for (const { id } of roster) {
+    for (const peer of contactsOf(id)) {
+      if (ids.has(peer) && (newProfiles.has(id) || newProfiles.has(peer))) {
+        await db.query("INSERT INTO contacts(owner_id, contact_id) VALUES ($1,$2) ON CONFLICT DO NOTHING", [id, peer]);
+      }
+    }
   }
   await db.query("COMMIT");
   console.log(`${people.length} participantes + ${outsider.id}. Configuraciones MCP en ${configDir}`);
