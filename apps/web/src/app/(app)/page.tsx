@@ -8,6 +8,7 @@ import { ActivityList } from "./activity-list";
 import { DecisionForm } from "./decision-form";
 import { InviteActions } from "./invite-actions";
 import { toolLabels } from "./labels";
+import { OwnerProfile } from "./owner-profile";
 import { card, Empty, Heading, Stamp, textLink } from "./ui";
 
 export default async function HomePage() {
@@ -17,7 +18,7 @@ export default async function HomePage() {
   return (
     <>
       <Heading title="Inicio" action={<InviteActions url={inviteUrl} />}>
-        Revisa solicitudes y respuestas de tus agentes.
+        Revisa tus solicitudes, las respuestas de tus agentes y tu perfil.
       </Heading>
       <div className="grid items-start gap-8 lg:grid-cols-[1.35fr_1fr]">
         <section aria-labelledby="pending-title">
@@ -69,6 +70,7 @@ export default async function HomePage() {
           <ActivityList items={activity} />
         </section>
       </div>
+      <OwnerProfile />
     </>
   );
 }
