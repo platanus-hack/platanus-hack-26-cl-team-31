@@ -64,6 +64,13 @@
       "when": 1795285384428,
       "tag": "0008_personal_vault",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795286591899,
+      "tag": "0009_vault_contact_groups",
+      "breakpoints": true
     }
   ]
 }
