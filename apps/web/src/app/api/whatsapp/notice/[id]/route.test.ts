@@ -64,6 +64,19 @@ it("rechaza avisos sin firma válida, vencidos o de otro evento, y no existe sin
   expect((await notice()).status).toBe(404);
 });
 
+it("cancela la lectura al superar el límite en bytes aunque el aviso siga abierto", async () => {
+  const cancel = vi.fn();
+  const chunk = new TextEncoder().encode("á".repeat(1_025));
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(chunk); controller.enqueue(chunk); }, cancel,
+  });
+  const init = { method: "POST", body, duplex: "half" } as const;
+  const response = await POST(new Request("https://sideband.test", init), { params: Promise.resolve({ id: linkId }) });
+  expect(response.status).toBe(413);
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(after).not.toHaveBeenCalled();
+});
+
 it("envía la respuesta final una sola vez aunque el broker repita el aviso", async () => {
   await deliver({ windowOpen: true });
   expect(broker.status).toHaveBeenCalledWith({ userId: "user-a" }, requestId);

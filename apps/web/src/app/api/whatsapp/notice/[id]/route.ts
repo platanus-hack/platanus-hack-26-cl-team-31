@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { WAKE_UPDATE_EVENT, WakeNotice } from "@team-31/protocol";
-import { verifyWebhookSignature } from "@team-31/wake";
+import { readWebhookBody, verifyWebhookSignature } from "@team-31/wake";
 import { ownerClient } from "../../../../../lib/broker";
 import { getTelemetry, observeRoute } from "../../../../../lib/telemetry";
 import { noticeText } from "../../../../../lib/whatsapp/delivery";
@@ -22,8 +22,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const reply = (status: number, errorId?: string) =>
       new Response(null, { status, headers: errorId ? { "X-Error-Id": errorId } : undefined });
     try {
-      const body = await request.text();
-      if (body.length > 4_096) return reply(413);
+      const bytes = await readWebhookBody(request, 4_096);
+      if (!bytes) return reply(413);
+      const body = bytes.toString("utf8");
       const timestamp = Number(request.headers.get("webhook-timestamp"));
       if (!Number.isInteger(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > toleranceSeconds ||
           !verifyWebhookSignature(secret, request.headers.get("webhook-id") ?? "", timestamp, body,

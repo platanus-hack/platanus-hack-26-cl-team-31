@@ -5,6 +5,7 @@ import { mcpEventsPost, verifyMcpCallback } from "./adapters/mcp-events.js";
 import { openclawPost } from "./adapters/openclaw.js";
 import { standardWebhookPost } from "./adapters/standard-webhook.js";
 import { createSafeFetch } from "./safe-fetch.js";
+export { readWebhookBody } from "./read-webhook-body.js";
 
 function adapterPost(target: Exclude<WakeTarget, { kind: "none" }>, notice: WakeNotice) {
   switch (target.kind) {
