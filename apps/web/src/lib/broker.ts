@@ -3,6 +3,9 @@ import "server-only";
 import { mintServiceToken } from "@team-31/auth/service";
 import { createOwnerClient, type OwnerPort } from "@team-31/broker/client";
 import type { Owner } from "@team-31/protocol";
+import { tracedFetch } from "@team-31/telemetry";
+
+import { webTelemetry } from "./telemetry";
 
 export function brokerUrl(): string {
   const baseUrl = process.env.BROKER_URL;
@@ -17,5 +20,5 @@ export async function getServiceToken(owner: Owner): Promise<string> {
 }
 
 export function ownerClient(): OwnerPort {
-  return createOwnerClient({ baseUrl: brokerUrl(), getServiceToken });
+  return createOwnerClient({ baseUrl: brokerUrl(), getServiceToken, fetch: tracedFetch(webTelemetry()) });
 }
