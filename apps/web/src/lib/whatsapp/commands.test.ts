@@ -19,17 +19,17 @@ function fixture(addresses = [to]) {
 it("envía la pregunta original con una dirección explícita, aunque no use un comando", async () => {
   const { broker, report } = fixture();
   const text = "simon@sideband.app puede ir a tomar café en una hora?";
-  await runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: to }));
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "general" } });
+  await runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: to, category: "availability" }));
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } });
   expect(broker.contacts).not.toHaveBeenCalled();
 });
 
 it("no consulta al broker si hay dos coincidencias o Claude devuelve una dirección que no se escribió", async () => {
   const { broker, report } = fixture([to, "simon.otro@sideband.app"]);
   const text = "¿Simón apaña a un café?";
-  await expect(runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: "Simón" })))
+  await expect(runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: "Simón", category: "availability" })))
     .resolves.toContain("No pude identificar");
-  await expect(runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: to })))
+  await expect(runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: to, category: "availability" })))
     .resolves.toContain("No pude identificar");
   expect(broker.ask).not.toHaveBeenCalled();
 });
@@ -41,17 +41,37 @@ it("un seguimiento solo lee solicitudes enviadas y no manda otra pregunta", asyn
     { direction: "sent", to: "ana@sideband.app", requestId: "other-contact" },
     { direction: "sent", to, requestId },
   ]);
-  await runCommand(broker, owner, "¿Y qué dijo Simón?", report, async () => ({ action: "status", recipient: "Simón" }));
+  await runCommand(broker, owner, "¿Y qué dijo Simón?", report, async () => ({ action: "status", recipient: "Simón", category: null }));
   expect(broker.status).toHaveBeenCalledExactlyOnceWith(owner, requestId);
   expect(broker.ask).not.toHaveBeenCalled();
 });
 
-it("mantiene los comandos explícitos sin llamar a Claude", async () => {
+it("mantiene las preguntas explícitas sin Claude y los comandos de estado no usan el modelo", async () => {
   const { broker, report } = fixture();
   const interpret = vi.fn();
-  await runCommand(broker, owner, `Pregunta a ${to} si puede ir a tomar café`, report, interpret);
+  await runCommand(broker, owner, `Pregunta a ${to} si puede ir a tomar café`, report);
   await runCommand(broker, owner, `estado ${requestId}`, report, interpret);
   expect(interpret).not.toHaveBeenCalled();
-  expect(broker.ask).toHaveBeenCalledOnce();
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, {
+    to, tool: "question", args: { text: "si puede ir a tomar café", category: "general" },
+  });
   expect(broker.status).toHaveBeenCalledOnce();
+});
+
+it("clasifica preguntas explícitas sin dejar que el modelo cambie la dirección ni reintentar si se deniega", async () => {
+  const { broker, report } = fixture();
+  const text = "si puede juntarse hoy";
+  broker.ask.mockResolvedValue({ ...pending, decision: "deny", final: true });
+  const result = await runCommand(broker, owner, `Pregunta a ${to} ${text}`, report,
+    async () => ({ action: "ask", recipient: "otro@sideband.app", category: "availability" }));
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } });
+  expect(result).toContain("No se pudo compartir");
+});
+
+it("pide reformular una pregunta con varias categorías sin enviar nada", async () => {
+  const { broker, report } = fixture();
+  const result = await runCommand(broker, owner, `¿${to} está libre hoy y le gusta el café?`, report,
+    async () => ({ action: "ask", recipient: to, category: null }));
+  expect(result).toContain("Reformula");
+  expect(broker.ask).not.toHaveBeenCalled();
 });

@@ -1,5 +1,5 @@
 import { BrokerError, type OwnerPort } from "@team-31/broker/client";
-import { Address, AskInput, type Owner, type RequesterView } from "@team-31/protocol";
+import { Address, AskInput, type Category, type Owner, type RequesterView } from "@team-31/protocol";
 import type { InterpretMessage } from "./claude";
 
 export const askExample = "Pregunta a carla@sideband.app si puede jugar el sábado";
@@ -64,8 +64,8 @@ export async function runCommand(
     }
   }
 
-  async function ask(to: string, question: string) {
-    const input = AskInput.safeParse({ to, tool: "question", args: { text: question, category: "general" } });
+  async function ask(to: string, question: string, category: Category) {
+    const input = AskInput.safeParse({ to, tool: "question", args: { text: question, category } });
     if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
     const view = await broker.ask(owner, input.data);
     onResult("ask", view);
@@ -74,18 +74,23 @@ export async function runCommand(
 
   if (status || /^¿?\s*ya respondi[oó]\s*\??$/i.test(text)) return readStatus(status?.[1]);
   const match = /^(?:\/pregunta\s+|preg[uú]nta(?:le)?\s+a\s+)(\S+?)(?::\s*|\s+)(\S[\s\S]*)$/i.exec(text);
-  if (match?.[1] && match[2] && Address.safeParse(match[1].toLowerCase()).success) {
-    return ask(match[1].toLowerCase(), match[2]);
-  }
+  const explicit = Address.safeParse(match?.[1]?.toLowerCase());
+  const command = explicit.success && match?.[2] ? { to: explicit.data, question: match[2] } : undefined;
+  if (!interpret && command) return ask(command.to, command.question, "general");
   if (!interpret) return askHelp;
-  if (text.length > 1000) return "Escribe una pregunta de hasta 1000 caracteres.";
+  if ((command?.question ?? text).length > 1000) return "Escribe una pregunta de hasta 1000 caracteres.";
   if (!text) return askHelp;
 
   const intent = await interpret(text);
+  const clarifyCategory = "No pude identificar una sola categoría. Reformula el mensaje con una pregunta sobre un solo tema.";
+  if (command) {
+    return intent.action === "ask" && intent.category ? ask(command.to, command.question, intent.category) : clarifyCategory;
+  }
   if (intent.action === "help") return "Puedo preguntarle algo a un contacto o revisar si ya te respondió.";
   if (intent.action === "status" && !intent.recipient) return readStatus();
   const to = intent.recipient ? await resolveRecipient(broker, owner, text, intent.recipient) : undefined;
   if (!to) return "No pude identificar a una sola persona. Repite tu mensaje con su dirección Sideband completa.";
   // Do not let the model invent or rewrite what will be delivered to the other agent.
-  return intent.action === "status" ? readStatus(undefined, to) : ask(to, text);
+  if (intent.action === "status") return readStatus(undefined, to);
+  return intent.category ? ask(to, text, intent.category) : clarifyCategory;
 }
