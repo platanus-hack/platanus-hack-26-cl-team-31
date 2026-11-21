@@ -48,8 +48,18 @@ export const WakeResult = z.object({
 });
 export type WakeResult = z.infer<typeof WakeResult>;
 
+// Correlation metadata for observability. Never part of the notice sent to the agent.
+export type WakeAttempt = {
+  // One-based attempt number of the wake job.
+  attempt: number;
+  // True when no retry follows this attempt if it fails.
+  final: boolean;
+  userId?: string;
+  agentId?: string;
+};
+
 export interface Waker {
-  wake(target: WakeTarget, notice: WakeNotice): Promise<WakeResult>;
+  wake(target: WakeTarget, notice: WakeNotice, attempt?: WakeAttempt): Promise<WakeResult>;
   verifyCallback(target: Extract<WakeTarget, { kind: "mcp_events" }>): Promise<
     | { ok: true }
     | { ok: false; reason: "challenge_failed" | "timeout" | "https_required" | "blocked_address" }

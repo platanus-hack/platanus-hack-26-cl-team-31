@@ -426,6 +426,9 @@ importers:
       '@team-31/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@team-31/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       drizzle-orm:
         specifier: 0.45.4
         version: 0.45.4(@types/pg@8.23.1)(kysely@0.29.9)(pg@8.23.1)
@@ -516,6 +519,9 @@ importers:
       '@team-31/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@team-31/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
     devDependencies:
       '@team-31/typescript-config':
         specifier: workspace:*

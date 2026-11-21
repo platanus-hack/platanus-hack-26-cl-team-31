@@ -82,6 +82,13 @@ export const catalog = [
     attrs: { expectedIss: code(), reason: code() },
   }),
   defineEvent({ name: "auth.oauth.consent", kind: "auth", description: "Decisión de consentimiento OAuth.", attrs: { clientId: id(), granted: bool() } }),
+  defineEvent({
+    name: "auth.scope.denied",
+    kind: "auth",
+    level: "warn",
+    description: "Una identidad autenticada no tiene el permiso (scope) que exige la operación.",
+    attrs: { scope: code(), operation: code() },
+  }),
 
   defineEvent({
     name: "mcp.tool.call",

@@ -115,6 +115,7 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `auth.token.verified` / `auth.token.rejected` | auth | issuer, reason (código) |
 | `auth.service_jwt.rejected` | auth | expectedIss, reason |
 | `auth.oauth.consent` | auth | clientId, granted |
+| `auth.scope.denied` | auth | scope, operation |
 | `mcp.tool.call` | tool | tool, outcome (`ok` \| `error` \| `denied`) |
 | `broker.policy.evaluated` | policy | tool, decision (`allow` \| `deny` \| `ask_owner`), rule |
 | `broker.request.created` | lifecycle | tool, rule, targetAgentId |
