@@ -1,8 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useActionState } from "react";
 import { button, Feedback, primaryButton, secondaryText, textLink } from "../../../ui";
+import { CopyBox } from "../_components/CopyBox";
 import { updatePhone } from "./actions";
 
 export function LinkForm({ number, linked, pending }: {
@@ -29,10 +31,21 @@ export function LinkForm({ number, linked, pending }: {
           <button name="action" value="confirm" className={primaryButton} disabled={busy}>Confirmar vínculo</button>
         </> : <>
           <p className={secondaryText}>Genera un código, envíalo desde tu WhatsApp y vuelve aquí para confirmar. El código vence en 10 minutos.</p>
-          {pending && state.code && <div className="flex flex-wrap items-center gap-3">
-            <a href={`${chat}?text=${encodeURIComponent(`VINCULAR ${state.code}`)}`} target="_blank" rel="noreferrer" className={primaryButton}>Enviar código en WhatsApp</a>
-            <button type="button" className={`${textLink} cursor-pointer`} onClick={() => router.refresh()}>Ya envié el código</button>
-          </div>}
+          {pending && number && state.code && state.link && state.qr && <>
+            <div className="flex flex-wrap items-center gap-3">
+              <a href={state.link} target="_blank" rel="noreferrer" className={primaryButton}>Enviar código en WhatsApp</a>
+              <button type="button" className={`${textLink} cursor-pointer`} onClick={() => router.refresh()}>Ya envié el código</button>
+            </div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              <Image src={state.qr} alt="Código QR que abre WhatsApp con el mensaje de vinculación" width={160} height={160}
+                className="shrink-0 rounded-xl bg-white p-2" />
+              <div className="min-w-0 flex-1 space-y-3">
+                <p className={secondaryText}>¿Estás en el computador? Escanea el QR con tu teléfono o envía este mensaje al número de Sideband.</p>
+                <CopyBox label="Número de Sideband" value={number} />
+                <CopyBox label="Mensaje" value={`VINCULAR ${state.code}`} />
+              </div>
+            </div>
+          </>}
         </>}
       {!linked && chat && <button name="action" value="start" className={pending ? button : primaryButton} disabled={busy}>
         {pending ? "Generar otro código" : "Generar código"}
