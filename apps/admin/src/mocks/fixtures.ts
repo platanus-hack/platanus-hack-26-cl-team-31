@@ -234,12 +234,14 @@ const fieldsByTool: Record<ToolName, string[]> = {
   availability: ["available", "freeSlots"],
   question: ["answer"],
   interest_check: ["matches"],
+  connect: ["accepted"],
 }
 const argsKeysByTool: Record<ToolName, string[]> = {
   profile: [],
   availability: ["date", "start", "durationMinutes", "timezone"],
   question: ["text"],
   interest_check: ["interest"],
+  connect: [],
 }
 
 type StatusPlan = { status: RequestStatus; count: number }
@@ -297,6 +299,12 @@ function samplePayload(tool: ToolName, status: RequestStatus) {
         args: { interest: "cerámica" },
         purpose: "Armar un taller",
         result: answered ? { matches: true } : null,
+      }
+    case "connect":
+      return {
+        args: {},
+        purpose: null,
+        result: answered ? { accepted: true } : null,
       }
     case "profile":
       return {

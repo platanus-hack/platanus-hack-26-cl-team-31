@@ -69,6 +69,12 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.ping(c.get("web"), parseInput(route.params, c.req.param()).agentId);
     case "owner.revokeAgent":
       return owner.revokeAgent(c.get("web"), parseInput(route.params, c.req.param()).agentId);
+    case "owner.connect":
+      return owner.connect(c.get("web"), (await parseBody(c, route.body)).to);
+    case "owner.friends":
+      return { items: await owner.friends(c.get("web")) };
+    case "owner.removeFriend":
+      return owner.removeFriend(c.get("web"), parseInput(route.params, c.req.param()).address);
     case "admin.rewake":
       return admin.rewake(c.get("admin"), parseInput(route.params, c.req.param()).id, (await parseBody(c, route.body)).reason);
     case "admin.expire":

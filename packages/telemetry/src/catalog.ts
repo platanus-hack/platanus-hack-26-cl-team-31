@@ -91,6 +91,19 @@ export const catalog = [
   }),
 
   defineEvent({
+    name: "web.invite.progress",
+    kind: "lifecycle",
+    description: "Paso observado en el alta por invitación de Nexo.",
+    attrs: { step: z.enum(["opened", "sign_in", "claim_address", "address_claimed", "connect"]) },
+  }),
+  defineEvent({
+    name: "web.agent.ping",
+    kind: "lifecycle",
+    description: "Inicio o resultado de una prueba de conexión desde la app web.",
+    attrs: { stage: z.enum(["started", "finished"]), outcome: code(), verified: bool() },
+  }),
+
+  defineEvent({
     name: "mcp.tool.call",
     kind: "tool",
     description: "Llamada a una tool del MCP de Nexo.",

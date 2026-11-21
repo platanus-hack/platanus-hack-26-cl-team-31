@@ -1,18 +1,19 @@
 "use server";
 
 import { BrokerError } from "@team-31/broker/client";
-import { GrantInput, LocalPart, OwnerDecision, ToolResultSchemas } from "@team-31/protocol";
+import { Address, GrantInput, LocalPart, OwnerDecision, ToolResultSchemas } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ownerClient } from "@/lib/broker";
-import { getTelemetry } from "@/lib/telemetry";
+import { onboardingFlow, type OnboardingSource } from "@/lib/onboarding-flow";
+import { getTelemetry, observeWebRequest } from "@/lib/telemetry";
 
 import { getOwner, requireAddress } from "./owner";
 import { activityPageSize, validPage } from "./labels";
 
-type Feedback = { error?: string; message?: string };
+type Feedback = { error?: string; message?: string; errorId?: string };
 
 // Domain errors become a message; anything else is recorded (without its message) before the fallback.
 function actionError(operation: string, error: unknown, fallback: string) {
@@ -29,23 +30,35 @@ function actionError(operation: string, error: unknown, fallback: string) {
   }
 }
 
-export async function claimAddress(_: Feedback, form: FormData): Promise<Feedback> {
+export async function claimAddress(source: OnboardingSource, _: Feedback, form: FormData): Promise<Feedback> {
   const owner = await getOwner();
   const localPart = LocalPart.safeParse(form instanceof FormData ? form.get("localPart") : undefined);
   if (!localPart.success) {
     return { error: "Usa de 2 a 31 caracteres, con letras minúsculas, números, puntos, guiones o guiones bajos. Empieza con una letra o número." };
   }
 
-  try {
-    await ownerClient().claimAddress(owner, localPart.data);
-  } catch (error) {
-    if (error instanceof BrokerError && error.code === "conflict") {
-      return { error: "Esa dirección ya está tomada" };
+  const flow = onboardingFlow(source);
+  const feedback = await observeWebRequest("POST", "/onboarding", async (span) => {
+    const telemetry = getTelemetry();
+    telemetry.identify({ userId: owner.userId });
+    try {
+      await ownerClient().claimAddress(owner, localPart.data);
+      if (flow.source === "invite") {
+        telemetry.emit("web.invite.progress", { attrs: { step: "address_claimed" } });
+      }
+    } catch (error) {
+      const errorId = telemetry.error("action claimAddress", error);
+      span.setErrorId(errorId);
+      const message = error instanceof BrokerError && error.code === "conflict"
+        ? "Esa dirección ya está tomada"
+        : actionError("claimAddress", error, "No se pudo guardar la dirección. Intenta de nuevo.");
+      return { error: message, errorId };
     }
-    return { error: actionError("claimAddress", error, "No se pudo guardar la dirección. Intenta de nuevo.") };
-  }
+  });
+  if (feedback) return feedback;
+
   revalidatePath("/", "layout");
-  redirect("/");
+  redirect(flow.destination);
 }
 
 export async function readHome() {
@@ -131,6 +144,9 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
     if ((kind === "yes" || kind === "no") && item.escalated && item.tool === "interest_check") {
       decision = { kind: "answer", result: { matches: kind === "yes" } };
     }
+    if ((kind === "yes" || kind === "no") && item.escalated && item.tool === "connect") {
+      decision = { kind: "answer", result: { accepted: kind === "yes" } };
+    }
 
     const parsed = OwnerDecision.safeParse(decision);
     if (!parsed.success || (kind === "approve_once" && item.escalated)) {
@@ -143,6 +159,8 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
 
   revalidatePath("/");
   revalidatePath("/activity");
+  revalidatePath("/friends");
+  revalidatePath("/grants");
   return { message: "Decisión guardada." };
 }
 
@@ -170,4 +188,45 @@ export async function manageAgent(agentId: string, _: Feedback, form: FormData):
   revalidatePath("/activity");
   revalidatePath("/");
   return { message: operation === "ping" ? "Prueba solicitada. Revisa su estado en Actividad." : "Agente desconectado." };
+}
+
+export async function readFriends() {
+  await requireAddress();
+  const owner = await getOwner();
+  return ownerClient().friends(owner);
+}
+
+export async function sendConnection(_: Feedback, form: FormData): Promise<Feedback> {
+  const address = await requireAddress();
+  const owner = await getOwner();
+  const to = Address.safeParse(form instanceof FormData ? String(form.get("to") ?? "").trim() : undefined);
+  if (!to.success) return { error: "Ingresa una dirección válida, por ejemplo nombre@nexo.app." };
+  if (to.data === address) return { error: "Esa es tu propia dirección." };
+
+  try {
+    const view = await ownerClient().connect(owner, to.data);
+    revalidatePath("/friends");
+    revalidatePath("/activity");
+    if (view.final && view.decision === "deny") return { error: "No se pudo enviar la solicitud a esa dirección." };
+  } catch (error) {
+    return { error: actionError("sendConnection", error, "No se pudo enviar la solicitud. Intenta de nuevo.") };
+  }
+  return { message: "Solicitud enviada. Te avisaremos cuando responda." };
+}
+
+export async function removeFriend(friend: string): Promise<Feedback> {
+  await requireAddress();
+  const owner = await getOwner();
+  const address = Address.safeParse(friend);
+  if (!address.success) return { error: "La dirección no es válida." };
+
+  try {
+    await ownerClient().removeFriend(owner, address.data);
+  } catch (error) {
+    return { error: actionError("removeFriend", error, "No se pudo quitar. Intenta de nuevo.") };
+  }
+  revalidatePath("/friends");
+  revalidatePath("/grants");
+  revalidatePath("/activity");
+  return { message: "Quitado de Amigos." };
 }

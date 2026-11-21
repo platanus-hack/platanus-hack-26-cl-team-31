@@ -23,6 +23,7 @@ describe("catálogo", () => {
       "service.started", "service.heartbeat", "service.stopping",
       "http.request", "http.rate_limited",
       "auth.token.verified", "auth.token.rejected", "auth.service_jwt.rejected", "auth.oauth.consent", "auth.scope.denied",
+      "web.invite.progress", "web.agent.ping",
       "mcp.tool.call", "broker.policy.evaluated", "broker.request.created", "broker.request.status_changed",
       "broker.request.closed", "broker.reply.rejected", "broker.owner.decided", "broker.grant.set", "broker.grant.revoked",
       "wake.attempt", "wake.exhausted", "coordination.tool.call", "demo.contact.seeded", "error",

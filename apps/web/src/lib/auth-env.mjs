@@ -11,10 +11,14 @@ export function getGoogleOptions() {
   return { clientId: required("GOOGLE_CLIENT_ID"), clientSecret: required("GOOGLE_CLIENT_SECRET") };
 }
 
+export function getAuthBaseUrl() {
+  return required("BETTER_AUTH_URL");
+}
+
 export function getAuthOptions() {
   return {
     databaseUrl: required("DATABASE_URL"),
-    baseUrl: required("BETTER_AUTH_URL"),
+    baseUrl: getAuthBaseUrl(),
     secret: required("BETTER_AUTH_SECRET"),
     google: getGoogleOptions(),
     mcpResource: required("MCP_RESOURCE_URL"),

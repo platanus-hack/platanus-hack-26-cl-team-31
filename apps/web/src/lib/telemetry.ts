@@ -1,7 +1,8 @@
 // Telemetry of the web server (docs/admin.md#3). Server only: Next has no Hono, so route handlers
 // use observeRoute() and server components and actions get a trace from the broker client.
 // Without "server-only" on purpose: instrumentation.ts imports it outside the React server layer.
-import { createTelemetry, type Telemetry } from "@team-31/telemetry";
+import { createTelemetry, type SpanHandle, type Telemetry } from "@team-31/telemetry";
+import { headers } from "next/headers";
 
 const holder = globalThis as unknown as { __nexoWebTelemetry?: Telemetry };
 
@@ -44,4 +45,14 @@ export async function observeRoute(request: Request, route: string, handler: () 
     }
     return response;
   });
+}
+
+/** Keeps multiple calls in a server component or action under the same request trace. */
+export async function observeWebRequest<T>(
+  method: "GET" | "POST",
+  route: string,
+  run: (span: SpanHandle<"http.request">) => T | Promise<T>,
+): Promise<T> {
+  const traceparent = (await headers()).get("traceparent");
+  return getTelemetry().span("http.request", { traceparent, attrs: { method, route } }, run);
 }

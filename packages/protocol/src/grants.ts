@@ -2,8 +2,8 @@ import { z } from "zod";
 import { Address } from "./address.js";
 import { fieldsOf, ToolName } from "./tools.js";
 
-// `profile` is being retired and takes no grant.
-export const GrantTool = ToolName.exclude(["profile"]);
+// Connection invitations have their own consent flow.
+export const GrantTool = ToolName.exclude(["profile", "connect"]);
 export type GrantTool = z.infer<typeof GrantTool>;
 
 export const GrantInput = z.object({

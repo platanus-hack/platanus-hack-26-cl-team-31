@@ -41,9 +41,9 @@ function GrantFields({ tool, grant }: { tool: GrantTool; grant?: Grant }) {
   );
 }
 
-export function GrantsEditor({ grants }: { grants: Grant[] }) {
+export function GrantsEditor({ grants, initialAddress }: { grants: Grant[]; initialAddress: string }) {
   const [state, submit, pending] = useActionState(saveGrant, {});
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState(initialAddress);
   const [tool, setTool] = useState<GrantTool>("availability");
   const toolSelect = useRef<HTMLSelectElement>(null);
   const friends = new Map<string, Grant[]>();
@@ -64,9 +64,9 @@ export function GrantsEditor({ grants }: { grants: Grant[] }) {
   return (
     <div className="space-y-8">
       <form action={submit} onReset={(event) => event.preventDefault()} className={`${card} space-y-4 p-5`}>
-        <h2 className="text-lg font-semibold">{permissions ? "Permisos de este amigo" : "Agregar un amigo"}</h2>
+        <h2 className="text-lg font-semibold">{current ? "Editar permiso" : "Dar un permiso"}</h2>
         <label className="block text-sm font-semibold">
-          Dirección Nexo de tu amigo
+          Dirección Nexo de la persona
           <input name="grantee" required value={address} placeholder="ana@nexo.app" autoCapitalize="none" spellCheck={false}
             onChange={(event) => setAddress(event.target.value.trim().toLowerCase())} list="friends" className={`${input} mt-1`} />
           <datalist id="friends">{Array.from(friends.keys(), (friend) => <option key={friend} value={friend} />)}</datalist>
@@ -79,13 +79,13 @@ export function GrantsEditor({ grants }: { grants: Grant[] }) {
         </label>
         <GrantFields key={JSON.stringify([tool, current?.id, current?.fields])} tool={tool} grant={current} />
         <button className={primaryButton} disabled={pending}>
-          {current ? "Guardar cambios" : permissions ? "Agregar permiso" : "Agregar amigo con permiso"}
+          {current ? "Guardar cambios" : "Agregar permiso"}
         </button>
         <Feedback {...state} />
       </form>
 
       <section aria-labelledby="friends-heading" className="space-y-3">
-        <h2 id="friends-heading" className="text-lg font-semibold">Amigos con permiso</h2>
+        <h2 id="friends-heading" className="text-lg font-semibold">Personas con permiso</h2>
         {friends.size === 0 && <Empty>Todavía no le diste permiso a nadie.</Empty>}
         {Array.from(friends, ([friend, permissions]) => (
           <article key={friend} className={`${card} px-5 pt-4`}>
