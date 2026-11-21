@@ -427,6 +427,24 @@ describe("conexiones y prueba de aviso", () => {
     expect((await broker.owner.agents(bruno))[0]).toMatchObject({ wakeKind: "polling", lastWakeAt: now.toISOString() });
   });
 
+  it("guarda el detalle del despacho de sondeo y descarta el texto libre del adaptador", async () => {
+    wake.mockResolvedValue({ ok: true, retryable: false, ms: 1, detail: "polling" });
+    await broker.agent.connectWake(bruno, { kind: "polling" });
+    const sondeo = await askAvailability();
+    expect((await broker.tick(now)).wakesOk).toBe(1);
+    // Sin el detail, ops.v_wake_jobs.code rendería 'ok': idéntico a un webhook entregado.
+    expect(await deps.store.tx((tx) => tx.getWakeForUpdate(sondeo.requestId, 0)))
+      .toMatchObject({ lastResult: { ok: true, detail: "polling" } });
+
+    wake.mockResolvedValue({ ok: false, retryable: false, ms: 1, detail: "diagnóstico sensible del adaptador" });
+    await broker.owner.setWake(bruno, bruno.agentId, webhook);
+    const libre = await askAvailability();
+    await broker.tick(now);
+    const job = await deps.store.tx((tx) => tx.getWakeForUpdate(libre.requestId, 0));
+    expect(job?.lastResult).toMatchObject({ ok: false });
+    expect(job?.lastResult?.detail).toBeUndefined();
+  });
+
   it("prefiere el canal push cuando el titular también tiene un CLI sondeando", async () => {
     // "ana-cli" gana cualquiera de los criterios de orden anteriores: sólo el de sondeo lo manda al final.
     await broker.agent.connectWake({ ...bruno, agentId: "ana-cli" }, { kind: "polling" });

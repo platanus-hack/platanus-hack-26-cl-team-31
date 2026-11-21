@@ -4,6 +4,8 @@ import type { AgentConnectionRow, ChannelRow, RequestRow, StoreTx, WakeClaim, Wa
 
 const batchSize = 100;
 const wakeLeaseMs = 60_000;
+// Same shape ops.v_wake_jobs accepts as `code`: a fixed identifier, never free text.
+const resultDetail = /^[a-z_]{1,40}$/;
 
 function actionable(row: RequestRow | null, job: WakeJob, now: Date): row is RequestRow {
   return row?.status === "awaiting_agent" && row.version === job.requestVersion && row.expiresAt > now;
@@ -36,11 +38,12 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
   async function deliver(job: WakeClaim, target: WakeTarget, event: WakeNotice["event"],
     owner: { userId: string; agentId?: string }): Promise<WakeResult> {
     try {
-      const { ok, retryable, ms, status } = await waker.wake(target, { requestId: job.requestId, event }, {
+      const { ok, retryable, ms, status, detail } = await waker.wake(target, { requestId: job.requestId, event }, {
         attempt: job.attempt, final: wakeRetryDelaysMs[job.attempt] === undefined, ...owner,
       });
-      // Adapters may return diagnostic text. Persist only structured metadata.
-      return { ok, retryable, ms, status };
+      // Adapters may return diagnostic text. Persist only a short code, the shape ops.v_wake_jobs renders.
+      const code = detail !== undefined && resultDetail.test(detail) ? { detail } : {};
+      return { ok, retryable, ms, status, ...code };
     } catch (error) {
       telemetry?.error?.("wake.deliver", error, { requestId: job.requestId, ...owner });
       return { ok: false, retryable: true, ms: 0 };
