@@ -61,6 +61,7 @@ const overview: Overview = {
   wakes: [{ kind: "standard_webhook", ok: 97, failed: 3, retried: 2, p95LatencyMs: 450 }],
   errors: { total: 3, top: [errorGroup] },
   rateLimited: 0,
+  activeQuotaWindows: 0,
 }
 
 const requestSummary: RequestSummary = {

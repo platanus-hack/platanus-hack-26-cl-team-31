@@ -56,6 +56,7 @@ export type WakeResult = z.infer<typeof WakeResult>;
 
 // Correlation metadata for observability. Never part of the notice sent to the agent.
 export type WakeAttempt = {
+  queueWaitMs?: number;
   // One-based attempt number of the wake job.
   attempt: number;
   // True when no retry follows this attempt if it fails.

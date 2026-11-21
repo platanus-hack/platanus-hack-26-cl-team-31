@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Address } from "./address.js";
+import { Category } from "./categories.js";
 import { ToolArgs, ToolName, ToolResult, ToolResultSchemas } from "./tools.js";
 import { Sharing } from "./sharing.js";
 
@@ -85,6 +86,7 @@ export const InboxItem = z.object({
   expiresAt: z.iso.datetime({ offset: true }),
   allowedFields: z.array(z.string()),
   ownerAuthorization: z.object({
+    category: Category.optional(),
     rule: z.string(),
     guidance: z.string(),
     verifiedBy: z.literal("broker"),

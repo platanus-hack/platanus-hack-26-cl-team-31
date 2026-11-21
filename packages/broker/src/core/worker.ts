@@ -3,6 +3,8 @@ import type { BrokerDeps, TickReport } from "../ports.js";
 import type { AgentConnectionRow, ChannelRow, RequestRow, StoreTx, WakeClaim, WakeJob } from "../store/store.js";
 
 const batchSize = 100;
+// Claim only work that can start immediately, independently of the expiry scan size.
+const wakeConcurrency = 8;
 const wakeLeaseMs = 60_000;
 
 function actionable(row: RequestRow | null, job: WakeJob, now: Date): row is RequestRow {
@@ -35,6 +37,7 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     owner: { userId: string; agentId?: string }): Promise<WakeResult> {
     try {
       const { ok, retryable, ms, status } = await waker.wake(target, { requestId: job.requestId, event }, {
+        queueWaitMs: Math.max(0, clock.now().getTime() - job.dueAt.getTime()),
         attempt: job.attempt, final: wakeRetryDelaysMs[job.attempt] === undefined, ...owner,
       });
       // Adapters may return diagnostic text. Persist only structured metadata.
@@ -130,10 +133,12 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
 
     const claimAt = clock.now();
     const leaseUntil = new Date(claimAt.getTime() + wakeLeaseMs);
-    const jobs = await store.tx((tx) => tx.claimDueWakes(claimAt, leaseUntil, batchSize));
-    const results = await Promise.all(jobs.map((job) => job.audience === "origin" ? runOriginNotice(job) : runWake(job)));
+    const jobs = await store.tx((tx) => tx.claimDueWakes(claimAt, leaseUntil, wakeConcurrency));
+    const results = await Promise.allSettled(jobs.map((job) => job.audience === "origin" ? runOriginNotice(job) : runWake(job)));
     for (const result of results) {
-      if (result) report[result]++;
+      // Wait for every lease before allowing the scheduler to start its next tick.
+      if (result.status === "rejected") throw result.reason;
+      if (result.value) report[result.value]++;
     }
     return report;
   };

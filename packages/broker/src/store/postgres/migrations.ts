@@ -45,6 +45,7 @@ async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string
     TO ${role}
   `);
   await client.query(`GRANT SELECT, INSERT, DELETE ON sideband.friends TO ${role}`);
+  await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.quota_windows TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.vault_categories, sideband.vault_entries, sideband.vault_permissions TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, DELETE ON
     sideband.vault_contact_groups, sideband.vault_contact_group_members, sideband.vault_contact_group_permissions TO ${role}`);

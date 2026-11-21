@@ -110,6 +110,8 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 
 ### Catálogo de eventos (`packages/telemetry/src/catalog.ts`)
 
+El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes en `ops.v_quota_windows`, agrupadas por tipo de operación sin identificar titulares. En los spans `wake.attempt`, `attrs.queueWaitMs` mide desde que el intento quedó disponible hasta el envío; la duración del span mide el transporte. El worker reserva hasta ocho avisos por vuelta.
+
 | name | kind | attrs permitidos |
 | --- | --- | --- |
 | `service.started` / `service.heartbeat` / `service.stopping` | lifecycle | version |
@@ -136,7 +138,7 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `broker.agent.connected` | lifecycle | kind (tipo de aviso al crearse: `none`). Se emite una vez por conexión, cuando la primera llamada autenticada del agente la crea; `userId` y `agentId` en el sobre. Presencia: el agente entra a la red |
 | `broker.agent.revoked` | lifecycle | by (`owner` \| `admin`). Solo la primera revocación. Presencia: el agente sale de la red |
 | `broker.channel.set` | lifecycle | channel (`whatsapp`), kind (tipo de aviso); nunca la URL ni el secreto |
-| `wake.attempt` | wake | kind, attempt, ok, httpStatus, code |
+| `wake.attempt` | wake | kind, attempt, queueWaitMs, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
 | `wake.lease_recovered` | wake | attempt |
 | `wake.callback_verification` | wake | ok, reason |

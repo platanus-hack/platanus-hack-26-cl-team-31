@@ -409,7 +409,8 @@ export function createPgAdminQueries({
           async () =>
             db.query(
               `SELECT count(*) FILTER (WHERE kind = 'error') AS errors,
-                    count(*) FILTER (WHERE name = 'http.rate_limited') AS rate_limited
+                    count(*) FILTER (WHERE name = 'http.rate_limited') AS rate_limited,
+                    (SELECT sum(active_windows) FROM ops.v_quota_windows) AS active_windows
              FROM ops.v_events
              WHERE at >= now() - $1::interval AND (kind = 'error' OR name = 'http.rate_limited')`,
               [interval]
@@ -451,6 +452,7 @@ export function createPgAdminQueries({
           })),
           errors: { total: num(counts.rows[0]?.errors), top },
           rateLimited: num(counts.rows[0]?.rate_limited),
+          activeQuotaWindows: num(counts.rows[0]?.active_windows),
         })
       }),
 

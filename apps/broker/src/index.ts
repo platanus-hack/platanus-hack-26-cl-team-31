@@ -6,10 +6,10 @@ import { createBrokerTelemetry, type BrokerServiceTelemetry } from "./telemetry.
 import { startWorker } from "./worker.js";
 
 function start(env: BrokerEnv, telemetry: BrokerServiceTelemetry) {
-  const { broker, close } = composeBroker(env, telemetry);
+  const { broker, limiter, close } = composeBroker(env, telemetry);
   const shutdown = new AbortController();
   const app = createHttpServer({
-    broker, publicKeys: env.SERVICE_JWT_PUBLIC_KEYS, shutdown: shutdown.signal, telemetry: telemetry.http,
+    broker, limiter, publicKeys: env.SERVICE_JWT_PUBLIC_KEYS, shutdown: shutdown.signal, telemetry: telemetry.http,
   });
   const server = serve({ fetch: app.fetch, hostname: env.BROKER_HOST, port: env.BROKER_PORT }, ({ address, port }) => {
     console.info(`[broker] HTTP escuchando en ${address}:${port}`);

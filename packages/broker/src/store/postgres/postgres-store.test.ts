@@ -57,6 +57,20 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   runStoreContractTests(() => store);
 
+  it("comparte la cuota entre réplicas concurrentes y renueva solo la ventana vencida", async () => {
+    const replica = createPostgresStore({ databaseUrl, secretsKey });
+    try {
+      const results = await Promise.all(Array.from({ length: 12 }, (_, i) =>
+        (i % 2 ? replica : store).consumeQuota("ana", "ask", 5)));
+      expect(results.filter(result => result === undefined)).toHaveLength(5);
+      expect(results.filter(result => result && result.retryAfter > 0 && result.retryAfter <= 60)).toHaveLength(7);
+      expect(await replica.consumeQuota("bob", "ask", 5)).toBeUndefined();
+      expect(await replica.consumeQuota("ana", "reply", 5)).toBeUndefined();
+      await isolated.query("UPDATE sideband.quota_windows SET reset_at = now() WHERE user_id='ana' AND bucket='ask'");
+      expect(await store.consumeQuota("ana", "ask", 5)).toBeUndefined();
+    } finally { await replica.close(); }
+  });
+
   async function makeRequest(overrides: Partial<RequestRow> = {}) {
     const row: RequestRow = {
       id: randomUUID(), fromUserId: "alice", toUserId: "bruno",
@@ -245,12 +259,13 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(11);
+    expect(rows).toHaveLength(12);
   });
 
   it("keeps the first active agent and preserves previously revoked history when migrating", async () => {
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
-    await isolated.query("DELETE FROM sideband.__drizzle_migrations WHERE id = 11");
+    await isolated.query("DROP TABLE sideband.quota_windows");
+    await isolated.query("DELETE FROM sideband.__drizzle_migrations WHERE id >= 11");
     const base = { userId: "alice", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now } as const;
     await store.tx(async tx => {
       await tx.upsertAgentConnection({ ...base, agentId: "first" });
@@ -267,6 +282,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
   // Rewind the vault and channel tables before replaying older fixtures.
   async function undoVaultAndNotifyOrigin() {
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
+    await isolated.query("DROP TABLE sideband.quota_windows");
     await isolated.query("DROP TABLE sideband.vault_contact_group_permissions, sideband.vault_contact_group_members, sideband.vault_contact_groups");
     await isolated.query("DROP TABLE sideband.vault_permissions, sideband.vault_entries, sideband.vault_categories");
     await isolated.query("DROP TABLE sideband.channels");

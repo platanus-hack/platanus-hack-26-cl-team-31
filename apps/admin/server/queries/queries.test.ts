@@ -312,6 +312,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       "v_identities",
       "v_oauth_clients",
       "v_oauth_grants",
+      "v_quota_windows",
       "v_request_events",
       "v_request_payloads",
       "v_requests",
@@ -335,7 +336,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     expect(readOnly).not.toContain("v_request_payloads")
     expect(readOnly).not.toContain("events")
     expect(readOnly).toContain("v_vault_contact_group_summary")
-    expect(readOnly).toHaveLength(17)
+    expect(readOnly).toHaveLength(18)
     const audit = await db.query<{ table: string }>(
       `SELECT table_name AS table FROM information_schema.role_table_grants
        WHERE table_schema = 'admin' AND grantee = 'sideband_admin_ro' AND privilege_type = 'SELECT'`
@@ -369,7 +370,9 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
   })
 
   it("overview resume solicitudes, avisos, errores y servicios", async () => {
+    await store.consumeQuota("ana", "ask", 30)
     const overview = Overview.parse(await queries.overview("1h"))
+    expect(overview.activeQuotaWindows).toBe(1)
     expect(overview.requests).toMatchObject({ total: 3, open: 2, stuck: 1 })
     expect(overview.requests.byStatus).toMatchObject({
       awaiting_agent: 1,

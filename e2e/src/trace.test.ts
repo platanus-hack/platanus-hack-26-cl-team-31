@@ -4,9 +4,9 @@ import { generateKeyPairSync } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { serve, type ServerType } from "@hono/node-server";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createBroker, createMemoryStore } from "@team-31/broker";
+import { applyPostgresMigrations, createPostgresStore } from "@team-31/broker/postgres";
+import { connectAgent } from "./agents.js";
 import { createAgentClient } from "@team-31/broker/client";
 import { applyOpsMigrations } from "@team-31/ops";
 import {
@@ -37,14 +37,14 @@ async function listen(server: ServerType) {
 }
 
 /** Starts broker and MCP with their own telemetry over one sink and asks one question. */
-async function askThroughMcp(sink: TelemetrySink) {
+async function startStack(sink: TelemetrySink, store = createMemoryStore()) {
   const mcpKey = generateKeyPairSync("ed25519");
   const signing = generateKeyPairSync("ed25519");
   const brokerTelemetry = createTelemetry({ service: "broker", sink, heartbeatMs: 0, lifecycle: false });
   const mcpTelemetry = createTelemetry({ service: "mcp", sink, heartbeatMs: 0, lifecycle: false });
 
   const broker = createBroker({
-    store: createMemoryStore(),
+    store,
     waker: { wake: vi.fn().mockResolvedValue({ ok: true, retryable: false, ms: 1 }), verifyCallback: vi.fn() },
     clock: { now: () => new Date() },
     signingKey: signing.privateKey,
@@ -54,7 +54,7 @@ async function askThroughMcp(sink: TelemetrySink) {
   });
   await broker.owner.claimAddress({ userId: "ana" }, "ana");
   await broker.owner.claimAddress({ userId: "bob" }, "bob");
-  await broker.owner.setGrant({ userId: "bob" }, { grantee: "ana@sideband.app", category: "general" });
+  const grant = await broker.owner.setGrant({ userId: "bob" }, { grantee: "ana@sideband.app", category: "general" });
 
   const brokerApp = createBrokerHttp({
     broker, publicKeys: { mcp: mcpKey.publicKey.export({ format: "jwk" }) }, telemetry: brokerTelemetry,
@@ -72,16 +72,21 @@ async function askThroughMcp(sink: TelemetrySink) {
   mcpServer.listen(0, "127.0.0.1");
   const mcpUrl = await listen(mcpServer);
 
-  const client = new Client({ name: "trace-test", version: "1.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${mcpUrl}/mcp`), {
-    requestInit: { headers: { Authorization: "Bearer dev:ana:ana-bot" } },
-  }));
-  cleanup.push(() => client.close());
-  const result = await client.callTool({
-    name: "sideband_ask", arguments: { to: "bob@sideband.app", tool: "question", args: { text: secretText, category: "general" } },
-  });
-  const requestId = (result.structuredContent as { requestId: string }).requestId;
-  await Promise.all([brokerTelemetry.flush(), mcpTelemetry.flush()]);
+  async function connect(user: string) {
+    const agent = await connectAgent(new URL(`${mcpUrl}/mcp`), `dev:${user}:${user}-bot`);
+    cleanup.push(agent.close);
+    return agent;
+  }
+  return { connect, revoke: () => broker.owner.revokeGrant({ userId: "bob" }, grant.id),
+    flush: () => Promise.all([brokerTelemetry.flush(), mcpTelemetry.flush()]) };
+}
+
+const question = { to: "bob@sideband.app", tool: "question", args: { text: secretText, category: "general" } } as const;
+async function askThroughMcp(sink: TelemetrySink) {
+  const stack = await startStack(sink);
+  const ana = await stack.connect("ana");
+  const { requestId } = await ana.ask(question);
+  await stack.flush();
   return requestId;
 }
 
@@ -113,6 +118,31 @@ describe("traza de punta a punta MCP → broker", () => {
   });
 
   const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+  it.skipIf(!testDatabaseUrl && !process.env.CI)("revocar bloquea tanto la respuesta pendiente como la ya guardada antes de leerla", async () => {
+    const db = await createTestDatabase("revoke_test");
+    cleanup.push(() => db.drop());
+    await applyPostgresMigrations({ databaseUrl: db.url });
+    const store = createPostgresStore({ databaseUrl: db.url, secretsKey: Buffer.alloc(32, 3).toString("base64") });
+    cleanup.push(() => store.close());
+    const stack = await startStack(memorySink(), store);
+    const ana = await stack.connect("ana");
+    const bob = await stack.connect("bob");
+    await ana.ask(question);
+    await ana.ask(question);
+    const inbox = await bob.inbox();
+    expect(inbox).toHaveLength(2);
+    const [saved, pending] = inbox;
+    const result = { answer: "Respuesta privada de prueba" };
+    await bob.reply({ requestId: saved!.requestId, nonce: saved!.nonce, outcome: "answered", result });
+    await stack.revoke();
+    await expect(bob.reply({ requestId: pending!.requestId, nonce: pending!.nonce, outcome: "answered", result }))
+      .rejects.toMatchObject({ code: "conflict" });
+    for (const { requestId } of inbox) {
+      const view = await ana.check(requestId);
+      expect(view).toMatchObject({ final: true, decision: "deny" });
+      expect(view).not.toHaveProperty("result");
+    }
+  }, 30_000);
   // CREATE DATABASE + migrations on a loaded CI box can exceed Vitest's default 5 s.
   it.skipIf(!testDatabaseUrl)("la misma traza queda en ops.events", async () => {
     // drop() waits for the backends to leave before dropping (the race from #89).
