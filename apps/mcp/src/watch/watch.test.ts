@@ -5,6 +5,7 @@ import { createWaker } from "@team-31/wake";
 import { expect, it, vi } from "vitest";
 import { createHttpServer } from "../http.js";
 import { startReceiver } from "./listener.js";
+import { pollInbox } from "./poll.js";
 import { connect } from "./remote.js";
 
 it("se suscribe por MCP, recibe un aviso firmado del broker, omite duplicados y se desuscribe", async () => {
@@ -63,6 +64,7 @@ it("se suscribe por MCP, recibe un aviso firmado del broker, omite duplicados y 
     expect((await broker.tick(new Date())).wakesOk).toBe(1);
     expect(events).toEqual([requestId]);
     expect((await broker.agent.inbox({ ...watcher, scopes: [...watcher.scopes] })).map((item) => item.requestId)).toContain(requestId);
+    expect(await remote.inbox(AbortSignal.timeout(3_000))).toEqual([requestId]);
     const [target, notice] = sendWake.mock.calls[0]!;
     expect((await waker.wake(target, notice)).status).toBe(204);
     expect(events).toEqual([requestId]);
@@ -85,4 +87,26 @@ it("se suscribe por MCP, recibe un aviso firmado del broker, omite duplicados y 
       server.closeAllConnections();
     });
   }
+});
+
+it("avisa solo por solicitudes nuevas y retoma la lectura después de un error", async () => {
+  const controller = new AbortController();
+  const events: string[] = [];
+  const onReady = vi.fn();
+  const onRetry = vi.fn();
+  const inbox = vi.fn<() => Promise<string[]>>()
+    .mockResolvedValueOnce(["previa"])
+    .mockRejectedValueOnce(new Error("sin conexión"))
+    .mockResolvedValueOnce(["previa", "nueva"])
+    .mockResolvedValueOnce(["nueva", "otra"]);
+  await pollInbox({
+    inbox, signal: controller.signal, intervalMs: 1, onReady, onRetry,
+    onRequest(id) {
+      events.push(id);
+      if (id === "otra") controller.abort();
+    },
+  });
+  expect(events).toEqual(["nueva", "otra"]);
+  expect(onReady).toHaveBeenCalledOnce();
+  expect(onRetry).toHaveBeenCalledOnce();
 });

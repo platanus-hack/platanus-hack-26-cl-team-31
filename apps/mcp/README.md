@@ -9,12 +9,12 @@ Con Node 24 y pnpm, desde la raíz:
 ```sh
 pnpm install --frozen-lockfile
 pnpm build --filter @team-31/mcp
-brew install cloudflared # macOS; omite si ya tienes cloudflared o tu propio túnel
-pnpm sideband watch --mcp-url <URL-HTTPS-del-MCP>
+pnpm sideband watch --poll --mcp-url <URL-HTTPS-del-MCP>
 ```
 
-Abre en el navegador el enlace que imprime el comando y autoriza **Sideband Terminal**. No hace falta dejar abierto el navegador ni OpenCode. La terminal imprime una línea con el ID por solicitud nueva entregada a esta conexión; no abre la bandeja ni responde. El broker elige un solo destino de avisos por solicitud: si ya tienes otro agente con avisos configurados, puede recibirlos él.
+Abre en el navegador el enlace que imprime el comando y autoriza **Sideband Terminal**. No hace falta dejar abierto el navegador ni OpenCode. `--poll` consulta la bandeja mediante MCP cada 2 segundos y muestra solo los IDs que aparecen después de la primera lectura. No responde ni configura avisos. Si una solicitud sale de la bandeja antes de la siguiente consulta, puede no aparecer.
 
+- Para probar avisos push por webhook, omite `--poll` e instala `cloudflared` (en macOS, `brew install cloudflared`). El broker elige un solo destino: si ya hay otro agente con avisos configurados, puede recibirlos él.
 - Usa `--check` para verificar que el servidor ofrece el webhook, sin abrir un túnel ni suscribirte.
 - Para usar un túnel propio, apunta un origen HTTPS público a `127.0.0.1` y al puerto que indiques con `--webhook-origin <origen> --port <puerto>`. De lo contrario el comando abre un túnel temporal con `cloudflared`.
 - Sal con `Ctrl+C` para cancelar la suscripción. Si el proceso se interrumpe sin poder cancelarla, revoca la conexión desde Agentes. Si el broker sigue usando un túnel cerrado, puede marcar solicitudes nuevas como no entregadas.

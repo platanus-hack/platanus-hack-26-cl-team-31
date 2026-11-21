@@ -6,13 +6,19 @@ import { WAKE_EVENT } from "@team-31/protocol";
 import { z } from "zod";
 import { startReceiver } from "./watch/listener.js";
 import { authorize } from "./watch/oauth.js";
+import { pollInbox } from "./watch/poll.js";
 import { connect } from "./watch/remote.js";
 import { openTunnel } from "./watch/tunnel.js";
 
-const help = `Uso: sideband watch --mcp-url <URL> [--check | --webhook-origin <https://host> --port <puerto>]
+const help = `Uso: sideband watch --mcp-url <URL> [--poll | --check | --webhook-origin <https://host> --port <puerto>]
 
 Recibe avisos firmados en la terminal. Usa cloudflared si no indicas un túnel propio.
+--poll revisa la bandeja cada 2 segundos, sin túnel ni suscripción.
 --check verifica el catálogo MCP sin abrir un túnel ni crear una suscripción.`;
+
+function printRequest(requestId: string) {
+  console.log(`${new Date().toLocaleTimeString("es-CL", { hour12: false })}  Nueva solicitud · ${requestId}`);
+}
 
 function secureUrl(value: string | undefined): URL {
   const parsed = z.url({ protocol: /^https$/ }).safeParse(value);
@@ -37,6 +43,7 @@ async function main() {
     allowPositionals: true, options: {
       help: { type: "boolean", short: "h" },
       check: { type: "boolean" },
+      poll: { type: "boolean" },
       "mcp-url": { type: "string" },
       "webhook-origin": { type: "string" },
       port: { type: "string" },
@@ -44,6 +51,9 @@ async function main() {
   });
   if (values.help || positionals.length === 0) return console.log(help);
   if (positionals.length !== 1 || positionals[0] !== "watch") throw new Error(help);
+  if (values.poll && (values.check || values["webhook-origin"] !== undefined || values.port !== undefined)) {
+    throw new Error("Usa --poll sin opciones de webhook.");
+  }
   const url = secureUrl(values["mcp-url"]);
   const origin = values["webhook-origin"] === undefined ? undefined : secureUrl(values["webhook-origin"]);
   const port = values.port === undefined ? undefined : Number(values.port);
@@ -64,15 +74,21 @@ async function main() {
     });
     stage = "No se pudo conectar al MCP";
     remote = await connect(url, { authProvider });
+    if (values.poll) {
+      stage = "No se pudo leer la bandeja de Sideband";
+      return await pollInbox({
+        inbox: remote.inbox, signal: shutdown.signal, onRequest: printRequest,
+        onReady: () => console.log("Revisando solicitudes nuevas cada 2 segundos… (Ctrl+C para salir)"),
+        onRetry: () => console.warn("No se pudo leer la bandeja. Reintentando…"),
+      });
+    }
     stage = "No se pudo verificar el catálogo de eventos";
     if (!await remote.supportsWebhook()) throw new Error("Evento no disponible.");
     if (values.check) return console.log(`${WAKE_EVENT}: webhook disponible.`);
     if (shutdown.signal.aborted) return;
 
     stage = "No se pudo abrir el receptor local";
-    receiver = await startReceiver((requestId) => {
-      console.log(`${new Date().toLocaleTimeString("es-CL", { hour12: false })}  Nueva solicitud · ${requestId}`);
-    }, port);
+    receiver = await startReceiver(printRequest, port);
     let webhookOrigin = origin;
     if (!webhookOrigin) {
       try {
@@ -85,7 +101,7 @@ async function main() {
     }
     if (shutdown.signal.aborted) return;
     const callback = new URL(receiver.path, webhookOrigin);
-    stage = "El MCP no pudo verificar el webhook. Comprueba que el túnel HTTPS esté disponible";
+    stage = "El MCP no pudo verificar el webhook. Puedes volver a ejecutar con --poll para no usar el túnel";
     console.log("Verificando el webhook con Sideband…");
     const subscription = await remote.subscribe(callback, receiver.secret, shutdown.signal);
     id = subscription.id;

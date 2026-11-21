@@ -2,12 +2,13 @@ import { setTimeout } from "node:timers/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport, type StreamableHTTPClientTransportOptions } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { McpError } from "@modelcontextprotocol/sdk/types.js";
-import { WAKE_EVENT } from "@team-31/protocol";
+import { ErrorBody, WAKE_EVENT } from "@team-31/protocol";
 import { z } from "zod";
 
 const catalog = z.object({ events: z.array(z.object({ name: z.string(), delivery: z.array(z.string()) })) });
 const subscription = z.object({ id: z.string().regex(/^sub_[0-9a-f]{16}$/), refreshBefore: z.iso.datetime() });
 const callbackFailure = z.object({ reason: z.enum(["challenge_failed", "timeout"]) });
+const inboxIds = z.object({ items: z.array(z.object({ requestId: z.uuid() })) });
 
 export async function connect(url: URL, options: StreamableHTTPClientTransportOptions) {
   const client = new Client({ name: "sideband-terminal", version: "0.1.0" });
@@ -19,6 +20,18 @@ export async function connect(url: URL, options: StreamableHTTPClientTransportOp
     throw error;
   }
   return {
+    async inbox(signal: AbortSignal) {
+      const response = await client.callTool({ name: "sideband_inbox", arguments: {} }, undefined, {
+        signal, timeout: 15_000,
+      });
+      if (response.isError) {
+        const result = ErrorBody.safeParse(response.structuredContent);
+        throw new McpError(-32000, "No se pudo leer la bandeja.", {
+          reason: result.success ? result.data.error.code : "tool_error",
+        });
+      }
+      return inboxIds.parse(response.structuredContent).items.map(({ requestId }) => requestId);
+    },
     async supportsWebhook() {
       const { events } = await client.request({ method: "events/list" }, catalog, { timeout: 20_000 });
       return events.some((event) => event.name === WAKE_EVENT && event.delivery.includes("webhook"));
