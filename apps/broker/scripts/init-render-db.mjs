@@ -1,5 +1,6 @@
 import pg from "pg";
-import { applyPostgresMigrations } from "../dist/store/postgres/index.js";
+import { applyPostgresMigrations } from "@team-31/broker/postgres";
+import { applyOpsMigrations } from "@team-31/ops";
 
 const { DATABASE_URL, BROKER_DB_PASSWORD, WEB_DB_PASSWORD } = process.env;
 const brokerRole = "nexo_broker_runtime";
@@ -32,6 +33,18 @@ async function prepare() {
     runtimeRole: brokerRole,
     runtimePassword: BROKER_DB_PASSWORD,
   });
+  await applyOpsMigrations({ databaseUrl: DATABASE_URL });
+
+  const telemetryClient = new pg.Client({ connectionString: DATABASE_URL });
+  await telemetryClient.connect();
+  try {
+    const roles = [brokerRole, webRole].map((role) => pg.escapeIdentifier(role)).join(", ");
+    await telemetryClient.query(`GRANT USAGE ON SCHEMA ops TO ${roles}`);
+    await telemetryClient.query(`GRANT INSERT ON ops.events TO ${roles}`);
+    await telemetryClient.query(`GRANT USAGE ON SEQUENCE ops.events_id_seq TO ${roles}`);
+  } finally {
+    await telemetryClient.end();
+  }
 }
 
 try {

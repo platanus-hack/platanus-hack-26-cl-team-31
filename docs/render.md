@@ -36,3 +36,7 @@ claude mcp add --transport http nexo https://<servicio>.onrender.com/mcp
 Los primeros dos comandos devuelven `200`. El POST sin token devuelve `401` y un `WWW-Authenticate` con el enlace a la metadata OAuth. En Claude Code abre `/mcp`, autentica Nexo con Google y acepta los permisos. Otros clientes deben soportar MCP Streamable HTTP y OAuth.
 
 El plan gratuito duerme al quedar inactivo; mientras duerme no procesa avisos ni vencimientos y la primera conexión puede demorar. Render Postgres gratuito expira después de 30 días: para mantener la instancia activa y conservar sus datos, cambia el plan antes del vencimiento.
+
+Para habilitar texto libre en WhatsApp, configura `ANTHROPIC_API_KEY` en **Environment**
+del servicio. El launcher la pasa solo al proceso web. Sin ella siguen funcionando
+los comandos de la [guía de WhatsApp](whatsapp.md).

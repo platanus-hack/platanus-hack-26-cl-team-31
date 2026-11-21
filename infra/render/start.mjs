@@ -71,12 +71,16 @@ function start() {
     DATABASE_URL: dbUrl("nexo_web_runtime", "WEB_DB_PASSWORD"),
     RENDER: "true",
     MCP_PORT: mcp.MCP_PORT,
+    ...(process.env.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY } : {}),
     NEXT_TELEMETRY_DISABLED: "1",
   };
+  for (const key of ["KAPSO_API_KEY", "KAPSO_PHONE_NUMBER_ID", "KAPSO_WHATSAPP_NUMBER", "KAPSO_WEBHOOK_SECRET"]) {
+    if (process.env[key]) web[key] = process.env[key];
+  }
   const port = required("PORT");
 
   migrate("apps/web/scripts/migrate-auth.mjs", { ...common, ...auth, DATABASE_URL: required("DATABASE_URL") });
-  migrate("packages/broker/scripts/init-render-db.mjs", {
+  migrate("apps/broker/scripts/init-render-db.mjs", {
     ...common,
     DATABASE_URL: required("DATABASE_URL"),
     BROKER_DB_PASSWORD: required("BROKER_DB_PASSWORD"),
