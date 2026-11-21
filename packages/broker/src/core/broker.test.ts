@@ -307,6 +307,19 @@ describe("aislamiento y concurrencia", () => {
 });
 
 describe("cierre y avisos", () => {
+  it("atiende avisos entre lotes de solicitudes vencidas", async () => {
+    for (let i = 0; i < 101; i++) await askAvailability();
+    await broker.tick(now);
+    await broker.tick(now);
+    advance(900_000);
+    await broker.agent.inbox(bruno);
+    await broker.owner.setWake(bruno, bruno.agentId, webhook);
+    const live = await askAvailability();
+    expect(await broker.tick(now)).toMatchObject({ expired: 100, wakesOk: 1 });
+    expect(wake.mock.calls.map(([, notice]) => notice.requestId)).toContain(live.requestId);
+    expect((await broker.tick(now)).expired).toBe(1);
+  });
+
   it("vence solicitudes de agente y dueño en el plazo exacto", async () => {
     const agent = await askAvailability();
     const owner = await askAndEscalate();

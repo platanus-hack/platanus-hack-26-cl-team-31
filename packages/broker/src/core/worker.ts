@@ -115,16 +115,14 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
 
   return async function tick(now: Date): Promise<TickReport> {
     const report = { expired: 0, wakesOk: 0, wakesRetried: 0, wakesFailed: 0 };
-    let expiredBatchSize: number;
-    do {
-      expiredBatchSize = await store.tx(async (tx) => {
-        const due = await tx.listDueForExpiry(now, batchSize);
-        for (const row of due) {
-          if (await closePending(tx, row, "expired", now)) report.expired++;
-        }
-        return due.length;
-      });
-    } while (expiredBatchSize === batchSize);
+    report.expired = await store.tx(async (tx) => {
+      const due = await tx.listDueForExpiry(now, batchSize);
+      let closed = 0;
+      for (const row of due) {
+        if (await closePending(tx, row, "expired", now)) closed++;
+      }
+      return closed;
+    });
 
     const claimAt = clock.now();
     const leaseUntil = new Date(claimAt.getTime() + wakeLeaseMs);
