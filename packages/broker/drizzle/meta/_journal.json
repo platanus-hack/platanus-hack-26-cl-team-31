@@ -92,6 +92,13 @@
       "when": 1795289788676,
       "tag": "0012_vault_member_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795290922584,
+      "tag": "0013_invitation_sender_group",
+      "breakpoints": true
     }
   ]
 }
