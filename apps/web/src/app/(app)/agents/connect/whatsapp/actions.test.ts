@@ -5,6 +5,7 @@ import { updatePhone } from "./actions";
 const { start } = vi.hoisted(() => ({ start: vi.fn<(userId: string) => Promise<string | undefined>>() }));
 vi.mock("@/lib/whatsapp/runtime", () => ({ whatsappStore: () => ({ start }) }));
 vi.mock("@/lib/whatsapp/kapso", () => ({ config: () => ({ number: "+56911112222" }) }));
+vi.mock("@/lib/whatsapp/channel", () => ({ setChannel: vi.fn() }));
 vi.mock("@/lib/telemetry", () => ({ getTelemetry: () => ({ emit: vi.fn(), error: vi.fn() }) }));
 vi.mock("../../../owner", () => ({ getOwner: async () => ({ userId: "ana" }), requireAddress: async () => "ana@sideband.app" }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));

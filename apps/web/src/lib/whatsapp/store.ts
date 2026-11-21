@@ -94,6 +94,15 @@ export function createWhatsAppStore(db: Pool) {
         await run(rows[0]?.id);
       });
     },
+    // Links confirmed before broker notices existed have no notice id. The owner's next message
+    // issues one, and only one concurrent message gets it back.
+    async assignLinkId(phone: string) {
+      const { rows } = await db.query<{ userId: string; linkId: string }>(`
+        UPDATE public."user" SET whatsapp_link_id = gen_random_uuid()
+        WHERE "phoneNumber" = $1 AND whatsapp_linked_at IS NOT NULL AND whatsapp_link_id IS NULL
+        RETURNING id AS "userId", whatsapp_link_id AS "linkId"`, [phone]);
+      return rows[0];
+    },
     // Same ordering as whileLinked, for a broker notice addressed to the link in its URL.
     async whileNotified(linkId: string, run: (link: { userId: string; phone: string; windowOpen: boolean } | undefined) => Promise<void>) {
       await transaction(async (tx) => {

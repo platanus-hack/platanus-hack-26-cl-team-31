@@ -2,10 +2,11 @@ import { after } from "next/server";
 import { BrokerError } from "@team-31/broker/client";
 import { ownerClient } from "../../../../lib/broker";
 import { getTelemetry, observeRoute } from "../../../../lib/telemetry";
+import { setChannel } from "../../../../lib/whatsapp/channel";
 import { claudeInterpreter } from "../../../../lib/whatsapp/claude";
 import { runCommand } from "../../../../lib/whatsapp/commands";
 import { noticeText } from "../../../../lib/whatsapp/delivery";
-import { config, inboundEvent, parseMessage, sendText, validSignature } from "../../../../lib/whatsapp/kapso";
+import { config, inboundEvent, noticeTarget, parseMessage, sendText, validSignature } from "../../../../lib/whatsapp/kapso";
 import { whatsappStore } from "../../../../lib/whatsapp/runtime";
 
 const route = "/api/kapso/webhook";
@@ -60,6 +61,10 @@ export async function POST(request: Request) {
               : "Código usado, incorrecto o vencido. Genera otro desde Sideband.", userId);
             return;
           }
+          // Outside whileLinked: updating the row while holding its shared lock would deadlock.
+          const unregistered = await store.assignLinkId(message.phone);
+          const target = unregistered && noticeTarget(unregistered.linkId);
+          if (target) await setChannel(unregistered.userId, target);
           await store.whileLinked(message.phone, message.timestamp, async (userId) => {
             if (!userId) return send(`Vincula tu WhatsApp desde Sideband: ${kapso.connectUrl}`);
             await telemetry.context({ userId }, async () => {

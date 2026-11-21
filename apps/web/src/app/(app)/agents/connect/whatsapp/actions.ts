@@ -2,8 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import QRCode from "qrcode";
-import type { WakeTarget } from "@team-31/protocol";
-import { ownerClient } from "@/lib/broker";
+import { setChannel } from "@/lib/whatsapp/channel";
 import { config, noticeTarget } from "@/lib/whatsapp/kapso";
 import { getTelemetry } from "@/lib/telemetry";
 import { whatsappStore } from "@/lib/whatsapp/runtime";
@@ -11,16 +10,6 @@ import { getOwner, requireAddress } from "../../../owner";
 
 type Feedback = { code?: string; link?: string; qr?: string; error?: string; message?: string };
 const path = "/agents/connect/whatsapp";
-
-// The broker notifies the channel when a WhatsApp request changes. Linking still works if this
-// fails: the owner can read replies with «estado».
-async function setChannel(userId: string, target: WakeTarget) {
-  try {
-    await ownerClient().setChannel({ userId }, "whatsapp", target);
-  } catch (error) {
-    getTelemetry().error("whatsapp.channel", error, { userId });
-  }
-}
 
 export async function updatePhone(_: Feedback, form: FormData): Promise<Feedback> {
   const { userId } = await getOwner();

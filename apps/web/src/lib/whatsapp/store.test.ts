@@ -75,8 +75,16 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
     await store.clearPending("carla", "request-1");
     expect(await store.pending("carla")).toEqual(["request-2"]);
 
+    expect(await store.assignLinkId(phone)).toBeUndefined();
+    await db.query(`UPDATE public."user" SET whatsapp_link_id = NULL WHERE id = 'carla'`);
+    const issued = await store.assignLinkId(phone);
+    expect(issued).toEqual({ userId: "carla", linkId: expect.stringMatching(/^[a-f0-9-]{36}$/) });
+    expect(await store.assignLinkId(phone)).toBeUndefined();
+    await store.whileNotified(issued!.linkId, run);
+    expect(run).toHaveBeenLastCalledWith({ userId: "carla", phone, windowOpen: true });
+
     await store.unlink("carla");
-    await store.whileNotified(linkId, run);
+    await store.whileNotified(issued!.linkId, run);
     expect(run).toHaveBeenLastCalledWith(undefined);
     expect(await store.pending("carla")).toEqual([]);
   });
