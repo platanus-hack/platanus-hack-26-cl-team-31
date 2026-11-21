@@ -1,5 +1,5 @@
 import { Address, ContactTag, type OwnerVault } from "@team-31/protocol";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, DrizzleQueryError, eq, inArray, or } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import type { StoreTx } from "../store.js";
 import { BrokerError } from "../../errors.js";
@@ -9,6 +9,19 @@ import {
 } from "./schema.js";
 
 type Tx = Parameters<Parameters<ReturnType<typeof drizzle>["transaction"]>[0]>[0];
+
+// Foreign keys guard concurrent deletion of contacts and groups. Use a savepoint
+// so a missing parent returns false without requiring UPDATE rights to lock it.
+async function insertWithParents(db: Tx, insert: (tx: Tx) => Promise<unknown>) {
+  try {
+    await db.transaction(insert);
+    return true;
+  } catch (error) {
+    if (error instanceof DrizzleQueryError && (error.cause as { code?: string })?.code === "23503") return false;
+    throw error;
+  }
+}
+
 export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "ownerVault" | "changeVault" | "sharedVault" | "contactGroups" | "changeContactGroup"> {
   function listCategories(owner: string) {
     return db.select({ id: c.id, name: c.name }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
@@ -56,14 +69,11 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "ownerVault" 
       }
       const group = and(eq(g.owner, owner), eq(g.id, id));
       if (change.action === "delete") return !!(await db.delete(g).where(group).returning({ id: g.id })).length;
-      if (!(await db.select({ id: g.id }).from(g).where(group).for("key share")).length) return false;
       if (change.action === "add_contact") {
-        const contact = and(eq(friends.userId, owner), eq(friends.address, change.address));
-        if (!(await db.select({ address: friends.address }).from(friends).where(contact).for("key share")).length) return false;
-        await db.insert(m).values({ owner, groupId: id, address: change.address }).onConflictDoNothing();
-      } else {
-        await db.delete(m).where(and(eq(m.owner, owner), eq(m.groupId, id), eq(m.address, change.address)));
+        return insertWithParents(db, async tx => tx.insert(m).values({ owner, groupId: id, address: change.address }).onConflictDoNothing());
       }
+      if (!(await db.select({ id: g.id }).from(g).where(group)).length) return false;
+      await db.delete(m).where(and(eq(m.owner, owner), eq(m.groupId, id), eq(m.address, change.address)));
       return true;
     },
     async changeVault(owner, id, change) {
@@ -81,9 +91,11 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "ownerVault" 
           else await db.delete(p).where(and(eq(p.owner, owner), eq(p.id, id), eq(p.group, change.group)));
           break;
         case "set_contact_group":
-          if (!(await db.select({ id: g.id }).from(g).where(and(eq(g.owner, owner), eq(g.id, change.groupId))).for("key share")).length) return false;
-          if (change.allowed) await db.insert(gp).values({ owner, id, groupId: change.groupId }).onConflictDoNothing();
-          else await db.delete(gp).where(and(eq(gp.owner, owner), eq(gp.id, id), eq(gp.groupId, change.groupId)));
+          if (change.allowed) {
+            return insertWithParents(db, async tx => tx.insert(gp).values({ owner, id, groupId: change.groupId }).onConflictDoNothing());
+          }
+          if (!(await db.select({ id: g.id }).from(g).where(and(eq(g.owner, owner), eq(g.id, change.groupId)))).length) return false;
+          await db.delete(gp).where(and(eq(gp.owner, owner), eq(gp.id, id), eq(gp.groupId, change.groupId)));
           break;
         case "put_entry":
           await db.insert(e).values({ owner, id, label: change.label, value: change.value })

@@ -382,6 +382,23 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect(await tx.addFriend("bruno", friend)).toBe(true);
           expect(await tx.addFriend("bruno", friend)).toBe(false);
           expect(await tx.listFriends("bruno")).toEqual([friend]);
+          const groupId = randomUUID();
+          const categoryId = randomUUID();
+          const group = { id: groupId, name: "Instituciones", members: [friend] };
+          const membership = { groupId, address: friend };
+          const sharing = { action: "set_contact_group", categoryId, groupId, allowed: true } as const;
+          expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
+          expect(await tx.changeContactGroup("bruno", groupId, { action: "create", name: group.name })).toBe(true);
+          expect(await tx.changeContactGroup("bruno", groupId, { ...membership, action: "add_contact" })).toBe(true);
+          expect(await tx.contactGroups("bruno")).toEqual({ groups: [group] });
+          expect(await tx.contactGroups("alice")).toEqual({ groups: [] });
+          await tx.changeVault("bruno", categoryId, { action: "create", name: "Prueba" });
+          expect(await tx.changeVault("bruno", categoryId, sharing)).toBe(true);
+          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([{ id: categoryId, name: "Prueba" }]);
+          expect(await tx.changeContactGroup("bruno", groupId, { ...membership, action: "remove_contact" })).toBe(true);
+          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([]);
+          expect(await tx.changeContactGroup("bruno", groupId, { groupId, action: "delete" })).toBe(true);
+          expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
           expect(await tx.removeFriend("bruno", friend)).toBe(true);
         });
       } finally {
@@ -392,6 +409,13 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
         [runtimeRole],
       );
       expect(privileges?.can_mutate).toBe(false);
+      const { rows: groupPrivileges } = await isolated.query(
+        `SELECT name, has_table_privilege($1, name, 'UPDATE, TRUNCATE') AS excess
+         FROM unnest(ARRAY['sideband.friends', 'sideband.vault_contact_groups',
+           'sideband.vault_contact_group_members', 'sideband.vault_contact_group_permissions']) AS t(name)`,
+        [runtimeRole],
+      );
+      expect(groupPrivileges.every(({ excess }) => !excess)).toBe(true);
     } finally {
       await isolated.query(`DROP OWNED BY ${pg.escapeIdentifier(runtimeRole)}`);
       await isolated.query(`DROP ROLE IF EXISTS ${pg.escapeIdentifier(runtimeRole)}`);
