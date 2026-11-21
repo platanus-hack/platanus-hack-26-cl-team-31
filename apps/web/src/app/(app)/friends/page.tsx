@@ -1,5 +1,7 @@
+import Link from "next/link";
+
 import { readFriends } from "../actions";
-import { card, Empty, Heading } from "../ui";
+import { card, Empty, Heading, textLink } from "../ui";
 import { ConnectForm, RemoveFriend } from "./friend-forms";
 
 export default async function FriendsPage() {
@@ -19,7 +21,11 @@ export default async function FriendsPage() {
             {friends.map((address) => (
               <li key={address} className={`${card} flex flex-wrap items-center justify-between gap-3 px-5 py-3`}>
                 <span className="break-all font-medium">{address}</span>
-                <RemoveFriend address={address} />
+                <div className="flex flex-wrap items-center gap-4">
+                  <Link className={textLink} href={{ pathname: "/grants", query: { to: address } }}
+                    aria-label={`Gestionar permisos de ${address}`}>Gestionar permisos</Link>
+                  <RemoveFriend address={address} />
+                </div>
               </li>
             ))}
           </ul>
