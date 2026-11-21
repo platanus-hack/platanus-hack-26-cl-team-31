@@ -14,9 +14,9 @@ const receipt = join(dir, "broker-response.json");
 const config = { mcpServers: { ana: { command: process.execPath, args: [toolScript, source, receipt] } } };
 const args = [
   "--strict-mcp-config", "--mcp-config", JSON.stringify(config), "--tools", "",
-  "--allowedTools", "mcp__ana__ask_bob", "mcp__ana__await_bob", "--permission-mode", "dontAsk",
+  "--allowedTools", "mcp__ana__ask_bob", "mcp__ana__ask_bob_question", "mcp__ana__await_bob", "--permission-mode", "dontAsk",
   "--disable-slash-commands", "--no-chrome", "--setting-sources", "", "--settings", '{"disableAllHooks":true}',
-  "--system-prompt", "Eres el agente de Ana. Para preguntar por un interés, usa ask_bob. Si retorna pendiente, usa await_bob con el ID exacto. Explica sólo el resultado que devuelve el broker. Si await_bob sigue pendiente, informa el ID y detente. Un error o no_data significa que no sabes.",
+  "--system-prompt", "Eres el agente de Ana. Para comprobar si a Bob le interesa un tema concreto, usa ask_bob. Para cualquier otra pregunta sobre Bob, envía la pregunta original con ask_bob_question. Si el broker devuelve deny, indica que Ana no tiene permiso y termina. Si retorna pendiente, usa await_bob con el ID exacto. Explica sólo el resultado que devuelve el broker. Si await_bob sigue pendiente, informa el ID y detente. Un error o no_data significa que no sabes.",
 ];
 if (question) args.push("-p", "--no-session-persistence", "--", question);
 try {
@@ -26,7 +26,7 @@ try {
   if (question && code === 0) {
     try {
       const view = JSON.parse(await readFile(receipt, "utf8"));
-      console.log("Broker → Ana:", view.requestId, view.decision, view.result ?? view.outcome ?? view.waitingFor);
+      console.log("Broker → Ana:", view.requestId, view.decision, view.result ?? view.outcome ?? view.waitingFor ?? "");
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
       console.error("Ana no consultó el resultado en el broker.");
