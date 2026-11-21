@@ -389,15 +389,16 @@ describe("cierre y avisos", () => {
 describe("conexiones y prueba de aviso", () => {
   it("registra perezosamente, conserva revocación y verifica solo el agente seleccionado", async () => {
     const another = { ...bruno, agentId: "other-bot" };
-    await Promise.all([broker.agent.inbox(bruno), broker.agent.inbox(another)]);
-    expect(await broker.owner.agents(bruno)).toHaveLength(2);
+    await broker.agent.connect(bruno);
+    await expect(broker.agent.connect(another)).rejects.toMatchObject({ code: "conflict" });
+    expect(await broker.owner.agents(bruno)).toHaveLength(1);
     await broker.owner.setWake(bruno, bruno.agentId, webhook);
     const ping = await broker.owner.ping(bruno, bruno.agentId);
-    expect(await broker.agent.inbox(another)).toEqual([]);
+    await expect(broker.agent.inbox(another)).rejects.toMatchObject({ code: "conflict" });
     const item = await inboxItem(bruno, ping.requestId);
     expect(item).toMatchObject({ from: "system@sideband.app", tool: "question", senderMessage: { trusted: false } });
     await expect(broker.agent.reply(another, { ...item, nonce: deriveNonce(nonceKey, ping.requestId), outcome: "no_data" }))
-      .rejects.toMatchObject({ code: "not_found" });
+      .rejects.toMatchObject({ code: "conflict" });
     await broker.tick(now);
     expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: ping.requestId, event: WAKE_EVENT }, expect.objectContaining({ attempt: 1, final: false, userId: bruno.userId }));
     await broker.agent.reply(bruno, { ...item, outcome: "no_data" });
@@ -409,6 +410,7 @@ describe("conexiones y prueba de aviso", () => {
     const pending = await askAvailability();
     const pendingItem = await inboxItem(bruno, pending.requestId);
     await broker.owner.revokeAgent(bruno, bruno.agentId);
+    await broker.agent.connect(another);
     await expect(broker.agent.reply(bruno, { ...pendingItem, outcome: "no_data" })).rejects.toMatchObject({ code: "not_found" });
     await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "not_found" });
     await expect(broker.agent.connectWake(bruno, { kind: "none" })).rejects.toMatchObject({ code: "not_found" });
@@ -586,7 +588,7 @@ describe("solicitudes de conexión", () => {
       result: { accepted: true }, share: ["health"] as Sharing };
     await expect(broker.agent.reply(bruno, reply)).rejects.toMatchObject({ code: "forbidden" });
     const agent: Principal = { ...bruno, scopes: [...bruno.scopes, "sideband:accept"] };
-    await expect(broker.agent.reply({ ...agent, userId: carla.userId }, reply)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.agent.reply({ ...carla, scopes: agent.scopes }, reply)).rejects.toMatchObject({ code: "not_found" });
     await broker.agent.reply(agent, reply);
     expect((await broker.owner.contacts(bruno)).contacts).toEqual([
       { address: "carla@sideband.app", gives: ["health"], receives: basicSharing },

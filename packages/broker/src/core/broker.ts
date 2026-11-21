@@ -505,6 +505,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
   return {
     agent: {
+      async connect(p) {
+        await store.tx(tx => ensureActiveAgentConnection(tx, p));
+      },
       async contactGroups(p) {
         requireScope(p, "sideband:vault", "agent.contactGroups");
         return store.tx(async tx => {

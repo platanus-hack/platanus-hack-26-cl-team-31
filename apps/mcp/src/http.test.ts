@@ -25,6 +25,7 @@ async function listen(server: Server) {
 
 function testPort(): AgentPort {
   return {
+    connect: vi.fn(),
     capabilities: vi.fn(),
     vaultCatalog: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
     contactGroups: vi.fn(), changeContactGroup: vi.fn(),
@@ -104,6 +105,14 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
   }
 });
 
+it("rechaza el inicio del cliente cuando el titular tiene otro agente activo", async () => {
+  const agent = testPort();
+  vi.mocked(agent.connect).mockRejectedValue(new BrokerError("conflict", "Ya tienes un agente conectado."));
+  const origin = await listen(createHttpServer(options, agent));
+  await expect(connect(`${origin}/mcp`, "dev:ana:otro")).rejects.toThrow(/Ya tienes un agente conectado/);
+  expect(agent.connect).toHaveBeenCalledWith(expect.objectContaining({ userId: "ana", agentId: "otro" }));
+});
+
 it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de cada conexión al broker", async () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const getServiceToken = createServiceTokenMinter(JSON.stringify(privateKey.export({ format: "jwk" })));
@@ -146,6 +155,10 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     }
 
     const path = `${req.method} ${req.url}`;
+    if (path === "POST /v1/agent/connection") {
+      res.writeHead(204).end();
+      return;
+    }
     let body = "";
     for await (const chunk of req) body += chunk;
     requests.push({ path, ...identity, body: body ? JSON.parse(body) : undefined });

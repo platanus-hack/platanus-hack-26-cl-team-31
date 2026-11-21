@@ -6,7 +6,7 @@ import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, 
 import { alias } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { BrokerError } from "../../errors.js";
+import { activeAgentConflict, BrokerError } from "../../errors.js";
 import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
@@ -425,7 +425,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         .returning({ agentId: agentConnections.agentId });
       if (inserted.length > 0) onCreated?.();
       const connection = await getAgentConnection(row.userId, row.agentId, true);
-      if (!connection) throw new BrokerError("internal", "No se pudo registrar la conexión del agente.");
+      if (!connection) throw activeAgentConflict();
       return connection;
     },
 

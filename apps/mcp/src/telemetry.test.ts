@@ -58,7 +58,7 @@ async function connect(url: string, token: string) {
 function port(overrides: Partial<AgentPort> = {}): AgentPort {
   return {
     capabilities: vi.fn(), ask: vi.fn(), inbox: vi.fn(), reply: vi.fn(), status: vi.fn(), contacts: vi.fn(),
-    vaultCatalog: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
+    connect: vi.fn(), vaultCatalog: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
     contactGroups: vi.fn(), changeContactGroup: vi.fn(),
     connectWake: vi.fn(), disconnectWake: vi.fn(), ...overrides,
   };
@@ -69,6 +69,10 @@ describe("telemetría del MCP", () => {
     const { privateKey } = generateKeyPairSync("ed25519");
     const headers: Record<string, string | undefined>[] = [];
     const broker = await listen(createServer((req, res) => {
+      if (req.url === "/v1/agent/connection") {
+        res.writeHead(204).end();
+        return;
+      }
       headers.push({ traceparent: String(req.headers.traceparent ?? "") });
       req.resume();
       res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({

@@ -166,6 +166,8 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 
 ## MCP Sideband
 
+- Cada titular puede tener un solo agente activo (el `agentId` del cliente OAuth). Para conectar otro, desconecta primero el actual en **Agentes**. Las sesiones del mismo cliente comparten identidad. Los canales como WhatsApp son independientes.
+
 - `pnpm env:init` genera `MCP_RESOURCE_URL` con el puerto del worktree, y `AUTH_ISSUER` y `AUTH_JWKS_URL` con el puerto web. Ajusta los valores en `.env.local` si cambias el origen público.
 - Usa `pnpm dev --filter @team-31/mcp` para iniciar solo MCP. Escucha en loopback por defecto y expone `GET /healthz`.
 - La [guía del MCP](apps/mcp/README.md) cubre stdio de desarrollo y el perfil Compose `sideband`.

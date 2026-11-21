@@ -188,6 +188,7 @@ export const agentConnections = sideband.table("agent_connections", {
   createdAt: time("created_at").notNull(),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.agentId] }),
+  uniqueIndex("agent_connections_one_active").on(table.userId).where(sql`${table.revokedAt} is null`),
   check("agent_connections_wake_secret_check", sql`(${table.wakeKind} = 'none') = (${table.wakeSecret} is null)`),
 ]);
 

@@ -1,5 +1,5 @@
 import type { Address, ContactGroups, ContactTag, Sharing, OwnerVault } from "@team-31/protocol";
-import { BrokerError } from "../errors.js";
+import { activeAgentConflict, BrokerError } from "../errors.js";
 import type {
   AgentConnectionRow, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "./store.js";
@@ -51,6 +51,8 @@ function transaction(state: State): StoreTx {
   }
 
   function putAgent(row: AgentConnectionRow): AgentConnectionRow {
+    if (!row.revokedAt && [...state.agents.values()].some(other =>
+      other.userId === row.userId && other.agentId !== row.agentId && !other.revokedAt)) throw activeAgentConflict();
     ensureUser(row.userId, row.createdAt);
     const stored = structuredClone(row);
     state.agents.set(pairKey(row.userId, row.agentId), stored);
@@ -323,8 +325,10 @@ function transaction(state: State): StoreTx {
     },
     async ensureAgentConnection(row, onCreated) {
       const existing = state.agents.get(pairKey(row.userId, row.agentId));
-      if (!existing) onCreated?.();
-      return structuredClone(existing ?? putAgent(row));
+      if (existing) return structuredClone(existing);
+      const created = putAgent(row);
+      onCreated?.();
+      return structuredClone(created);
     },
     async upsertAgentConnection(row) {
       putAgent(row);
