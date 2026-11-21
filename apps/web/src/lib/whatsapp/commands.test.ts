@@ -75,3 +75,24 @@ it("pide reformular una pregunta con varias categorías sin enviar nada", async 
   expect(result).toContain("Reformula");
   expect(broker.ask).not.toHaveBeenCalled();
 });
+
+it("lista los contactos con lo que cada uno comparte, con o sin Claude", async () => {
+  const { broker, report } = fixture();
+  broker.contacts.mockResolvedValue({ contacts: [
+    { address: to, gives: ["general"], receives: ["availability", "interests"] },
+    { address: "ana@sideband.app", gives: [], receives: [] },
+  ] });
+  const interpret = vi.fn().mockResolvedValue({ action: "contacts", recipient: null, category: null });
+  const reply = await runCommand(broker, owner, "dime qué amigos tengo", report, interpret);
+  expect(reply).toContain(`• ${to}: te comparte Disponibilidad horaria · Intereses`);
+  expect(reply).toContain("• ana@sideband.app: te comparte Nada");
+  await expect(runCommand(broker, owner, "contactos", report)).resolves.toBe(reply);
+  expect(interpret).toHaveBeenCalledOnce();
+  expect(broker.ask).not.toHaveBeenCalled();
+  expect(report).not.toHaveBeenCalled();
+});
+
+it("avisa cuando todavía no hay contactos", async () => {
+  const { broker, report } = fixture([]);
+  await expect(runCommand(broker, owner, "contactos", report)).resolves.toContain("Aún no tienes contactos");
+});

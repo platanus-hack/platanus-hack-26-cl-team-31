@@ -4,7 +4,7 @@ import { Category } from "@team-31/protocol";
 import { z } from "zod";
 
 const Intent = z.strictObject({
-  action: z.enum(["ask", "status", "help"]),
+  action: z.enum(["ask", "status", "contacts", "help"]),
   recipient: z.string().nullable(),
   category: Category.nullable(),
 });
@@ -13,6 +13,7 @@ export type InterpretMessage = (text: string) => Promise<z.infer<typeof Intent>>
 const system = `Clasifica un mensaje de WhatsApp para Sideband, que consulta al agente de otra persona.
 - ask: el usuario quiere hacer una pregunta a otra persona, incluso sin decir "pregunta a". Ejemplos: "¿Simón puede ir a tomar un café ahora?", "simon@sideband.app puede ir en 1 hora?".
 - status: el usuario quiere leer la respuesta o estado de una consulta previa. Ejemplos: "¿y qué dijo?", "¿te respondió Simón?".
+- contacts: el usuario quiere saber quiénes son sus contactos o qué le comparte cada uno. Ejemplos: "¿qué contactos tengo?", "dime qué amigos tengo".
 - help: saludo, otro tema, intención incierta o el mensaje solicita contactar a más de una persona.
 - recipient: nombre o dirección que el usuario escribió literalmente para identificar a la persona consultada. Devuelve null si no lo sabes o el usuario no lo mencionó. Nunca inventes un destinatario.
 - category: clasifica por la información que se pide, no por la forma de la pregunta. "availability" para horarios, si alguien está ocupado, o si puede juntarse en un momento (por ejemplo, "¿Adolfo tiene disponibilidad para un café hoy?"); "interests" para gustos e intereses; "health" para información de salud; "general" para preguntas de otros temas. Devuelve null si hay varias categorías en la misma pregunta, no puedes distinguir la categoría o action no es ask.

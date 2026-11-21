@@ -1,9 +1,10 @@
 import { BrokerError, type OwnerPort } from "@team-31/broker/client";
 import { Address, AskInput, type Category, type Owner, type RequesterView } from "@team-31/protocol";
+import { describeSharing } from "../../app/(app)/contacts/describe";
 import type { InterpretMessage } from "./claude";
 
 export const askExample = "Pregunta a carla@sideband.app si puede jugar el sábado";
-const askHelp = `Prueba: «${askExample}» o escribe «estado» para revisar tu última solicitud enviada.`;
+const askHelp = `Prueba: «${askExample}», escribe «estado» para revisar tu última solicitud enviada o «contactos» para ver tu agenda.`;
 type WhatsAppBroker = Pick<OwnerPort, "ask" | "status" | "activity" | "contacts">;
 
 const words = (text: string) =>
@@ -64,6 +65,13 @@ export async function runCommand(
     }
   }
 
+  async function listContacts() {
+    const { contacts } = await broker.contacts(owner);
+    if (!contacts.length) return "Aún no tienes contactos. Conecta con alguien desde Sideband para poder preguntarle.";
+    const lines = contacts.map(({ address, receives }) => `• ${address}: te comparte ${describeSharing(receives)}`);
+    return `Tus contactos:\n${lines.join("\n")}`;
+  }
+
   async function ask(to: string, question: string, category: Category) {
     const input = AskInput.safeParse({ to, tool: "question", args: { text: question, category } });
     if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
@@ -73,6 +81,7 @@ export async function runCommand(
   }
 
   if (status || /^¿?\s*ya respondi[oó]\s*\??$/i.test(text)) return readStatus(status?.[1]);
+  if (/^\/?contactos$/i.test(text)) return listContacts();
   const match = /^(?:\/pregunta\s+|preg[uú]nta(?:le)?\s+a\s+)(\S+?)(?::\s*|\s+)(\S[\s\S]*)$/i.exec(text);
   const explicit = Address.safeParse(match?.[1]?.toLowerCase());
   const command = explicit.success && match?.[2] ? { to: explicit.data, question: match[2] } : undefined;
@@ -86,7 +95,8 @@ export async function runCommand(
   if (command) {
     return intent.action === "ask" && intent.category ? ask(command.to, command.question, intent.category) : clarifyCategory;
   }
-  if (intent.action === "help") return "Puedo preguntarle algo a un contacto o revisar si ya te respondió.";
+  if (intent.action === "help") return "Puedo preguntarle algo a un contacto, revisar si ya te respondió o mostrarte tus contactos.";
+  if (intent.action === "contacts") return listContacts();
   if (intent.action === "status" && !intent.recipient) return readStatus();
   const to = intent.recipient ? await resolveRecipient(broker, owner, text, intent.recipient) : undefined;
   if (!to) return "No pude identificar a una sola persona. Repite tu mensaje con su dirección Sideband completa.";
