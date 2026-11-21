@@ -8,7 +8,8 @@ function summarize(view: RequesterView): string {
   const reference = `\n\nSolicitud: ${view.requestId}`;
   if (view.decision === "deny") return "No se pudo compartir una respuesta a esta solicitud." + reference;
   if (view.decision === "pending") {
-    return `Solicitud a ${view.to} pendiente ${view.waitingFor === "owner" ? "de aprobación" : "de respuesta"}.` + reference;
+    const waiting = view.waitingFor === "owner" ? "de aprobación" : "de respuesta";
+    return `Solicitud a ${view.to} pendiente ${waiting}. Para consultar la respuesta, envía:\n\nestado ${view.requestId}`;
   }
   if (view.decision === "unanswered") {
     return { no_data: "No hay datos para responder.", expired: "La solicitud venció.",
@@ -41,7 +42,7 @@ export async function runCommand(
     }
   }
   const match = /^(?:\/pregunta\s+|preg[uú]nta(?:le)?\s+a\s+)(\S+?)(?::\s*|\s+)(\S[\s\S]*)$/i.exec(text);
-  if (!match) return askHelp;
+  if (!match?.[1] || !match[2]) return askHelp;
   const input = AskInput.safeParse({ to: match[1].toLowerCase(), tool: "question", args: { text: match[2] } });
   if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
   const view = await broker.ask(owner, input.data);
