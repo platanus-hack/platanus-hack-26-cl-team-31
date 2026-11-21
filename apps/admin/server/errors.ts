@@ -17,11 +17,13 @@ export const statusOf = {
 // Error con un código del contrato (ErrorBody). Su mensaje se muestra al cliente.
 export class AdminHttpError extends Error {
   readonly code: ErrorCode
+  readonly errorId?: string
   readonly retryAfter?: number
 
-  constructor(code: ErrorCode, message: string, options?: { retryAfter?: number }) {
+  constructor(code: ErrorCode, message: string, options?: { retryAfter?: number; errorId?: string }) {
     super(message)
     this.code = code
+    this.errorId = options?.errorId
     this.retryAfter = options?.retryAfter
   }
 }

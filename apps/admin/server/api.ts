@@ -95,11 +95,12 @@ export function clientIp(c: Context, trustProxy: boolean): string | null {
 function errorResponse(c: Context, error: unknown, telemetry: Pick<Telemetry, "error" | "emit">) {
   if (error instanceof AdminHttpError) {
     if (error.code === "unauthorized") c.header("WWW-Authenticate", 'Cookie realm="sideband-admin"')
+    if (error.errorId) c.header("X-Error-Id", error.errorId)
     if (error.retryAfter) c.header("Retry-After", String(error.retryAfter))
     if (error.code === "rate_limited") {
       telemetry.emit("http.rate_limited", { attrs: { route: c.req.routePath, bucket: c.req.path.endsWith("/reveal") ? "reveal" : c.req.path.endsWith("/live") ? "live" : "login" } })
     }
-    return c.json(ErrorBody.parse({ error: { code: error.code, message: error.message } }), statusOf[error.code])
+    return c.json(ErrorBody.parse({ error: { code: error.code, message: error.message, errorId: error.errorId } }), statusOf[error.code])
   }
   if (error instanceof AdminQueryError) {
     if (error.code === "timeout") {
@@ -187,7 +188,11 @@ export function createAdminApi(deps: AdminApiDeps) {
     try {
       await run()
     } catch (error) {
-      await audit.record({ ...entry, meta: { ok: false, code: error instanceof AdminHttpError ? error.code : "internal" } })
+      try {
+        await audit.record({ ...entry, meta: { ok: false, code: error instanceof AdminHttpError ? error.code : "internal" } })
+      } catch (auditError) {
+        telemetry.error("admin.action.audit", auditError, { userId: principal.id })
+      }
       throw error
     }
     return { ok: true as const, auditId: await audit.record({ ...entry, meta: { ok: true } }) }

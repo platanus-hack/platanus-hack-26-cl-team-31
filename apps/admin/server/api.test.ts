@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { TelemetryEvent } from "../shared/contract.js"
 import { AdminQueryError, type AdminQueries } from "../shared/queries.js"
 import { createAdminApp } from "./app.js"
-import { createPgAuditLog, migrateAdminTables } from "./audit.js"
+import { createPgAuditLog, migrateAdminTables, type AuditLog } from "./audit.js"
 import { createAdminAuth, createRoleResolver, migrateAdminAuth, type AdminAuthOptions } from "./auth/index.js"
 import { createBrokerAdminClient } from "./broker.js"
 import { createAdminPool } from "./db.js"
@@ -41,7 +41,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     events: async ({ afterId }) => (afterId ? [] : [telemetryEvent("2"), telemetryEvent("1")]),
   })
 
-  function buildApp(overrides: { devAuth?: boolean; queries?: AdminQueries; live?: LiveOptions } = {}) {
+  function buildApp(overrides: { devAuth?: boolean; queries?: AdminQueries; live?: LiveOptions; audit?: AuditLog } = {}) {
     const telemetry = createTelemetry({ service: "admin", sink, heartbeatMs: 0, lifecycle: false })
     const tokens = createPgTokenStore(pool)
     return createAdminApp({
@@ -51,7 +51,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
       queries: overrides.queries ?? queries,
       tokens,
       authenticateToken: (bearer) => tokens.authenticate(bearer),
-      audit: createPgAuditLog(pool, telemetry),
+      audit: overrides.audit ?? createPgAuditLog(pool, telemetry),
       broker: createBrokerAdminClient({ baseUrl: BROKER_URL, privateKey: privateJwk, fetch: brokerFetch }),
       revealer: { reveal },
       limiters: createAdminLimiters(),
@@ -268,6 +268,27 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     const rows = await auditRows()
     expect(rows.find((row) => row.action === "rewake")).toMatchObject({ target: "req_1", reason: "el aviso se perdió", meta: { ok: true } })
     expect(sink.find("admin.action")[0]).toMatchObject({ attrs: { action: "rewake", target: "req_1" } })
+  })
+
+  it("audits an unexpected HTML success as a broker failure", async () => {
+    brokerFetch.mockResolvedValue(new Response("<html>OK</html>", { status: 200 }))
+    const cookie = await login("op@test.cl")
+    const response = await buildApp().request("/api/admin/requests/req_1/rewake", post(cookie, { reason: "revisar el aviso" }))
+    expect(response.status).toBe(502)
+    expect((await auditRows()).find((row) => row.action === "rewake")?.meta).toEqual({ ok: false, code: "upstream" })
+  })
+
+  it("preserves the broker error ID when recording the failed action also fails", async () => {
+    const errorId = "2b6953de-f8cd-44e5-a34a-4de79dad2d96"
+    brokerFetch.mockResolvedValue(Response.json({ error: { code: "not_found", message: "cerrada" } },
+      { status: 404, headers: { "X-Error-Id": errorId } }))
+    const audit = { record: vi.fn().mockRejectedValue(new Error("audit unavailable")) }
+    const cookie = await login("op@test.cl")
+    const response = await buildApp({ audit }).request("/api/admin/requests/req_1/expire", post(cookie, { reason: "cerrar solicitud" }))
+    expect(response.status).toBe(404)
+    expect(response.headers.get("X-Error-Id")).toBe(errorId)
+    expect((await response.json()).error).toMatchObject({ errorId, code: "not_found" })
+    expect(sink.find("error")).toContainEqual(expect.objectContaining({ attrs: expect.objectContaining({ operation: "admin.action.audit" }) }))
   })
 
   it("expire y revokeAgent: errores del broker se mapean y quedan auditados", async () => {
