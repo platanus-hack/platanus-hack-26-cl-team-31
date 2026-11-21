@@ -7,6 +7,7 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
   const request = createHttpClient(options, Principal);
 
   return {
+    connect: (p) => request(routes.agentConnect, p),
     vaultCatalog: (p) => request(routes.agentVaultCatalog, p),
     contactGroups: (p) => request(routes.agentContactGroups, p),
     changeContactGroup: (p, body) => request(routes.agentChangeContactGroup, p, { body }),

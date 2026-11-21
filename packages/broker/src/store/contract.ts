@@ -132,13 +132,11 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       await store.tx(async (tx) => {
         const agent = { userId: "alice", agentId: "client-1", label: "Alba", wakeTarget: { kind: "none" }, createdAt: now } as const;
         await tx.ensureAgentConnection(agent);
-        await tx.ensureAgentConnection({ ...agent, agentId: "client-2", label: "Luna" });
         await tx.ensureAgentConnection({ ...agent, userId: "bruno" });
         await tx.ensureAgentConnection({ ...agent, userId: "addressless" });
         await tx.upsertAgentConnection({ ...agent, agentId: "old", revokedAt: now });
         expect(await tx.listPublicAgents()).toEqual([
           { agentId: "client-1", label: "Alba", address: fromAddress }, { agentId: "client-1", label: "Alba", address: toAddress },
-          { agentId: "client-2", label: "Luna", address: fromAddress },
         ]);
       });
     });
@@ -307,6 +305,15 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("only lets one of two different agents claim the same owner concurrently", async () => {
+      const base: AgentConnectionRow = { userId: "alice", agentId: "a", label: "Bot", createdAt: now, wakeTarget: { kind: "none" } };
+      const outcomes = await Promise.allSettled(["a", "b"].map(agentId =>
+        store.tx(tx => tx.ensureAgentConnection({ ...base, agentId }))));
+      expect(outcomes.filter(result => result.status === "fulfilled")).toHaveLength(1);
+      expect(outcomes).toContainEqual({ status: "rejected", reason: expect.objectContaining({ code: "conflict" }) });
+      expect(await store.tx(tx => tx.listAgentConnections("alice"))).toHaveLength(1);
+    });
+
     it("keeps one live grant per grantor, grantee and category, and hides revoked grants", async () => {
       const grant: GrantRow = {
         id: randomUUID(), grantorUserId: "bruno", granteeAddress: fromAddress,
@@ -332,7 +339,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
 
     it("lists an owner's agents by creation time and breaks ties by agent ID", async () => {
       await store.tx(async (tx) => {
-        const agent = { userId: "alice", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now } as const;
+        const agent = { userId: "alice", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now, revokedAt: now } as const;
         await tx.ensureAgentConnection({ ...agent, agentId: "z" });
         await tx.ensureAgentConnection({ ...agent, agentId: "A" });
         await tx.ensureAgentConnection({ ...agent, agentId: "a" });

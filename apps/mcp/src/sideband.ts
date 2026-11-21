@@ -40,6 +40,7 @@ export async function startSideband(stdio: boolean, devAuth: boolean) {
       agentId: readEnv("SIDEBAND_DEV_AGENT_ID", id),
       scopes: [...Scope.options],
     };
+    await agent.connect(principal);
     await createServer(principal, agent, telemetry).connect(new StdioServerTransport());
     console.error("[sideband-mcp] Listo en stdio.");
     return;

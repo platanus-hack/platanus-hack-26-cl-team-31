@@ -94,7 +94,7 @@ function expectOneTrace(rows: Row[], requestId: string) {
   expect(traceId).toMatch(/^[0-9a-f]{32}$/);
 
   const trace = rows.filter((row) => row.traceId === traceId);
-  const brokerSpan = trace.find((row) => row.service === "broker" && row.name === "http.request");
+  const brokerSpan = trace.find((row) => row.service === "broker" && row.name === "http.request" && row.requestId === requestId);
   // The broker span hangs from the MCP tool span: same trace, same request.
   expect(brokerSpan).toMatchObject({ requestId, parentSpanId: tool?.spanId });
   expect(trace.find((row) => row.service === "mcp" && row.name === "http.request")?.spanId).toBe(tool?.parentSpanId);

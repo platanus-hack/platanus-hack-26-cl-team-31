@@ -33,6 +33,7 @@ import type { SanitizeContext } from "./sanitize/types.js";
 import type { Store } from "./store/store.js";
 
 export interface AgentPort {
+  connect(p: Principal): Promise<void>;
   contactGroups(p: Principal): Promise<ContactGroups>;
   changeContactGroup(p: Principal, input: ContactGroupChange): Promise<{ groupId: string }>;
   vaultCatalog(p: Principal): Promise<VaultCatalog>;

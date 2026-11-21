@@ -2,7 +2,7 @@ import { createServer as createNodeServer, type IncomingMessage, type ServerResp
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpGuard } from "@team-31/auth/resource";
-import type { AgentPort } from "@team-31/broker/client";
+import { BrokerError, type AgentPort } from "@team-31/broker/client";
 import { Scope, type Principal } from "@team-31/protocol";
 import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
 import { createServer } from "./server.js";
@@ -129,6 +129,16 @@ export function createHttpServer(
     telemetry.emit("auth.token.verified", { attrs: { issuer, reason: devToken ? "dev_token" : "jwt" } });
     if (res.destroyed) return;
 
+    try {
+      await agent.connect(principal);
+    } catch (error) {
+      if (!(error instanceof BrokerError) || !["conflict", "not_found", "rate_limited"].includes(error.code)) throw error;
+      const status = error.code === "conflict" ? 409 : error.code === "rate_limited" ? 429 : 403;
+      res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify({
+        jsonrpc: "2.0", id: null, error: { code: -32000, message: error.message },
+      }));
+      return;
+    }
     const server = createServer(principal, agent, telemetry);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.once("close", () => {

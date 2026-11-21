@@ -19,6 +19,7 @@ const noContent = { status: 204, response: z.undefined() } as const;
 const circleMemberParams = z.object({ id: z.string(), address: Address });
 
 export const routes = {
+  agentConnect: { method: "POST", path: "/v1/agent/connection", ...noContent, iss: "mcp", port: "agent.connect" },
   agentContactGroups: { method: "GET", path: "/v1/agent/contact-groups", response: ContactGroups, iss: "mcp", port: "agent.contactGroups" },
   agentChangeContactGroup: { method: "POST", path: "/v1/agent/contact-groups", body: ContactGroupChange, response: ContactGroupReceipt, iss: "mcp", port: "agent.changeContactGroup" },
   ownerVault: { method: "GET", path: "/v1/owner/vault", response: OwnerVault, iss: "web", port: "owner.vault" },

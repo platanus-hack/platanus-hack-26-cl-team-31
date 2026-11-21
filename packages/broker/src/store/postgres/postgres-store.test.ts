@@ -201,7 +201,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     ];
     await store.tx(async (tx) => {
       for (const wakeTarget of targets) {
-        await tx.upsertAgentConnection({ userId: "alice", agentId: wakeTarget.kind, label: "Bot", createdAt: now, wakeTarget });
+        await tx.upsertAgentConnection({ userId: "alice", agentId: wakeTarget.kind, label: "Bot", createdAt: now, revokedAt: now, wakeTarget });
       }
     });
     const { rows } = await isolated.query<{ wake_kind: string; wake_public: object; wake_secret: Buffer | null }>(
@@ -245,11 +245,28 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(11);
+  });
+
+  it("keeps the first active agent and preserves previously revoked history when migrating", async () => {
+    await isolated.query("DROP INDEX sideband.agent_connections_one_active");
+    await isolated.query("DELETE FROM sideband.__drizzle_migrations WHERE id = 11");
+    const base = { userId: "alice", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now } as const;
+    await store.tx(async tx => {
+      await tx.upsertAgentConnection({ ...base, agentId: "first" });
+      await tx.upsertAgentConnection({ ...base, agentId: "later", createdAt: new Date(now.getTime() + 1) });
+      await tx.upsertAgentConnection({ ...base, agentId: "old", revokedAt: now });
+    });
+    await applyPostgresMigrations({ databaseUrl });
+    const agents = await store.tx(tx => tx.listAgentConnections("alice"));
+    expect(agents.filter(a => !a.revokedAt).map(a => a.agentId)).toEqual(["first"]);
+    expect(agents.find(a => a.agentId === "old")?.revokedAt).toEqual(now);
+    expect(agents.find(a => a.agentId === "later")?.revokedAt).toBeInstanceOf(Date);
   });
 
   // Rewind the vault and channel tables before replaying older fixtures.
   async function undoVaultAndNotifyOrigin() {
+    await isolated.query("DROP INDEX sideband.agent_connections_one_active");
     await isolated.query("DROP TABLE sideband.vault_contact_group_permissions, sideband.vault_contact_group_members, sideband.vault_contact_groups");
     await isolated.query("DROP TABLE sideband.vault_permissions, sideband.vault_entries, sideband.vault_categories");
     await isolated.query("DROP TABLE sideband.channels");
