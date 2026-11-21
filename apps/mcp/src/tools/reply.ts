@@ -15,12 +15,14 @@ const result = z.union(Object.values(ToolResultSchemas)).describe(
   + '["available","freeSlots"] → {"available": true, "freeSlots": ["09:00-10:00"]}; ["accepted"] → {"accepted": true}.',
 );
 
-// share sólo tiene sentido al aceptar una invitación connect, y el broker rechaza la respuesta
-// que lo trae en cualquier otro caso. El esquema no puede condicionarlo —la tool de la solicitud
-// no es un argumento de sideband_reply—, así que lo dice la descripción.
+// share sólo tiene sentido al aceptar una invitación connect: son los grants que tu titular le da
+// a quien invitó. El esquema no puede condicionarlo —la tool de la solicitud no es un argumento de
+// sideband_reply—, así que lo dice la descripción. Una lista vacía no otorga nada y el broker la
+// ignora fuera de connect; una con categorías sí se rechaza.
 const share = ReplyArguments.shape.share.describe(
   "Solo al aceptar una invitación connect: las categorías que tu titular le comparte al contacto. "
-  + "Omítelo —ni siquiera como lista vacía— en cualquier otra respuesta; el broker la rechaza.",
+  + "En cualquier otra respuesta omítelo; una lista vacía se ignora y una con categorías se rechaza. "
+  + "Al aceptar un connect sin compartir nada, envíalo vacío: ahí [] sí significa aceptar con cero categorías.",
 );
 
 const inputSchema = ReplyArguments.extend({ share, result: result.optional() });

@@ -672,8 +672,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
               return reject(new BrokerError("invalid_input", "Para aceptar, incluye accepted: true y las categorías elegidas por tu titular."));
             }
             requireScope(p, "reply.connect");
-          } else if (parsed.data.share !== undefined) {
-            return reject(new BrokerError("invalid_input", "Solo una aceptación lleva categorías para compartir."));
+          } else if (parsed.data.share !== undefined && parsed.data.share.length > 0) {
+            // share son los grants que el destinatario le da a quien invitó: sólo viajan al aceptar
+            // un connect. Una lista vacía no otorga nada, así que se ignora en vez de rechazarse;
+            // en connect, en cambio, `share: []` sigue siendo una aceptación con cero categorías.
+            return reject(new BrokerError(
+              "invalid_input",
+              "share sólo viaja al aceptar una invitación connect. Esta solicitud no es una invitación: omite share o envíalo vacío.",
+            ));
           }
           let response: Awaited<ReturnType<typeof prepareAgentReply>>;
           try {
