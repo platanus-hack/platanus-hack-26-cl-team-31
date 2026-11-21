@@ -19,11 +19,6 @@ const checkArgs = z.object({
   minutes: z.number().int().min(1).max(1440),
 });
 
-export async function allowed(db: PoolClient, requester: string, recipient: string, group: string) {
-  const result = await db.query(`SELECT EXISTS (${permission}) AS allowed`, [requester, recipient, group]);
-  return result.rows[0].allowed as boolean;
-}
-
 export async function groupAllowed(db: PoolClient, requester: string, recipients: string[], group: string) {
   const result = await db.query(`SELECT NOT EXISTS (
     SELECT unnest($2::text[]) EXCEPT SELECT recipient FROM (${grants}) g WHERE requester=$1 AND group_id=$3
@@ -56,10 +51,13 @@ async function saveCheck(db: PoolClient, me: string, args: z.infer<typeof checkA
 }
 
 async function deliverCheck(db: PoolClient, me: string, requestId: string) {
-  const result = await db.query(`SELECT recipient, group_id, available FROM availability_requests
-    WHERE requester = $1 AND id = $2`, [me, requestId]);
+  // Use a fresh snapshot after saveCheck so a revocation before delivery is respected.
+  const result = await db.query<{ available: boolean }>(`
+    SELECT r.available FROM availability_requests r
+    JOIN (${grants}) g USING (requester, recipient, group_id)
+    WHERE r.requester = $1 AND r.id = $2`, [me, requestId]);
   const row = result.rows[0];
-  if (!row || !await allowed(db, me, row.recipient, row.group_id)) return notShareable;
+  if (!row) return notShareable;
   return { status: row.available ? "available" : "busy", request_id: requestId };
 }
 
