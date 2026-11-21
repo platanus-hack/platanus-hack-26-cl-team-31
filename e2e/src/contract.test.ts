@@ -111,7 +111,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
       requestId: item.requestId, nonce: item.nonce, outcome: "answered", result: { answer },
     })).toMatchObject({ status: "answered", deliveredFields: ["answer"] });
     expect(await sender.agent.check(item.requestId)).toMatchObject({ decision: "allow", result: { answer } });
-    const expected = `Respuesta de ${recipient.address}:\n${answer}\n\nSolicitud: ${item.requestId}`;
+    const expected = `Respuesta de ${recipient.address}:\n${answer}`;
     expect(await command(check)).toBe(expected);
     expect(await command("estado")).toBe(expected);
   });

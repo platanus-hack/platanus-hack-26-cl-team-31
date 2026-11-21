@@ -65,7 +65,7 @@ it("clasifica preguntas explícitas sin dejar que el modelo cambie la dirección
   const result = await runCommand(broker, owner, `Pregunta a ${to} ${text}`, report,
     async () => ({ action: "ask", recipient: "otro@sideband.app", category: "availability" }));
   expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } }, "whatsapp");
-  expect(result).toContain("No se pudo compartir");
+  expect(result).toBe(`No se pudo obtener una respuesta de ${to}.`);
 });
 
 it("pide reformular una pregunta con varias categorías sin enviar nada", async () => {

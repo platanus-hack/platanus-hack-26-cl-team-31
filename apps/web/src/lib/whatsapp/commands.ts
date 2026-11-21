@@ -26,16 +26,15 @@ async function resolveRecipient(broker: WhatsAppBroker, owner: Owner, text: stri
 }
 
 export function summarize(view: RequesterView): string {
-  const reference = `\n\nSolicitud: ${view.requestId}`;
-  if (view.decision === "deny") return "No se pudo compartir una respuesta a esta solicitud." + reference;
+  if (view.decision === "deny") return `No se pudo obtener una respuesta de ${view.to}.`;
   if (view.decision === "pending") {
     return view.waitingFor === "owner"
       ? `Le pregunté a ${view.to}. Espera su aprobación; te aviso apenas responda.`
       : `Le pregunté a ${view.to}. Te aviso apenas responda.`;
   }
   if (view.decision === "unanswered") {
-    return { no_data: "No hay datos para responder.", expired: "La solicitud venció.",
-      delivery_failed: "No se pudo entregar la solicitud." }[view.outcome] + reference;
+    return { no_data: `${view.to} no tiene datos para responder eso.`, expired: `Tu pregunta a ${view.to} venció sin respuesta.`,
+      delivery_failed: `No se pudo entregar tu pregunta a ${view.to}.` }[view.outcome];
   }
   const result = view.result;
   const answer = "answer" in result ? result.answer :
@@ -43,7 +42,7 @@ export function summarize(view: RequesterView): string {
     "available" in result ? `${result.available ? "Disponible." : "No disponible."}${result.freeSlots?.length ? ` Horarios: ${result.freeSlots.join(", ")}.` : ""}` :
     "accepted" in result ? result.accepted ? "Aceptó la solicitud de conexión." : "No aceptó la solicitud de conexión." :
     [result.displayName, result.headline].filter(Boolean).join(" — ");
-  return `Respuesta de ${view.to}:\n${answer}` + reference;
+  return `Respuesta de ${view.to}:\n${answer}`;
 }
 
 export async function runCommand(
