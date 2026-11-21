@@ -1,0 +1,29 @@
+{
+  "sol@example.test": {
+    "nombre": "Sol",
+    "publico": { "perfil": "Coordina el proyecto de ejemplo." },
+    "por_defecto": "preguntar"
+  },
+  "luna@example.test": {
+    "nombre": "Luna",
+    "publico": { "perfil": "Administra el calendario de ejemplo." },
+    "circulos": { "equipo": ["sol@example.test", "mar@example.test"] },
+    "permisos": { "equipo": ["disponibilidad", "pregunta"] },
+    "campos_permitidos": {
+      "equipo": { "disponibilidad": ["disponible", "bloques_libres"], "pregunta": ["respuesta"] }
+    },
+    "como_compartir": { "disponibilidad": "Comparte solo la disponibilidad y los bloques libres." },
+    "por_defecto": "preguntar"
+  },
+  "mar@example.test": {
+    "nombre": "Mar",
+    "circulos": { "equipo": ["sol@example.test", "luna@example.test"] },
+    "permisos": { "equipo": ["pregunta"] },
+    "campos_permitidos": { "equipo": { "pregunta": ["respuesta"] } },
+    "por_defecto": "rechazar"
+  },
+  "rio@example.test": {
+    "nombre": "Río",
+    "por_defecto": "rechazar"
+  }
+}

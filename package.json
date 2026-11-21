@@ -1,6 +1,7 @@
 {
   "name": "team-31",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.6.2",
   "engines": {
     "node": ">=20"
@@ -16,12 +17,14 @@
     "dev": "./scripts/with-env.sh turbo run dev",
     "build": "./scripts/with-env.sh --optional-env turbo run build",
     "test": "./scripts/with-env.sh --optional-env turbo run test",
+    "test:workspace": "./scripts/with-env.sh --optional-env vitest run --config vitest.workspace.ts",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
     "turbo": "^2.11.13",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "4.1.12"
   }
 }
