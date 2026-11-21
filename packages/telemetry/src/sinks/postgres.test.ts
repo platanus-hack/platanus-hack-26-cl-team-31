@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { applyOpsMigrations } from "@team-31/ops";
-import pg from "pg";
+import { createTestDatabase, type TestDatabase } from "@team-31/test-db";
+import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTelemetry } from "../telemetry.js";
 import type { TelemetryRecord } from "../types.js";
@@ -63,30 +63,20 @@ describe("postgresSink: cola", () => {
 const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? "";
 
 describe.skipIf(!testDatabaseUrl)("postgresSink contra TEST_DATABASE_URL", () => {
-  const databaseName = "telemetry_test_" + randomUUID().replaceAll("-", "");
-  let admin: pg.Pool;
+  let testDb: TestDatabase;
   let db: pg.Pool;
   let databaseUrl: string;
 
   beforeAll(async () => {
-    const url = new URL(testDatabaseUrl);
-    const devUrl = process.env.DATABASE_URL;
-    if (!url.pathname.endsWith("_test") || (devUrl && url.pathname === new URL(devUrl).pathname)) {
-      throw new Error("TEST_DATABASE_URL debe apuntar a una base _test separada.");
-    }
     // Base propia para no chocar con otras suites que usan app_test en paralelo.
-    admin = new pg.Pool({ connectionString: testDatabaseUrl });
-    await admin.query(`CREATE DATABASE ${pg.escapeIdentifier(databaseName)}`);
-    url.pathname = "/" + databaseName;
-    databaseUrl = url.toString();
+    testDb = await createTestDatabase("telemetry_test");
+    databaseUrl = testDb.url;
     await applyOpsMigrations({ databaseUrl });
-    db = new pg.Pool({ connectionString: databaseUrl });
+    db = testDb.pool();
   });
 
   afterAll(async () => {
-    await db?.end();
-    await admin?.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(databaseName)} WITH (FORCE)`);
-    await admin?.end();
+    await testDb?.drop();
   });
 
   it("escribe eventos, spans y errores en ops.events", async () => {

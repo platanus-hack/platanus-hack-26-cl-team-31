@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import pg from "pg";
+import { createTestDatabase, type TestDatabase } from "@team-31/test-db";
+import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyOpsMigrations } from "./index.js";
 
@@ -8,31 +8,18 @@ const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? "";
 // ops sin las tablas del broker, Better Auth ni coordinación: las vistas de telemetría existen y
 // las demás aparecen al volver a llamar a ops.refresh_views() cuando sus tablas ya existen.
 describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
-  const databaseName = "ops_test_" + randomUUID().replaceAll("-", "");
-  let admin: pg.Pool;
+  let testDb: TestDatabase;
   let db: pg.Pool;
   let databaseUrl: string;
 
   beforeAll(async () => {
-    const url = new URL(testDatabaseUrl);
-    const devUrl = process.env.DATABASE_URL;
-    if (!url.pathname.endsWith("_test") || (devUrl && url.pathname === new URL(devUrl).pathname)) {
-      throw new Error("TEST_DATABASE_URL debe apuntar a una base _test separada.");
-    }
-    admin = new pg.Pool({ connectionString: testDatabaseUrl });
-    await admin.query(`CREATE DATABASE ${pg.escapeIdentifier(databaseName)}`);
-    url.pathname = "/" + databaseName;
-    databaseUrl = url.toString();
-    db = new pg.Pool({ connectionString: databaseUrl });
+    testDb = await createTestDatabase("ops_test");
+    databaseUrl = testDb.url;
+    db = testDb.pool();
   });
 
   afterAll(async () => {
-    try {
-      await db?.end();
-      await admin?.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(databaseName)} WITH (FORCE)`);
-    } finally {
-      await admin?.end();
-    }
+    await testDb?.drop();
   });
 
   async function views(): Promise<string[]> {
