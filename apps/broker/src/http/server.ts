@@ -27,7 +27,7 @@ async function parseBody<S extends z.ZodType>(c: HttpContext, schema: S): Promis
   return parseInput(schema, value);
 }
 
-async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, { agent, owner }: BrokerCore) {
+async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, { agent, owner, admin }: BrokerCore) {
   switch (route.port) {
     case "agent.capabilities":
       return agent.capabilities(c.get("mcp"), parseInput(route.query, c.req.query()).to);
@@ -65,6 +65,14 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.ping(c.get("web"), parseInput(route.params, c.req.param()).agentId);
     case "owner.revokeAgent":
       return owner.revokeAgent(c.get("web"), parseInput(route.params, c.req.param()).agentId);
+    case "admin.rewake":
+      return admin.rewake(c.get("admin"), parseInput(route.params, c.req.param()).id, (await parseBody(c, route.body)).reason);
+    case "admin.expire":
+      return admin.expire(c.get("admin"), parseInput(route.params, c.req.param()).id, (await parseBody(c, route.body)).reason);
+    case "admin.revokeAgent": {
+      const { userId, agentId } = parseInput(route.params, c.req.param());
+      return admin.revokeAgent(c.get("admin"), userId, agentId, (await parseBody(c, route.body)).reason);
+    }
   }
 }
 
@@ -78,6 +86,7 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   const auth = {
     mcp: requireServiceIdentity("mcp", publicKeys),
     web: requireServiceIdentity("web", publicKeys),
+    admin: requireServiceIdentity("admin", publicKeys),
   };
 
   for (const route of Object.values(routes)) {
@@ -85,7 +94,8 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
       if (route.iss) {
         c.header("Cache-Control", "no-store");
         const bucket = route.port === "agent.ask" ? "ask" : route.port === "agent.reply" ? "reply" : "other";
-        const blocked = await limiter.consume(c.get(route.iss).userId, bucket);
+        const caller = route.iss === "admin" ? `admin:${c.get("admin").adminId}` : c.get(route.iss).userId;
+        const blocked = await limiter.consume(caller, bucket);
         if (blocked) {
           c.header("Retry-After", String(blocked.retryAfter));
           throw rateLimitError();

@@ -1,10 +1,10 @@
 import { verifyServiceToken } from "@team-31/auth/service";
 import { BrokerError } from "@team-31/broker";
-import type { Owner, Principal } from "@team-31/protocol";
+import type { AdminActor, Owner, Principal } from "@team-31/protocol";
 import type { MiddlewareHandler } from "hono";
 
 export type ServiceKeys = NonNullable<Parameters<typeof verifyServiceToken>[1]["publicKeys"]>;
-export type AuthContext = { Variables: { mcp: Principal; web: Owner } };
+export type AuthContext = { Variables: { mcp: Principal; web: Owner; admin: AdminActor } };
 
 export function requireServiceIdentity<I extends keyof ServiceKeys>(
   expectedIss: I,
