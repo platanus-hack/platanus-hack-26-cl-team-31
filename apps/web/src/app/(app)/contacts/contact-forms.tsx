@@ -8,7 +8,7 @@ import { answerInvitation, removeContact, saveContactTag, saveSharing, saveTagPr
 import { button, card, Feedback, input, primaryButton } from "../ui";
 import { describeSharing } from "./describe";
 import { SharingPicker } from "./sharing";
-import { TagBadge, TagPicker } from "./tags";
+import { TagMenu, TagPicker } from "./tags";
 
 const dangerButton = "inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg px-3.5 py-2 text-sm font-semibold text-danger transition hover:bg-danger-bg disabled:cursor-wait disabled:opacity-60";
 
@@ -84,32 +84,20 @@ export function ContactRow({ contact, presets }: { contact: Contact; presets: Ta
 
   return (
     <li className={card}>
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
-        className="flex w-full cursor-pointer items-center justify-between gap-4 px-5 py-4 text-left">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="break-all font-semibold">{contact.address}</p>
-            <TagBadge tag={contact.tag} />
-            {custom && <span className="text-xs text-muted">Personalizado</span>}
-          </div>
-          <p className="text-sm"><span className="text-muted">Le compartes:</span> {describeSharing(contact.gives)}</p>
-          <p className="text-sm"><span className="text-muted">Te comparte:</span> {describeSharing(contact.receives)}</p>
+      <div className="flex items-center gap-3 px-5 py-4">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <p className="break-all font-semibold">{contact.address}</p>
+          <TagMenu value={contact.tag} custom={custom} disabled={tagging} onChange={retag} />
         </div>
-        <span aria-hidden="true" className={`text-xl text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
-      </button>
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Ocultar opciones" : "Ver opciones"}
+          className="-mr-2 inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-xl text-muted transition hover:bg-chip-hover hover:text-ink">
+          <span aria-hidden="true" className={`transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+        </button>
+      </div>
+      {tagState.error && <div className="px-5 pb-3"><Feedback {...tagState} /></div>}
       {open && (
         <div className="space-y-4 border-t border-line px-5 py-4">
-          <div className="space-y-2">
-            <p className="text-sm font-semibold">Etiqueta</p>
-            <TagPicker value={contact.tag} onChange={retag} />
-            {custom && contact.tag && (
-              <button type="button" disabled={tagging} onClick={() => retag(contact.tag!)}
-                className="cursor-pointer text-sm font-semibold text-accent-ink hover:underline">
-                Volver a lo de {contactTags[contact.tag].label}
-              </button>
-            )}
-            <Feedback {...tagState} />
-          </div>
+          <p className="text-sm"><span className="text-muted">Te comparte:</span> {describeSharing(contact.receives)}</p>
           <form action={submit} className="space-y-3">
             <p className="text-sm font-semibold">Lo que le compartes</p>
             <SharingPicker value={share} onChange={setShare} />
