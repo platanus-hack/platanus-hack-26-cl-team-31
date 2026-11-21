@@ -230,6 +230,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       if (!await tx.addContact(userId, address)) continue;
       await grants.applySharing(tx, userId, address, share);
     }
+    // A group deleted while waiting must not prevent acceptance or grant access to its replacement.
+    if (row.senderGroupId && await tx.changeContactGroup(row.fromUserId, row.senderGroupId, {
+      action: "add_contact", groupId: row.senderGroupId, address: row.toAddress,
+    })) record(tx, "broker.vault.changed", { requestId: row.id, userId: row.fromUserId, attrs: { action: "contact_group_add_contact" } });
     record(tx, "broker.contact.connected", { requestId: row.id, userId: row.toUserId });
   }
 
@@ -258,13 +262,17 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
     const recipient = await tx.getUserByAddress(to);
     let offer = input.tool === "connect" ? input.args.share : undefined;
+    const senderGroupId = input.tool === "connect" ? input.groupId ?? undefined : undefined;
     const now = clock.now();
     let crossedInvitationAccepted = false;
     if (recipient && tool === "connect") {
+      if (senderGroupId && !(await tx.contactGroups(userId)).groups.some(g => g.id === senderGroupId)) return notFound();
       if ((await tx.listContactAddresses(userId)).includes(to)) return new BrokerError("invalid_input", "Ya son contactos.");
       const open = (await tx.listOpenInvitations(userId)).filter((row) => row.expiresAt > now);
       const sent = open.find((row) => row.fromUserId === userId && row.toAddress === to);
       if (sent) {
+        if (input.tool === "connect" && input.groupId !== undefined && sent.senderGroupId !== senderGroupId)
+          return new BrokerError("conflict", "La invitación pendiente tiene otra selección de grupo.");
         if (!agentId) {
           const previousTag = (await tx.listContactTags(userId)).get(to);
           if ((origin.tag !== undefined && previousTag !== origin.tag) || (offer !== undefined && !sameSharing(offerOf(sent), offer))) {
@@ -281,6 +289,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       if (received) {
         if (agentId) return new BrokerError("invalid_input", "Esta persona ya te invitó. Revisa la invitación recibida.");
         await closeInvitation(tx, received, true, offer, "owner");
+        if (senderGroupId) await tx.changeContactGroup(userId, senderGroupId, { action: "add_contact", groupId: senderGroupId, address: to });
         crossedInvitationAccepted = true;
       }
       if (origin.tag) await tagContact(tx, userId, to, origin.tag);
@@ -288,7 +297,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     }
     let row = await initialRequest({
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
-      originChannel: channel,
+      originChannel: channel, senderGroupId,
     }, now);
     const invitation = recipient && tool === "connect";
     const category = categoryOf(tool, args);
@@ -325,7 +334,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   }
 
   type InitialRequest = Pick<RequestRow, "fromAddress" | "toAddress" | "fromUserId" | "toUserId" | "tool" | "args"> &
-    Partial<Pick<RequestRow, "targetAgentId" | "purpose" | "originChannel">>;
+    Partial<Pick<RequestRow, "targetAgentId" | "purpose" | "originChannel" | "senderGroupId">>;
 
   function initialRequest(input: InitialRequest, now: Date): Promise<RequestRow> {
     return seal({
@@ -381,6 +390,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const { principal, channel } = origin;
     const parsed = AskInput.safeParse(input);
     if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
+    if (principal && parsed.data.tool === "connect" && parsed.data.groupId) requireScope(principal, "changeContactGroup");
     const view = await store.tx(async (tx) => {
       if (principal) await ensureActiveAgentConnection(tx, principal);
       return submit(tx, userId, parsed.data, { agentId: principal?.agentId, channel });
@@ -648,12 +658,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return result;
       },
 
-      async networkUsers(p, after) {
+      async networkUsers(p, after, q) {
         requireScope(p, "networkUsers");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           const pageSize = 50;
-          const rows = await tx.networkAddresses(after, pageSize + 1);
+          const rows = await tx.networkAddresses(after, pageSize + 1, q);
           const addresses = rows.slice(0, pageSize);
           return { addresses, ...(rows.length > pageSize ? { nextCursor: addresses.at(-1) } : {}) };
         });
@@ -719,6 +729,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     },
 
     owner: {
+      contactGroups: o => store.tx(async tx => ({
+        ...await tx.contactGroups(o.userId), ...await tx.vaultCatalog(o.userId),
+      })),
       vault: o => store.tx(tx => tx.ownerVault(o.userId)),
       changeVault: (o, change) => store.tx(tx => changeVault(tx, o.userId, change)),
       ask: (o, input, channel) => ask(o.userId, input, { channel }),

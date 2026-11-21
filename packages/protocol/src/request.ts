@@ -14,7 +14,12 @@ export function withToolArgs<Shape extends z.ZodRawShape>(shape: Shape) {
   ]);
 }
 
-export const AskInput = withToolArgs({ to: Address, purpose: z.string().max(200).optional() });
+const askVariants = withToolArgs({ to: Address, purpose: z.string().max(200).optional() }).options;
+// Private sender metadata, deliberately outside the arguments delivered to the recipient.
+export const AskInput = z.discriminatedUnion("tool", [
+  askVariants[0], askVariants[1], askVariants[2], askVariants[3],
+  askVariants[4].extend({ groupId: z.uuid().nullable().optional() }),
+]);
 export type AskInput = z.infer<typeof AskInput>;
 export type AskArguments = z.input<typeof AskInput>;
 

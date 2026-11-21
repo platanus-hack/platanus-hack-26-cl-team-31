@@ -25,10 +25,11 @@ const ownerActivityQuery = z.object({
 export type OwnerActivityQuery = z.output<typeof ownerActivityQuery>;
 
 export const routes = {
-  agentNetworkUsers: { method: "GET", path: "/v1/agent/network/users", query: z.strictObject({ after: Address.optional() }),
+  agentNetworkUsers: { method: "GET", path: "/v1/agent/network/users", query: z.strictObject({ after: Address.optional(), q: z.string().trim().min(1).max(128).toLowerCase().optional() }),
     response: z.object({ addresses: z.array(Address), nextCursor: Address.optional() }), iss: "mcp", port: "agent.networkUsers" },
   agentConnect: { method: "POST", path: "/v1/agent/connection", ...noContent, iss: "mcp", port: "agent.connect" },
   agentContactGroups: { method: "GET", path: "/v1/agent/contact-groups", response: ContactGroups, iss: "mcp", port: "agent.contactGroups" },
+  ownerContactGroups: { method: "GET", path: "/v1/owner/contact-groups", response: ContactGroups.extend(VaultCatalog.shape), iss: "web", port: "owner.contactGroups" },
   agentChangeContactGroup: { method: "POST", path: "/v1/agent/contact-groups", body: ContactGroupChange, response: ContactGroupReceipt, iss: "mcp", port: "agent.changeContactGroup" },
   ownerVault: { method: "GET", path: "/v1/owner/vault", response: OwnerVault, iss: "web", port: "owner.vault" },
   ownerChangeVault: { method: "POST", path: "/v1/owner/vault", body: VaultChange, response: VaultReceipt, iss: "web", port: "owner.changeVault" },

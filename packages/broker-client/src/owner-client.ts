@@ -10,6 +10,7 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     request(routes.ownerRemoveContact, owner, { params: { address: contact } });
 
   return {
+    contactGroups: o => request(routes.ownerContactGroups, o),
     vault: (o) => request(routes.ownerVault, o),
     changeVault: (o, body) => request(routes.ownerChangeVault, o, { body }),
     me: (owner) => request(routes.ownerMe, owner),

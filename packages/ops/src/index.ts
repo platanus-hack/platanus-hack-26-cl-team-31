@@ -42,6 +42,7 @@ export async function applyOpsMigrations({ databaseUrl }: { databaseUrl: string 
     await client.query("SELECT ops.refresh_whatsapp_view()");
     await client.query("SELECT ops.refresh_vault_view()");
     await client.query("SELECT ops.refresh_vault_contact_group_view()");
+    await client.query("SELECT ops.refresh_group_invitations_view()");
     await client.query("SELECT ops.refresh_quota_view()");
   } finally {
     // Closing this dedicated connection rolls back any open transaction and releases the session lock.

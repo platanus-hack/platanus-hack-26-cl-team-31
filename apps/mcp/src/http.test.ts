@@ -190,6 +190,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
+  expect((await ana.callTool({ name: "sideband_ask", arguments: { to: pending.to, tool: "connect", args: {} } })).isError).toBe(true);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
   expect((await bob.callTool({ name: "sideband_inbox" })).structuredContent).toEqual({ items: [inbox] });
   expect((await bob.callTool({ name: "sideband_reply", arguments: answer })).structuredContent).toEqual(receipt);

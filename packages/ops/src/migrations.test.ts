@@ -62,6 +62,7 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0016_quota_windows.sql",
       "0017_vault_member_rules.sql",
       "0018_whatsapp_registration.sql",
+      "0019_group_invitations.sql",
     ]);
     expect(await applyOpsMigrations({ databaseUrl })).toEqual([]);
     expect(await views()).toEqual(["v_errors", "v_events", "v_service_health"]);
