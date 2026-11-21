@@ -1,6 +1,5 @@
 "use server";
 
-import type { RequestStatus } from "@team-31/protocol";
 import { WakeTarget } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
@@ -64,9 +63,16 @@ export async function startPing(kind: ClientKind, agentId: string): Promise<Ping
   }
 }
 
-export async function readPingStatus(requestId: string): Promise<RequestStatus | undefined> {
+export async function readPingStatus(requestId: string) {
   const { owner, broker } = await connectContext();
   if (!requestId || !routes.ownerDecide.params.safeParse({ id: requestId }).success) return;
   const items = await broker.activity(owner, 100);
-  return items.find((item) => item.requestId === requestId)?.status;
+  const ping = items.find((item) => item.requestId === requestId);
+  if (!ping) return;
+
+  // El titular también puede responder una prueba escalada. La verificación exige la respuesta final del agente.
+  const { status, events } = ping;
+  const verified = (status === "answered" || status === "no_data") &&
+    events.some((event) => event.kind === "response" && event.status === status);
+  return { status, verified };
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { requireAddress } from "../../../owner";
 import { button, Heading, input, secondaryText, textLink } from "../../../ui";
 import { selectConnection } from "../actions";
 import { clients, type ClientKind } from "../clients";
@@ -94,7 +95,7 @@ export async function Wizard({ kind, agentId, install, login, wake }: WizardProp
         <Step number={4} title="Probar la conexión">
           <p className={secondaryText}>Envía una solicitud de prueba y comprueba aquí que el agente la recibió.</p>
           {selected && wakeReady ? (
-            <PingButton key={selected.agentId} agentId={selected.agentId} kind={kind} />
+            <PingButton key={selected.agentId} agentId={selected.agentId} kind={kind} address={await requireAddress()} />
           ) : (
             <p className={secondaryText}>El botón Probar aparece cuando el agente seleccionado tiene el aviso configurado.</p>
           )}
