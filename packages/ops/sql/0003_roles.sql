@@ -20,8 +20,12 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
       BEGIN
         EXECUTE format('CREATE ROLE %I NOLOGIN', role_name);
-      EXCEPTION WHEN duplicate_object OR unique_violation THEN
-        NULL;
+      EXCEPTION
+        WHEN duplicate_object OR unique_violation THEN
+          NULL;
+        -- Postgres administrado sin CREATEROLE: el admin queda en modo degradado (docs/admin.md).
+        WHEN insufficient_privilege THEN
+          RAISE WARNING 'ops: % no puede crear el rol %; el admin correrá en modo degradado', current_user, role_name;
       END;
     END IF;
   END LOOP;
@@ -37,6 +41,12 @@ AS $fn$
 DECLARE
   view_name text;
 BEGIN
+  -- Sin los roles (modo degradado) no hay permisos que aplicar.
+  IF (SELECT count(*) FROM pg_roles
+      WHERE rolname IN ('nexo_telemetry_writer', 'nexo_admin_ro', 'nexo_admin_reveal')) < 3 THEN
+    RETURN;
+  END IF;
+
   REVOKE ALL ON ALL TABLES IN SCHEMA ops FROM nexo_telemetry_writer, nexo_admin_ro, nexo_admin_reveal;
   REVOKE ALL ON ALL SEQUENCES IN SCHEMA ops FROM nexo_telemetry_writer, nexo_admin_ro, nexo_admin_reveal;
   REVOKE ALL ON ALL FUNCTIONS IN SCHEMA ops FROM nexo_telemetry_writer, nexo_admin_ro, nexo_admin_reveal;

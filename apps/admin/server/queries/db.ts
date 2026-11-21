@@ -19,17 +19,46 @@ export function createPool(databaseUrl: string): pg.Pool {
   return pool
 }
 
+// ¿Puede el usuario de conexión asumir el rol? En Postgres administrado (Render) el usuario no es
+// superusuario: si la migración 0008 no pudo darle la membresía WITH SET, el admin corre en modo
+// degradado (sin SET ROLE). Las lecturas siguen en READ ONLY y solo tocan vistas redactadas, pero
+// sql() se deshabilita porque sin el rol podría leer tablas base. Se calcula una vez por pool.
+const roleChecks = new WeakMap<pg.Pool, Map<ReadRole, Promise<boolean>>>()
+
+export function canAssumeRole(pool: pg.Pool, role: ReadRole): Promise<boolean> {
+  let checks = roleChecks.get(pool)
+  if (!checks) {
+    checks = new Map()
+    roleChecks.set(pool, checks)
+  }
+  let check = checks.get(role)
+  if (!check) {
+    check = pool
+      .query<{ ok: boolean | null }>(
+        `SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)
+                THEN pg_has_role(current_user, $1, 'SET') ELSE false END AS ok`,
+        [role]
+      )
+      .then(({ rows }) => rows[0]?.ok === true)
+    // Un fallo transitorio de conexión no deja fijado el modo degradado.
+    check.catch(() => checks.delete(role))
+    checks.set(role, check)
+  }
+  return check
+}
+
 // Los nombres de rol son constantes del código, nunca entrada del usuario.
 export async function readOnly<T>(
   pool: pg.Pool,
   role: ReadRole,
   fn: (db: Db) => Promise<T>
 ): Promise<T> {
+  const setRole = (await canAssumeRole(pool, role)) ? ` SET LOCAL ROLE ${role};` : ""
   const client = await pool.connect()
   let broken: Error | undefined
   try {
     await client.query(
-      `BEGIN READ ONLY; SET LOCAL ROLE ${role}; SET LOCAL statement_timeout = '${STATEMENT_TIMEOUT}'`
+      `BEGIN READ ONLY;${setRole} SET LOCAL statement_timeout = '${STATEMENT_TIMEOUT}'`
     )
     try {
       const result = await fn(client)
