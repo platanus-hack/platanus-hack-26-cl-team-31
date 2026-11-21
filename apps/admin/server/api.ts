@@ -131,12 +131,23 @@ export function createAdminApi(deps: AdminApiDeps) {
 
   // Flujo en vivo: solo los eventos que dibuja el grafo, con attrs recortados a su lista blanca
   // (packages/agent-flow/src/telemetry.ts) y el resumen de cada solicitud antes de su primer evento.
+  function liveAccess(c: Context, principal: AdminPrincipal) {
+    return async () => {
+      const current = await auth.api.getSession({
+        headers: c.req.raw.headers,
+        query: { disableRefresh: true, disableCookieCache: true },
+      })
+      return current?.session.id === principal.session.id && current.user.id === principal.id && !!roleOf(current.user.email)
+    }
+  }
+
   function flowLive(c: Context, principal: AdminPrincipal) {
     const { after } = parseInput(adminRoutes.flowLive.query, queryInput(c))
     const known = new Set<string>()
     return liveStream(c, queries, telemetry, liveSlots, {
       stream: "flow",
       principalId: principal.id,
+      hasAccess: liveAccess(c, principal),
       filters: { names: [...flowEventNames] },
       after,
       backlog: false,
@@ -322,7 +333,9 @@ export function createAdminApi(deps: AdminApiDeps) {
       }
       if (name === "live") {
         const filters = parseInput(adminRoutes.live.query, queryInput(c))
-        return liveStream(c, queries, telemetry, liveSlots, { stream: "events", principalId: principal.id, filters, backlog: true }, deps.live)
+        return liveStream(c, queries, telemetry, liveSlots, {
+          stream: "events", principalId: principal.id, hasAccess: liveAccess(c, principal), filters, backlog: true,
+        }, deps.live)
       }
       if (name === "flowLive") return flowLive(c, principal)
       return c.json(route.response.parse(await handle(name, c, principal)))

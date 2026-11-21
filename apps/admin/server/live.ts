@@ -36,6 +36,7 @@ export type LiveOptions = {
 export type LiveSpec = {
   stream: "events" | "flow"
   principalId: string
+  hasAccess: () => Promise<boolean>
   filters: Omit<EventFilters, "afterId" | "beforeId" | "limit"> & { names?: readonly string[] }
   // Cursor de la primera conexión. Last-Event-ID gana.
   after?: string
@@ -149,7 +150,7 @@ async function openStream(
 
   const startedAt = Date.now()
   let delivered = 0
-  let reason: "client" | "shutdown" | "error" | "stalled" = "client"
+  let reason: "client" | "shutdown" | "error" | "stalled" | "access_ended" = "client"
   telemetry.emit("admin.live.opened", {
     userId: spec.principalId,
     attrs: { stream: spec.stream, resumed: Boolean(resumeFrom), reset },
@@ -185,6 +186,10 @@ async function openStream(
       await write((s) => s.write("retry: 1000\n\n"))
       if (reset) await write((s) => s.writeSSE({ id: cursor, event: "reset", data: JSON.stringify({ cursor: cursor ?? null }) }))
       while (!signal.aborted) {
+        if (!await spec.hasAccess()) {
+          reason = "access_ended"
+          break
+        }
         const outgoing = spec.accept ? items.filter(spec.accept) : items
         if (outgoing.length > 0 && spec.prelude) {
           for (const message of await spec.prelude(outgoing)) {

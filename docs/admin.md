@@ -289,6 +289,7 @@ Grafo de la red y de cada solicitud que cruza el broker (`packages/agent-flow`).
 
 - Filtro en SQL: `name = ANY(flowEventNames)` (índice `(name, id)`). Las `coordination.tool.call` que no son `ask_contact`/`await_contact` se descartan antes de salir (`isFlowRow`) y cada fila sale con `attrs` recortado a `flowAttrKeys` (`projectFlowRow`). Ambas listas viven en `packages/agent-flow/src/telemetry.ts`, junto al mapeo.
 - Antes del primer evento de cada solicitud manda `event: request` con `FlowRequestRef` (quién pregunta y a quién): el navegador no pide `/requests/:id` por cada solicitud.
+- Las vistas **Eventos** y **Flujo** comprueban sesión y rol antes de entregar cada lote. Cerrar sesión o salir de la lista de acceso cierra la transmisión con `admin.live.closed` y `reason=access_ended`. Tener la vista abierta no renueva la sesión por sí solo.
 - Orden y huecos: `id` de cada mensaje = `ops.events.id`; reanuda con `Last-Event-ID` o `?after=`. Como los lotes de cada servicio confirman en cualquier orden, cada lectura relee los últimos 3 s y descarta lo ya enviado (una escritura que confirma tarde no se pierde). Si al reanudar faltan más de 50.000 ids, manda `event: reset` y sigue desde el último.
 - Contrapresión: cada escritura espera al cliente; uno que no lee en 30 s se corta (`reason: stalled`). Máximo 6 streams por admin (`429`). Cada conexión deja `admin.live.opened` y `admin.live.closed`; un error inesperado, `error` con su `errorId`.
 
