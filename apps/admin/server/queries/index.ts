@@ -13,14 +13,10 @@ import {
   RequestDetail,
   RequestSummary,
   SqlResult,
-  TelemetryEvent,
-  TimelineItem,
-  Trace,
   UserDetail,
   UserSummary,
   WakeJobRow,
   type AgentFilters,
-  type EventFilters,
   type RequestFilters,
   type UserFilters,
 } from "../../shared/contract.js"
@@ -41,10 +37,11 @@ import {
   num,
   numOrNull,
   readOnly,
-  scalarAttrs,
+  UUID_PATTERN,
   Where,
   type Db,
 } from "./db.js"
+import { errorEvent, events, requestTimeline, requestTraceIds, trace } from "./events.js"
 import { flowSnapshot, latestEventId, requestRefs } from "./flow.js"
 import { errorGroups, overview, services } from "./overview.js"
 import { checkReadOnlySql, SQL_MAX_ROWS, wrapWithLimit } from "./sql-guard.js"
@@ -63,8 +60,6 @@ export interface PgAdminQueries extends AdminQueries {
 
 const OPEN_STATUSES = ["awaiting_agent", "awaiting_owner"] satisfies RequestStatus[]
 const AUDIT_PAGE = 50
-const TIMELINE_EVENTS = 500
-const TRACE_SPANS = 2000
 const RECENT_REQUESTS = 20
 const LIST_LIMIT = 500
 // ---------- Filas de las vistas ----------
@@ -76,9 +71,6 @@ type Numeric = number | string
 const REQUEST_COLUMNS = `id, tool, from_address, to_address, status, outcome, rule, escalated,
   target_agent_id, answered_by_agent_id, wake_attempts, last_wake_ok, created_at, expires_at,
   closed_at, duration_ms, stuck, created_at::text AS cursor_at`
-
-const EVENT_COLUMNS = `id::text AS event_id, at, service, kind, name, level, trace_id, span_id,
-  parent_span_id, request_id, user_id, agent_id, duration_ms, status, error_id::text AS error_id, attrs`
 
 const WAKE_COLUMNS =
   "id, request_id, attempt, state, run_at, kind, ok, http_status, code"
@@ -124,27 +116,6 @@ function toRequestSummary(row: Row): RequestSummary {
     closedAt: isoOrNull(row.closed_at as Time | null),
     durationMs: numOrNull(row.duration_ms as Numeric | null),
     stuck: row.stuck,
-  })
-}
-
-function toTelemetryEvent(row: Row): TelemetryEvent {
-  return TelemetryEvent.parse({
-    id: row.event_id,
-    at: iso(row.at as Time),
-    service: row.service,
-    kind: row.kind,
-    name: row.name,
-    level: row.level,
-    traceId: row.trace_id ?? null,
-    spanId: row.span_id ?? null,
-    parentSpanId: row.parent_span_id ?? null,
-    requestId: row.request_id ?? null,
-    userId: row.user_id ?? null,
-    agentId: row.agent_id ?? null,
-    durationMs: numOrNull(row.duration_ms as Numeric | null),
-    status: row.status ?? null,
-    errorId: row.error_id ?? null,
-    attrs: scalarAttrs(row.attrs),
   })
 }
 
@@ -208,34 +179,12 @@ function page<T>(
   }
 }
 
-// Un cliente de pg ejecuta una consulta a la vez: las corre en orden dentro de la transacción.
-async function inOrder<T extends readonly (() => Promise<unknown>)[]>(
-  ...steps: T
-): Promise<{ [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
-  const results: unknown[] = []
-  for (const step of steps) results.push(await step())
-  return results as { [K in keyof T]: Awaited<ReturnType<T[K]>> }
-}
-
 async function viewExists(db: Db, view: string): Promise<boolean> {
   const { rows } = await db.query<{ ok: boolean }>(
     "SELECT to_regclass($1) IS NOT NULL AS ok",
     [view]
   )
   return rows[0]?.ok === true
-}
-
-const ID_PATTERN = /^\d{1,19}$/
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-function eventId(value: string, field: string): string {
-  if (!ID_PATTERN.test(value))
-    throw new AdminQueryError(
-      "invalid_input",
-      `${field} debe ser un id numérico.`
-    )
-  return value
 }
 
 async function agentsOf(db: Db, where: Where): Promise<AgentRow[]> {
@@ -318,63 +267,11 @@ export function createPgAdminQueries({
         )
         const row = rows[0]
         if (!row) return null
-        const [requestEvents, telemetry, wakes, traces] = await inOrder(
-          async () =>
-            db.query(
-              "SELECT at, kind, status, code FROM ops.v_request_events WHERE request_id = $1 ORDER BY at, id",
-              [id]
-            ),
-          async () =>
-            db.query(
-              `SELECT ${EVENT_COLUMNS} FROM ops.v_events WHERE request_id = $1 ORDER BY at, id LIMIT ${TIMELINE_EVENTS}`,
-              [id]
-            ),
-          async () =>
-            db.query(
-              `SELECT ${WAKE_COLUMNS} FROM ops.v_wake_jobs WHERE request_id = $1 ORDER BY run_at, id`,
-              [id]
-            ),
-          async () =>
-            db.query(
-              `SELECT trace_id FROM ops.v_events WHERE request_id = $1 AND trace_id IS NOT NULL
-             GROUP BY trace_id ORDER BY min(at) LIMIT 50`,
-              [id]
-            )
+        const timeline = await requestTimeline(db, id)
+        const wakes = await db.query(
+          `SELECT ${WAKE_COLUMNS} FROM ops.v_wake_jobs WHERE request_id = $1 ORDER BY run_at, id`,
+          [id]
         )
-        const timeline: TimelineItem[] = [
-          ...requestEvents.rows.map((event) => ({
-            at: iso(event.at),
-            source: "request_event" as const,
-            kind: event.kind,
-            name: event.code ? `${event.kind}.${event.code}` : event.kind,
-            service: "broker" as const,
-            status: event.status ?? null,
-            level:
-              event.code === "failed" ||
-              ["expired", "delivery_failed"].includes(event.status)
-                ? ("warn" as const)
-                : ("info" as const),
-            durationMs: null,
-            traceId: null,
-            errorId: null,
-            attrs: (event.code
-              ? { code: event.code }
-              : {}) as TimelineItem["attrs"],
-          })),
-          ...telemetry.rows.map(toTelemetryEvent).map((event) => ({
-            at: event.at,
-            source: "telemetry" as const,
-            kind: event.kind,
-            name: event.name,
-            service: event.service,
-            status: event.status,
-            level: event.level,
-            durationMs: event.durationMs,
-            traceId: event.traceId,
-            errorId: event.errorId,
-            attrs: event.attrs,
-          })),
-        ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
         return RequestDetail.parse({
           summary: toRequestSummary(row),
           idempotentReceipts: Number(row.receipt_count ?? 0),
@@ -388,88 +285,19 @@ export function createPgAdminQueries({
           responseSigned: row.response_signed,
           timeline,
           wakes: wakes.rows.map(toWakeJob),
-          traceIds: traces.rows.map((trace) => trace.trace_id),
+          traceIds: await requestTraceIds(db, id),
         })
       }),
 
-    trace: (traceId) =>
-      ro(async (db) => {
-        const { rows } = await db.query(
-          `SELECT ${EVENT_COLUMNS} FROM ops.v_events WHERE trace_id = $1 ORDER BY at, id LIMIT ${TRACE_SPANS}`,
-          [traceId]
-        )
-        if (!rows.length) return null
-        return Trace.parse({
-          traceId,
-          spans: rows.map(toTelemetryEvent).map((event) => ({
-            // Los eventos sueltos de la traza (sin span propio) se muestran como spans instantáneos.
-            spanId: event.spanId ?? `event:${event.id}`,
-            parentSpanId: event.parentSpanId,
-            service: event.service,
-            name: event.name,
-            startAt: event.at,
-            durationMs: event.durationMs,
-            status: event.status,
-            level: event.level,
-            requestId: event.requestId,
-            errorId: event.errorId,
-            attrs: event.attrs,
-          })),
-        })
-      }),
+    trace: (traceId) => ro((db) => trace(db, traceId)),
 
-    events: (filters: EventFilters & { names?: readonly string[] }) =>
-      ro(async (db) => {
-        const where = new Where()
-        if (filters.service)
-          where.and(`service = ${where.value(filters.service)}`)
-        if (filters.kind) where.and(`kind = ${where.value(filters.kind)}`)
-        if (filters.name) where.and(`name = ${where.value(filters.name)}`)
-        if (filters.names)
-          where.and(`name = ANY(${where.value([...filters.names])}::text[])`)
-        if (filters.level) where.and(`level = ${where.value(filters.level)}`)
-        if (filters.requestId)
-          where.and(`request_id = ${where.value(filters.requestId)}`)
-        if (filters.userId)
-          where.and(`user_id = ${where.value(filters.userId)}`)
-        if (filters.traceId)
-          where.and(`trace_id = ${where.value(filters.traceId)}`)
-        if (filters.afterId)
-          where.and(
-            `id > ${where.value(eventId(filters.afterId, "afterId"))}::bigint`
-          )
-        if (filters.beforeId)
-          where.and(
-            `id < ${where.value(eventId(filters.beforeId, "beforeId"))}::bigint`
-          )
-        // Con afterId es una cola (ascendente); si no, historial (lo más nuevo primero).
-        const order = filters.afterId ? "ASC" : "DESC"
-        const { rows } = await db.query(
-          `SELECT ${EVENT_COLUMNS} FROM ops.v_events ${where} ORDER BY id ${order} LIMIT ${filters.limit}`,
-          where.params
-        )
-        return rows.map(toTelemetryEvent)
-      }),
+    events: (filters) => ro((db) => events(db, filters)),
 
     latestEventId: () => ro(latestEventId),
 
     errors: (filters) => ro((db) => errorGroups(db, filters, 100)),
 
-    error: (errorId) =>
-      ro(async (db) => {
-        const lookup = UUID_PATTERN.test(errorId)
-          ? { clause: "error_id = $1::uuid", value: errorId }
-          : ID_PATTERN.test(errorId)
-            ? { clause: "id = $1::bigint", value: errorId }
-            : null
-        if (!lookup) return null
-        const { rows } = await db.query(
-          `SELECT ${EVENT_COLUMNS} FROM ops.v_events WHERE kind = 'error' AND ${lookup.clause}
-           ORDER BY id DESC LIMIT 1`,
-          [lookup.value]
-        )
-        return rows[0] ? toTelemetryEvent(rows[0]) : null
-      }),
+    error: (errorId) => ro((db) => errorEvent(db, errorId)),
 
     users: (filters: z.infer<typeof UserFilters>) =>
       ro(async (db) => {
@@ -511,34 +339,27 @@ export function createPgAdminQueries({
         const userId = row.user_id as string
         const byUser = new Where()
         byUser.and(`a.user_id = ${byUser.value(userId)}`)
-        const [hasIdentities, hasGrants] = await inOrder(
-          async () => viewExists(db, "ops.v_identities"),
-          async () => viewExists(db, "ops.v_oauth_grants")
-        )
-        const [identity, grants, agents, recent] = await inOrder(
-          async () =>
-            hasIdentities
-              ? db.query(
-                  "SELECT email, active_sessions FROM ops.v_identities WHERE user_id = $1",
-                  [userId]
-                )
-              : null,
-          async () =>
-            hasGrants
-              ? db.query(
-                  `SELECT client_id, client_name, last_token_at, active_tokens FROM ops.v_oauth_grants
-                 WHERE user_id = $1 ORDER BY last_token_at DESC NULLS LAST, client_id`,
-                  [userId]
-                )
-              : null,
-          async () => agentsOf(db, byUser),
-          async () =>
-            db.query(
-              `SELECT ${REQUEST_COLUMNS} FROM ops.v_requests
-             WHERE from_user_id = $1 OR to_user_id = $1
-             ORDER BY created_at DESC, id DESC LIMIT ${RECENT_REQUESTS}`,
+        const hasIdentities = await viewExists(db, "ops.v_identities")
+        const hasGrants = await viewExists(db, "ops.v_oauth_grants")
+        const identity = hasIdentities
+          ? await db.query(
+              "SELECT email, active_sessions FROM ops.v_identities WHERE user_id = $1",
               [userId]
             )
+          : null
+        const grants = hasGrants
+          ? await db.query(
+              `SELECT client_id, client_name, last_token_at, active_tokens FROM ops.v_oauth_grants
+               WHERE user_id = $1 ORDER BY last_token_at DESC NULLS LAST, client_id`,
+              [userId]
+            )
+          : null
+        const agents = await agentsOf(db, byUser)
+        const recent = await db.query(
+          `SELECT ${REQUEST_COLUMNS} FROM ops.v_requests
+           WHERE from_user_id = $1 OR to_user_id = $1
+           ORDER BY created_at DESC, id DESC LIMIT ${RECENT_REQUESTS}`,
+          [userId]
         )
         return UserDetail.parse({
           tags: await viewExists(db, "ops.v_tag_summary")
