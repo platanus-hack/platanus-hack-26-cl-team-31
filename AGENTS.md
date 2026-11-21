@@ -34,11 +34,22 @@ El grant es el único modelo de permisos. Un grant dice que un titular deja a un
 
 Pendiente, cada uno en su PR:
 
-- Grupos. Entrar a un grupo crea grants entre sus miembros y salir los revoca. Solo quien creó el grupo invita y saca miembros, y cada invitado acepta antes de entrar.
 - Retirar la tool `profile`. Sigue declarada y no admite grants, así que toda solicitud `profile` se deniega.
 - Vista `ops.v_grants` para el admin y borrar la tabla `nexo.sharing_rules`, que `ops.v_users` todavía lee.
 - Pasar `memberships.can_ask` y `can_share` de `apps/server` a grants y retirar el directorio con `interests.audience`.
 - `demo_profiles.interest_readers` solo alimenta el seed de `apps/demo`, que la convierte en grants.
+
+### Modelo decidido, por construir
+
+Decidido el 2026-11-21. Lo que sigue todavía no existe en el código; quien lo construya usa estos términos y estas reglas.
+
+- **Categoría.** El titular da permisos por categoría de información y nunca ve tools ni campos. Cada categoría fija en el código su tool y sus campos: Disponibilidad (`availability`: `available`), Horarios libres (`availability`: `available`, `freeSlots`), Intereses (`interest_check`: `matches`) y Preguntas abiertas (`question`: `answer`).
+- **Preguntas abiertas no tiene límite de tema.** El broker no lee el texto y el agente del titular decide qué contesta. Por eso queda fuera de lo básico.
+- **Básico.** Las categorías que se dan por defecto: Disponibilidad e Intereses.
+- **Contacto.** Agregar a una persona le da lo básico; quitarla le quita todo. Va en un solo sentido: si Ana agrega a Bob, Bob puede preguntarle a Ana.
+- **Grupo.** Un conjunto con nombre que crea un titular. Solo su creador invita y saca miembros, y cada invitado acepta antes de entrar. Cada miembro le da lo básico a los demás.
+- **Los permisos de grupo se calculan, no se guardan.** Bob puede preguntarle algo a Ana si ella le dio ese permiso, o si comparten un grupo y la categoría es básica. Salir de un grupo borra la membresía; si siguen juntos en otro, lo básico se mantiene.
+- **Perfil.** Nombre y dirección Nexo de cada titular, visibles para todo usuario con sesión.
 
 ### Vocabulario
 
@@ -52,6 +63,11 @@ Usa un término por concepto, en el código y en los textos.
 | Solicitud | `AskInput`, `requestId` | Pregunta de un titular a otro con una tool. Termina en un `FinalOutcome`. |
 | Tool | `ToolName` | Operación que se puede pedir: `availability`, `question`, `interest_check`. `profile` está en retiro. |
 | Grant | `Grant`, `GrantInput` | Permiso de un titular a una dirección: una tool y los campos de respuesta que entrega. En la interfaz se llama «permiso». |
+| Categoría | por construir | Tipo de información sobre el que responde un agente. Fija una tool y sus campos. |
+| Básico | por construir | Categorías que reciben por defecto un contacto y los miembros de un grupo. |
+| Contacto | por construir | Persona a la que un titular le dio lo básico. |
+| Grupo | por construir | Conjunto de titulares, con un creador, que se dan lo básico entre sí. |
+| Perfil | por construir | Nombre y dirección Nexo de un titular, visibles para los demás usuarios. |
 | Aviso | `WakeTarget`, `WakeNotice` | Notificación al agente del destinatario de que tiene una solicitud. |
 | Bandeja | `InboxItem` | Solicitudes pendientes que lee el agente del destinatario. |
 
