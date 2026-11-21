@@ -89,6 +89,11 @@ export type GrantRow = {
   createdAt: Date;
 };
 
+export type CircleRow = { id: string; ownerUserId: string; name: string; createdAt: Date };
+
+// An invitation until the invited address joins.
+export type CircleMemberRow = { circleId: string; address: Address; joinedAt?: Date };
+
 export interface Store {
   // A rejected callback rolls back all its writes. Keep external I/O outside it.
   tx<T>(fn: (tx: StoreTx) => Promise<T>): Promise<T>;
@@ -116,6 +121,21 @@ export interface StoreTx {
   // An existing live grant takes precedence over the friendship default.
   insertFriendGrant(row: GrantRow): Promise<boolean>;
   revokeFriendGrants(userId: string, address: Address, at: Date): Promise<string[]>;
+
+  insertCircle(row: CircleRow): Promise<void>;
+  getCircle(id: string): Promise<CircleRow | null>;
+  // Also deletes its members and invitations.
+  deleteCircle(id: string): Promise<void>;
+  // Circles the address has joined or is invited to, oldest first.
+  listCircles(address: Address): Promise<CircleRow[]>;
+  listCircleMembers(circleId: string): Promise<CircleMemberRow[]>;
+  // Keeps an existing row, so inviting a member or inviting twice changes nothing.
+  inviteCircleMember(circleId: string, address: Address): Promise<void>;
+  // False when the address has no pending invitation.
+  joinCircle(circleId: string, address: Address, at: Date): Promise<boolean>;
+  removeCircleMember(circleId: string, address: Address): Promise<boolean>;
+  // True when both addresses have joined the same circle.
+  shareCircle(a: Address, b: Address): Promise<boolean>;
 
   insertRequest(row: RequestRow): Promise<void>;
   getRequest(

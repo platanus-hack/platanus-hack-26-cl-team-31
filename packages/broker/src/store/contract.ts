@@ -219,5 +219,34 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
           .toEqual(["older", "A", "a", "z", "newer"]);
       });
     });
+
+    it("shares a circle only between addresses that joined it", async () => {
+      const circle = { id: randomUUID(), ownerUserId: "alice", name: "Fútbol", createdAt: now };
+      await store.tx(async (tx) => {
+        await tx.insertCircle(circle);
+        await tx.inviteCircleMember(circle.id, fromAddress);
+        await tx.inviteCircleMember(circle.id, toAddress);
+        expect(await tx.joinCircle(circle.id, fromAddress, now)).toBe(true);
+        expect(await tx.joinCircle(circle.id, fromAddress, now)).toBe(false);
+        expect(await tx.joinCircle(circle.id, "carla@nexo.app", now)).toBe(false);
+        expect(await tx.shareCircle(fromAddress, toAddress)).toBe(false);
+        expect(await tx.listCircles(toAddress)).toEqual([circle]);
+
+        await tx.inviteCircleMember(circle.id, fromAddress);
+        expect(await tx.joinCircle(circle.id, toAddress, now)).toBe(true);
+        expect(await tx.shareCircle(toAddress, fromAddress)).toBe(true);
+        expect(await tx.listCircleMembers(circle.id)).toEqual([
+          { circleId: circle.id, address: fromAddress, joinedAt: now },
+          { circleId: circle.id, address: toAddress, joinedAt: now },
+        ]);
+
+        expect(await tx.removeCircleMember(circle.id, toAddress)).toBe(true);
+        expect(await tx.removeCircleMember(circle.id, toAddress)).toBe(false);
+        expect(await tx.shareCircle(fromAddress, toAddress)).toBe(false);
+        await tx.deleteCircle(circle.id);
+        expect(await tx.getCircle(circle.id)).toBeNull();
+        expect(await tx.listCircles(fromAddress)).toEqual([]);
+      });
+    });
   });
 }

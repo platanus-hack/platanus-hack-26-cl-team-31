@@ -1,11 +1,15 @@
 import type { Address } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import type { AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob } from "./store.js";
+import type {
+  AgentConnectionRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
+} from "./store.js";
 
 type State = {
   users: Map<string, UserRow>;
   grants: (GrantRow & { revokedAt?: Date; friendDefault?: boolean })[];
   friends: Map<string, Set<Address>>;
+  circles: Map<string, CircleRow>;
+  circleMembers: CircleMemberRow[];
   requests: Map<string, RequestRow>;
   events: RequestEvent[];
   wakes: Map<string, WakeJob>;
@@ -31,6 +35,10 @@ function transaction(state: State): StoreTx {
     return structuredClone([...state.requests.values()]
       .filter((row) => row.toAddress === address && row.toUserId === ownerId && row.status === status)
       .sort(byCreatedAt));
+  }
+
+  function circleMember(circleId: string, address: Address) {
+    return state.circleMembers.find((member) => member.circleId === circleId && member.address === address);
   }
 
   function putAgent(row: AgentConnectionRow): AgentConnectionRow {
@@ -114,6 +122,45 @@ function transaction(state: State): StoreTx {
       const defaults = liveGrants(userId).filter((grant) => grant.granteeAddress === address && grant.friendDefault);
       for (const grant of defaults) grant.revokedAt = structuredClone(at);
       return defaults.map((grant) => grant.id);
+    },
+    async insertCircle(row) {
+      state.circles.set(row.id, structuredClone(row));
+    },
+    async getCircle(id) {
+      return structuredClone(state.circles.get(id) ?? null);
+    },
+    async deleteCircle(id) {
+      state.circles.delete(id);
+      state.circleMembers = state.circleMembers.filter((member) => member.circleId !== id);
+    },
+    async listCircles(address) {
+      const ids = new Set(state.circleMembers.filter((member) => member.address === address).map((member) => member.circleId));
+      return structuredClone([...state.circles.values()].filter((circle) => ids.has(circle.id))
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)));
+    },
+    async listCircleMembers(circleId) {
+      return structuredClone(state.circleMembers.filter((member) => member.circleId === circleId)
+        .sort((a, b) => a.address.localeCompare(b.address)));
+    },
+    async inviteCircleMember(circleId, address) {
+      if (!circleMember(circleId, address)) state.circleMembers.push({ circleId, address });
+    },
+    async joinCircle(circleId, address, at) {
+      const member = circleMember(circleId, address);
+      if (!member || member.joinedAt) return false;
+      member.joinedAt = structuredClone(at);
+      return true;
+    },
+    async removeCircleMember(circleId, address) {
+      const member = circleMember(circleId, address);
+      state.circleMembers = state.circleMembers.filter((current) => current !== member);
+      return member !== undefined;
+    },
+    async shareCircle(a, b) {
+      const joined = (address: Address) => state.circleMembers
+        .filter((member) => member.address === address && member.joinedAt).map((member) => member.circleId);
+      const circlesOfB = new Set(joined(b));
+      return joined(a).some((circleId) => circlesOfB.has(circleId));
     },
     async insertRequest(row) {
       if (state.requests.has(row.id)) throw new BrokerError("conflict", "La solicitud ya existe.");
@@ -212,7 +259,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    users: new Map(), grants: [], friends: new Map(), requests: new Map(),
+    users: new Map(), grants: [], friends: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
     events: [], wakes: new Map(), agents: new Map(),
   };
   let previous = Promise.resolve();
