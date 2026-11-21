@@ -1,0 +1,102 @@
+import { RequestStatus } from "@team-31/protocol";
+import { sql } from "drizzle-orm";
+import {
+  bigserial, boolean, check, customType, index, integer, jsonb, pgSchema,
+  primaryKey, text, timestamp,
+} from "drizzle-orm/pg-core";
+
+export const nexo = pgSchema("nexo");
+const time = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
+const wakeStates = ["queued", "running", "done"] as const;
+
+function values(options: readonly string[]) {
+  return sql.join(options.map((option) => sql`${sql.raw("'" + option + "'")}`), sql`, `);
+}
+
+export const users = nexo.table("users", {
+  userId: text("user_id").primaryKey(),
+  address: text("address").unique(),
+  displayName: text("display_name"),
+  createdAt: time("created_at").notNull().defaultNow(),
+});
+
+export const sharingRules = nexo.table("sharing_rules", {
+  userId: text("user_id").primaryKey().references(() => users.userId),
+  rules: jsonb("rules").notNull(),
+  updatedAt: time("updated_at").notNull().defaultNow(),
+});
+
+export const requests = nexo.table("requests", {
+  id: text("id").primaryKey(),
+  fromAddress: text("from_address").notNull(),
+  toAddress: text("to_address").notNull(),
+  fromUserId: text("from_user_id").references(() => users.userId),
+  toUserId: text("to_user_id").references(() => users.userId),
+  targetAgentId: text("target_agent_id"),
+  tool: text("tool").notNull(),
+  args: jsonb("args").notNull(),
+  purpose: text("purpose"),
+  status: text("status").notNull(),
+  outcome: text("outcome"),
+  allowedFields: text("allowed_fields").array().notNull(),
+  guidance: text("guidance").notNull(),
+  rule: text("rule").notNull(),
+  decisionReason: text("decision_reason"),
+  internalReason: text("internal_reason"),
+  result: jsonb("result"),
+  droppedFields: text("dropped_fields").array(),
+  answeredByAgentId: text("answered_by_agent_id"),
+  escalated: boolean("escalated").notNull(),
+  envelopeSignature: text("envelope_signature").notNull(),
+  responseSignature: text("response_signature"),
+  createdAt: time("created_at").notNull(),
+  expiresAt: time("expires_at").notNull(),
+  closedAt: time("closed_at"),
+  version: integer("version").notNull(),
+}, (table) => [
+  check("requests_status_check", sql`${table.status} in (${values(RequestStatus.options)})`),
+  index("requests_to_address_status_idx").on(table.toAddress, table.status),
+  index("requests_from_user_created_at_idx").on(table.fromUserId, table.createdAt.desc()),
+  index("requests_to_user_created_at_idx").on(table.toUserId, table.createdAt.desc()),
+  index("requests_status_expires_at_idx").on(table.status, table.expiresAt),
+]);
+
+export const requestEvents = nexo.table("request_events", {
+  id: bigserial("id", { mode: "bigint" }).primaryKey(),
+  requestId: text("request_id").notNull().references(() => requests.id),
+  at: time("at").notNull(),
+  kind: text("kind").notNull(),
+  detail: jsonb("detail").notNull(),
+}, (table) => [
+  index("request_events_request_id_id_idx").on(table.requestId, table.id),
+]);
+
+export const wakeJobs = nexo.table("wake_jobs", {
+  id: text("id").primaryKey(),
+  requestId: text("request_id").notNull().references(() => requests.id),
+  requestVersion: integer("request_version").notNull(),
+  attempt: integer("attempt").notNull(),
+  runAt: time("run_at").notNull(),
+  state: text("state", { enum: wakeStates }).notNull(),
+  lastResult: jsonb("last_result"),
+}, (table) => [
+  check("wake_jobs_state_check", sql`${table.state} in (${values(wakeStates)})`),
+  index("wake_jobs_state_run_at_idx").on(table.state, table.runAt, table.id),
+]);
+
+export const agentConnections = nexo.table("agent_connections", {
+  userId: text("user_id").notNull().references(() => users.userId),
+  agentId: text("agent_id").notNull(),
+  label: text("label").notNull(),
+  wakeKind: text("wake_kind").notNull(),
+  wakePublic: jsonb("wake_public").notNull(),
+  wakeSecret: bytea("wake_secret"),
+  verifiedAt: time("verified_at"),
+  lastWakeAt: time("last_wake_at"),
+  revokedAt: time("revoked_at"),
+  createdAt: time("created_at").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.agentId] }),
+  check("agent_connections_wake_secret_check", sql`(${table.wakeKind} = 'none') = (${table.wakeSecret} is null)`),
+]);
