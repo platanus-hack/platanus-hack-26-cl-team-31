@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ownerClient } from "@/lib/broker";
+import { onboardingFlow, type OnboardingSource } from "@/lib/onboarding-flow";
 
 import { getOwner, requireAddress } from "./owner";
 import { activityPageSize, validPage } from "./labels";
@@ -24,7 +25,7 @@ function actionError(error: unknown, fallback: string) {
   }
 }
 
-export async function claimAddress(_: Feedback, form: FormData): Promise<Feedback> {
+export async function claimAddress(source: OnboardingSource, _: Feedback, form: FormData): Promise<Feedback> {
   const owner = await getOwner();
   const localPart = LocalPart.safeParse(form instanceof FormData ? form.get("localPart") : undefined);
   if (!localPart.success) {
@@ -40,7 +41,7 @@ export async function claimAddress(_: Feedback, form: FormData): Promise<Feedbac
     return { error: actionError(error, "No se pudo guardar la dirección. Intenta de nuevo.") };
   }
   revalidatePath("/", "layout");
-  redirect("/");
+  redirect(onboardingFlow(source).destination);
 }
 
 export async function readHome() {

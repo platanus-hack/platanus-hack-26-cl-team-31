@@ -2,12 +2,14 @@
 
 import { useActionState, useState } from "react";
 
+import type { OnboardingSource } from "@/lib/onboarding-flow";
+
 import { claimAddress } from "../actions";
 import { Feedback, input, primaryButton } from "../ui";
 
-export function AddressForm() {
+export function AddressForm({ source }: { source: OnboardingSource }) {
   const [localPart, setLocalPart] = useState("");
-  const [state, submit, pending] = useActionState(claimAddress, {});
+  const [state, submit, pending] = useActionState(claimAddress.bind(null, source), {});
 
   return (
     <form action={submit} className="mt-7 space-y-5">

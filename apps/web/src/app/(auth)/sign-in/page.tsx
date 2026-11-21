@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { getGoogleOptions } from "@/lib/auth-env.mjs";
 import { getOAuthRequest } from "@/lib/auth-request";
+import { onboardingFlow } from "@/lib/onboarding-flow";
 
 import { GoogleButton } from "./google-button";
 
@@ -25,7 +26,8 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
     );
   }
 
-  if (!request && await getSession()) redirect("/sign-in/complete");
+  const flow = onboardingFlow(request ? undefined : params.from);
+  if (!request && await getSession()) redirect(flow.signInComplete);
 
   return (
     <>
@@ -41,7 +43,10 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
         </p>
       )}
       {getGoogleOptions() ? (
-        <GoogleButton signedQuery={request?.signedQuery} />
+        <GoogleButton
+          callbackURL={flow.signInComplete}
+          errorCallbackURL={request ? `/sign-in?${request.signedQuery}` : flow.signIn}
+        />
       ) : (
         <p className="mt-4 text-sm text-[#525a4c]" role="status">
           Configura las credenciales de Google en el entorno local para iniciar sesión.

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 
-export function GoogleButton({ signedQuery }: { signedQuery?: string }) {
+export function GoogleButton({ callbackURL, errorCallbackURL }: { callbackURL: string; errorCallbackURL: string }) {
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -13,8 +13,8 @@ export function GoogleButton({ signedQuery }: { signedQuery?: string }) {
     try {
       const result = await authClient.signIn.social({
         provider: "google",
-        callbackURL: "/sign-in/complete",
-        errorCallbackURL: signedQuery ? `/sign-in?${signedQuery}` : "/sign-in",
+        callbackURL,
+        errorCallbackURL,
       });
       if (!result.error) return;
     } catch {
