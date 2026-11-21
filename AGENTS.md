@@ -73,7 +73,7 @@ El servidor usa `DATABASE_URL`. Cada adaptador MCP (`apps/server/dist/mcp.js`) r
 
 Ctrl+C detiene la API del host y `pnpm infra:down` detiene PostgreSQL conservando el volumen. Después de preparar el esquema, las cuentas y el build, también puedes iniciar la API en segundo plano con `docker compose --profile agents up -d coordination` con el puerto del host libre. Para detener ese stack usa `docker compose --profile agents down`.
 
-El dashboard de desarrollo en `/demo` usa Ollama por loopback (`DEMO_MODEL_URL`) y `DEMO_MODEL` (por defecto `qwen3:4b-instruct`). Puedes usar el perfil Compose `demo-model` o un proceso nativo, no ambos a la vez. Los comandos están en el README. No usa credenciales de un proveedor externo.
+El dashboard de desarrollo en `/demo` abre Contactos de Ana con el mismo runtime de Claude Code que la CLI. El modo Fútbol del sábado usa Ollama por loopback (`DEMO_MODEL_URL`) y `DEMO_MODEL` (por defecto `qwen3:4b-instruct`). Puedes usar el perfil Compose `demo-model` o un proceso nativo, no ambos a la vez. Los comandos están en el README. No usa credenciales de un proveedor externo.
 
 ## Consultas resueltas por el runtime del titular
 
