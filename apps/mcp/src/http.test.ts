@@ -30,6 +30,7 @@ function testPort(): AgentPort {
     inbox: vi.fn(),
     reply: vi.fn(),
     status: vi.fn(),
+    contacts: vi.fn(),
     connectWake: vi.fn(),
     disconnectWake: vi.fn(),
   };
@@ -147,7 +148,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
 
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
-    ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true],
+    ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);

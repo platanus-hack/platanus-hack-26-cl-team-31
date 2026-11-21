@@ -39,6 +39,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return { items: await agent.inbox(c.get("mcp")) };
     case "agent.reply":
       return agent.reply(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.contacts":
+      return agent.contacts(c.get("mcp"));
     case "agent.status":
       return agent.status(c.get("mcp"), parseInput(route.params, c.req.param()).id);
     case "agent.connectWake":

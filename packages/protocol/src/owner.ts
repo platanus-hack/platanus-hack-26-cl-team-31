@@ -92,6 +92,12 @@ export const ContactsView = z.object({
 });
 export type ContactsView = z.infer<typeof ContactsView>;
 
+export const AgentContacts = z.object({
+  contacts: z.array(z.object({ address: Address, theyShare: Sharing, youShare: Sharing })),
+  circles: z.array(z.object({ name: z.string(), members: z.array(Address) })),
+});
+export type AgentContacts = z.infer<typeof AgentContacts>;
+
 export const InvitationAnswer = z.object({
   accept: z.boolean(),
   share: Sharing.optional(),

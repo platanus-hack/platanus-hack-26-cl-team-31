@@ -415,6 +415,20 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return circle;
   }
 
+  async function listContacts(tx: StoreTx, userId: string) {
+    const me = (await tx.getUser(userId))?.address;
+    const mine = await tx.listGrants(userId);
+    return Promise.all((await tx.listFriends(userId)).map(async (address) => {
+      const other = await tx.getUserByAddress(address);
+      const theirs = other && me ? (await tx.listGrants(other.userId)).filter((grant) => grant.granteeAddress === me) : [];
+      return {
+        address,
+        gives: sharingOf(mine.filter((grant) => grant.granteeAddress === address)),
+        receives: sharingOf(theirs),
+      };
+    }));
+  }
+
   async function toCircle(tx: StoreTx, row: CircleRow): Promise<Circle> {
     const owner = (await tx.getUser(row.ownerUserId))?.address;
     if (!owner) throw new BrokerError("internal", "El círculo no tiene creador con dirección.");
@@ -518,6 +532,24 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         // Returning the error inside tx commits the expiry and any authorized audit event.
         if (result instanceof BrokerError) throw result;
         return result;
+      },
+
+      async contacts(p) {
+        requireScope(p, "sideband:ask", "agent.contacts");
+        return store.tx(async (tx) => {
+          await ensureActiveAgentConnection(tx, p);
+          const me = (await tx.getUser(p.userId))?.address;
+          if (!me) return { contacts: [], circles: [] };
+          const contacts = (await listContacts(tx, p.userId))
+            .map(({ address, gives, receives }) => ({ address, theyShare: receives, youShare: gives }));
+          const circles = (await Promise.all((await tx.listCircles(me)).map((row) => toCircle(tx, row))))
+            .filter((circle) => circle.members.some((member) => member.address === me && member.joined))
+            .map(({ name, members }) => ({
+              name,
+              members: members.filter((member) => member.joined && member.address !== me).map(({ address }) => address),
+            }));
+          return { contacts, circles };
+        });
       },
 
       async status(p, id) {
@@ -721,17 +753,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       async contacts(o) {
         return store.tx(async (tx) => {
-          const me = (await tx.getUser(o.userId))?.address;
-          const mine = await tx.listGrants(o.userId);
-          const contacts = await Promise.all((await tx.listFriends(o.userId)).map(async (address) => {
-            const other = await tx.getUserByAddress(address);
-            const theirs = other && me ? (await tx.listGrants(other.userId)).filter((grant) => grant.granteeAddress === me) : [];
-            return {
-              address,
-              gives: sharingOf(mine.filter((grant) => grant.granteeAddress === address)),
-              receives: sharingOf(theirs),
-            };
-          }));
+          const contacts = await listContacts(tx, o.userId);
           const now = clock.now();
           const open = (await tx.listOpenInvitations(o.userId)).filter((row) => row.expiresAt > now);
           const invitation = (row: RequestRow, address: Address) => ({
