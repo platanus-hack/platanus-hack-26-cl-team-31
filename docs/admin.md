@@ -63,13 +63,14 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 
 | Vista | Fuente | Columnas | Redacción |
 | --- | --- | --- | --- |
-| `ops.v_requests` | `sideband.requests` + `sideband.wake_jobs` | id, tool, from_address, to_address, from_user_id, to_user_id, status, outcome, rule, escalated, target_agent_id, answered_by_agent_id, allowed_fields, dropped_fields, decision_reason, internal_reason, args_keys, result_keys, has_purpose, response_signed, created_at, expires_at, closed_at, duration_ms, stuck, wake_attempts, last_wake_ok | Sin `args`, `result`, `purpose`, firmas ni nonce. Solo las llaves de args y result. |
+| `ops.v_requests` | `sideband.requests` + `sideband.wake_jobs` | id, tool, from_address, to_address, from_user_id, to_user_id, status, outcome, rule, escalated, target_agent_id, answered_by_agent_id, allowed_fields, dropped_fields, decision_reason, internal_reason, args_keys, result_keys, has_purpose, response_signed, created_at, expires_at, closed_at, duration_ms, stuck, wake_attempts, last_wake_ok, origin_channel | Sin `args`, `result`, `purpose`, firmas ni nonce. Solo las llaves de args y result. |
 | `ops.v_request_payloads` | `sideband.requests` | id, args, purpose, result | **Solo** rol `sideband_admin_reveal`. Se usa únicamente en `POST /requests/:id/reveal`. |
 | `ops.v_request_events` | `sideband.request_events` | request_id, id, at, kind, status, code | `detail` se reduce a status y code. |
-| `ops.v_wake_jobs` | `sideband.wake_jobs` + conexión | id, request_id, attempt, state, run_at, kind, ok, http_status, code, latency_ms, user_id, agent_id | Sin cuerpo de respuesta. `code` es `ok`, `retryable`, `failed` o un código `[a-z_]` del adaptador.  Cuando el estado es `running`, `run_at` indica cuándo vence la concesión. |
+| `ops.v_wake_jobs` | `sideband.wake_jobs` + conexión o canal | id, request_id, attempt, state, run_at, kind, ok, http_status, code, latency_ms, user_id, agent_id, audience | Sin cuerpo de respuesta. `code` es `ok`, `retryable`, `failed` o un código `[a-z_]` del adaptador.  Cuando el estado es `running`, `run_at` indica cuándo vence la concesión. |
 | `ops.v_agent_connections` | `sideband.agent_connections` | user_id, agent_id, label, wake_kind, wake_host, verified_at, last_wake_at, revoked_at, created_at | Solo el host de la URL. Nunca `wake_secret`. |
 | `ops.v_users` | `sideband.users` + `sideband.sharing_rules` | user_id, address, display_name, created_at, rules | |
 | `ops.v_circles` | `sideband.circles` + `sideband.circle_members` | circle_id, name, owner_user_id, created_at, members, invitations | Sin las direcciones de los miembros |
+| `ops.v_channels` | `sideband.channels` | user_id, name, wake_kind, wake_host, created_at | Solo el host de la URL. Nunca `wake_secret`. `audience = 'origin'` en `ops.v_wake_jobs` marca sus avisos. |
 | `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions, has_phone_number | Sin tokens de sesión. Del teléfono solo se ve si existe, nunca el número. `user.id` es el mismo `user_id` de `sideband.users`. |
 | `ops.v_whatsapp` | Better Auth y esquema `whatsapp` (migración de web antes de ops) | linked_accounts, active_pairings, inbound_receipts | Solo recuentos. En Eventos, filtra por `whatsapp.link`, `whatsapp.request` o `whatsapp.send` para seguir el flujo. |
 | `ops.v_oauth_clients` | `public."oauthClient"`, `"oauthAccessToken"`, `"oauthRefreshToken"` | client_id, name, user_id, redirect_hosts, created_at, last_token_at, active_tokens | Sin `client_secret` ni tokens. Token activo: sin revocar y sin vencer (access o refresh). |
@@ -132,6 +133,7 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `broker.contact.connected` / `broker.contact.removed` | policy | sin atributos; `requestId` y `userId` en el sobre |
 | `broker.contact.tagged` / `broker.tag.preset_set` | policy | tag, categories (cantidad) |
 | `broker.circle.changed` | policy | circleId, action (`created` \| `deleted` \| `invited` \| `joined` \| `removed`) |
+| `broker.channel.set` | lifecycle | channel (`whatsapp`), kind (tipo de aviso); nunca la URL ni el secreto |
 | `wake.attempt` | wake | kind, attempt, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
 | `wake.lease_recovered` | wake | attempt |
