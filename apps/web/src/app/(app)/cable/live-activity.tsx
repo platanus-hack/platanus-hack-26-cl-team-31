@@ -3,6 +3,7 @@
 import type { ActivityItem } from "@team-31/protocol";
 import { useEffect, useState } from "react";
 
+import { parseActivity } from "./parse-activity";
 import { eventLabels, fieldLabels, statusLabels, toolLabels } from "../labels";
 import { card, Empty, Heading, Stamp, Status } from "../ui";
 
@@ -120,9 +121,8 @@ export function LiveActivity() {
         }
       };
       source.addEventListener("activity", (event: MessageEvent<string>) => {
-        // The same-origin route validates and reserializes every activity frame.
-        const item = JSON.parse(event.data) as ActivityItem;
-        setItems((previous) => upsert(previous, item));
+        const item = parseActivity(event.data);
+        if (item) setItems((previous) => upsert(previous, item));
       });
     }
 

@@ -328,14 +328,17 @@ export function AgentFlow({
   useEffect(() => {
     filterChangeRef.current = onFilterChange;
   });
-  const filterKey = JSON.stringify([shownOwners ? [...shownOwners] : (ownerQuery ?? null), [...hiddenActors]]);
-  const reportedFilter = useRef(filterKey);
+  const filter = useMemo(() => ({
+    owners: shownOwners ? [...shownOwners] : ownerQuery,
+    hiddenActors: [...hiddenActors],
+  }), [shownOwners, ownerQuery, hiddenActors]);
+  const reportedFilter = useRef(JSON.stringify(filter));
   useEffect(() => {
-    if (reportedFilter.current === filterKey) return;
-    reportedFilter.current = filterKey;
-    const [owners, hidden] = JSON.parse(filterKey) as [string[] | null, string[]];
-    filterChangeRef.current?.({ owners, hiddenActors: hidden });
-  }, [filterKey]);
+    const key = JSON.stringify(filter);
+    if (reportedFilter.current === key) return;
+    reportedFilter.current = key;
+    filterChangeRef.current?.(filter);
+  }, [filter]);
 
   const selectedEvent = selection?.kind === "event" ? findEvent(selection.id) : undefined;
   const selectedActor = selection?.kind === "actor" ? flow.actors.get(selection.id) : undefined;
