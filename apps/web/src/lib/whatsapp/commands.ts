@@ -1,5 +1,5 @@
 import { BrokerError, type OwnerPort } from "@team-31/broker-client";
-import { Address, AskInput, type Category, type Owner, type OwnerVault, type RequesterView } from "@team-31/protocol";
+import { Address, AskInput, type Category, type Owner, type RequesterView, type VaultCatalog } from "@team-31/protocol";
 import { getTelemetry } from "../telemetry";
 import { describeSharing } from "../../app/(app)/contacts/describe";
 import { parseSharingCategories, type MessageReply } from "@team-31/message-flow";
@@ -127,7 +127,13 @@ export async function runCommand(
   if (status) return readStatus(broker, owner, onResult, status[1]);
   if (contactsCommand.test(text)) return contactsText((await broker.contacts(owner)).contacts);
   const vault = vaultCommand.exec(text);
-  if (vault) return vaultText(await broker.vault(owner), vault[1]);
+  if (vault) {
+    const name = vault[1];
+    const { categories } = await broker.vault(owner);
+    if (!name) return vaultListText(categories);
+    const matches = categories.filter(c => words(c.name) === words(name));
+    return matches.length ? openedVaultText(matches) : `No tienes una bóveda llamada «${name}». Escribe «bóvedas» para verlas.`;
+  }
   if (acceptCommand.test(text)) return acceptInvitation(broker, owner, text);
   if (messageFlow && text) return formatMessageReply(await messageFlow(text));
   if (/^¿?\s*ya respondi[oó]\s*\??$/i.test(text)) return readStatus(broker, owner, onResult);
@@ -139,15 +145,16 @@ function contactsText(contacts: { address: string; receives: Category[] }[]): st
   return ["Tus contactos:", ...contacts.map(({ address, receives }) => `• ${address}: te comparte ${describeSharing(receives)}`)].join("\n");
 }
 
-function vaultText({ categories }: OwnerVault, name?: string): string {
-  const title = (c: OwnerVault["categories"][number]) => `${c.name}: ${c.description ?? "sin descripción"}`;
-  if (!name) {
-    if (!categories.length) return "Tu bóveda no tiene categorías. Créalas desde Mi bóveda en Sideband.";
-    return ["Tus bóvedas:", ...categories.map(c => `• ${title(c)}`), "Escribe «bóveda» y un nombre para ver lo que guarda."].join("\n");
-  }
-  const matches = categories.filter(c => words(c.name) === words(name));
-  if (!matches.length) return `No tienes una bóveda llamada «${name}». Escribe «bóvedas» para verlas.`;
-  return matches.map(c => [title(c), ...(c.entries.length ? c.entries.map(e => `• ${e.label}: ${e.value}`) : ["Aún no guarda datos."])].join("\n")).join("\n\n");
+type OwnCategory = VaultCatalog["categories"][number];
+const vaultTitle = (c: OwnCategory) => `${c.name}: ${c.description ?? "sin descripción"}`;
+
+function vaultListText(categories: OwnCategory[]): string {
+  if (!categories.length) return "Tu bóveda no tiene categorías. Créalas desde Mi bóveda en Sideband.";
+  return ["Tus bóvedas:", ...categories.map(c => `• ${vaultTitle(c)}`), "Escribe «bóveda» y un nombre para ver lo que guarda."].join("\n");
+}
+
+function openedVaultText(categories: OwnCategory[]): string {
+  return categories.map(c => [vaultTitle(c), ...(c.entries?.length ? c.entries.map(e => `• ${e.label}: ${e.value}`) : ["Aún no guarda datos."])].join("\n")).join("\n\n");
 }
 
 function requestRepliesText(reply: Extract<MessageReply, { kind: "requests" }>): string {
@@ -169,6 +176,11 @@ export function formatMessageReply(reply: MessageReply): string {
       return reply.items.map(p => [`${p.displayName} (${p.address})`, p.headline].filter(Boolean).join(" — ")).join("\n") || "No encontré perfiles públicos con ese nombre.";
     case "vault":
       return reply.data.categories.map(c => [c.name, ...(c.entries ?? []).map(e => `• ${e.label}: ${e.value}`)].join("\n")).join("\n") || "No encontré categorías compartidas para esa consulta.";
+    case "own_vault": {
+      // Entries come only for an opened category.
+      const { categories } = reply.data;
+      return categories.length && categories.every(c => c.entries) ? openedVaultText(categories) : vaultListText(categories);
+    }
     case "unavailable":
       return { expired: "Ese turno venció. Vuelve a escribir tu petición.", unsupported: "Esa operación no está disponible.", empty_selection: "No encontré destinatarios para esa consulta." }[reply.reason];
   }

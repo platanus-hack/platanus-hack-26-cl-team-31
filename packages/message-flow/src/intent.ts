@@ -26,6 +26,7 @@ function explicitScope(source: string) {
   if (single[text]) return single[text];
   return (Object.keys(scopeTerms) as (keyof typeof scopeTerms)[]).find(scope => scopeTerms[scope].test(text));
 }
+const ownVaultTerms = /\b(?:bovedas?|vaults?|categorias?|guard\w*|saved?|stored?)\b/;
 const collective = /\b(alguien|todos|todas|todo el|toda mi|integrantes|miembros|anyone|everyone|all|members|mis amig[oa]s|mis contactos|mis colegas|mis familiares|my friends|my contacts)\b/;
 
 export function grounded(intent: Intent, source: string): Intent {
@@ -39,6 +40,11 @@ export function grounded(intent: Intent, source: string): Intent {
     if (intent.action === "profiles" && (!/\b(perfil(?:es)?|profiles?)\b/.test(text) ||
       !/\b(public[oa]s?|public|busc\w*|encuentr\w*|search|find)\b/.test(text) ||
       intent.query && !includesLiteral(source, intent.query))) return { action: "clarify" };
+    if (intent.action === "own_vault") {
+      if (!ownVaultTerms.test(text)) return { action: "clarify" };
+      // A name the holder did not write lists the categories instead of opening one.
+      if (intent.categoryName && !includesLiteral(source, intent.categoryName)) delete intent.categoryName;
+    }
     return intent;
   }
   const { selector } = intent;
@@ -111,7 +117,7 @@ export async function continueIntent(text: string, previous: Pending, interpret:
     return keep;
   }
   if (field === "query" && intent.action === "profiles") { intent.query = value; return keep; }
-  if (field === "categoryId" && intent.action === "vault") {
+  if (field === "categoryId" && (intent.action === "vault" || intent.action === "own_vault")) {
     if (option) return { ...keep, categoryId: option };
     intent.categoryName = value;
     return keep;
