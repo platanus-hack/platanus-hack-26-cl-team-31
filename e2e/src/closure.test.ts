@@ -1,12 +1,12 @@
 import { describe, expect, onTestFinished, test } from "vitest";
 import { startFakeReceivers } from "./fake-receivers.js";
-import { enabled, inboxItem, rulesFor, seedAgents } from "./fixtures.js";
+import { enabled, grantTo, inboxItem, seedAgents } from "./fixtures.js";
 
 describe.skipIf(!enabled)("Cierre de solicitudes por el worker", () => {
   test("vence una sin respuesta y cierra otra tras tres avisos HTTP 500", async () => {
     const { ownerPort, agents: [sender, recipient] } = await seedAgents("closure", 2);
     if (!sender || !recipient) throw new Error("Faltan agentes de prueba.");
-    await ownerPort.setRules(recipient.owner, rulesFor([sender.address], "question", ["answer"]));
+    await grantTo(ownerPort, recipient.owner, [sender.address], "question", ["answer"]);
 
     const question = {
       to: recipient.address, tool: "question",

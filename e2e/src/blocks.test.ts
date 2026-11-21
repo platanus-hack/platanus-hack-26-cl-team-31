@@ -1,16 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, test } from "vitest";
-import { enabled, rulesFor, seedAgents } from "./fixtures.js";
+import { enabled, grantTo, seedAgents } from "./fixtures.js";
 
-describe.skipIf(!enabled)("Bloqueos y solicitudes a uno mismo", () => {
-  test("un bloqueo prevalece sobre los permisos y el perfil público", async () => {
+describe.skipIf(!enabled)("Denegaciones y solicitudes a uno mismo", () => {
+  test("sin un grant para esa tool, la solicitud se deniega sin avisar al destinatario", async () => {
     const { ownerPort, agents: [sender, recipient] } = await seedAgents("blocks", 2);
     if (!sender || !recipient) throw new Error("Faltan agentes de prueba.");
 
-    const rules = rulesFor([sender.address], "question", ["answer"]);
-    rules.blocked = [sender.address];
-    rules.publicProfile = { displayName: "Perfil de prueba" };
-    await ownerPort.setRules(recipient.owner, rules);
+    await grantTo(ownerPort, recipient.owner, [sender.address], "availability", ["available"]);
     const question = { tool: "question", args: { text: "¿Puedes compartir el dato de prueba?" } } as const;
 
     const domain = recipient.address.split("@")[1];

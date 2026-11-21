@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mintServiceToken } from "@team-31/auth/service";
 import { createOwnerClient, type OwnerPort } from "@team-31/broker/client";
-import { SharingRules, type Address, type Owner, type ToolName } from "@team-31/protocol";
+import type { Address, GrantInput, Owner } from "@team-31/protocol";
 import { decodeJwt, type JWK } from "jose";
 import { expect, onTestFinished } from "vitest";
 import { z } from "zod";
@@ -67,8 +67,6 @@ function identities(group: Group, count: number): Identity[] {
   return groupTokens.slice(0, count).map(oauthIdentity);
 }
 
-const defaultRules = SharingRules.parse({ circles: {}, grants: {} });
-
 export async function seedAgents(group: Group, count: number) {
   const mcp = loopbackUrl("E2E_MCP_URL");
   const privateKey: JWK = json("WEB_SERVICE_PRIVATE_KEY", z.object({
@@ -93,7 +91,8 @@ export async function seedAgents(group: Group, count: number) {
     const address = info.address ?? await ownerPort.claimAddress(owner, `e2e-${randomUUID().slice(0, 23)}`);
     await agent.inbox(); // The first authenticated tool call creates the agent connection.
     await ownerPort.setWake(owner, agentId, { kind: "none" });
-    await ownerPort.setRules(owner, defaultRules);
+    // Earlier runs may have left grants on this test account.
+    for (const grant of await ownerPort.grants(owner)) await ownerPort.revokeGrant(owner, grant.id);
     return { agent, agentId, owner, address };
   }));
   return {
@@ -105,11 +104,10 @@ export async function seedAgents(group: Group, count: number) {
   };
 }
 
-export function rulesFor(senders: Address[], tool: ToolName, fields: string[]): SharingRules {
-  return SharingRules.parse({
-    circles: { testers: senders },
-    grants: { testers: [{ tool, fields, guidance: "Comparte solo los campos de prueba autorizados." }] },
-  });
+export async function grantTo(
+  ownerPort: OwnerPort, owner: Owner, senders: Address[], tool: GrantInput["tool"], fields: string[],
+) {
+  for (const grantee of senders) await ownerPort.setGrant(owner, { grantee, tool, fields });
 }
 
 export async function inboxItem(agent: Awaited<ReturnType<typeof connectAgent>>, requestId: string) {
