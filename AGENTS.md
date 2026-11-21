@@ -277,6 +277,17 @@ Levanta un stack aislado (como `docker:demo`), siembra un mundo determinista y l
 
 `pnpm dev` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm typecheck`. Antes de dar algo por listo: `pnpm lint && pnpm typecheck` (y `pnpm test` si aplica).
 
+### Hook pre-push (verificar solo lo afectado)
+
+`pnpm install`/`pnpm bootstrap` activa los hooks de `.githooks/` (`git config core.hooksPath .githooks`, compartido por todos los worktrees; cada uno corre su propia versión). Antes de cada `git push`, `pre-push` ejecuta `scripts/check-affected.sh`:
+
+- Calcula el merge-base con `origin/main` y corre `turbo run lint typecheck test --filter=...[<merge-base>]`: los paquetes cambiados (commits, staged, sin stage y archivos nuevos) **y los que dependen de ellos**, con la caché de turbo. Corre la suite completa de cada paquete afectado (no solo los tests "relacionados": migraciones, SQL y fixtures se leen en runtime y el grafo de imports no los ve).
+- Si cambia configuración global (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `turbo.json`, `vitest.shared.ts`, `.nvmrc`, `.npmrc`, `scripts/with-env.sh`, `infra/postgres/`) o no existe `origin/main`, verifica todo. Si solo cambian docs o scripts fuera de los paquetes, no corre nada.
+- Usa el `.env` del worktree (como `pnpm test`). Si Postgres no responde, lo dice y aborta: `pnpm infra:up`.
+- Saltarlo: `git push --no-verify` o `SKIP_HOOKS=1 git push`. Otra base: `CHECK_BASE=<ref>`. Todo: `CHECK_ALL=1`.
+
+Agentes: corre `pnpm check:affected` (lo mismo que el hook, sin pushear) antes de dar por lista una tarea; si `origin/main` está viejo, `git fetch origin` primero. No uses `--no-verify` para esconder un test roto: arréglalo o repórtalo.
+
 `pnpm lint` solo cubre `apps/admin` y `apps/web`. El resto depende de `pnpm typecheck` y `pnpm test`, y `apps/demo` queda fuera de `typecheck`.
 
 Las validaciones se ejecutan en el worktree local. El CI del repo del hackathon corre build y typecheck en cada push a `main`, sin disparar deploys.

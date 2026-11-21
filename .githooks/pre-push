@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Antes de cada push: lint + typecheck + test solo de lo afectado (ver scripts/check-affected.sh).
+# Saltarlo: git push --no-verify, o SKIP_HOOKS=1 git push.
+set -euo pipefail
+
+[ "${SKIP_HOOKS:-}" = 1 ] && { echo "[pre-push] SKIP_HOOKS=1: se omite." >&2; exit 0; }
+
+# stdin: "<ref local> <sha local> <ref remoto> <sha remoto>" por cada ref empujada.
+# Verifica si se empuja algún commit (no al borrar ramas ni al empujar solo tags).
+zero=0000000000000000000000000000000000000000
+head="$(git rev-parse HEAD)"
+check=""
+while read -r local_ref local_sha _remote_ref _remote_sha; do
+  case "$local_ref" in refs/tags/*) continue ;; esac
+  [ "$local_sha" = "$zero" ] && continue
+  check=1
+  if [ "$local_sha" != "$head" ]; then
+    echo "[pre-push] Ojo: empujas ${local_ref#refs/heads/} ($(git rev-parse --short "$local_sha")) pero se verifica el working tree actual (HEAD)." >&2
+  fi
+done
+[ -z "$check" ] && exit 0
+
+root="$(git rev-parse --show-toplevel)"
+# Git exporta GIT_DIR & cía. a los hooks; los scripts deben descubrir el repo/worktree solos.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+cd "$root"
+exec ./scripts/check-affected.sh
