@@ -22,6 +22,7 @@ if [ -z "$SLOT" ]; then
     grep -q "^$s " "$REGISTRY" && continue
     port_busy $((3000 + s)) && continue
     port_busy $((54320 + s)) && continue
+    port_busy $((4310 + s)) && continue
     SLOT=$s; break
   done
   [ -z "$SLOT" ] && { echo "No hay slots libres" >&2; exit 1; }
@@ -31,6 +32,7 @@ echo "$SLOT $ROOT" >>"$REGISTRY"
 # --- Puertos: BASE + SLOT. Al agregar un servicio, agrega su variable aquí. ---
 WEB_PORT=$((3000 + SLOT))
 POSTGRES_PORT=$((54320 + SLOT))
+COORDINATION_PORT=$((4310 + SLOT))
 
 cat >"$ENV_FILE" <<ENV
 # GENERADO por scripts/env-init.sh — no editar a mano (secretos van en .env.local)
@@ -39,6 +41,8 @@ COMPOSE_PROJECT_NAME=team31-$SLOT
 
 WEB_PORT=$WEB_PORT
 POSTGRES_PORT=$POSTGRES_PORT
+COORDINATION_PORT=$COORDINATION_PORT
+COORDINATION_API_URL=http://127.0.0.1:$COORDINATION_PORT
 
 DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app_test
