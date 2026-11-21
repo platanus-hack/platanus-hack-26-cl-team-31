@@ -44,7 +44,7 @@ export function httpTransport(base, maxSockets) {
   return { call, close: () => agent.destroy() };
 }
 
-const ADAPTER = fileURLToPath(new URL("../../mcp/dist/index.js", import.meta.url));
+const ADAPTER = fileURLToPath(new URL("../../server/dist/mcp.js", import.meta.url));
 
 /** Abre un proceso MCP stdio para una identidad, igual que un cliente real. @param {string} base @param {string} token @param {string} name */
 export async function mcpSession(base, token, name) {

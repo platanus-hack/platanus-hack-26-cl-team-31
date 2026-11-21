@@ -105,11 +105,12 @@ services:
       coordination:
         condition: service_healthy
 
-  # Tests de todos los paquetes contra la base app_test.
+  # Tests del stack de coordinación (server + scale) contra la base app_test. El resto del
+  # monorepo se prueba con `pnpm test` en el host; esta imagen sólo trae lo que sirve.
   test:
     <<: *app
     profiles: ["test"]
-    command: ["pnpm", "turbo", "run", "test"]
+    command: ["pnpm", "turbo", "run", "test", "--continue", "--filter=@team-31/server", "--filter=@team-31/scale"]
     depends_on:
       postgres:
         condition: service_healthy

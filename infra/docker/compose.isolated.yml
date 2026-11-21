@@ -9,3 +9,13 @@ services:
       - /var/lib/postgresql/data
   coordination:
     ports: !reset []
+  # Servicios de otros perfiles (nexo, demo-model): no se levantan aquí, pero Compose
+  # valida todo el archivo y sus puertos dependen de variables del .env del worktree.
+  broker:
+    ports: !reset []
+  mcp:
+    ports: !reset []
+  admin:
+    ports: !reset []
+  ollama:
+    ports: !reset []

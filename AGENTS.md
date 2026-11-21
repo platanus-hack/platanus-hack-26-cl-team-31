@@ -240,9 +240,9 @@ Las llamadas internas al broker usan `tracedFetch` (opción `fetch` de `createAg
 Sin Node local, sólo Docker. Cada corrida usa un stack propio (Postgres en tmpfs, sin puertos en el host) y lo borra al terminar, así que no choca con tu stack de dev ni con otros worktrees.
 
 - `pnpm docker:demo [N]` — esquema + identidades + demo MCP con N participantes (default 3).
-- `pnpm docker:test` — tests de todos los paquetes contra `app_test`, la demo end-to-end y el escenario de carga `smoke` (~5 s).
+- `pnpm docker:test` — tests del stack de coordinación (`apps/server`, `apps/scale`) contra `app_test` en paralelo con la demo end-to-end y el escenario de carga `smoke`. ~25 s con la imagen en caché. El resto del monorepo se prueba con `pnpm test` en el host.
 
-Imagen única en `Dockerfile` (excluye `apps/web`); servicios `demo`/`test`/`scale` en `docker-compose.yml`; override aislado en `infra/docker/compose.isolated.yml`.
+Imagen en `Dockerfile`, recortada con `turbo prune` a `apps/server`, `apps/scale` y `apps/mcp` (sus dependencias sólo se reinstalan si cambian los `package.json` o el lockfile, y el build usa la caché de turbo); servicios `demo`/`test`/`scale` en `docker-compose.yml`; override aislado en `infra/docker/compose.isolated.yml`.
 
 ## Carga + invariantes (`apps/scale`)
 

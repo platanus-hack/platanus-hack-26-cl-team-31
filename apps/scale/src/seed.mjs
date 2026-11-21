@@ -41,8 +41,9 @@ export async function seedWorld(db, world, { reset = false } = {}) {
   await db.query("BEGIN");
   try {
     if (reset) {
+      // CASCADE: también limpia tablas nuevas que referencien a people (contactos, perfiles…).
       await db.query(`TRUNCATE meeting_participants, meetings, availability_requests, interests,
-        busy_slots, memberships, people`);
+        busy_slots, memberships, people CASCADE`);
     }
     // Los triggers de FK por fila son ~80% del costo con 100k+ filas. Si el rol puede, se omiten
     // dentro de esta transacción y las FK se validan al final con un anti-join por tabla.
