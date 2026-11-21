@@ -9,7 +9,7 @@ export default mergeConfig(
   defineConfig({
     resolve: { alias: app.resolve?.alias },
     test: {
-      include: ["server/**/*.test.ts", "shared/**/*.test.ts", "src/**/*.test.ts"],
+      include: ["server/**/*.test.ts", "shared/**/*.test.ts", "src/**/*.test.{ts,tsx}"],
       environment: "node",
     },
   }),
