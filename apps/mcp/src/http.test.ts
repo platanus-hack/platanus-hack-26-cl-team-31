@@ -29,6 +29,7 @@ function testPort(): AgentPort {
     connect: vi.fn(),
     searchPublicProfiles: vi.fn(), capabilities: vi.fn(),
     vaultCatalog: vi.fn(), vaultMembers: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
+    uploadVaultDocument: vi.fn(), downloadVaultDocument: vi.fn(),
     networkUsers: vi.fn(), tags: vi.fn(), changeTag: vi.fn(),
     ask: vi.fn(),
     inbox: vi.fn(),
@@ -189,7 +190,8 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
     ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_tags", true], ["sideband_tag_change", undefined],
-    ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_access", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
+    ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_access", true], ["sideband_vault_change", undefined],
+    ["sideband_vault_upload", undefined], ["sideband_vault_download", true], ["sideband_vault_query", true],
     ["sideband_vault_request_access", undefined],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);

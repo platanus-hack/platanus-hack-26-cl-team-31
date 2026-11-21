@@ -172,6 +172,40 @@ it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de
   expect((await broker.agent.queryVault(carla, query)).categories[0]?.entries).toEqual([]);
 });
 
+it("sube cualquier archivo a la bóveda y lo entrega solo mientras la categoría está autorizada", async () => {
+  const ownerAgent: Principal = { ...bruno, scopes: ["sideband:vault", "sideband:ask"] };
+  const readerAgent: Principal = { ...alice, scopes: ["sideband:ask"] };
+  const invitation = await broker.owner.connect(bruno, { to: "alice@sideband.app", share: [] });
+  await broker.owner.answerInvitation(alice, invitation.requestId, { accept: true, share: [] });
+  const { categoryId } = await broker.agent.changeVault(ownerAgent, { action: "create", name: "Archivos" });
+  await broker.owner.changeVault(bruno, { action: "set_member", categoryId, address: "alice@sideband.app", allowed: true });
+
+  const contentBase64 = Buffer.from([0, 1, 2, 255, 254]).toString("base64");
+  const upload = {
+    categoryId,
+    fileName: "foto.bin",
+    mimeType: "application/octet-stream",
+    contentBase64,
+    idempotencyKey: "archivo-1",
+  } as const;
+  const first = await broker.agent.uploadVaultDocument(ownerAgent, upload);
+  const replay = await broker.agent.uploadVaultDocument(ownerAgent, upload);
+  expect(replay).toEqual(first);
+  expect((await broker.agent.queryVault(readerAgent, { to: "bruno@sideband.app", categoryId })).categories[0]?.documents).toMatchObject([{
+    id: first.id, fileName: "foto.bin", sizeBytes: 5, mimeType: "application/octet-stream",
+  }]);
+  await expect(broker.agent.downloadVaultDocument(readerAgent, {
+    to: "bruno@sideband.app", categoryId, documentId: first.id,
+  })).resolves.toMatchObject({ ...first, contentBase64 });
+  await expect(broker.agent.uploadVaultDocument(ownerAgent, { ...upload, contentBase64: "eA==", idempotencyKey: upload.idempotencyKey }))
+    .rejects.toMatchObject({ code: "conflict" });
+
+  await broker.owner.changeVault(bruno, { action: "set_member", categoryId, address: "alice@sideband.app", allowed: false });
+  await expect(broker.agent.downloadVaultDocument(readerAgent, {
+    to: "bruno@sideband.app", categoryId, documentId: first.id,
+  })).rejects.toMatchObject({ code: "not_found" });
+});
+
 it("recupera el recibo inicial después de una respuesta y aísla claves por titular, agente, canal y destinatario", async () => {
   const input = { ...availability, idempotencyKey: "turno.17" };
   const [first, ...copies] = await Promise.all(Array.from({ length: 8 }, () => broker.agent.ask(alice, input)));

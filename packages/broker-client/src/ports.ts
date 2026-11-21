@@ -2,6 +2,7 @@ import type { OwnerActivityQuery } from "@team-31/protocol/http";
 import type {
   ActivityItem,
   TagChange, TagsView, Tag, TagInput, TagUpdate, OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
+  VaultDocumentDownload, VaultDocumentMetadata, VaultDocumentQuery, VaultDocumentUpload,
   AdminActor,
   Capability,
   Circle,
@@ -40,6 +41,8 @@ export interface AgentPort {
   vaultMembers(p: Principal, categoryId: string): Promise<{ members: Address[] }>;
   changeVault(p: Principal, change: VaultChange): Promise<VaultReceipt>;
   queryVault(p: Principal, query: VaultQuery): Promise<VaultResult>;
+  uploadVaultDocument(p: Principal, input: VaultDocumentUpload): Promise<VaultDocumentMetadata>;
+  downloadVaultDocument(p: Principal, query: VaultDocumentQuery): Promise<VaultDocumentDownload>;
   capabilities(p: Principal, to: Address): Promise<{ tools: Capability[] }>;
   ask(p: Principal, input: AskArguments): Promise<RequesterView>;
   inbox(p: Principal, includeInvitations?: boolean): Promise<InboxItem[]>;

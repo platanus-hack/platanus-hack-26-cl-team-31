@@ -13,7 +13,7 @@ describe("catálogo", () => {
       "mcp.tool.call", "broker.policy.evaluated", "broker.request.created", "broker.request.status_changed",
       "broker.request.closed", "broker.reply.rejected", "broker.reply.sanitized", "broker.owner.decided", "broker.grant.set", "broker.grant.revoked",
       "broker.contact.connected", "broker.contact.removed", "broker.contact.tagged", "broker.channel.set", "broker.tag.changed",
-      "broker.vault.changed", "broker.vault.queried",
+      "broker.vault.changed", "broker.vault.queried", "broker.vault.document.uploaded", "broker.vault.document.downloaded",
       "broker.circle.changed", "broker.agent.connected", "broker.agent.revoked",
       "worker.tick.completed", "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
       "admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created",

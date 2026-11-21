@@ -75,6 +75,23 @@ export const grants = sideband.table("grants", {
     .where(sql`${table.revokedAt} is null`),
 ]);
 
+export const vaultDocuments = sideband.table("vault_documents", {
+  id: text("document_id").primaryKey(),
+  owner: text("owner_id").notNull(),
+  categoryId: text("category_id").notNull(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type"),
+  sizeBytes: integer("size_bytes").notNull(),
+  sha256: text("sha256").notNull(),
+  content: bytea("content").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: time("created_at").notNull(),
+}, (t) => [
+  uniqueIndex("vault_documents_owner_idempotency_idx").on(t.owner, t.idempotencyKey),
+  foreignKey({ columns: [t.owner, t.categoryId], foreignColumns: [vaultCategories.owner, vaultCategories.id] }).onDelete("cascade"),
+  check("vault_documents_size_check", sql`${t.sizeBytes} >= 0 AND ${t.sizeBytes} <= 5242880`),
+]);
+
 export const friends = sideband.table("friends", {
   userId: text("user_id").notNull().references(() => users.userId),
   address: text("address").notNull(),

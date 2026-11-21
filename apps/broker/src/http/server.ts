@@ -47,6 +47,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "agent.vaultMembers": return agent.vaultMembers(c.get("mcp"), parseInput(route.query, c.req.query()).categoryId);
     case "agent.changeVault": return agent.changeVault(c.get("mcp"), await parseBody(c, route.body));
     case "agent.queryVault": return agent.queryVault(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.uploadVaultDocument": return agent.uploadVaultDocument(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.downloadVaultDocument": return agent.downloadVaultDocument(c.get("mcp"), await parseBody(c, route.body));
     case "owner.vault": return owner.vault(c.get("web"));
     case "owner.changeVault": return owner.changeVault(c.get("web"), await parseBody(c, route.body));
     case "agent.capabilities":
@@ -147,6 +149,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
 
 // Ports that create a request share the ask rate-limit bucket.
 const askPorts: readonly (string | null)[] = ["agent.ask", "owner.ask", "owner.channelAsk"];
+const vaultPorts: readonly (string | null)[] = ["agent.uploadVaultDocument", "agent.downloadVaultDocument"];
 
 // Correlates the http.request span with the request it touched (ids only, never the payload).
 function requestIdOf(c: HttpContext, result: unknown): string | undefined {
@@ -177,7 +180,9 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   for (const route of Object.values(routes)) {
     app.on([route.method], [route.path], ...(route.iss ? [auth[route.iss]] : []), async (c: HttpContext) => {
       if (route.iss) {
-        const bucket = askPorts.includes(route.port) ? "ask" : route.port === "agent.reply" ? "reply" : "other";
+        const bucket = askPorts.includes(route.port) ? "ask"
+          : route.port === "agent.reply" ? "reply"
+            : vaultPorts.includes(route.port) ? "vault" : "other";
         const caller = route.iss === "admin" ? `admin:${c.get("admin").adminId}` : c.get(route.iss).userId;
         const blocked = await limiter.consume(caller, bucket);
         if (blocked) {

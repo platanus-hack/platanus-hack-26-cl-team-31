@@ -1,9 +1,10 @@
-import { Address, type OwnerVault, type VaultCatalog } from "@team-31/protocol";
+import { Address, type OwnerVault, type VaultCatalog, type VaultDocumentQuery } from "@team-31/protocol";
 import { and, DrizzleQueryError, eq, exists, inArray, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/node-postgres";
+import { BrokerError } from "../../errors.js";
 import type { StoreTx } from "../store.js";
 import {
-  users, friends, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e, vaultMemberRules as r,
+  users, friends, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e, vaultDocuments as d, vaultMemberRules as r,
 } from "./schema.js";
 
 type Tx = Parameters<Parameters<ReturnType<typeof drizzle>["transaction"]>[0]>[0];
@@ -20,7 +21,7 @@ export async function insertWithParents(db: Tx, insert: (tx: Tx) => Promise<unkn
   }
 }
 
-export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault"> {
+export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "putVaultDocument" | "sharedVaultDocument"> {
   // Serialize name resolution (including an absent name) with category creation, rename and deletion.
   const lockNames = (owner: string) => db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}, 417))`);
   async function vaultCatalog(owner: string, forNameResolution = false): Promise<VaultCatalog> {
@@ -104,7 +105,58 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       if (!id) return { categories: await db.select({ id: c.id, name: c.name }).from(c).where(visible).orderBy(c.name, c.id) };
       const rows = await db.select({ name: c.name, entry: { label: e.label, value: e.value } }).from(c)
         .leftJoin(e, and(eq(e.owner, c.owner), eq(e.id, c.id))).where(and(visible, eq(c.id, id))).orderBy(e.label);
-      return { categories: rows[0] ? [{ id, name: rows[0].name, entries: rows.flatMap(row => row.entry ? [row.entry] : []) }] : [] };
+      if (!rows[0]) return { categories: [] };
+      const documents = await db.select({
+        id: d.id, fileName: d.fileName, mimeType: d.mimeType, sizeBytes: d.sizeBytes, sha256: d.sha256, createdAt: d.createdAt,
+      }).from(d).innerJoin(c, and(eq(c.owner, d.owner), eq(c.id, d.categoryId)))
+        .where(and(visible, eq(d.categoryId, id)))
+        .orderBy(d.createdAt, d.id);
+      return {
+        categories: [{
+          id, name: rows[0].name,
+          entries: rows.flatMap(row => row.entry ? [row.entry] : []),
+          ...(documents.length ? {
+            documents: documents.map(document => ({
+              id: document.id,
+              fileName: document.fileName,
+              ...(document.mimeType ? { mimeType: document.mimeType } : {}),
+              sizeBytes: document.sizeBytes,
+              sha256: document.sha256,
+              createdAt: document.createdAt.toISOString(),
+            })),
+          } : {}),
+        }],
+      };
+    },
+    async putVaultDocument(row) {
+      if (!(await db.select({ id: c.id }).from(c).where(and(eq(c.owner, row.owner), eq(c.id, row.categoryId)))).length) return null;
+      await db.insert(d).values({
+        ...row,
+        mimeType: row.mimeType ?? null,
+      }).onConflictDoNothing({ target: [d.owner, d.idempotencyKey] });
+      const [stored] = await db.select().from(d)
+        .where(and(eq(d.owner, row.owner), eq(d.idempotencyKey, row.idempotencyKey))).for("update");
+      if (!stored) return null;
+      if (stored.categoryId !== row.categoryId || stored.fileName !== row.fileName ||
+          stored.mimeType !== (row.mimeType ?? null) || stored.sha256 !== row.sha256 || stored.sizeBytes !== row.sizeBytes ||
+          !Buffer.from(stored.content).equals(Buffer.from(row.content))) {
+        throw new BrokerError("conflict", "La clave de idempotencia ya fue usada para otro archivo.");
+      }
+      return { ...stored, mimeType: stored.mimeType ?? undefined };
+    },
+    async sharedVaultDocument(reader, to, query: VaultDocumentQuery) {
+      const owner = db.select({ owner: users.userId }).from(users).where(eq(users.address, to));
+      const allowed = reader === to
+        ? sql<boolean>`true`
+        : exists(db.select({ address: friends.address }).from(friends)
+          .where(and(eq(friends.userId, c.owner), eq(friends.address, reader), canRead)));
+      const [document] = await db.select({
+        id: d.id, owner: d.owner, categoryId: d.categoryId, fileName: d.fileName, mimeType: d.mimeType,
+        sizeBytes: d.sizeBytes, sha256: d.sha256, content: d.content, idempotencyKey: d.idempotencyKey, createdAt: d.createdAt,
+      }).from(d).innerJoin(c, and(eq(c.owner, d.owner), eq(c.id, d.categoryId))).where(and(
+        eq(d.id, query.documentId), eq(d.categoryId, query.categoryId), inArray(c.owner, owner), allowed,
+      ));
+      return document ? { ...document, mimeType: document.mimeType ?? undefined } : null;
     },
   };
 }

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   Address,
   ConnectInput,
@@ -30,13 +30,18 @@ import {
   type ReplyReceipt,
   type RequesterView,
   type ToolResult,
+  VaultDocumentQuery,
+  VaultDocumentUpload,
+  MAX_VAULT_DOCUMENT_BYTES,
+  type VaultDocumentDownload,
+  type VaultDocumentMetadata,
 } from "@team-31/protocol";
 import { sameSharing } from "@team-31/protocol/constants";
 import { BrokerError, notFound } from "../errors.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import { sanitizeReply } from "../sanitize/pipeline.js";
 import { SanitizeBlockedError, type SanitizeFlag } from "../sanitize/types.js";
-import type { RequestRow, StoreTx } from "../store/store.js";
+import type { RequestRow, StoreTx, VaultDocumentRow } from "../store/store.js";
 import { submitOnce } from "./ask-receipt.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
@@ -457,6 +462,54 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return { categoryId };
   }
 
+  function documentMetadata(row: VaultDocumentRow): VaultDocumentMetadata {
+    return {
+      id: row.id,
+      fileName: row.fileName,
+      ...(row.mimeType ? { mimeType: row.mimeType } : {}),
+      sizeBytes: row.sizeBytes,
+      sha256: row.sha256,
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+
+  async function uploadVaultDocument(tx: StoreTx, userId: string, input: VaultDocumentUpload, agentId?: string) {
+    const parsed = VaultDocumentUpload.safeParse(input);
+    if (!parsed.success) throw new BrokerError("invalid_input", "Revisa el archivo y la categoría.");
+    if (!(await tx.getUser(userId))?.address) throw new BrokerError("invalid_input", "Primero elige tu dirección Sideband.");
+    const content = Buffer.from(parsed.data.contentBase64, "base64");
+    if (content.length > MAX_VAULT_DOCUMENT_BYTES) throw new BrokerError("invalid_input", "El archivo supera el límite de 5 MiB.");
+    const row = await tx.putVaultDocument({
+      id: randomUUID(),
+      owner: userId,
+      categoryId: parsed.data.categoryId,
+      fileName: parsed.data.fileName,
+      mimeType: parsed.data.mimeType,
+      sizeBytes: content.length,
+      sha256: createHash("sha256").update(content).digest("hex"),
+      content,
+      idempotencyKey: parsed.data.idempotencyKey,
+      createdAt: clock.now(),
+    });
+    if (!row) throw notFound();
+    record(tx, "broker.vault.document.uploaded", { userId, agentId, attrs: { sizeBytes: row.sizeBytes } });
+    return documentMetadata(row);
+  }
+
+  async function downloadVaultDocument(tx: StoreTx, userId: string, input: VaultDocumentQuery, agentId?: string): Promise<VaultDocumentDownload> {
+    const parsed = VaultDocumentQuery.safeParse(input);
+    if (!parsed.success) throw new BrokerError("invalid_input", "Revisa el documento y la categoría.");
+    const reader = (await tx.getUser(userId))?.address;
+    if (!reader) throw notFound();
+    const row = await tx.sharedVaultDocument(reader, parsed.data.to, parsed.data);
+    if (!row) throw notFound();
+    const metadata = documentMetadata(row);
+    record(tx, "broker.vault.document.downloaded", {
+      userId, agentId, attrs: { sizeBytes: row.sizeBytes },
+    });
+    return { ...metadata, contentBase64: Buffer.from(row.content).toString("base64") };
+  }
+
   async function removeContact(o: Owner, contact: Address) {
     if (!Address.safeParse(contact).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
     await store.tx(async (tx) => {
@@ -526,6 +579,20 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return queryVault(tx, p.userId, input, p.agentId);
+        });
+      },
+      async uploadVaultDocument(p, input) {
+        requireScope(p, "uploadVaultDocument");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          return uploadVaultDocument(tx, p.userId, input, p.agentId);
+        });
+      },
+      async downloadVaultDocument(p, input) {
+        requireScope(p, "downloadVaultDocument");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          return downloadVaultDocument(tx, p.userId, input, p.agentId);
         });
       },
       async capabilities(p, to) {

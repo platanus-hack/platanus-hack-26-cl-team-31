@@ -224,6 +224,16 @@ export const catalog = [
     attrs: { action: code(), allowed: z.boolean().optional() } }),
   defineEvent({ name: "broker.vault.queried", kind: "policy", description: "Consulta a categorías compartidas, sin contenido.",
     attrs: { lookup: z.enum(["entries", "categories"]), visible: z.boolean() } }),
+  defineEvent({
+    name: "broker.vault.document.uploaded", kind: "policy",
+    description: "Archivo guardado en una categoría propia, sin nombre ni contenido.",
+    attrs: { sizeBytes: int().nonnegative() },
+  }),
+  defineEvent({
+    name: "broker.vault.document.downloaded", kind: "policy",
+    description: "Archivo descargado desde una categoría autorizada, sin nombre ni contenido.",
+    attrs: { sizeBytes: int().nonnegative() },
+  }),
   defineEvent({ name: "broker.contact.tagged", kind: "policy", description: "Cambiaron las etiquetas de un contacto. Sin la dirección ni los nombres.",
     attrs: { tags: int().nonnegative(), by: z.enum(["owner", "agent"]), sharingApplied: z.boolean() } }),
   defineEvent({ name: "broker.tag.changed", kind: "policy", description: "Un titular o su agente creó, cambió o borró una etiqueta. Sin el nombre.",
