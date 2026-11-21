@@ -44,7 +44,7 @@ export function createAdminApp(deps: AdminAppDeps) {
     audit: async ({ actor, action, target }) => {
       await deps.audit.record({ actor: { type: "token", id: actor.tokenId, label: actor.label }, action, target })
     },
-  }, deps.telemetry)
+  }, deps.telemetry, deps.adminUrl)
 
   const notFound = () => ErrorBody.parse({ error: { code: "not_found", message: "No se encontró la ruta." } })
   if (deps.serveSpa) {

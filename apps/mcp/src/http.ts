@@ -2,6 +2,7 @@ import { createServer as createNodeServer, type IncomingMessage, type ServerResp
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpGuard } from "@team-31/auth/resource";
+import { acceptsMcpOrigin } from "@team-31/auth";
 import { BrokerError, type AgentPort } from "@team-31/broker/client";
 import { Scope, type Principal } from "@team-31/protocol";
 import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
@@ -98,7 +99,7 @@ export function createHttpServer(
       res.writeHead(404).end();
       return;
     }
-    if (req.headers.origin !== undefined && req.headers.origin !== resource.origin) {
+    if (!acceptsMcpOrigin(req.headers.origin, resource.origin)) {
       res.writeHead(403, { "Content-Type": "application/json" }).end(JSON.stringify({
         jsonrpc: "2.0", id: null, error: { code: -32000, message: "Origen no permitido." },
       }));
