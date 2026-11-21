@@ -106,10 +106,66 @@ export const flowEventNames: ReadonlySet<string> = new Set([
   "mcp.tool.call",
   "coordination.tool.call",
   "whatsapp.link",
+  "broker.agent.connected",
+  "broker.agent.revoked",
 ]);
+
+/**
+ * Atributos que el mapeo lee de cada evento. El servidor del admin recorta `attrs` a esta lista
+ * antes de enviar una fila al navegador (`projectFlowRow`): lo que no está aquí nunca sale.
+ */
+export const flowAttrKeys: Readonly<Record<string, readonly string[]>> = {
+  "broker.policy.evaluated": ["tool", "category", "decision", "rule"],
+  "broker.request.created": ["tool", "rule", "targetAgentId"],
+  "broker.request.status_changed": ["from", "to", "by"],
+  "broker.request.closed": ["outcome", "escalated"],
+  "broker.reply.rejected": ["code", "flags"],
+  "broker.reply.sanitized": ["flags", "dropped"],
+  "broker.owner.decided": ["decision"],
+  "wake.attempt": ["attempt", "ok", "httpStatus", "code"],
+  "wake.exhausted": ["attempts"],
+  "mcp.tool.call": ["tool", "outcome"],
+  "coordination.tool.call": ["tool", "outcome"],
+  "whatsapp.link": ["action"],
+  "broker.agent.connected": ["kind"],
+  "broker.agent.revoked": ["by"],
+};
 
 const askTools = new Set(["sideband_ask", "ask_contact"]);
 const checkTools = new Set(["sideband_check", "await_contact"]);
+
+/** true si la fila produce algún paso. Las tools de coordinación que no pasan por el broker no cuentan. */
+export function isFlowRow(row: Pick<TelemetryRow, "name" | "attrs">): boolean {
+  if (!flowEventNames.has(row.name)) return false;
+  if (row.name !== "coordination.tool.call") return true;
+  const tool = row.attrs.tool;
+  return typeof tool === "string" && (askTools.has(tool) || checkTools.has(tool));
+}
+
+/** Copia de la fila con `attrs` recortado a `flowAttrKeys`. La usa el servidor antes de enviarla. */
+export function projectFlowRow<R extends TelemetryRow>(row: R): R {
+  const keys = flowAttrKeys[row.name] ?? [];
+  const attrs: Record<string, Scalar> = {};
+  for (const key of keys) {
+    const value = row.attrs[key];
+    if (value !== undefined) attrs[key] = value;
+  }
+  return { ...row, attrs };
+}
+
+// Prefijos de las cuentas de prueba y demo: «demo-ana@…» se muestra como «Ana».
+const testPrefixes = /^(demo|test|e2e|fixture|seed)[-_.]/i;
+
+/** Nombre visible de un titular: su nombre o, si no tiene, la parte local de su dirección legible. */
+export function ownerLabel(address: string | null | undefined, displayName?: string | null): string {
+  const name = displayName?.trim();
+  if (name) return name;
+  if (!address) return "Sin identificar";
+  const local = address.split("@")[0] ?? address;
+  const words = local.replace(testPrefixes, "").split(/[-_.]+/).filter(Boolean);
+  if (words.length === 0) return local;
+  return words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join(" ");
+}
 // Spans: `at` es el final; el paso empezó durationMs antes.
 const spans = new Set(["mcp.tool.call", "coordination.tool.call", "wake.attempt"]);
 
@@ -151,24 +207,46 @@ export interface TelemetryMapper {
    * provisional por titular con dirección y sin agentes. Va antes de los eventos en vivo.
    */
   snapshot(at: number): FlowEvent[];
+  /**
+   * Compara el directorio (recién refrescado) con quienes el mapeo cree presentes: `left` por cada
+   * agente que ahora figura revocado y `joined` por cada agente nuevo no revocado. Cubre señales
+   * perdidas mientras el stream estuvo caído. Idempotente.
+   */
+  reconcile(at: number): FlowEvent[];
+  /** Ids de usuario y agente que aparecieron en filas y no están en el directorio. Se vacía al leerlo. */
+  takeUnknown(): { users: string[]; agents: string[] };
 }
+
+/** Filas recordadas para descartar duplicados (reconexiones, relecturas del servidor). */
+const SEEN_ROWS = 10_000;
 
 export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper {
   const contexts = new Map<string, RequestContext>();
+  // Ids de fila ya mapeados (orden de alta, acotado): una fila repetida no produce pasos.
+  const mappedRows = new Set<string>();
+  const unknownUsers = new Set<string>();
+  const unknownAgents = new Set<string>();
+  // Agentes presentes según la foto, las entradas y las salidas (para `reconcile`).
+  const present = new Map<string, { agentId: string; userId?: string }>();
+  // Último nombre con el que se dibujó cada agente: si el directorio lo completa después, reconcile lo corrige.
+  const drawnLabels = new Map<string, string>();
+  const labelKey = (actor: FlowActor) => `${actor.owner.key}|${actor.owner.label}|${actor.label}|${actor.channel ?? ""}`;
 
   const ownerOfAddress = (address: string): FlowOwner => {
     const user = directory.address(address);
-    return { key: address, label: user?.displayName || address };
+    return { key: address, label: ownerLabel(address, user?.displayName) };
   };
   const ownerOfUser = (userId: string): FlowOwner => {
     const user = directory.user(userId);
-    if (user?.address) return { key: user.address, label: user.displayName || user.address };
+    if (!user) unknownUsers.add(userId);
+    if (user?.address) return { key: user.address, label: ownerLabel(user.address, user.displayName) };
     return { key: `user:${userId}`, label: user?.displayName || short(userId) };
   };
   const unknownOwner: FlowOwner = { key: "unknown", label: "Sin identificar" };
 
   const agentActor = (agentId: string, fallback: FlowOwner): FlowActor => {
     const agent = directory.agent(agentId);
+    if (!agent) unknownAgents.add(agentId);
     const owner = agent?.userId ? ownerOfUser(agent.userId) : fallback;
     const channel = channelLabel(agent?.kind);
     return { id: `agent:${agentId}`, role: "agent", label: agent?.label || channel || "Agente", owner, ...(channel ? { channel } : {}) };
@@ -218,6 +296,9 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
 
   return {
     map(row) {
+      if (mappedRows.has(row.id)) return [];
+      mappedRows.add(row.id);
+      if (mappedRows.size > SEEN_ROWS) mappedRows.delete(mappedRows.values().next().value as string);
       const { attrs } = row;
       const requestId = row.requestId ?? undefined;
       const ctx = context(requestId);
@@ -226,7 +307,13 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
       const at = spans.has(row.name) && duration ? end - duration : end;
       const out: FlowEvent[] = [];
       const push = (event: Omit<FlowEvent, "id" | "at" | "requestId" | "traceId">) => {
-        for (const end of [event.from, event.to]) if (end !== BROKER && end.role === "agent" && !end.placeholder) seen.add(end.id);
+        for (const end of [event.from, event.to]) {
+          if (end === BROKER || end.role !== "agent" || end.placeholder) continue;
+          seen.add(end.id);
+          drawnLabels.set(end.id, labelKey(end));
+          // Participar cuenta como presencia, salvo el propio paso de salida.
+          if (event.step !== "left" && end.id.startsWith("agent:")) present.set(end.id, { agentId: end.id.slice("agent:".length) });
+        }
         out.push({
           id: out.length === 0 ? row.id : `${row.id}:${out.length}`,
           at: at + out.length, // conserva el orden dentro de una misma fila
@@ -282,6 +369,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
             : placeholder(row.userId ? ownerOfUser(row.userId) : unknownOwner);
           if (row.agentId && !seen.has(self.id)) {
             seen.add(self.id);
+            present.set(self.id, { agentId: row.agentId, ...(row.userId ? { userId: row.userId } : {}) });
             push({ step: "joined", status: "ok", from: self, to: self, meta: {} });
           }
           if (tool === "sideband_reply") {
@@ -292,6 +380,16 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
           }
           const step = checkTools.has(tool) ? "check" : tool === "sideband_inbox" ? "inbox" : "tool";
           push({ step, status: failed ?? "ok", from: self, to: BROKER, meta: { tool } });
+          break;
+        }
+        case "broker.agent.connected":
+        case "broker.agent.revoked": {
+          if (!row.agentId || !row.userId) break;
+          const actor = agentActor(row.agentId, ownerOfUser(row.userId));
+          const joined = row.name === "broker.agent.connected";
+          if (joined) present.set(actor.id, { agentId: row.agentId, userId: row.userId });
+          else present.delete(actor.id);
+          push({ step: joined ? "joined" : "left", status: joined ? "ok" : "expired", from: actor, to: actor, meta: joined ? {} : { by: str(attrs.by) } });
           break;
         }
         case "whatsapp.link": {
@@ -375,6 +473,8 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
       const out: FlowEvent[] = [];
       const add = (actor: FlowActor) => {
         seen.add(actor.id);
+        drawnLabels.set(actor.id, labelKey(actor));
+        if (!actor.placeholder && actor.id.startsWith("agent:")) present.set(actor.id, { agentId: actor.id.slice("agent:".length) });
         out.push({ id: `snapshot:${actor.id}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: { snapshot: true } });
       };
       for (const user of users) {
@@ -387,6 +487,42 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
         for (const agent of own) add(agentActor(agent.agentId, owner));
       }
       return out;
+    },
+    reconcile(at) {
+      const out: FlowEvent[] = [];
+      const { agents } = directory.list();
+      for (const agent of agents) {
+        const id = `agent:${agent.agentId}`;
+        const owner = agent.userId ? ownerOfUser(agent.userId) : unknownOwner;
+        if (agent.revokedAt && present.has(id)) {
+          present.delete(id);
+          const actor = agentActor(agent.agentId, owner);
+          out.push({ id: `reconcile:left:${id}:${at}`, at, step: "left", status: "expired", from: actor, to: actor, meta: {} });
+        } else if (!agent.revokedAt && !present.has(id) && !seen.has(id)) {
+          seen.add(id);
+          present.set(id, { agentId: agent.agentId, ...(agent.userId ? { userId: agent.userId } : {}) });
+          const actor = agentActor(agent.agentId, owner);
+          drawnLabels.set(id, labelKey(actor));
+          out.push({ id: `reconcile:joined:${id}:${at}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: {} });
+        } else if (!agent.revokedAt && drawnLabels.has(id)) {
+          // Ya dibujado con un nombre provisional (p. ej. llegó antes que su titular al directorio):
+          // una entrada sin animación ni línea de tiempo actualiza la tarjeta.
+          const actor = agentActor(agent.agentId, owner);
+          if (drawnLabels.get(id) === labelKey(actor)) continue;
+          drawnLabels.set(id, labelKey(actor));
+          out.push({ id: `reconcile:label:${id}:${at}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: { snapshot: true } });
+        }
+      }
+      return out;
+    },
+    takeUnknown() {
+      const result = {
+        users: [...unknownUsers].filter((id) => !directory.user(id)),
+        agents: [...unknownAgents].filter((id) => !directory.agent(id)),
+      };
+      unknownUsers.clear();
+      unknownAgents.clear();
+      return result;
     },
   };
 }

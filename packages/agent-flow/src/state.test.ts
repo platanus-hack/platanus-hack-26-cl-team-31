@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { BROKER, type FlowActor, type FlowEvent } from "./model.js";
 import { scenarioEvents } from "./scenario.js";
-import { activities, emptyFlowState, reduceFlow, resolveId } from "./state.js";
+import { activities, emptyFlowState, foldFlow, reduceFlow, resolveId } from "./state.js";
 
 const owner = { key: "bob@sideband.app", label: "Bob" };
 const placeholder: FlowActor = { id: "agent@bob@sideband.app", role: "agent", label: "Agente", owner, placeholder: true };
@@ -115,5 +115,19 @@ describe("foldFlow", () => {
       }
     }
     expect(cache.size).toBeGreaterThan(0);
+  });
+});
+
+describe("foldFlow with a base (live window)", () => {
+  it("folding the kept tail from the state after the dropped head equals folding everything", () => {
+    const events = scenarioEvents();
+    const times = events.map((_, i) => i * 10);
+    const dropped = Math.floor(events.length / 2);
+    const base = foldFlow(events, times, dropped);
+    const windowed = foldFlow(events.slice(dropped), times.slice(dropped), events.length - dropped, undefined, 50, base);
+    const full = foldFlow(events, times, events.length);
+    expect([...windowed.actors.keys()]).toEqual([...full.actors.keys()]);
+    expect([...windowed.requests.values()].map((r) => r.status)).toEqual([...full.requests.values()].map((r) => r.status));
+    expect(windowed.log.map((e) => e.event.id)).toEqual(full.log.map((e) => e.event.id));
   });
 });

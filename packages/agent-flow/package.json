@@ -14,6 +14,11 @@
       "types": "./src/scenario.ts",
       "@team-31/source": "./src/scenario.ts",
       "default": "./dist/scenario.js"
+    },
+    "./telemetry": {
+      "types": "./src/telemetry.ts",
+      "@team-31/source": "./src/telemetry.ts",
+      "default": "./dist/telemetry.js"
     }
   },
   "scripts": {

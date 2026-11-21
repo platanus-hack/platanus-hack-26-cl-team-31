@@ -232,9 +232,11 @@ export function foldFlow(
   count: number,
   cache?: Map<number, FlowState>,
   every = 50,
+  /** Estado previo al primer evento (ventana en vivo: los pasos descartados ya aplicados). */
+  base?: FlowState,
 ): FlowState {
   let start = 0;
-  let state = emptyFlowState();
+  let state = base ?? emptyFlowState();
   if (cache) {
     for (let k = Math.floor(count / every) * every; k > 0; k -= every) {
       const hit = cache.get(k);

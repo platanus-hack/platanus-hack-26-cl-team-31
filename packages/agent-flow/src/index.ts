@@ -8,7 +8,11 @@ export {
   channelLabel,
   createFlowDirectory,
   createTelemetryMapper,
+  flowAttrKeys,
   flowEventNames,
+  isFlowRow,
+  ownerLabel,
+  projectFlowRow,
   type DirectoryAgent,
   type DirectoryRequest,
   type DirectoryUser,
@@ -16,3 +20,4 @@ export {
   type TelemetryMapper,
   type TelemetryRow,
 } from "./telemetry.js";
+export { compareIds, createLiveFeed, occurredAt, type LiveFeed, type LiveFeedOptions } from "./live.js";
