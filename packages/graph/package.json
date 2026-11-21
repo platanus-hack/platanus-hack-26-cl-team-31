@@ -1,0 +1,35 @@
+{
+  "name": "@team-31/graph",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./pg": {
+      "types": "./src/pg/index.ts",
+      "default": "./dist/pg/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "bench": "tsx scripts/bench.ts",
+    "bench:pg": "tsx scripts/bench.ts --pg",
+    "demo": "tsx scripts/demo.ts",
+    "clean": "rm -rf dist .turbo node_modules"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@team-31/typescript-config": "workspace:*",
+    "@types/node": "24.19.2",
+    "@types/pg": "^8.15.5",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}

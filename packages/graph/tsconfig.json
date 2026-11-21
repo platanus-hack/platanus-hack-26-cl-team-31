@@ -1,0 +1,12 @@
+{
+  "extends": "@team-31/typescript-config/base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": ["node"],
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src", "scripts"]
+}
