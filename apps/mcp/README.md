@@ -21,7 +21,7 @@ Con `NODE_ENV=production`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL` r
 
 `GET /healthz` devuelve `{"ok":true}`. El descubrimiento OAuth está disponible en `/.well-known/oauth-protected-resource` y `/.well-known/oauth-protected-resource/mcp`. El servidor escucha en `127.0.0.1` por defecto. Puedes elegir otra interfaz con `MCP_HOST`.
 
-Si prefieres Compose, compila con `pnpm build --filter @team-31/mcp` y usa `docker compose --env-file .env --env-file .env.local --profile sideband up -d mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile sideband stop mcp`.
+Si prefieres Compose, usa `docker compose --env-file .env --env-file .env.local --profile sideband up -d --build mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile sideband stop mcp`.
 
 ## Modo de desarrollo
 
