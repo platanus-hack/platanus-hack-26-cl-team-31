@@ -14,7 +14,7 @@ export function whatsappMessage(
   const context: TurnContext = {
     userId: owner.userId, binding, deliveryId: delivery.id, now: new Date(delivery.timestamp * 1000),
     ops: {
-      invitationGroups: () => broker.contactGroups(owner),
+      invitationTags: async () => ({ ...await broker.tags(owner), ...await broker.vault(owner) }),
       contacts: () => broker.directory(owner),
       ask: async input => {
         const view = await broker.ask(owner, input, "whatsapp");

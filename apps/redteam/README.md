@@ -34,9 +34,9 @@ son `describe.skipIf`: si falta algo, se saltan y jamás rompen `pnpm test`.
   la respuesta no se enriquece más allá de `{matches}`, que nada prohibido cruza y que el juez
   la aprueba.
 
-Los veredictos `known_gap` son parte del diseño: representan vectores que hoy pasan (codificación
-en base64, paráfrasis de instrucciones, identificadores que no son contacto). Si el broker mejora
-y un gap deja de fugarse, el test falla y hay que mover el caso a `contained` con su nota.
+Los tres ejemplos históricos (canario en base64, una paráfrasis de instrucciones y un identificador
+`@usuario`) son regresiones `contained`. El juez opcional recibe esas muestras sintéticas directamente.
+Esto no acredita que un filtro de texto entienda cualquier paráfrasis ni que verifique su procedencia.
 
 ## Guardrails cubiertos
 

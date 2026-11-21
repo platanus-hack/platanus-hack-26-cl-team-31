@@ -1,6 +1,6 @@
 import {
   ActivityEvent, Address, Category, ChannelName, FinalOutcome, RequestStatus, ToolArgs, ToolName, ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
-  ContactTag, Sharing,
+  Sharing, TagColor,
 } from "@team-31/protocol";
 import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -11,11 +11,11 @@ import { wakeClaim } from "../store.js";
 import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
-import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit } from "../directory.js";
+import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit, seededTags, sortTags } from "../directory.js";
 import { createWakeCodec } from "./crypto.js";
-import { vaultStore } from "./vault-store.js";
+import { insertWithParents, vaultStore } from "./vault-store.js";
 import {
-  agentConnections, askReceipts, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tagPresets, users, wakeJobs,
+  agentConnections, askReceipts, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tags, users, vaultDocuments, wakeJobs,
 } from "./schema.js";
 
 export type PostgresStoreOptions = {
@@ -60,7 +60,6 @@ function readRequest(row: typeof requests.$inferSelect): RequestRow {
     fromAddress: parseStored(Address, row.fromAddress),
     toAddress: parseStored(Address, row.toAddress),
     targetAgentId: row.targetAgentId ?? undefined,
-    senderGroupId: row.senderGroupId ?? undefined,
     originChannel: row.originChannel === null ? undefined : parseStored(ChannelName, row.originChannel),
     args: parseStored<unknown>(ToolArgs[tool], row.args),
     purpose: row.purpose ?? undefined,
@@ -238,9 +237,10 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
     async listContacts(userId) {
       const { rows } = await db.execute<{
-        address: string; name: string | null; tag: string | null; gives: string[]; receives: string[];
+        address: string; name: string | null; tags: string[]; gives: string[]; receives: string[];
       }>(sql`
-        SELECT f.address, other.display_name AS name, t.tag,
+        SELECT f.address, other.display_name AS name,
+          ARRAY(SELECT t.tag_id FROM sideband.contact_tags t WHERE (t.user_id, t.address) = (f.user_id, f.address)) AS tags,
           ARRAY(SELECT category FROM sideband.grants g
                 WHERE g.grantor_user_id = f.user_id AND g.grantee_address = f.address AND g.revoked_at IS NULL) AS gives,
           ARRAY(SELECT category FROM sideband.grants g
@@ -248,7 +248,6 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         FROM sideband.friends f
         JOIN sideband.users me ON me.user_id = f.user_id AND me.address IS NOT NULL
         LEFT JOIN sideband.users other ON other.address = f.address
-        LEFT JOIN sideband.contact_tags t ON (t.user_id, t.address) = (f.user_id, f.address)
         WHERE f.user_id = ${userId}
         ORDER BY f.address COLLATE "C"`);
       return rows.map(directoryContact);
@@ -287,30 +286,50 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       return removed.length > 0;
     },
 
-    async listContactTags(userId) {
-      const rows = await db.select().from(contactTags).where(eq(contactTags.userId, userId));
-      return new Map(rows.map((row) => [parseStored(Address, row.address), parseStored(ContactTag, row.tag)]));
+    async listTags(userId) {
+      await ensureUser(userId);
+      const [seed] = await db.update(users).set({ tagsSeeded: true })
+        .where(and(eq(users.userId, userId), eq(users.tagsSeeded, false))).returning({ userId: users.userId });
+      if (seed) await db.insert(tags).values(seededTags().map((tag) => ({ userId, ...tag }))).onConflictDoNothing();
+      const rows = await db.select().from(tags).where(eq(tags.userId, userId));
+      return sortTags(rows.map((row) => ({
+        id: row.id, name: row.name, color: parseStored(TagColor, row.color), categories: parseStored(Sharing, row.categories),
+      })));
     },
 
-    async setContactTag(userId, address, tag) {
-      if (!tag) {
-        await db.delete(contactTags).where(and(eq(contactTags.userId, userId), eq(contactTags.address, address)));
-        return;
+    async putTag(userId, tag) {
+      try {
+        await db.transaction((savepoint) => savepoint.insert(tags).values({ userId, ...tag })
+          .onConflictDoUpdate({ target: [tags.userId, tags.id], set: { name: tag.name, color: tag.color, categories: tag.categories } }));
+      } catch (error) {
+        if (error instanceof DrizzleQueryError && (error.cause as { code?: string })?.code === "23505") {
+          throw new BrokerError("conflict", "Ya tienes una etiqueta con ese nombre.");
+        }
+        throw error;
       }
-      await ensureUser(userId);
-      await db.insert(contactTags).values({ userId, address, tag })
-        .onConflictDoUpdate({ target: [contactTags.userId, contactTags.address], set: { tag } });
     },
 
-    async listTagPresets(userId) {
-      const rows = await db.select().from(tagPresets).where(eq(tagPresets.userId, userId));
-      return Object.fromEntries(rows.map((row) => [parseStored(ContactTag, row.tag), parseStored(Sharing, row.categories)]));
+    async deleteTag(userId, tagId) {
+      const removed = await db.delete(tags).where(and(eq(tags.userId, userId), eq(tags.id, tagId))).returning({ id: tags.id });
+      return removed.length > 0;
     },
 
-    async putTagPreset(userId, tag, sharing) {
-      await ensureUser(userId);
-      await db.insert(tagPresets).values({ userId, tag, categories: sharing })
-        .onConflictDoUpdate({ target: [tagPresets.userId, tagPresets.tag], set: { categories: sharing } });
+    async listContactTags(userId) {
+      const rows = await db.select().from(contactTags).where(eq(contactTags.userId, userId))
+        .orderBy(sql`${contactTags.tagId} collate "C"`);
+      const byAddress = new Map<Address, string[]>();
+      for (const row of rows) {
+        const address = parseStored(Address, row.address);
+        byAddress.set(address, [...byAddress.get(address) ?? [], row.tagId]);
+      }
+      return byAddress;
+    },
+
+    async setContactTags(userId, address, tagIds) {
+      await db.delete(contactTags).where(and(eq(contactTags.userId, userId), eq(contactTags.address, address)));
+      if (!tagIds.length) return true;
+      return insertWithParents(db, async (tx) => tx.insert(contactTags)
+        .values([...new Set(tagIds)].map((tagId) => ({ userId, address, tagId }))).onConflictDoNothing());
     },
 
     async listOpenInvitations(userId) {
@@ -380,8 +399,8 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       const filter = and(eq(friends.userId, userId), eq(friends.address, to));
       const [contact] = await db.select({ address: friends.address }).from(friends).where(filter).for("share");
       if (!contact || !relation.tag) return Boolean(contact);
-      const [tag] = await db.select({ tag: contactTags.tag }).from(contactTags).where(and(
-        eq(contactTags.userId, userId), eq(contactTags.address, to), eq(contactTags.tag, relation.tag),
+      const [tag] = await db.select({ tag: contactTags.tagId }).from(contactTags).where(and(
+        eq(contactTags.userId, userId), eq(contactTags.address, to), eq(contactTags.tagId, relation.tag),
       )).for("share");
       return Boolean(tag);
     },
@@ -599,14 +618,14 @@ export function createPostgresStore({ databaseUrl, secretsKey }: PostgresStoreOp
           (SELECT user_id, bucket FROM sideband.quota_windows WHERE reset_at <= now()
            ORDER BY reset_at LIMIT 1000 FOR UPDATE SKIP LOCKED)`);
       }
-      // Both replicas serialize on the same key. Use the DB clock for the whole window.
+      // Replicas serialize on the same key. Report the remaining time after any row-lock wait.
       const { rows: [row] } = await pool.query<{ retry: number }>(`
         INSERT INTO sideband.quota_windows AS w (user_id, bucket, count, reset_at)
         VALUES ($1, $2, 1, statement_timestamp() + interval '1 minute')
         ON CONFLICT (user_id, bucket) DO UPDATE SET
           count = CASE WHEN w.reset_at <= statement_timestamp() THEN 1 ELSE least(w.count + 1, $3::int + 1) END,
           reset_at = CASE WHEN w.reset_at <= statement_timestamp() THEN excluded.reset_at ELSE w.reset_at END
-        RETURNING CASE WHEN count > $3::int THEN greatest(1, ceil(extract(epoch FROM reset_at - statement_timestamp()))::int)
+        RETURNING CASE WHEN count > $3::int THEN greatest(1, ceil(extract(epoch FROM reset_at - clock_timestamp()))::int)
                        ELSE 0 END AS retry`, [userId, bucket, limit]);
       if (!row) throw new BrokerError("internal", "No se pudo verificar la cuota.");
       return row.retry ? { retryAfter: row.retry } : undefined;

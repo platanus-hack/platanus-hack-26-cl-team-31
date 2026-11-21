@@ -11,14 +11,11 @@ export const input = "h-10 w-full rounded-xl bg-field px-3 text-sm text-ink plac
 export const secondaryText = "text-[13px] leading-relaxed text-muted";
 export const eyebrow = "text-[11px] text-subtle";
 
-export function Heading({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
+export function Heading({ title, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
-    <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-      <div className="max-w-2xl">
-        <h1 className="text-[30px] leading-[1.15] font-medium tracking-[-0.01em] text-white sm:text-[36px] sm:leading-[42px]">{title}</h1>
-        {children && <p className="mt-2 text-sm leading-[22px] text-body">{children}</p>}
-      </div>
-      {action}
+    <header className={`mb-6 flex items-center justify-between gap-4 ${action ? "" : "lg:hidden"}`}>
+      <h1 className="text-2xl leading-8 font-medium tracking-[-0.01em] text-white lg:sr-only">{title}</h1>
+      {action && <div className="ml-auto shrink-0">{action}</div>}
     </header>
   );
 }
@@ -52,4 +49,52 @@ export function Feedback({ error, message, errorId }: { error?: string; message?
 
 export function Empty({ children }: { children: ReactNode }) {
   return <p className={`${card} px-5 py-6 text-[13px] text-muted`}>{children}</p>;
+}
+
+const avatarColors = [
+  "bg-[#7db4ff]/25 text-[#9cc6ff]",
+  "bg-[#7ddba3]/25 text-[#8fe3b2]",
+  "bg-[#f2c66d]/25 text-[#f5d38e]",
+  "bg-[#c4a1ff]/25 text-[#d2b8ff]",
+  "bg-[#ff8f80]/25 text-[#ffab9f]",
+  "bg-[#6fd6e0]/25 text-[#8fe0e8]",
+  "bg-[#f59ac8]/25 text-[#f7b3d6]",
+];
+
+export function Initial({ name }: { name: string }) {
+  const hash = [...name].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 0);
+  return <span aria-hidden="true" className={`grid size-9 shrink-0 place-items-center rounded-full text-[13px] font-medium tag ${avatarColors[hash % avatarColors.length]}`}>{name.slice(0, 1).toUpperCase()}</span>;
+}
+
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <span aria-hidden="true" className={`block animate-pulse bg-white/6 ${className.includes("rounded") ? "" : "rounded-md"} ${className}`} />;
+}
+
+export function ListSkeleton({ rows = 4, label = "Cargando" }: { rows?: number; label?: string }) {
+  return (
+    <div role="status" aria-label={label} className={`${card} divide-y divide-line`}>
+      {Array.from({ length: rows }, (_, index) => (
+        <div key={index} className="flex items-center gap-3 px-4 py-3">
+          <Skeleton className="size-9 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className={`h-3.5 ${["w-2/5", "w-1/3", "w-1/2", "w-1/4"][index % 4]}`} />
+            <Skeleton className="h-3 w-1/5" />
+          </div>
+          <Skeleton className="h-7 w-20 rounded-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function PageSkeleton({ rows = 5, tabs = false, label = "Cargando" }: { rows?: number; tabs?: boolean; label?: string }) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        {tabs ? <div className="flex gap-2"><Skeleton className="h-[30px] w-24 rounded-full" /><Skeleton className="h-[30px] w-28 rounded-full" /><Skeleton className="h-[30px] w-24 rounded-full" /></div> : <span />}
+        <Skeleton className="h-8 w-32 rounded-full" />
+      </div>
+      <ListSkeleton rows={rows} label={label} />
+    </div>
+  );
 }

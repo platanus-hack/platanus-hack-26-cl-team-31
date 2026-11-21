@@ -11,4 +11,5 @@ it.each([
 ])("aplica la política de enmarcado correspondiente a %s", async (path, ancestors) => {
   const response = await unstable_getResponseFromNextConfig({ url: `https://web.example${path}`, nextConfig });
   expect(response.headers.get("Content-Security-Policy")).toBe(`frame-ancestors ${ancestors}`);
+  expect(response.headers.get("Content-Security-Policy-Report-Only")).toContain("script-src 'self'");
 });

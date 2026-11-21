@@ -14,7 +14,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       <section className="w-full max-w-md rounded-3xl bg-card p-7 sm:p-9">
         <div>
           <Brand className="mb-8" />
-          <Suspense fallback={<p role="status" className="text-[13px] text-muted">Cargando…</p>}>{children}</Suspense>
+          <Suspense fallback={<div role="status" aria-label="Cargando" className="mt-6 space-y-3"><span className="block h-4 w-3/4 animate-pulse rounded-md bg-white/6" /><span className="block h-4 w-1/2 animate-pulse rounded-md bg-white/6" /><span className="mt-6 block h-11 w-full animate-pulse rounded-full bg-white/6" /></div>}>{children}</Suspense>
         </div>
       </section>
     </main>

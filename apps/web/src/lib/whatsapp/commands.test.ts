@@ -41,6 +41,33 @@ it("mantiene las preguntas explícitas sin Claude y los comandos de estado no us
   expect(broker.status).toHaveBeenCalledOnce();
 });
 
+it("envía la pregunta de estado informal al flujo si está configurado y consulta la última enviada en su ausencia", async () => {
+  const { broker, report } = fixture();
+  const text = "¿Ya respondió?";
+  const flow = vi.fn().mockResolvedValue({ kind: "unavailable", reason: "expired" });
+  await expect(runCommand(broker, owner, text, report, flow)).resolves.toContain("Ese turno venció");
+  expect(flow).toHaveBeenCalledExactlyOnceWith(text);
+  expect(broker.activity).not.toHaveBeenCalled();
+
+  broker.activity.mockResolvedValue([
+    { direction: "received", requestId: "incoming" },
+    { direction: "sent", requestId },
+  ]);
+  await runCommand(broker, owner, text, report);
+  expect(broker.status).toHaveBeenCalledExactlyOnceWith(owner, requestId);
+  expect(report).toHaveBeenCalledExactlyOnceWith("status", pending);
+});
+
+it("distingue una dirección inválida de una pregunta demasiado larga al usar /pregunta", async () => {
+  const { broker, report } = fixture();
+  const help = await runCommand(broker, owner, "", report);
+  await expect(runCommand(broker, owner, "/pregunta nadie: qué tal", report)).resolves.toBe(help);
+  await expect(runCommand(broker, owner, `/pregunta ${to}: ${"a".repeat(1001)}`, report))
+    .resolves.toBe(`Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${help}`);
+  expect(broker.ask).not.toHaveBeenCalled();
+  expect(report).not.toHaveBeenCalled();
+});
+
 it("lista los contactos con lo que cada uno comparte, con o sin Claude", async () => {
   const { broker, report } = fixture();
   broker.contacts.mockResolvedValue({ contacts: [

@@ -4,8 +4,11 @@ import type { ActivityItem } from "@team-31/protocol";
 import { useEffect, useState } from "react";
 
 import { parseActivity } from "./parse-activity";
-import { eventLabels, fieldLabels, statusLabels, toolLabels } from "../labels";
-import { card, Empty, Heading, Stamp, Status } from "../ui";
+import { ActivityDetail } from "../activity-list";
+import { outcomeText, sentence } from "../activity-text";
+import { eventLabels } from "../labels";
+import { Modal } from "../modal";
+import { card, Empty, Heading, Initial, ListSkeleton } from "../ui";
 
 type Connection = "connecting" | "live" | "reconnecting";
 
@@ -15,13 +18,6 @@ const connectionLabels: Record<Connection, string> = {
   reconnecting: "Reconectando…",
 };
 
-const clock = new Intl.DateTimeFormat("es-CL", {
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  timeZone: "America/Santiago",
-});
-
 const snapshotSize = 30;
 
 function upsert(items: ActivityItem[], item: ActivityItem) {
@@ -30,76 +26,57 @@ function upsert(items: ActivityItem[], item: ActivityItem) {
     .slice(0, snapshotSize);
 }
 
-function LiveCard({ item }: { item: ActivityItem }) {
+const steps = ["received", "permission", "wake", "response", "delivery"] as const;
+
+function Steps({ item }: { item: ActivityItem }) {
+  const done = new Set(item.events.map((event) => event.kind));
+  const failed = item.status === "denied" || item.status === "delivery_failed" || item.status === "expired";
+  const last = steps.reduce((index, step, current) => (done.has(step) ? current : index), -1);
   return (
-    <article className={`${card} overflow-hidden`}>
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2 className="text-[15px] font-medium tracking-[-0.01em]">{toolLabels[item.tool]}</h2>
-            <p className="text-xs font-medium text-muted">{item.direction === "sent" ? "Enviada" : "Recibida"}</p>
-          </div>
-          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 break-all font-mono text-sm text-muted">
-            <span>{item.from}</span><span aria-label="a">→</span><span>{item.to}</span>
-          </p>
-          <p className="mt-2 text-xs text-muted">Plazo <Stamp value={item.expiresAt} /></p>
-        </div>
-        {item.status === "no_data" ? (
-          <span className="inline-block rounded-full bg-danger-bg px-2.5 py-1 text-xs font-medium text-danger">
-            {statusLabels.no_data}
-          </span>
-        ) : <Status status={item.status} />}
-      </header>
-
-      <div className="px-5 py-5 sm:px-6">
-        {item.events.length > 0 ? (
-          <ol aria-label="Recorrido de la solicitud" className="ml-1.5 border-l border-line">
-            {item.events.map((event, index) => (
-              <li key={index} className="relative flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-4 pl-5 last:pb-0">
-                <span aria-hidden="true" className="absolute top-1.5 -left-[5px] size-[9px] rounded-full bg-accent ring-2 ring-card" />
-                <time dateTime={event.at} className="font-mono text-xs tabular-nums text-muted">
-                  {clock.format(new Date(event.at))}
-                </time>
-                <p className="text-sm font-medium">{eventLabels[event.kind]}</p>
-                {event.status && <p className="text-xs text-muted">{statusLabels[event.status]}</p>}
-              </li>
-            ))}
-          </ol>
-        ) : <p className="text-sm text-muted">Aún no hay eventos registrados.</p>}
-
-        {(Boolean(item.droppedFields?.length) ||
-          (item.direction === "received" && (item.decisionReason || item.internalReason))) && (
-          <dl className="mt-5 space-y-2 rounded-xl stage px-4 py-3 text-sm">
-            {Boolean(item.droppedFields?.length) && (
-              <div>
-                <dt className="font-medium">Campos eliminados</dt>
-                <dd className="mt-0.5 wrap-anywhere text-muted">
-                  {item.droppedFields?.map((field) => fieldLabels[field] ?? field).join(", ")}
-                </dd>
-              </div>
-            )}
-            {item.direction === "received" && item.decisionReason && (
-              <div>
-                <dt className="font-medium">Motivo de la decisión</dt>
-                <dd className="mt-0.5 wrap-anywhere text-muted">{item.decisionReason}</dd>
-              </div>
-            )}
-            {item.direction === "received" && item.internalReason && (
-              <div>
-                <dt className="font-medium">Motivo interno</dt>
-                <dd className="mt-0.5 wrap-anywhere text-muted">{item.internalReason}</dd>
-              </div>
-            )}
-          </dl>
-        )}
-      </div>
-    </article>
+    <ol aria-label="Recorrido" className="flex items-center gap-1">
+      {steps.map((step, index) => {
+        const reached = index <= last;
+        const color = !reached ? "bg-white/10" : failed && index === last ? "bg-danger/70" : "bg-accent-ink/70";
+        return (
+          <li key={step} title={eventLabels[step]} className="flex items-center gap-1">
+            <span className={`block h-1.5 w-6 rounded-full ${color}`} />
+            <span className="sr-only">{eventLabels[step]}: {reached ? "listo" : "pendiente"}</span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
+
+function LiveRow({ item, fresh }: { item: ActivityItem; fresh: boolean }) {
+  const { other, lead, rest } = sentence(item);
+  const [status, color] = outcomeText[item.status];
+  return (
+    <Modal label={`Ver detalle: ${rest}`} title={lead ? `${lead} ${rest}` : rest}
+      triggerClassName={`flex w-full cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 text-left transition-colors duration-700 hover:bg-white/3 ${fresh ? "bg-accent-soft" : ""}`}
+      trigger={<>
+        <Initial name={other} />
+        <span className="min-w-48 flex-1">
+          <span className="block text-sm text-body [overflow-wrap:anywhere]">{lead && <span className="font-medium text-ink">{lead} </span>}{rest}</span>
+          <span className={`block text-xs ${color}`}>{status}</span>
+        </span>
+        <span className="ml-auto flex items-center gap-4">
+          <Steps item={item} />
+          <time dateTime={item.createdAt} className="w-12 text-right font-mono text-xs text-muted tabular-nums">{clock.format(new Date(item.createdAt))}</time>
+        </span>
+      </>}>
+      <ActivityDetail item={item} />
+    </Modal>
+  );
+}
+
+const clock = new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "America/Santiago" });
 
 export function LiveActivity() {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [connection, setConnection] = useState<Connection>("connecting");
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let source: EventSource;
@@ -122,40 +99,51 @@ export function LiveActivity() {
       };
       source.addEventListener("activity", (event: MessageEvent<string>) => {
         const item = parseActivity(event.data);
-        if (item) setItems((previous) => upsert(previous, item));
+        if (!item) return;
+        setItems((previous) => upsert(previous, item));
+        setFresh((previous) => new Set(previous).add(item.requestId));
+        setTimeout(() => setFresh((previous) => {
+          const next = new Set(previous);
+          next.delete(item.requestId);
+          return next;
+        }), 1500);
       });
     }
 
     connect();
+    const settle = setTimeout(() => setReady(true), 1200);
     return () => {
+      clearTimeout(settle);
       clearTimeout(retryTimer);
       source.close();
     };
   }, []);
 
   return (
-    <div className="max-w-4xl">
-      <Heading title="El cable" action={(
-        <p role="status" className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${
-          connection === "live" ? "bg-success-bg text-success" : "bg-warn-bg text-warn"
-        }`}>
-          <span aria-hidden="true" className="size-2 rounded-full bg-current" />
+    <div>
+      <Heading title="El cable" />
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-body">Las solicitudes de tus agentes, en el momento en que pasan.</p>
+        <p role="status" className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${connection === "live" ? "bg-success-bg text-success" : "bg-warn-bg text-warn"}`}>
+          <span aria-hidden="true" className="relative flex size-2">
+            {connection === "live" && <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-50" />}
+            <span className="relative inline-flex size-2 rounded-full bg-current" />
+          </span>
           {connectionLabels[connection]}
         </p>
-      )}>
-        Sigue el recorrido de tus solicitudes enviadas y recibidas.
-      </Heading>
+      </div>
 
       {items.length > 0 ? (
-        <ul aria-label="Solicitudes" className="space-y-4">
-          {items.map((item) => <li key={item.requestId}><LiveCard item={item} /></li>)}
+        <ul aria-label="Solicitudes" aria-live="polite" className={`${card} divide-y divide-line overflow-hidden`}>
+          {items.map((item) => <li key={item.requestId}><LiveRow item={item} fresh={ready && fresh.has(item.requestId)} /></li>)}
         </ul>
-      ) : (
+      ) : connection === "connecting" ? <ListSkeleton rows={4} label="Conectando con el cable" /> : (
         <Empty>
-          {connection === "connecting" ? "Cargando solicitudes…" : connection === "reconnecting" ?
-            "Esperando a que vuelva la conexión." : "Las nuevas solicitudes aparecerán aquí."}
+          {connection === "reconnecting" ?
+            "Se cortó la conexión. Reintentando…" : "Todo tranquilo. Cuando un agente pregunte o responda, aparecerá aquí al instante."}
         </Empty>
       )}
+      <p className="mt-3 px-1 text-xs text-muted">Cada barra es un paso: recibida, permiso, aviso al agente, respuesta y entrega.</p>
     </div>
   );
 }

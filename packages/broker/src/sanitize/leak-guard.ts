@@ -28,6 +28,7 @@ const PHONE = /\+?\d(?:[\s().-]{0,2}\d){7,}/g;
 const INJECTION_MARKERS: readonly RegExp[] = [
   /\bignore\s+(?:all\s+|any\s+)?(?:the\s+)?(?:previous|prior|above|earlier)\s+(?:instructions|messages|rules)/,
   /\bignora\s+(?:todas\s+)?(?:las\s+)?instrucciones\s+(?:anteriores|previas)/,
+  /\bolv[ií]date\s+de\s+(?:todo\s+lo\s+anterior|las\s+instrucciones\s+(?:anteriores|previas))\b/,
   /\b(?:system|developer)\s+(?:prompt|message|instructions)\b/,
   /\b(?:prompt|instrucciones|mensaje)\s+(?:del\s+)?sistema\b/,
   /\byou\s+are\s+now\b/,
@@ -54,6 +55,7 @@ function findContacts(text: string, ctx: SanitizeContext): FlagCode[] {
 
   // Emails contain domains; don't report them twice as URLs.
   const withoutEmails = lower.replace(EMAIL, " ");
+  if (/(?:^|[^\p{L}\p{N}._%+-])@[\p{L}\p{N}_]+/u.test(withoutEmails.replace(URL, " "))) codes.push("leak_handle");
   const urls = withoutEmails.match(URL) ?? [];
   if (urls.some((match) => !allowed(match, ctx.contacts?.urls))) codes.push("leak_url");
 
@@ -81,7 +83,13 @@ function echoesSender(text: string, ctx: SanitizeContext): boolean {
 /** Leak findings for one free-text value, without the matched content. */
 export function inspectText(text: string, ctx: SanitizeContext): FlagCode[] {
   const codes: FlagCode[] = [];
-  if ((ctx.canaries ?? []).some((canary) => canary.trim() && compactSkeleton(text).includes(compactSkeleton(canary)))) {
+  const compact = compactSkeleton(text);
+  if ((ctx.canaries ?? []).some((canary) => {
+    if (!canary.trim()) return false;
+    const bytes = Buffer.from(canary);
+    return compact.includes(compactSkeleton(canary)) ||
+      text.includes(bytes.toString("base64url")) || text.includes(bytes.toString("base64").replace(/=+$/, ""));
+  })) {
     codes.push("leak_canary");
   }
   if ((ctx.privateHints ?? []).some((hint) => containsHint(text, hint))) codes.push("leak_private_hint");

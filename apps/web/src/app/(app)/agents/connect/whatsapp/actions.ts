@@ -13,8 +13,9 @@ const path = "/agents/connect/whatsapp";
 
 export async function updatePhone(_: Feedback, form: FormData): Promise<Feedback> {
   const { userId } = await getOwner();
-  await requireAddress();
   const action = form.get("action");
+  // The owner can revoke the local link even when the broker is unavailable.
+  if (action !== "unlink") await requireAddress();
   const telemetry = getTelemetry();
   try {
     const store = whatsappStore();

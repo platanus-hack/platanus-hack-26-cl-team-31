@@ -13,7 +13,7 @@ import {
   WaypointsIcon,
   type LucideIcon,
 } from "lucide-react"
-import { NavLink, useLocation } from "react-router"
+import { matchPath, NavLink, useLocation } from "react-router"
 
 import { Badge } from "@/components/ui/badge"
 import {
@@ -131,16 +131,16 @@ export function AppSidebar() {
               <SidebarGroupContent>
                 <SidebarMenu>
                   {items.map((item) => {
-                    const active =
-                      item.to === "/"
-                        ? pathname === "/"
-                        : pathname.startsWith(item.to)
+                    const active = matchPath(
+                      { path: item.to, end: item.to === "/" },
+                      pathname
+                    )
                     const count = badgeValue(item.badge)
                     return (
                       <SidebarMenuItem key={item.to}>
                         <SidebarMenuButton
                           asChild
-                          isActive={active}
+                          isActive={active !== null}
                           tooltip={item.title}
                         >
                           <NavLink

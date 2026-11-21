@@ -6,7 +6,7 @@ import { createMessageFlow, type Intent, type InterpretMessage, type TurnContext
 const ana = "ana.soto@sideband.app", second = "ana.vera@sideband.app";
 const circle = "69a03cbd-6881-48c0-83f0-b49f8336377e";
 const directory: AgentContacts = {
-  contacts: [ana, second].map(address => ({ address, tag: "friend", displayName: "Ana", theyShare: [], youShare: [] })),
+  contacts: [ana, second].map(address => ({ address, tags: ["friend"], displayName: "Ana", theyShare: [], youShare: [] })),
   circles: [{ id: circle, name: "Fútbol", members: [ana, second, ana] }],
 };
 const askAna: Intent = { action: "ask", selector: { scope: "friend", count: "one", person: "Ana" },
@@ -37,16 +37,19 @@ function harness(interpret: InterpretMessage = async () => structuredClone(askAn
 }
 
 describe("turnos del titular", () => {
-  it.each([["Sin grupo", null], ["Equipo", circle]])("respeta la elección explícita de grupo %s", async (answer, groupId) => {
+  it.each([["Sin etiqueta", []], ["Equipo", ["equipo"]]])("respeta la elección explícita de etiqueta %s", async (answer, tags) => {
     const intent: Intent = { action: "ask", tool: "connect", args: {}, selector: { scope: "address", count: "one", person: ana } };
     const { run, ask, context } = harness(async () => intent);
-    context.ops.invitationGroups = async () => ({ groups: [{ name: "Equipo", id: circle, members: [] }], categories: [] });
+    context.ops.invitationTags = async () => ({
+      tags: [{ name: "Equipo", id: "equipo", color: "sky", categories: ["availability"], members: [] }], categories: [],
+    });
     const first = await run("Invita a " + ana);
-    if (first.kind !== "clarification") throw new Error("expected group selection");
+    if (first.kind !== "clarification") throw new Error("expected tag selection");
     expect(ask).not.toHaveBeenCalled();
-    expect(first.choices?.map(c => c.label)).toEqual(["Sin grupo", "Equipo"]);
-    await run(answer!, first.continuationId);
-    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ to: ana, groupId, tool: "connect" }));
+    expect(first.choices?.map(c => c.label)).toEqual(["Sin etiqueta", "Equipo"]);
+    expect(first.question).toContain("Equipo — Disponibilidad horaria");
+    await run(answer as string, first.continuationId);
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ to: ana, tags, tool: "connect" }));
   });
 
   it("elige dentro de amigos, conserva el interés y consulta el recibo después", async () => {
@@ -68,7 +71,7 @@ describe("turnos del titular", () => {
 
   it("una dirección de trabajo no satisface la condición de amistad, tampoco en aclaraciones", async () => {
     const { run, context, ask } = harness();
-    context.ops.contacts = async () => ({ contacts: [{ ...directory.contacts[0]!, tag: "work" }], circles: [] });
+    context.ops.contacts = async () => ({ contacts: [{ ...directory.contacts[0]!, tags: ["work"] }], circles: [] });
     const result = await run("¿A mi amiga Ana le interesa la cerámica?");
     if (result.kind !== "clarification") throw new Error("expected clarification");
     expect((await run(ana, result.continuationId)).kind).toBe("clarification");
@@ -208,7 +211,7 @@ describe("turnos del titular", () => {
       ...askAna, selector: { scope: "friend", count: "many" },
     }));
     const addresses = Array.from({ length: 6 }, (_, i) => "amigo" + i + "@sideband.app");
-    context.ops.contacts = async () => ({ contacts: addresses.map(address => ({ address, tag: "friend", theyShare: [], youShare: [] })), circles: [] });
+    context.ops.contacts = async () => ({ contacts: addresses.map(address => ({ address, tags: ["friend"], theyShare: [], youShare: [] })), circles: [] });
     const submit = ask.getMockImplementation()!;
     const confirmed = new Set<string>();
     let budget = 2;

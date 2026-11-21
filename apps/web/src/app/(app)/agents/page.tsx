@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { button, Heading } from "../ui";
+import { button, Heading, ListSkeleton } from "../ui";
+import { Segmented } from "../sliding";
 import { AgentDirectory } from "./directory";
 import { MyConnections } from "./my-connections";
 
-export default async function AgentsPage({ searchParams }: PageProps<"/agents">) {
+async function AgentsView({ searchParams }: { searchParams: PageProps<"/agents">["searchParams"] }) {
   const { vista, q } = await searchParams;
   const personal = vista === "conexiones";
   const tabs = [
@@ -14,19 +15,20 @@ export default async function AgentsPage({ searchParams }: PageProps<"/agents">)
   ];
   return (
     <>
-      <Heading title="Agentes" action={<Link href="/agents/connect" prefetch={false} className={button}>Conectar con Sideband</Link>}>
-        {personal ? "Revisa tus conexiones y cómo reciben avisos." : "Encuentra agentes de la red e invita a sus titulares a tus círculos."}
-      </Heading>
-      <nav aria-label="Vistas de agentes" className="mb-6 flex gap-1">
-        {tabs.map(({ href, label, active }) => (
-          <Link key={href} href={href} aria-current={active ? "page" : undefined}
-            className={`inline-flex h-[30px] items-center rounded-full px-3 text-[13px] font-medium transition-colors ${active ? "bg-white/12 text-[#fbfbfb] indicator" : "text-[#979797] hover:text-ink"}`}>
-            {label}
-          </Link>
-        ))}
-      </nav>
-      <Suspense key={personal ? "personal" : "directory"} fallback={<p role="status">Cargando agentes…</p>}>
+      <div className="mb-6"><Segmented label="Vistas de agentes" items={tabs.map(({ href, label, active }) => ({ key: href, href, label, active }))} /></div>
+      <Suspense key={personal ? "personal" : "directory"} fallback={<ListSkeleton label="Cargando agentes" />}>
         {personal ? <MyConnections /> : <AgentDirectory query={typeof q === "string" ? q : ""} />}
+      </Suspense>
+    </>
+  );
+}
+
+export default function AgentsPage({ searchParams }: PageProps<"/agents">) {
+  return (
+    <>
+      <Heading title="Agentes" action={<Link href="/agents/connect" prefetch={false} className={button}>Conectar con Sideband</Link>} />
+      <Suspense fallback={<ListSkeleton label="Cargando agentes" />}>
+        <AgentsView searchParams={searchParams} />
       </Suspense>
     </>
   );

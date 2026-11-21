@@ -1,6 +1,5 @@
 import type { ToolName, ToolResult } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import type { Redactor } from "./redact.js";
 
 export type StageName = "parse" | "canonicalize" | "policy" | "redact" | "leak-guard";
 
@@ -19,6 +18,7 @@ export type FlagCode =
   | "leak_private_hint"
   | "leak_canary"
   | "leak_email"
+  | "leak_handle"
   | "leak_phone"
   | "leak_url"
   | "leak_sender_echo"
@@ -57,6 +57,21 @@ export type ContactPolicy = {
   phones?: ContactAllowance;
   urls?: ContactAllowance;
 };
+
+export type RedactInput = {
+  text: string;
+  allowedFields: readonly string[];
+  guidance: string;
+  privateHints: readonly string[];
+};
+
+/**
+ * Rewrites free text so it only says what the owner allows. Implementations may be fallible
+ * (e.g. an LLM); the pipeline always re-validates their output and runs leak-guard afterwards.
+ */
+export interface Redactor {
+  redact(input: RedactInput): Promise<{ text: string }>;
+}
 
 export type SanitizeContext = {
   tool: ToolName;

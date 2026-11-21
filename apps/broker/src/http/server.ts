@@ -35,14 +35,20 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       const { after, q } = parseInput(route.query, c.req.query());
       return agent.networkUsers(c.get("mcp"), after, q);
     }
-    case "owner.contactGroups": return owner.contactGroups(c.get("web"));
+    case "owner.tags": return owner.tags(c.get("web"));
+    case "owner.createTag": return owner.createTag(c.get("web"), await parseBody(c, route.body));
+    case "owner.updateTag":
+      return owner.updateTag(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
+    case "owner.deleteTag": return owner.deleteTag(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "agent.connect": return agent.connect(c.get("mcp"));
     case "agent.vaultCatalog": return agent.vaultCatalog(c.get("mcp"));
-    case "agent.contactGroups": return agent.contactGroups(c.get("mcp"));
-    case "agent.changeContactGroup": return agent.changeContactGroup(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.tags": return agent.tags(c.get("mcp"));
+    case "agent.changeTag": return agent.changeTag(c.get("mcp"), await parseBody(c, route.body));
     case "agent.vaultMembers": return agent.vaultMembers(c.get("mcp"), parseInput(route.query, c.req.query()).categoryId);
     case "agent.changeVault": return agent.changeVault(c.get("mcp"), await parseBody(c, route.body));
     case "agent.queryVault": return agent.queryVault(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.uploadVaultDocument": return agent.uploadVaultDocument(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.downloadVaultDocument": return agent.downloadVaultDocument(c.get("mcp"), await parseBody(c, route.body));
     case "owner.vault": return owner.vault(c.get("web"));
     case "owner.changeVault": return owner.changeVault(c.get("web"), await parseBody(c, route.body));
     case "agent.capabilities":
@@ -108,10 +114,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.contacts(c.get("web"));
     case "owner.setSharing":
       return owner.setSharing(c.get("web"), parseInput(route.params, c.req.param()).address, await parseBody(c, route.body));
-    case "owner.setContactTag":
-      return owner.setContactTag(c.get("web"), parseInput(route.params, c.req.param()).address, (await parseBody(c, route.body)).tag);
-    case "owner.setTagPreset":
-      return owner.setTagPreset(c.get("web"), parseInput(route.params, c.req.param()).tag, await parseBody(c, route.body));
+    case "owner.setContactTags":
+      return owner.setContactTags(c.get("web"), parseInput(route.params, c.req.param()).address, (await parseBody(c, route.body)).tags);
     case "owner.answerInvitation":
       return owner.answerInvitation(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
     case "owner.circles":
@@ -145,6 +149,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
 
 // Ports that create a request share the ask rate-limit bucket.
 const askPorts: readonly (string | null)[] = ["agent.ask", "owner.ask", "owner.channelAsk"];
+const vaultPorts: readonly (string | null)[] = ["agent.uploadVaultDocument", "agent.downloadVaultDocument"];
 
 // Correlates the http.request span with the request it touched (ids only, never the payload).
 function requestIdOf(c: HttpContext, result: unknown): string | undefined {
@@ -175,7 +180,9 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   for (const route of Object.values(routes)) {
     app.on([route.method], [route.path], ...(route.iss ? [auth[route.iss]] : []), async (c: HttpContext) => {
       if (route.iss) {
-        const bucket = askPorts.includes(route.port) ? "ask" : route.port === "agent.reply" ? "reply" : "other";
+        const bucket = askPorts.includes(route.port) ? "ask"
+          : route.port === "agent.reply" ? "reply"
+            : vaultPorts.includes(route.port) ? "vault" : "other";
         const caller = route.iss === "admin" ? `admin:${c.get("admin").adminId}` : c.get(route.iss).userId;
         const blocked = await limiter.consume(caller, bucket);
         if (blocked) {

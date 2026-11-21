@@ -209,7 +209,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL && !process.env.CI)("resuelve una amiga
     const recipient = { userId: name };
     const address = await stack.owner.claimAddress(recipient, name);
     await sql.query("UPDATE sideband.users SET display_name = $1 WHERE user_id = $2", ["Ana", name]);
-    const invitation = await stack.owner.connect({ userId: "bob" }, address, [], tag);
+    const invitation = await stack.owner.connect({ userId: "bob" }, { to: address, share: [], tags: [tag] });
     await stack.owner.answerInvitation(recipient, invitation.requestId, { accept: true, share: ["interests"] });
   }
   const bob = await stack.connect("bob");

@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import { AskInput, ProfileSearch, ToolArgs, type RequesterView } from "@team-31/protocol";
+import { AskInput, categories, ProfileSearch, ToolArgs, type RequesterView } from "@team-31/protocol";
 import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
 import { continueIntent, grounded } from "./intent.js";
 import { matchesPerson, normalized, resolveRecipients, type Prompt } from "./recipients.js";
@@ -31,7 +31,7 @@ class Turn {
   private relation?: Relation;
   private circleId?: string;
   private categoryId?: string;
-  private invitationGroup?: string | null;
+  private invitationTag?: string | null;
   private jobs: RoutedAsk[] = [];
   private refs: ReceiptRef[] = [];
   private readonly at: string;
@@ -61,7 +61,7 @@ class Turn {
   private async clarify(prompt: Prompt): Promise<Step> {
     const choices = prompt.choices?.length ? prompt.choices : undefined;
     await this.session.save({ phase: "clarify", at: this.at, relativeDays: this.relativeDays, intent: this.intent, field: prompt.field,
-      choices, circleId: this.circleId, invitationGroup: this.invitationGroup, refs: this.refs, timezone: this.timezone });
+      choices, circleId: this.circleId, invitationTag: this.invitationTag, refs: this.refs, timezone: this.timezone });
     return this.finish({ kind: "clarification", question: prompt.question, choices, continuationId: this.session.continuationId });
   }
 
@@ -89,7 +89,7 @@ class Turn {
       this.intent = selection.intent;
       this.circleId = selection.circleId;
       this.categoryId = selection.categoryId;
-      this.invitationGroup = selection.invitationGroup;
+      this.invitationTag = selection.invitationTag;
     } else {
       this.intent = grounded(await parse(this.input.text, { at: this.at, timezone: this.timezone }), this.input.text);
     }
@@ -180,20 +180,21 @@ class Turn {
     if (intent.action !== "ask") throw new Error("Invalid ask transition");
     const args = this.validateArgs(intent);
     if ("field" in args) return this.clarify(args);
-    if (intent.tool === "connect" && this.invitationGroup === undefined) {
-      const catalog = await this.context.ops.invitationGroups?.();
-      const groups = catalog?.groups ?? [];
-      const sharing = groups.map(group => {
-        const names = catalog!.categories.filter(c => c.contactGroups.some(g => g.id === group.id)).map(c => c.name);
-        return group.name + " — " + (names.join(", ") || "sin categorías compartidas");
+    if (intent.tool === "connect" && this.invitationTag === undefined) {
+      const catalog = await this.context.ops.invitationTags?.();
+      const tags = catalog?.tags ?? [];
+      const sharing = tags.map(tag => {
+        const names = [...tag.categories.map(c => categories[c].label),
+          ...catalog!.categories.filter(c => c.tags.includes(tag.id)).map(c => c.name)];
+        return tag.name + " — " + (names.join(", ") || "no comparte nada");
       });
-      return this.clarify({ field: "invitationGroup", question: ["¿A qué grupo quieres agregar el contacto?", ...sharing].join("\n"),
-        choices: [{ label: "Sin grupo", value: "none" }, ...groups.map(g => ({ label: g.name, value: g.id }))] });
+      return this.clarify({ field: "invitationTag", question: ["¿Qué etiqueta le pones al contacto?", ...sharing].join("\n"),
+        choices: [{ label: "Sin etiqueta", value: "none" }, ...tags.map(t => ({ label: t.name, value: t.id }))] });
     }
     this.jobs = this.targets.map(to => {
       const idempotencyKey = createHash("sha256").update(JSON.stringify([this.session.id, to])).digest("hex");
       const input = AskInput.parse({ to, tool: intent.tool, args: args.value, idempotencyKey, requireRelation: this.relation,
-        ...(intent.tool === "connect" && { groupId: this.invitationGroup }) });
+        ...(intent.tool === "connect" && { tags: this.invitationTag ? [this.invitationTag] : [] }) });
       return { ...input, idempotencyKey };
     });
     this.refs = [];

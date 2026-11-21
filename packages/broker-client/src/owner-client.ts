@@ -1,4 +1,4 @@
-import { Owner, type Address, type ConnectInput, type ContactTag, type Sharing } from "@team-31/protocol";
+import { Owner } from "@team-31/protocol";
 import { encodeAsk, routes } from "@team-31/protocol/http";
 import type { OwnerPort } from "./ports.js";
 import { createHttpClient, type ClientOptions } from "./http.js";
@@ -13,7 +13,10 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     searchPublicProfiles: async (o, query) => (await request(routes.ownerSearchPublicProfiles, o, { body: { query } })).items,
     directory: o => request(routes.ownerDirectory, o),
     queryVault: (o, body) => request(routes.ownerQueryVault, o, { body }),
-    contactGroups: o => request(routes.ownerContactGroups, o),
+    tags: o => request(routes.ownerTags, o),
+    createTag: (o, body) => request(routes.ownerCreateTag, o, { body }),
+    updateTag: (o, id, body) => request(routes.ownerUpdateTag, o, { params: { id }, body }),
+    deleteTag: (o, id) => request(routes.ownerDeleteTag, o, { params: { id } }),
     vault: (o) => request(routes.ownerVault, o),
     changeVault: (o, body) => request(routes.ownerChangeVault, o, { body }),
     me: (owner) => request(routes.ownerMe, owner),
@@ -37,12 +40,10 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     setChannel: (owner, name, body) => request(routes.ownerSetChannel, owner, { params: { name }, body }),
     ping: (owner, agentId) => request(routes.ownerPing, owner, { params: { agentId } }),
     revokeAgent: (owner, agentId) => request(routes.ownerRevokeAgent, owner, { params: { agentId } }),
-    connect: (owner, to: Address | ConnectInput, share?: Sharing, tag?: ContactTag) =>
-      request(routes.ownerConnect, owner, { body: typeof to === "string" ? { to, share, tag } : to }),
+    connect: (owner, body) => request(routes.ownerConnect, owner, { body }),
     contacts: (owner) => request(routes.ownerContacts, owner),
     setSharing: (owner, address, body) => request(routes.ownerSetSharing, owner, { params: { address }, body }),
-    setContactTag: (owner, address, tag) => request(routes.ownerSetContactTag, owner, { params: { address }, body: { tag } }),
-    setTagPreset: (owner, tag, body) => request(routes.ownerSetTagPreset, owner, { params: { tag }, body }),
+    setContactTags: (owner, address, tags) => request(routes.ownerSetContactTags, owner, { params: { address }, body: { tags } }),
     answerInvitation: (owner, id, body) => request(routes.ownerAnswerInvitation, owner, { params: { id }, body }),
     circles: async (owner) => (await request(routes.ownerCircles, owner)).items,
     createCircle: (owner, name) => request(routes.ownerCreateCircle, owner, { body: { name } }),

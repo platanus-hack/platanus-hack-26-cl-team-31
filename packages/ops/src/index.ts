@@ -41,8 +41,7 @@ export async function applyOpsMigrations({ databaseUrl }: { databaseUrl: string 
     if (refresh?.exists) await client.query("SELECT ops.refresh_views()");
     await client.query("SELECT ops.refresh_whatsapp_view()");
     await client.query("SELECT ops.refresh_vault_view()");
-    await client.query("SELECT ops.refresh_vault_contact_group_view()");
-    await client.query("SELECT ops.refresh_group_invitations_view()");
+    await client.query("SELECT ops.refresh_tags_view()");
     await client.query("SELECT ops.refresh_quota_view()");
     await client.query("SELECT ops.refresh_message_turns_view()");
     await client.query("SELECT ops.refresh_ask_receipts_view()");

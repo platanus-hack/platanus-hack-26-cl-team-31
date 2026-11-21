@@ -51,7 +51,7 @@ export async function resolveRecipients(
     relation = { kind: "circle", circleId: circle.id };
   } else {
     const tag = scope === "contacts" ? undefined : scope;
-    members = directory.contacts.filter(contact => !tag || contact.tag === tag).map(contact => contact.address);
+    members = directory.contacts.filter(contact => !tag || contact.tags.includes(tag)).map(contact => contact.address);
     relation = tag ? { kind: "contact", tag } : { kind: "contact" };
   }
   const candidates = [...new Set(members)].filter(to => !person || matchesPerson(person, to, names.get(to)));

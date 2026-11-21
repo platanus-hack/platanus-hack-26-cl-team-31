@@ -1,86 +1,73 @@
-import { Suspense } from "react";
-import { ownerClient } from "@/lib/broker";
-import { readAsOwner } from "../owner";
+import { cache, Suspense } from "react";
 
 import { readContacts } from "./actions";
-import { card, Empty, Heading, Stamp } from "../ui";
-import { ContactRow, IncomingInvitation, InviteForm, TagPresetsEditor } from "./contact-forms";
+import { Segmented } from "../sliding";
+import { card, Empty, Heading, PageSkeleton, Stamp } from "../ui";
+import { ContactRow, IncomingInvitation, InviteButton } from "./contact-forms";
 import { describeSharing } from "./describe";
 
-async function PrivateGroups() {
-  const { data: { groups, categories } } = await readAsOwner(o => ownerClient().contactGroups(o));
-  return <section aria-labelledby="groups-title" className="mb-10 space-y-3">
-    <h2 id="groups-title" className="font-medium">Grupos privados</h2>
-    {groups.length === 0 ? <Empty>Todavía no tienes grupos privados.</Empty> : <ul className="space-y-2">
-      {groups.map(group => {
-        const shared = categories.filter(c => c.contactGroups.some(g => g.id === group.id));
-        return <li key={group.id} className={`${card} space-y-1 px-5 py-3`}>
-          <h3 className="font-medium">{group.name}</h3>
-          <p className="break-words text-sm">Miembros: {group.members.join(", ") || "Sin miembros"}</p>
-          <p className="text-sm">Categorías compartidas: {shared.map(c => c.name).join(", ") || "Ninguna"}</p>
-        </li>;
-      })}
-    </ul>}
-  </section>;
-}
+const contactsData = cache(readContacts);
 
-async function ContactsList() {
-  const { contacts, presets, incoming, outgoing } = await readContacts();
+type View = "contactos" | "solicitudes" | "enviadas";
+
+async function ContactsList({ searchParams }: { searchParams: PageProps<"/contacts">["searchParams"] }) {
+  const { vista } = await searchParams;
+  const view: View = vista === "solicitudes" || vista === "enviadas" ? vista : "contactos";
+  const { contacts, tags, incoming, outgoing } = await contactsData();
+  const tabs: { id: View; label: string; count?: number }[] = [
+    { id: "contactos", label: "Contactos" },
+    { id: "solicitudes", label: "Solicitudes", count: incoming.length },
+    { id: "enviadas", label: "Enviadas", count: outgoing.length },
+  ];
   return (
-    <div className="space-y-10">
-      {incoming.length > 0 && (
-        <section aria-labelledby="incoming-title">
-          <h2 id="incoming-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Invitaciones</h2>
-          <ul className="space-y-3">
-            {incoming.map((invitation) => <IncomingInvitation key={invitation.requestId} invitation={invitation} presets={presets} />)}
-          </ul>
-        </section>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+      <Segmented label="Vistas de contactos" items={tabs.map(({ id, label, count }) => ({
+        key: id, href: id === "contactos" ? "/contacts" : `/contacts?vista=${id}`, active: view === id,
+        label: <>{label}{count ? <span className={`rounded-full px-1.5 text-[11px] tabular-nums ${id === "solicitudes" ? "bg-accent-soft text-accent-ink" : "bg-white/8 text-body"}`}>{count}</span> : null}</>,
+      }))} />
+      <InviteButton tags={tags} />
+      </div>
+
+      {view === "solicitudes" && (incoming.length === 0 ? <Empty>No tienes solicitudes pendientes.</Empty> : (
+        <ul className={`${card} divide-y divide-line`}>
+          {incoming.map((invitation) => <IncomingInvitation key={invitation.requestId} invitation={invitation} tags={tags} />)}
+        </ul>
+      ))}
+
+      {view === "enviadas" && (outgoing.length === 0 ? <Empty>No tienes invitaciones esperando respuesta.</Empty> : (
+        <ul className={`${card} divide-y divide-line`}>
+          {outgoing.map((invitation) => (
+            <li key={invitation.requestId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{invitation.address}</p>
+                <p className="text-xs text-muted">Le compartirás: {describeSharing(invitation.offer)}</p>
+              </div>
+              <p className="text-xs text-muted">Vence el <Stamp value={invitation.expiresAt} /></p>
+            </li>
+          ))}
+        </ul>
+      ))}
+
+      {view === "contactos" && (
+        <>
+          {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Toca Invitar para conectar con alguien.</Empty> : (
+            <ul className="space-y-2">
+              {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} tags={tags} />)}
+            </ul>
+          )}
+        </>
       )}
-
-      <InviteForm presets={presets} />
-
-      {outgoing.length > 0 && (
-        <section aria-labelledby="outgoing-title">
-          <h2 id="outgoing-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Esperando respuesta</h2>
-          <ul className={`${card} divide-y divide-line`}>
-            {outgoing.map((invitation) => (
-              <li key={invitation.requestId} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
-                <div className="min-w-0">
-                  <p className="break-all font-medium">{invitation.address}</p>
-                  <p className="text-xs text-muted">Le compartirás: {describeSharing(invitation.offer)}</p>
-                </div>
-                <p className="text-xs text-muted">Vence el <Stamp value={invitation.expiresAt} /></p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section aria-labelledby="contacts-title">
-        <h2 id="contacts-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Tus contactos</h2>
-        {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Invita a alguien con su dirección Sideband.</Empty> : (
-          <ul className="space-y-2">
-            {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} presets={presets} />)}
-          </ul>
-        )}
-      </section>
-
-      <TagPresetsEditor presets={presets} />
     </div>
   );
 }
 
-export default function ContactsPage() {
+export default function ContactsPage({ searchParams }: PageProps<"/contacts">) {
   return (
-    <div className="max-w-2xl">
-      <Heading title="Contactos">
-        Cada contacto tiene una etiqueta que define qué le compartes. Si quieres, ajustas a alguien en particular.
-      </Heading>
-      <Suspense fallback={<p role="status">Cargando grupos…</p>}>
-        <PrivateGroups />
-      </Suspense>
-      <Suspense fallback={<p role="status">Cargando contactos…</p>}>
-        <ContactsList />
+    <div>
+      <Heading title="Contactos" />
+      <Suspense fallback={<PageSkeleton tabs label="Cargando contactos" />}>
+        <ContactsList searchParams={searchParams} />
       </Suspense>
     </div>
   );

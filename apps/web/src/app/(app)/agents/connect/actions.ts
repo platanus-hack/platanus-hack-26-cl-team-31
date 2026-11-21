@@ -5,12 +5,13 @@ import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { observeWebRequest, getTelemetry } from "../../../../lib/telemetry";
+import { observeWebRequest, getTelemetry } from "@/lib/telemetry";
 
+import { actionError, type Feedback } from "../../action-feedback";
 import { clients, type ClientKind, type ManualWakeKind } from "./clients";
 import { connectContext, listConnections } from "./connections";
 
-type SaveFeedback = { error?: string; message?: string };
+type SaveFeedback = Feedback & { requestId?: string };
 type PingFeedback = { requestId?: string; error?: string; errorId?: string };
 
 export async function selectConnection(kind: ClientKind, form: FormData) {
@@ -30,22 +31,33 @@ export async function saveWake(kind: ManualWakeKind, agentId: string, _state: Sa
 
   const url = form.get("url");
   const secret = form.get("secret");
-  const target = WakeTarget.safeParse(kind === "grokbot"
+  const remove = kind === "grokbot" && form.get("operation") === "remove";
+  const configuration = kind === "grokbot"
     ? { kind: "grokbot_routine", url, key: secret }
-    : { kind: "openclaw_hooks", baseUrl: url, token: secret, agentId: "main" });
-  if (!target.success || typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+    : { kind: "openclaw_hooks", baseUrl: url, token: secret, agentId: "main" };
+  const target = WakeTarget.safeParse(remove ? { kind: "none" } : configuration);
+  if (!target.success || (!remove && (typeof url !== "string" || !/^https?:\/\//i.test(url)))) {
     return { error: "Ingresa una URL HTTP o HTTPS y un secreto de al menos 16 caracteres." };
+  }
+  if (target.data.kind === "grokbot_routine" && /^(?:Authorization\s*:|Bearer\s)/i.test(target.data.key.trimStart())) {
+    return { error: "Copia el campo key del panel Webhook de la rutina." };
   }
 
   try {
     await broker.setWake(owner, agentId, target.data);
   } catch (error) {
-    getTelemetry().error("action saveWake", error);
-    return { error: "No se pudo guardar el aviso. Comprueba que el agente siga conectado." };
+    return actionError("saveWake", error, "No se pudo actualizar el aviso. Comprueba que el agente siga conectado.");
   }
 
+  getTelemetry().emit("web.agent.wake_configured", { userId: owner.userId, agentId, attrs: { kind: remove ? "none" : clients[kind].wakeKind } });
   revalidatePath("/agents");
   revalidatePath(`/agents/connect/${kind}`);
+  if (remove) return { message: "Aviso quitado. El agente sigue conectado." };
+  if (kind === "grokbot") {
+    const ping = await startPing(kind, agentId);
+    if (ping.error) return { error: "El aviso quedó guardado. Pulsa Probar para reintentar.", errorId: ping.errorId };
+    return { requestId: ping.requestId };
+  }
   return { message: "Aviso guardado." };
 }
 

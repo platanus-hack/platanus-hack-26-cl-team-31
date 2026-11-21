@@ -314,14 +314,13 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       "v_message_turns",
       "v_oauth_clients",
       "v_oauth_grants",
-      "v_pending_group_invitations",
       "v_quota_windows",
       "v_request_events",
       "v_request_payloads",
       "v_requests",
       "v_service_health",
+      "v_tag_summary",
       "v_users",
-      "v_vault_contact_group_summary",
       "v_vault_summary",
       "v_wake_jobs",
     ])
@@ -404,6 +403,28 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       ["broker", "up"],
       ["mcp", "down"],
     ])
+  })
+
+  it("overview suma cada solicitud en su estado y su herramienta", async () => {
+    const id = "req_overview_interest"
+    await store.tx(async (tx) => {
+      const pending = await tx.getRequest(ids.open)
+      await tx.insertRequest({
+        ...pending!,
+        id,
+        tool: "interest_check",
+        args: { interest: "cerámica" },
+        allowedFields: ["matches"],
+      })
+    })
+    try {
+      const { requests } = await queries.overview("1h")
+      expect(requests.total).toBe(4)
+      expect(requests.byStatus.awaiting_agent).toBe(2)
+      expect(requests.byTool).toEqual({ question: 3, interest_check: 1 })
+    } finally {
+      await db.query("DELETE FROM sideband.requests WHERE id = $1", [id])
+    }
   })
 
   it("services devuelve el último latido por instancia", async () => {
@@ -568,6 +589,36 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     expect(await queries.error("x'; DROP TABLE ops.events; --")).toBeNull()
   })
 
+  it("pagina eventos, desempata spans y busca el último error por ID numérico", async () => {
+    // A ambos lados de una potencia de diez y fuera del rango exacto de Number.
+    const ids = ["9999999999999999", "10000000000000000", "10000000000000001"]
+    const errorId = randomUUID()
+    const traceId = randomUUID().replaceAll("-", "")
+    await db.query(
+      `INSERT INTO ops.events (id, at, service, instance, kind, name, level, error_id, trace_id)
+       SELECT id, now(), 'broker', 'test', 'error', 'error', 'error', $2, $3
+       FROM unnest($1::bigint[]) AS id`,
+      [ids, errorId, traceId]
+    )
+    try {
+      const tail = await queries.events(EventFilters.parse({ traceId, afterId: "0", limit: 1 }))
+      expect(tail.map((event) => event.id)).toEqual([ids[0]])
+      const next = await queries.events(EventFilters.parse({ traceId, afterId: tail[0]!.id, limit: 2 }))
+      expect(next.map((event) => event.id)).toEqual(ids.slice(1))
+
+      const latest = await queries.events(EventFilters.parse({ traceId, limit: 1 }))
+      expect(latest.map((event) => event.id)).toEqual([ids[2]])
+      const older = await queries.events(EventFilters.parse({ traceId, beforeId: latest[0]!.id, limit: 1 }))
+      expect(older.map((event) => event.id)).toEqual([ids[1]])
+
+      expect((await queries.error(errorId))?.id).toBe(ids[2])
+      expect((await queries.trace(traceId))?.spans.map((span) => span.spanId))
+        .toEqual(ids.map((id) => `event:${id}`))
+    } finally {
+      await db.query("DELETE FROM ops.events WHERE error_id = $1", [errorId])
+    }
+  })
+
   it("users y user unen persona, identidad OAuth, reglas, agentes y solicitudes", async () => {
     const users = page(UserSummary).parse(
       await queries.users(UserFilters.parse({}))
@@ -686,6 +737,15 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     for (const secret of [SECRET_QUESTION, SECRET_PURPOSE, SECRET_ANSWER, WAKE_SECRET, "no-filtrar", "hooks.example.com"]) {
       expect(text).not.toContain(secret)
     }
+  })
+
+  it("requestRefs limita a 200 solicitudes distintas antes de buscar las referencias", async () => {
+    const missing = Array.from({ length: 199 }, (_, i) => `missing-${i}`)
+    const idsToRead = [missing[0]!, ...missing, ids.answered, ids.open]
+
+    const refs = await queries.requestRefs(idsToRead)
+
+    expect(refs.map((ref) => ref.id)).toEqual([ids.answered])
   })
 
   it("audit pagina la bitácora del admin sin meta", async () => {

@@ -57,6 +57,7 @@ export function useFlowPlayback({
   };
 
   const reset = useCallback(() => {
+    if (savedRef.current) setPaused(savedRef.current.paused);
     inspectRef.current = null;
     savedRef.current = null;
     setInspect(null);

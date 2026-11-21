@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 
 import { getOwnerAccount, getOwnerUser } from "@/lib/auth-owner";
 import { getTelemetry } from "@/lib/telemetry";
+import { frozen } from "@/lib/frozen";
 import { whatsappStore } from "@/lib/whatsapp/runtime";
 
 import { card, Stamp, textLink } from "../ui";
 
 async function linkedPhone(userId: string) {
+  if (frozen) return "Sin vincular";
   try {
     const state = await whatsappStore().state(userId);
     return state?.linked ?? "Sin vincular";
@@ -36,8 +38,8 @@ export async function OwnerProfile() {
     : "Sin foto";
 
   return (
-    <section aria-labelledby="profile-title" className="mt-8">
-      <h2 id="profile-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Mi perfil</h2>
+    <section aria-labelledby="profile-title">
+      <h2 id="profile-title" className="sr-only">Mi perfil</h2>
       <div className={card}>
         <table aria-labelledby="profile-title" className="w-full table-fixed text-left text-sm">
           <tbody className="divide-y divide-line">

@@ -6,20 +6,23 @@ Con `ANTHROPIC_API_KEY` y la base de turnos configuradas, el servidor publica `s
 
 `search_public_profiles({ query })` busca personas por nombre o dirección dentro del directorio público. Las consultas sobre un amigo o un círculo se resuelven dentro de las relaciones del titular. [Diseño del flujo](../../docs/message-routing.md)
 
-## Grupos privados de la bóveda
+## Etiquetas de contactos
 
-- `sideband_contacts` lista los contactos aceptados. `sideband_contact_groups` lista tus grupos privados y sus miembros.
-- `sideband_contact_group_change` permite `create`, `delete`, `add_contact` y `remove_contact`; todas las operaciones salvo `create` usan el ID del grupo. Puedes agregar solo contactos aceptados.
-- `sideband_vault_catalog` muestra qué etiquetas y grupos privados tienen permiso de lectura en cada categoría propia, sin leer su contenido.
+- `sideband_contacts` lista los contactos aceptados con los IDs de sus etiquetas. `sideband_tags` lista las etiquetas del titular con su nombre, color, las categorías que comparten y los contactos que las llevan.
+- Cada titular parte con Amigo, Familia y Trabajo, y puede crear, renombrar, cambiar de color y borrar etiquetas. Un contacto puede llevar varias.
+- `sideband_tag_change` permite `create`, `update` (nombre o color), `delete`, `add_contact` y `remove_contact`; todas las operaciones salvo `create` usan el ID de la etiqueta. Solo se etiquetan contactos aceptados. Los cambios del agente nunca modifican lo que el titular comparte: las categorías de cada etiqueta solo se eligen en la App Sideband.
+- `sideband_vault_catalog` muestra qué etiquetas (`tags`) tienen permiso de lectura en cada categoría propia, sin leer su contenido.
+- `sideband_vault_upload` guarda cualquier archivo en una categoría propia. El cliente envía sus bytes como base64 y debe generar una `idempotencyKey` nueva por archivo.
+- `sideband_vault_download` devuelve el archivo original como base64 después de comprobar el acceso vigente a la categoría. `sideband_vault_query` lista los metadatos de los archivos cuando consultas una categoría concreta.
 - `sideband_vault_members` lista los contactos con acceso efectivo a una categoría propia. Busca primero su ID con `sideband_vault_catalog`.
-- Con `sideband_vault_change`, `set_contact_group` cambia el acceso de un grupo. `set_member` con `categoryId`, `address` y `allowed` agrega o quita un contacto aceptado de esa categoría. La decisión individual prevalece sobre grupos y etiquetas hasta que se cambie o se elimine el contacto.
+- Con `sideband_vault_change`, `set_tag` cambia el acceso de una etiqueta. `set_member` con `categoryId`, `address` y `allowed` agrega o quita un contacto aceptado de esa categoría. La decisión individual prevalece sobre las etiquetas hasta que se cambie o se elimine el contacto.
 - `sideband_vault_request_access` recibe `to` y `categoryName`. El contacto ve la solicitud en Inicio: al conceder lectura se reutiliza la categoría o se crea vacía y se agrega un permiso individual. Rechazar o dejarla vencer no cambia la bóveda. El solicitante consulta el resultado con `sideband_check`.
 - `sideband_network_users` (`sideband:ask`) lista direcciones con historial de conexión de agente, incluidas las que hoy no tienen agente activo. Devuelve hasta 50 por página; pasa `nextCursor` en `after` para continuar. Aparecer en el directorio no crea contactos ni permisos.
-- Para buscar, envía `q` con parte de la dirección y conserva ese filtro al paginar. Antes de invitar, pregunta al titular qué grupo quiere usar e indica qué categorías comparte. En `sideband_ask` con `tool: "connect"` incluye `groupId` fuera de `args`: el ID elegido (requiere `sideband:vault`) o `null` para «Sin grupo». El grupo es privado y la incorporación solo ocurre si se acepta la invitación y el grupo todavía existe.
-- Si tu cliente no muestra `groupId`, vuelve a consultar `tools/list` en una conexión nueva al mismo endpoint MCP. Busca `sideband_ask.inputSchema.properties.groupId`: si falta también allí, comprueba la versión desplegada; si aparece, actualiza el catálogo de herramientas del cliente.
-- Los grupos son privados, no son círculos ni etiquetas. Crear un grupo no comparte nada. Agregar un miembro le da acceso a lo ya compartido con el grupo. Quitar al contacto o eliminar el grupo revoca ese acceso, sin borrar datos ni tocar otros permisos. Administrar grupos requiere `sideband:vault`.
+- Para buscar, envía `q` con parte de la dirección y conserva ese filtro al paginar. Antes de invitar, pregunta al titular qué etiquetas quiere ponerle e indica qué categorías comparten. En `sideband_ask` con `tool: "connect"` incluye `tags` fuera de `args`: los IDs elegidos (requiere `sideband:vault`) o `[]` para «Sin etiqueta». Sin `share`, la invitación ofrece la unión de las categorías de esas etiquetas.
+- Si tu cliente no muestra `tags`, vuelve a consultar `tools/list` en una conexión nueva al mismo endpoint MCP. Busca `sideband_ask.inputSchema.properties.tags`: si falta también allí, comprueba la versión desplegada; si aparece, actualiza el catálogo de herramientas del cliente.
+- Las etiquetas son del titular y no son círculos. Crear una etiqueta desde el agente no comparte nada. Ponerla a un contacto le da lectura a las categorías de la bóveda permitidas para ella; quitarla o borrarla revoca ese acceso, sin borrar datos. Administrar etiquetas requiere `sideband:vault`.
 
-El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `sideband_ask`, `sideband_inbox`, `sideband_reply` y `sideband_check`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
+El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone las tools de solicitudes, bandeja, contactos y bóveda, incluidas `sideband_vault_upload` y `sideband_vault_download`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
 
 ## Arranque local
 

@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // URL. This is an optimistic routing hint, not authentication: the (app) layout still validates the
 // session and sends an expired cookie to /sign-in exactly as before. Every other route skips this.
 export function proxy(request: NextRequest) {
-  if (getSessionCookie(request)) return NextResponse.next();
+  if (process.env.UI_FROZEN === "1" || getSessionCookie(request)) return NextResponse.next();
   const response = NextResponse.rewrite(new URL("/bienvenida", request.url));
   // "/" answers differently with and without a session: keep shared caches from storing the landing.
   response.headers.set("Cache-Control", "private, no-cache, no-store, max-age=0, must-revalidate");

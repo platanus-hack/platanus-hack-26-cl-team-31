@@ -1,12 +1,12 @@
-import { Address, Category, ContactTag, type AgentContacts, type Contact } from "@team-31/protocol";
+import { Address, Category, defaultTags, type AgentContacts, type Contact, type Tag } from "@team-31/protocol";
 
 export function directoryContact(row: {
-  address: string; name?: string | null; tag?: string | null; gives: string[]; receives: string[];
+  address: string; name?: string | null; tags?: readonly string[] | null; gives: string[]; receives: string[];
 }): Contact {
   return {
     address: Address.parse(row.address),
     ...(row.name ? { displayName: row.name } : {}),
-    ...(row.tag ? { tag: ContactTag.parse(row.tag) } : {}),
+    tags: [...(row.tags ?? [])].sort(),
     // The protocol catalog sets the order for both stores, independent of grant creation time.
     gives: Category.options.filter(category => row.gives.includes(category)),
     receives: Category.options.filter(category => row.receives.includes(category)),
@@ -38,3 +38,17 @@ export function normalizeSearch(input: string) {
 }
 
 export const publicProfileLimit = 25;
+
+const defaultOrder = defaultTags.map((tag) => tag.id);
+
+export function sortTags<T extends Pick<Tag, "id" | "name">>(tags: T[]): T[] {
+  const rank = (tag: T) => {
+    const index = defaultOrder.indexOf(tag.id);
+    return index < 0 ? defaultOrder.length : index;
+  };
+  return tags.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+}
+
+export function seededTags(): Tag[] {
+  return defaultTags.map((tag) => ({ ...tag, categories: [...tag.categories] }));
+}

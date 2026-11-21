@@ -4,6 +4,17 @@
 // Solo lee atributos de una lista blanca por evento. Cualquier otro atributo se ignora, así que un
 // campo nuevo del catálogo nunca llega a la vista sin pasar por aquí.
 import { BROKER, type FlowActor, type FlowEvent, type FlowMeta, type FlowOwner, type FlowStatus } from "./model.js";
+import { createActorResolver, human, placeholder, type FlowDirectory } from "./directory.js";
+
+export {
+  channelLabel,
+  createFlowDirectory,
+  ownerLabel,
+  type DirectoryAgent,
+  type DirectoryRequest,
+  type DirectoryUser,
+  type FlowDirectory,
+} from "./directory.js";
 
 type Scalar = string | number | boolean | null;
 
@@ -21,76 +32,6 @@ export interface TelemetryRow {
   status?: string | null;
   attrs: Record<string, Scalar | undefined>;
 }
-
-export interface DirectoryUser {
-  userId: string;
-  address?: string | null;
-  displayName?: string | null;
-}
-
-export interface DirectoryAgent {
-  agentId: string;
-  userId?: string | null;
-  label?: string | null;
-  /** WakeKind del agente (mcp_events, openclaw_hooks…) o un canal (whatsapp). */
-  kind?: string | null;
-  /** Conexión revocada: no entra en la foto inicial de la red. */
-  revokedAt?: string | null;
-}
-
-/** Lo que el admin expone de una solicitud (RequestSummary): direcciones e ids, sin contenido. */
-export interface DirectoryRequest {
-  id: string;
-  fromAddress: string;
-  toAddress: string;
-  targetAgentId?: string | null;
-  answeredByAgentId?: string | null;
-}
-
-export interface FlowDirectory {
-  add(entries: { users?: DirectoryUser[]; agents?: DirectoryAgent[]; requests?: DirectoryRequest[] }): void;
-  user(userId: string): DirectoryUser | undefined;
-  address(address: string): DirectoryUser | undefined;
-  agent(agentId: string): DirectoryAgent | undefined;
-  request(requestId: string): DirectoryRequest | undefined;
-  /** Todo lo conocido, en orden de alta (para la foto inicial de la red). */
-  list(): { users: DirectoryUser[]; agents: DirectoryAgent[] };
-}
-
-export function createFlowDirectory(initial?: Parameters<FlowDirectory["add"]>[0]): FlowDirectory {
-  const users = new Map<string, DirectoryUser>();
-  const addresses = new Map<string, DirectoryUser>();
-  const agents = new Map<string, DirectoryAgent>();
-  const requests = new Map<string, DirectoryRequest>();
-  const directory: FlowDirectory = {
-    add(entries) {
-      for (const user of entries.users ?? []) {
-        users.set(user.userId, user);
-        if (user.address) addresses.set(user.address, user);
-      }
-      for (const agent of entries.agents ?? []) agents.set(agent.agentId, agent);
-      for (const request of entries.requests ?? []) requests.set(request.id, request);
-    },
-    user: (id) => users.get(id),
-    address: (address) => addresses.get(address),
-    agent: (id) => agents.get(id),
-    request: (id) => requests.get(id),
-    list: () => ({ users: [...users.values()], agents: [...agents.values()] }),
-  };
-  if (initial) directory.add(initial);
-  return directory;
-}
-
-const channelLabels: Record<string, string> = {
-  mcp_events: "MCP",
-  openclaw_hooks: "OpenClaw",
-  grokbot_routine: "Grok Bot",
-  standard_webhook: "Webhook",
-  whatsapp: "WhatsApp",
-  none: "Agente",
-};
-
-export const channelLabel = (kind?: string | null) => (kind ? (channelLabels[kind] ?? kind) : undefined);
 
 /**
  * Atributos que el mapeo lee de cada evento. El servidor del admin recorta `attrs` a esta lista
@@ -146,26 +87,12 @@ export function projectFlowRow<R extends TelemetryRow>(row: R): Omit<R, "attrs">
   return { ...row, attrs };
 }
 
-// Prefijos de las cuentas de prueba y demo: «demo-ana@…» se muestra como «Ana».
-const testPrefixes = /^(demo|test|e2e|fixture|seed)[-_.]/i;
-
-/** Nombre visible de un titular: su nombre o, si no tiene, la parte local de su dirección legible. */
-export function ownerLabel(address: string | null | undefined, displayName?: string | null): string {
-  const name = displayName?.trim();
-  if (name) return name;
-  if (!address) return "Sin identificar";
-  const local = address.split("@")[0] ?? address;
-  const words = local.replace(testPrefixes, "").split(/[-_.]+/).filter(Boolean);
-  if (words.length === 0) return local;
-  return words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join(" ");
-}
 // Spans: `at` es el final; el paso empezó durationMs antes.
 const spans = new Set(["mcp.tool.call", "coordination.tool.call", "wake.attempt"]);
 
 const str = (value: Scalar | undefined) => (typeof value === "string" && value.length > 0 ? value : undefined);
 const num = (value: Scalar | undefined) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
 const codes = (value: Scalar | undefined) => str(value)?.split(",").filter(Boolean);
-const short = (id: string) => (id.length > 10 ? `${id.slice(0, 8)}…` : id);
 
 const outcomeStatus: Record<string, FlowStatus> = {
   answered: "delivered",
@@ -214,45 +141,18 @@ export interface TelemetryMapper {
 const SEEN_ROWS = 10_000;
 
 export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper {
+  const { ownerOfAddress, ownerOfUser, agentActor, whatsappActor, snapshotActors, takeUnknown } = createActorResolver(directory);
   const contexts = new Map<string, RequestContext>();
   // Ids de fila ya mapeados (orden de alta, acotado): una fila repetida no produce pasos.
   const mappedRows = new Set<string>();
-  const unknownUsers = new Set<string>();
-  const unknownAgents = new Set<string>();
   // Agentes presentes según la foto, las entradas y las salidas (para `reconcile`).
   const present = new Set<string>();
   // Último nombre con el que se dibujó cada agente: si el directorio lo completa después, reconcile lo corrige.
   const drawnLabels = new Map<string, string>();
   const labelKey = (actor: FlowActor) => `${actor.owner.key}|${actor.owner.label}|${actor.label}|${actor.channel ?? ""}`;
 
-  const ownerOfAddress = (address: string): FlowOwner => {
-    const user = directory.address(address);
-    return { key: address, label: ownerLabel(address, user?.displayName) };
-  };
-  const ownerOfUser = (userId: string): FlowOwner => {
-    const user = directory.user(userId);
-    if (!user) unknownUsers.add(userId);
-    if (user?.address) return { key: user.address, label: ownerLabel(user.address, user.displayName) };
-    return { key: `user:${userId}`, label: user?.displayName || short(userId) };
-  };
-  const unknownOwner: FlowOwner = { key: "unknown", label: "Sin identificar" };
-
-  const agentActor = (agentId: string, fallback: FlowOwner): FlowActor => {
-    const agent = directory.agent(agentId);
-    if (!agent) unknownAgents.add(agentId);
-    const owner = agent?.userId ? ownerOfUser(agent.userId) : fallback;
-    const channel = channelLabel(agent?.kind);
-    return { id: `agent:${agentId}`, role: "agent", label: agent?.label || channel || "Agente", owner, ...(channel ? { channel } : {}) };
-  };
-  const placeholder = (owner: FlowOwner): FlowActor => ({ id: `agent@${owner.key}`, role: "agent", label: "Agente", owner, placeholder: true });
-  const human = (owner: FlowOwner): FlowActor => ({ id: `owner@${owner.key}`, role: "owner", label: "Titular", owner });
   // Agentes ya vistos: su primera llamada al MCP cuenta como entrada a la red.
   const seen = new Set<string>();
-  const whatsappActor = (userId: string): FlowActor => {
-    const owner = ownerOfUser(userId);
-    const linked = directory.list().agents.find((a) => a.userId === userId && a.kind === "whatsapp" && !a.revokedAt);
-    return linked ? agentActor(linked.agentId, owner) : { id: `whatsapp@${owner.key}`, role: "agent", label: "WhatsApp", owner, channel: "WhatsApp" };
-  };
 
   function context(requestId: string | undefined): RequestContext {
     if (!requestId) return {};
@@ -269,12 +169,12 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
   function requesterOwner(requestId: string | undefined, ctx: RequestContext): FlowOwner {
     const request = requestId ? directory.request(requestId) : undefined;
     if (request) return ownerOfAddress(request.fromAddress);
-    return ctx.requesterUser ? ownerOfUser(ctx.requesterUser) : unknownOwner;
+    return ownerOfUser(ctx.requesterUser);
   }
   function recipientOwner(requestId: string | undefined, ctx: RequestContext): FlowOwner {
     const request = requestId ? directory.request(requestId) : undefined;
     if (request) return ownerOfAddress(request.toAddress);
-    return ctx.recipientUser ? ownerOfUser(ctx.recipientUser) : unknownOwner;
+    return ownerOfUser(ctx.recipientUser);
   }
   function requester(requestId: string | undefined, ctx: RequestContext): FlowActor {
     const owner = requesterOwner(requestId, ctx);
@@ -354,9 +254,8 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
             push({ step: "ask", status: failed ?? "pending", from: requester(requestId, ctx), to: BROKER, meta: { tool } });
             break;
           }
-          const self = row.agentId
-            ? agentActor(row.agentId, row.userId ? ownerOfUser(row.userId) : unknownOwner)
-            : placeholder(row.userId ? ownerOfUser(row.userId) : unknownOwner);
+          const owner = ownerOfUser(row.userId || undefined);
+          const self = row.agentId ? agentActor(row.agentId, owner) : placeholder(owner);
           if (row.agentId && !seen.has(self.id)) {
             push({ step: "joined", status: "ok", from: self, to: self, meta: {} });
           }
@@ -456,23 +355,12 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
       return out.map(stripUndefined);
     },
     snapshot(at) {
-      const { users, agents } = directory.list();
       const out: FlowEvent[] = [];
-      const add = (actor: FlowActor) => {
+      for (const actor of snapshotActors()) {
         seen.add(actor.id);
         drawnLabels.set(actor.id, labelKey(actor));
         if (!actor.placeholder && actor.id.startsWith("agent:")) present.add(actor.id);
         out.push({ id: `snapshot:${actor.id}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: { snapshot: true } });
-      };
-      for (const user of users) {
-        const own = agents.filter((a) => a.userId === user.userId && !a.revokedAt);
-        const owner = ownerOfUser(user.userId);
-        if (own.length === 0) {
-          // Un titular cuyos agentes se revocaron ya salió de la red: no vuelve como provisional.
-          if (user.address && !agents.some((a) => a.userId === user.userId)) add(placeholder(owner));
-          continue;
-        }
-        for (const agent of own) add(agentActor(agent.agentId, owner));
       }
       return out;
     },
@@ -481,7 +369,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
       const { agents } = directory.list();
       for (const agent of agents) {
         const id = `agent:${agent.agentId}`;
-        const owner = agent.userId ? ownerOfUser(agent.userId) : unknownOwner;
+        const owner = ownerOfUser(agent.userId || undefined);
         if (agent.revokedAt && present.has(id)) {
           present.delete(id);
           const actor = agentActor(agent.agentId, owner);
@@ -503,15 +391,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
       }
       return out;
     },
-    takeUnknown() {
-      const result = {
-        users: [...unknownUsers].filter((id) => !directory.user(id)),
-        agents: [...unknownAgents].filter((id) => !directory.agent(id)),
-      };
-      unknownUsers.clear();
-      unknownAgents.clear();
-      return result;
-    },
+    takeUnknown,
   };
 }
 

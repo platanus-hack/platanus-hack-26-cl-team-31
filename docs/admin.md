@@ -116,6 +116,7 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | name | kind | attrs permitidos |
 | --- | --- | --- |
 | `service.started` / `service.heartbeat` / `service.stopping` | lifecycle | version |
+| `service.listening` | lifecycle | address, port del socket HTTP del admin o broker. El admin también indica serveSpa y devAuth. |
 | `http.request` | http | method, route (patrón, nunca la ruta cruda), status, bucket |
 | `http.rate_limited` | http | route, bucket |
 | `auth.token.verified` / `auth.token.rejected` | auth | issuer, reason (código) |
@@ -123,6 +124,7 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | `auth.oauth.consent` | auth | clientId, granted |
 | `auth.scope.denied` | auth | scope, operation |
 | `web.invite.progress` | lifecycle | step (`opened`, `sign_in`, `claim_address`, `address_claimed` o `connect`) |
+| `web.agent.wake_configured` | lifecycle | kind (`grokbot_routine`, `openclaw_hooks` o `none`) |
 | `web.agent.ping` | lifecycle | stage (`started` o `finished`), outcome, verified |
 | `message.interpret`, `message.interpreted` | http, tool | duración de la interpretación y acción elegida |
 | `message.recipients.resolved` | tool | ámbito y cantidad de direcciones |
@@ -139,7 +141,8 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | `broker.owner.decided` | lifecycle | decision |
 | `broker.grant.set` / `broker.grant.revoked` | policy | grantId, category |
 | `broker.contact.connected` / `broker.contact.removed` | policy | sin atributos; `requestId` y `userId` en el sobre |
-| `broker.contact.tagged` / `broker.tag.preset_set` | policy | tag, categories (cantidad) |
+| `broker.contact.tagged` | policy | tags (cantidad), by (`owner` \| `agent`), sharingApplied. Sin dirección ni nombres |
+| `broker.tag.changed` | policy | action (`created` \| `updated` \| `deleted`), by, categories y followers (cantidades). Sin el nombre |
 | `broker.circle.changed` | policy | circleId, action (`created` \| `deleted` \| `invited` \| `joined` \| `removed`) |
 | `broker.agent.connected` | lifecycle | kind (tipo de aviso al crearse: `none`). Se emite una vez por conexión, cuando la primera llamada autenticada del agente la crea; `userId` y `agentId` en el sobre. Presencia: el agente entra a la red |
 | `broker.agent.revoked` | lifecycle | by (`owner` \| `admin`). Solo la primera revocación. Presencia: el agente sale de la red |
@@ -425,9 +428,9 @@ En Postgres administrado el usuario de la base no es superusuario. En Postgres 1
 
 El admin detecta el modo una vez por pool con `pg_has_role(current_user, rol, 'SET')`. Los tres casos se probaron contra un Postgres 17 limpio con usuarios no superusuario.
 
-La ficha del titular incluye `vault`: cantidades de categorías, datos y permisos en `ops.v_vault_summary`. Los eventos `broker.vault.changed` y `broker.vault.queried` registran cambios y consultas sin nombres de categorías, etiquetas de datos ni valores.
+La ficha del titular incluye `vault`: cantidades de categorías, datos, documentos y permisos en `ops.v_vault_summary`. Los eventos `broker.vault.changed`, `broker.vault.queried`, `broker.vault.document.uploaded` y `broker.vault.document.downloaded` registran cambios, consultas y transferencias sin nombres de categorías, nombres de archivo ni contenido.
 `vault.memberRules` cuenta las decisiones individuales de acceso (permitir o excluir). El cambio se ve en `broker.vault.changed` con `action=set_member`; las lecturas del directorio y de los miembros se observan en `mcp.tool.call` sin devolver direcciones al admin.
 
-La ficha también incluye `vaultContactGroups`: cantidades de grupos privados, membresías y permisos en `ops.v_vault_contact_group_summary`. No expone nombres de grupos, direcciones ni datos de la bóveda. `broker.vault.changed` registra las acciones sobre grupos con el prefijo `contact_group_` y los permisos de categoría con `set_contact_group`.
+La ficha también incluye `tags`: cantidades de etiquetas (y cuántas creó el titular), etiquetas puestas a contactos y permisos de la bóveda por etiqueta en `ops.v_tag_summary`. `ops.v_contact_tags` cuenta contactos y categorías por etiqueta con su ID. Ninguna vista expone nombres de etiquetas, direcciones ni datos de la bóveda. Los cambios se ven en `broker.tag.changed` y `broker.contact.tagged`, y los permisos de categoría por etiqueta en `broker.vault.changed` con `action=set_tag`.
 
 Los turnos conversacionales se siguen con `message.turn.completed` y `message.recipients.resolved`. `AdminQueries.overview` expone `awaitingClarifications`. La vista `ops.v_message_turns` muestra identidad, fase, desenlace y vigencia de los turnos sin continuación consumida.

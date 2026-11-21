@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises";
 import { createTestDatabase, type TestDatabase } from "@team-31/test-db";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { setChannel } from "./channel";
 import { createWhatsAppStore } from "./store";
+
+const { brokerSetChannel, logError } = vi.hoisted(() => ({ brokerSetChannel: vi.fn(), logError: vi.fn() }));
+vi.mock("../broker", () => ({ ownerClient: () => ({ setChannel: brokerSetChannel }) }));
+vi.mock("../telemetry", () => ({ getTelemetry: () => ({ error: logError }) }));
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -104,7 +109,11 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
     await store.whileNotified(issued, run);
     expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "carla", phone, windowOpen: true }));
 
-    await store.unlink("carla");
+    const offline = new Error("offline");
+    brokerSetChannel.mockRejectedValueOnce(offline);
+    await store.unlink("carla", () => setChannel("carla", { kind: "none" }));
+    expect(brokerSetChannel).toHaveBeenCalledExactlyOnceWith({ userId: "carla" }, "whatsapp", { kind: "none" });
+    expect(logError).toHaveBeenCalledExactlyOnceWith("whatsapp.channel", offline, { userId: "carla" });
     await store.whileNotified(issued, run);
     expect(run).toHaveBeenLastCalledWith(undefined);
     expect(await store.pending(phone, timestamp)).toEqual([]);

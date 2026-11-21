@@ -49,11 +49,9 @@ async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string
   await client.query(`GRANT UPDATE (address) ON sideband.friends TO ${role}`);
   await client.query(`GRANT SELECT, INSERT ON sideband.ask_receipts TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.quota_windows TO ${role}`);
-  await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.vault_categories, sideband.vault_entries, sideband.vault_permissions TO ${role}`);
+  await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.vault_categories, sideband.vault_entries, sideband.vault_permissions, sideband.vault_documents TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE ON sideband.vault_member_rules TO ${role}`);
-  await client.query(`GRANT SELECT, INSERT, DELETE ON
-    sideband.vault_contact_groups, sideband.vault_contact_group_members, sideband.vault_contact_group_permissions TO ${role}`);
-  await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.contact_tags, sideband.tag_presets TO ${role}`);
+  await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.tags, sideband.contact_tags TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.circles, sideband.circle_members TO ${role}`);
   await client.query(`REVOKE UPDATE, DELETE, TRUNCATE ON sideband.request_events FROM ${role}`);
   await client.query(`GRANT SELECT, INSERT ON sideband.request_events TO ${role}`);

@@ -143,6 +143,9 @@ export function encodeCursor(at: string, id: string): string {
   return Buffer.from(JSON.stringify([at, id]), "utf8").toString("base64url")
 }
 
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const cursorTimestamp = z.iso.datetime({ offset: true })
 
 function isCursorTimestamp(at: string) {

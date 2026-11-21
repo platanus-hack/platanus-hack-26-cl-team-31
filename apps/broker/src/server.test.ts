@@ -131,8 +131,8 @@ describe("HTTP interno del broker", () => {
     for (const localPart of ["alice", "bruno", "carla"]) {
       await call(app, routes.ownerClaimAddress, { token: await owner(localPart), body: { localPart } });
     }
-    const preset = await call(app, routes.ownerConnect, { token, body: { to: "bruno@sideband.app", tag: "work" } });
-    const empty = await call(app, routes.ownerConnect, { token, body: { to: "carla@sideband.app", tag: "work", share: [] } });
+    const preset = await call(app, routes.ownerConnect, { token, body: { to: "bruno@sideband.app", tags: ["work"] } });
+    const empty = await call(app, routes.ownerConnect, { token, body: { to: "carla@sideband.app", tags: ["work"], share: [] } });
     const { outgoing } = await call(app, routes.ownerContacts, { token });
     expect(outgoing).toEqual(expect.arrayContaining([
       expect.objectContaining({ requestId: preset.requestId, offer: ["availability"] }),
@@ -391,7 +391,7 @@ describe("HTTP interno del broker", () => {
     await expectError(await request(app, routes.agentAsk, { token: brunoBot, body: {} }), 400, "invalid_input");
     expect(await call(app, routes.agentInbox, { token: aliceBot })).toEqual({ items: [] });
 
-    for (const [bucket, limit] of [["reply", 120], ["other", 300]] as const) {
+    for (const [bucket, limit] of [["reply", 120], ["vault", 10], ["other", 300]] as const) {
       for (let i = 0; i < limit; i++) expect(await limiter.consume("unrelated-user", bucket)).toBeUndefined();
       expect(await limiter.consume("unrelated-user", bucket)).toEqual({ retryAfter: 60 });
     }
