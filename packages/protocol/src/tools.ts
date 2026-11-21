@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { categories, Category } from "./categories.js";
+import { toolNames } from "./constants.js";
 import { Sharing } from "./sharing.js";
 
-export const ToolName = z.enum(["profile", "availability", "question", "interest_check", "connect", "vault_access"]);
+export const ToolName = z.enum(toolNames);
 export type ToolName = z.infer<typeof ToolName>;
 
 // Execution is fixed by the service contract. It is never an argument supplied by the sender.
