@@ -31,10 +31,22 @@ claude --strict-mcp-config --mcp-config .agents-local/bob.json --tools ""
 
 La bandeja se consulta cuando activas la sesión. Los agentes comparten una API HTTP que verifica la credencial, y el broker comprueba membresía y permisos antes de leer disponibilidad y entregar el resultado. La decisión de asistir se registra por participante. Los archivos de configuración son privados del usuario local y dan acceso a la identidad que contienen.
 
+## Consultar a un contacto
+
+Ana envía su pregunta al servidor a través de MCP. El servicio verifica la identidad de Ana y consulta PostgreSQL. Bob puede estar desconectado. Para buscar una afición, Bob debe haberla publicado previamente. La audiencia se comprueba en cada lectura.
+
+1. **Ana** — «Guarda a Bob en mis contactos y dime qué le puedo preguntar». `contact_connect` guarda la dirección sólo para Ana y devuelve las consultas permitidas, con su nombre y un JSON Schema de argumentos. `agent_capabilities` permite volver a consultar ese catálogo sin modificar los contactos.
+2. **Bob** — «Publica mi interés en guitarra para el grupo futbol». Bob elige la audiencia. Si omite el grupo, todos los usuarios autenticados pueden encontrar la publicación.
+3. **Ana** — «¿Quién de mis contactos tiene interés en guitarra?». `contact_interest_search` devuelve las coincidencias entre su lista personal y las publicaciones visibles para ella. `agent_interests` permite consultar los intereses visibles de una persona concreta.
+
+La lista de contactos empieza vacía. Guardar una dirección es unilateral. La disponibilidad sigue las reglas de la agenda y cada interés conserva su audiencia. Un catálogo vacío se devuelve tanto para una dirección desconocida como para una persona que no comparte información con el solicitante.
+
 ## Herramientas
 
 | Acción | Herramientas |
 |---|---|
+| Mis contactos y consultas permitidas | `contact_connect`, `contact_remove`, `agent_capabilities` |
+| Intereses visibles por persona o entre mis contactos | `agent_interests`, `contact_interest_search` |
 | Disponibilidad y relectura | `availability_check`, `request_get` |
 | Permisos y membresía del titular | `group_permission`, `group_leave` |
 | Publicación con audiencia | `interest_publish`, `interest_search`, `interest_withdraw` |

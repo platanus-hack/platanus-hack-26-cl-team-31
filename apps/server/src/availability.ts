@@ -85,8 +85,9 @@ const leave = defineTool("group_leave", "Leave your group and withdraw its priva
     return { status: "left" };
   });
 
-const listingArgs = z.object({ interest: z.string().trim().min(1).max(128), group: groupName.optional() });
-const topic = (interest: string) => interest.normalize("NFC").toLowerCase();
+export const interestName = z.string().trim().min(1).max(128);
+const listingArgs = z.object({ interest: interestName, group: groupName.optional() });
+export const topic = (interest: string) => interest.normalize("NFC").toLowerCase();
 
 const publish = defineTool("interest_publish", "Publish an interest to a group, or publicly when group is omitted.",
   listingArgs, async (db, me, { interest, group }) => {
@@ -101,14 +102,51 @@ const publish = defineTool("interest_publish", "Publish an interest to a group, 
     return { status: "published" };
   });
 
+// $1 is always the authenticated viewer. Direct reads, discovery and search use the same audience check.
+export const visibleInterests = `SELECT i.* FROM interests i WHERE i.audience = '' OR EXISTS (
+  SELECT 1 FROM memberships viewer JOIN memberships publisher USING (group_id)
+  WHERE viewer.group_id = i.audience AND viewer.person_id = $1 AND publisher.person_id = i.person_id
+)`;
+
 const search = defineTool("interest_search", "Find an interest in one audience. Omit group to search public listings.",
   listingArgs, async (db, me, { interest, group }) => {
-    const result = await db.query(`SELECT i.person_id AS person, i.interest FROM interests i
-      WHERE i.interest = $1 AND i.audience = $2 AND ($2 = '' OR EXISTS (
-        SELECT 1 FROM memberships viewer JOIN memberships publisher USING (group_id)
-        WHERE viewer.group_id = i.audience AND viewer.person_id = $3 AND publisher.person_id = i.person_id
-      )) ORDER BY i.person_id`, [topic(interest), group ?? "", me]);
+    const result = await db.query(`SELECT person_id AS person, interest FROM (${visibleInterests}) i
+      WHERE interest = $2 AND audience = $3 ORDER BY person_id`, [me, topic(interest), group ?? ""]);
     return { entries: result.rows };
+  });
+
+const recipientArgs = z.object({ recipient: personId });
+
+const interestsForPerson = defineTool("agent_interests", "Read the interests this person has published for you.",
+  recipientArgs, async (db, me, { recipient }) => {
+    const result = await db.query(`SELECT DISTINCT interest FROM (${visibleInterests}) i
+      WHERE person_id = $2 ORDER BY interest`, [me, recipient]);
+    return { interests: result.rows.map(row => row.interest) };
+  });
+
+export const capabilities = defineTool("agent_capabilities", "Discover the questions you can ask a particular agent now.",
+  recipientArgs, async (db, me, { recipient }) => {
+    const result = await db.query<{ groups: string[], interests: boolean }>(`SELECT
+      ARRAY(SELECT group_id FROM (${grants}) g WHERE requester=$1 AND recipient=$2 ORDER BY group_id) AS groups,
+      EXISTS (SELECT 1 FROM (${visibleInterests}) i WHERE person_id=$2) AS interests`, [me, recipient]);
+    const { groups, interests } = result.rows[0]!;
+    const tools = [];
+    const target = { type: "string", const: recipient };
+    if (groups.length) {
+      tools.push({
+        name: check.name, description: check.description,
+        inputSchema: { ...check.inputSchema, properties: {
+          ...check.inputSchema.properties, recipient: target, group: { type: "string", enum: groups },
+        } },
+      });
+    }
+    if (interests) {
+      tools.push({
+        name: interestsForPerson.name, description: interestsForPerson.description,
+        inputSchema: { ...interestsForPerson.inputSchema, properties: { recipient: target } },
+      });
+    }
+    return { tools };
   });
 
 const withdraw = defineTool("interest_withdraw", "Remove your interest listing from its original audience.",
@@ -118,4 +156,4 @@ const withdraw = defineTool("interest_withdraw", "Remove your interest listing f
     return { status: "withdrawn" };
   });
 
-export const availabilityTools = [check, get, permissionTool, leave, publish, search, withdraw];
+export const availabilityTools = [check, get, permissionTool, leave, publish, search, withdraw, interestsForPerson, capabilities];
