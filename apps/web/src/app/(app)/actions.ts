@@ -1,7 +1,7 @@
 "use server";
 
 import { BrokerError } from "@team-31/broker/client";
-import { Address, CircleName, GrantInput, LocalPart, OwnerDecision, ToolResultSchemas, type Owner } from "@team-31/protocol";
+import { Address, CircleName, LocalPart, OwnerDecision, Sharing, ToolResultSchemas, type Owner } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -65,46 +65,8 @@ export async function readHome() {
   await requireAddress();
   const owner = await getOwner();
   const broker = ownerClient();
-  return Promise.all([broker.pending(owner), broker.activity(owner, 4)]);
-}
-
-export async function readGrants() {
-  await requireAddress();
-  const owner = await getOwner();
-  return ownerClient().grants(owner);
-}
-
-export async function saveGrant(_: Feedback, form: FormData): Promise<Feedback> {
-  await requireAddress();
-  const owner = await getOwner();
-  const parsed = GrantInput.safeParse(form instanceof FormData
-    ? { grantee: form.get("grantee"), tool: form.get("tool"), fields: form.getAll("fields") }
-    : undefined);
-  if (!parsed.success) return { error: "Escribe una dirección Nexo válida y elige al menos un dato." };
-
-  try {
-    await ownerClient().setGrant(owner, parsed.data);
-  } catch (error) {
-    if (error instanceof BrokerError && error.code === "invalid_input") return { error: "Elige una dirección distinta a la tuya." };
-    return { error: actionError("saveGrant", error, "No se pudo guardar el permiso. Intenta de nuevo.") };
-  }
-  revalidatePath("/grants");
-  return { message: "Permiso guardado." };
-}
-
-export async function revokeGrant(grantId: string): Promise<Feedback> {
-  await requireAddress();
-  const owner = await getOwner();
-  if (!routes.ownerRevokeGrant.params.safeParse({ id: grantId }).success || !grantId) return { error: "Elige un permiso válido." };
-
-  try {
-    await ownerClient().revokeGrant(owner, grantId);
-  } catch (error) {
-    return { error: actionError("revokeGrant", error, "No se pudo revocar el permiso. Intenta de nuevo.") };
-  }
-  revalidatePath("/grants");
-  revalidatePath("/activity");
-  return {};
+  const [pending, activity, { incoming }] = await Promise.all([broker.pending(owner), broker.activity(owner, 4), broker.contacts(owner)]);
+  return [pending.filter((item) => item.tool !== "connect"), activity, incoming] as const;
 }
 
 export async function readActivity(input: unknown) {
@@ -159,8 +121,7 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
 
   revalidatePath("/");
   revalidatePath("/activity");
-  revalidatePath("/friends");
-  revalidatePath("/grants");
+  revalidatePath("/contacts");
   return { message: "Decisión guardada." };
 }
 
@@ -238,43 +199,92 @@ export async function deleteCircle(circleId: string): Promise<Feedback> {
     (owner) => ownerClient().deleteCircle(owner, circleId));
 }
 
-export async function readFriends() {
+export async function readContacts() {
   await requireAddress();
   const owner = await getOwner();
-  return ownerClient().friends(owner);
+  return ownerClient().contacts(owner);
 }
 
-export async function sendConnection(_: Feedback, form: FormData): Promise<Feedback> {
+function sharingFrom(form: FormData) {
+  return Sharing.safeParse({
+    availability: form.get("availability"),
+    interests: form.get("interests") === "on",
+    questions: form.get("questions") === "on",
+  });
+}
+
+function contactsChanged() {
+  revalidatePath("/contacts");
+  revalidatePath("/activity");
+  revalidatePath("/");
+}
+
+export async function sendInvitation(_: Feedback, form: FormData): Promise<Feedback> {
   const address = await requireAddress();
   const owner = await getOwner();
-  const to = Address.safeParse(form instanceof FormData ? String(form.get("to") ?? "").trim() : undefined);
+  if (!(form instanceof FormData)) return { error: "Ingresa una dirección válida, por ejemplo nombre@nexo.app." };
+  const to = Address.safeParse(String(form.get("to") ?? "").trim().toLowerCase());
   if (!to.success) return { error: "Ingresa una dirección válida, por ejemplo nombre@nexo.app." };
   if (to.data === address) return { error: "Esa es tu propia dirección." };
+  const share = sharingFrom(form);
+  if (!share.success) return { error: "Elige qué le compartes." };
 
   try {
-    const view = await ownerClient().connect(owner, to.data);
-    revalidatePath("/friends");
-    revalidatePath("/activity");
-    if (view.final && view.decision === "deny") return { error: "No se pudo enviar la solicitud a esa dirección." };
+    const view = await ownerClient().connect(owner, to.data, share.data);
+    contactsChanged();
+    if (view.final && view.decision === "deny") return { error: "No encontramos a nadie con esa dirección." };
+    if (view.final) return { message: `Ya estás conectado con ${to.data}.` };
   } catch (error) {
-    return { error: actionError("sendConnection", error, "No se pudo enviar la solicitud. Intenta de nuevo.") };
+    if (error instanceof BrokerError && error.code === "invalid_input") return { error: error.message };
+    return { error: actionError("sendInvitation", error, "No se pudo enviar la invitación. Intenta de nuevo.") };
   }
-  return { message: "Solicitud enviada. Te avisaremos cuando responda." };
+  return { message: `Invitación enviada a ${to.data}.` };
 }
 
-export async function removeFriend(friend: string): Promise<Feedback> {
+export async function answerInvitation(requestId: string, _: Feedback, form: FormData): Promise<Feedback> {
   await requireAddress();
   const owner = await getOwner();
-  const address = Address.safeParse(friend);
+  if (!(form instanceof FormData)) return { error: "Elige aceptar o rechazar." };
+  const accept = form.get("answer") === "accept";
+  const share = sharingFrom(form);
+  if (accept && !share.success) return { error: "Elige qué le compartes." };
+
+  try {
+    await ownerClient().answerInvitation(owner, requestId, { accept, ...(accept && share.success ? { share: share.data } : {}) });
+  } catch (error) {
+    return { error: actionError("answerInvitation", error, "No se pudo responder la invitación. Intenta de nuevo.") };
+  }
+  contactsChanged();
+  return { message: accept ? "Ahora están conectados." : "Invitación rechazada." };
+}
+
+export async function saveSharing(contact: string, _: Feedback, form: FormData): Promise<Feedback> {
+  await requireAddress();
+  const owner = await getOwner();
+  const address = Address.safeParse(contact);
+  const share = form instanceof FormData ? sharingFrom(form) : undefined;
+  if (!address.success || !share?.success) return { error: "Elige qué le compartes." };
+
+  try {
+    await ownerClient().setSharing(owner, address.data, share.data);
+  } catch (error) {
+    return { error: actionError("saveSharing", error, "No se pudo guardar. Intenta de nuevo.") };
+  }
+  contactsChanged();
+  return { message: "Guardado." };
+}
+
+export async function removeContact(contact: string): Promise<Feedback> {
+  await requireAddress();
+  const owner = await getOwner();
+  const address = Address.safeParse(contact);
   if (!address.success) return { error: "La dirección no es válida." };
 
   try {
     await ownerClient().removeFriend(owner, address.data);
   } catch (error) {
-    return { error: actionError("removeFriend", error, "No se pudo quitar. Intenta de nuevo.") };
+    return { error: actionError("removeContact", error, "No se pudo quitar. Intenta de nuevo.") };
   }
-  revalidatePath("/friends");
-  revalidatePath("/grants");
-  revalidatePath("/activity");
-  return { message: "Quitado de Amigos." };
+  contactsChanged();
+  return {};
 }

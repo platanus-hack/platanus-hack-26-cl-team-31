@@ -128,6 +128,7 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `broker.reply.rejected` | lifecycle | code (`nonce` \| `expired` \| `schema` \| `not_recipient` \| `closed`) |
 | `broker.owner.decided` | lifecycle | decision |
 | `broker.grant.set` / `broker.grant.revoked` | policy | grantId, tool, fields (cantidad) |
+| `broker.contact.connected` / `broker.contact.removed` | policy | sin atributos; `requestId` y `userId` en el sobre |
 | `broker.circle.changed` | policy | circleId, action (`created` \| `deleted` \| `invited` \| `joined` \| `removed`) |
 | `wake.attempt` | wake | kind, attempt, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |

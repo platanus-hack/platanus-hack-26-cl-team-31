@@ -9,7 +9,9 @@ import type {
   Address,
   AgentConnection,
   AskInput,
+  ContactsView,
   InboxItem,
+  InvitationAnswer,
   Owner,
   OwnerDecision,
   OwnerPendingItem,
@@ -17,6 +19,7 @@ import type {
   ReplyInput,
   ReplyReceipt,
   RequesterView,
+  Sharing,
   WakeTarget,
   Waker,
 } from "@team-31/protocol";
@@ -49,7 +52,10 @@ export interface OwnerPort {
   setWake(o: Owner, agentId: string, target: WakeTarget): Promise<void>;
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;
   revokeAgent(o: Owner, agentId: string): Promise<void>;
-  connect(o: Owner, to: Address): Promise<RequesterView>;
+  connect(o: Owner, to: Address, share?: Sharing): Promise<RequesterView>;
+  contacts(o: Owner): Promise<ContactsView>;
+  setSharing(o: Owner, contact: Address, sharing: Sharing): Promise<void>;
+  answerInvitation(o: Owner, requestId: string, answer: InvitationAnswer): Promise<void>;
   // Circles the owner joined or is invited to.
   circles(o: Owner): Promise<Circle[]>;
   // The creator joins at once. Only the creator invites, removes others and deletes.
@@ -60,7 +66,6 @@ export interface OwnerPort {
   joinCircle(o: Owner, circleId: string): Promise<void>;
   // A member leaves with their own address. The creator removes any other address.
   removeFromCircle(o: Owner, circleId: string, address: Address): Promise<void>;
-  friends(o: Owner): Promise<Address[]>;
   removeFriend(o: Owner, friend: Address): Promise<void>;
 }
 

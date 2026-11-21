@@ -123,6 +123,12 @@ function transaction(state: State): StoreTx {
       for (const grant of defaults) grant.revokedAt = structuredClone(at);
       return defaults.map((grant) => grant.id);
     },
+    async listOpenInvitations(userId) {
+      return structuredClone([...state.requests.values()]
+        .filter((row) => row.tool === "connect" && (row.status === "awaiting_agent" || row.status === "awaiting_owner") &&
+          (row.fromUserId === userId || row.toUserId === userId))
+        .sort(byCreatedAt));
+    },
     async insertCircle(row) {
       state.circles.set(row.id, structuredClone(row));
     },

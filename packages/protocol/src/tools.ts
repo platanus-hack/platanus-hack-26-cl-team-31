@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Sharing } from "./sharing.js";
 
 export const ToolName = z.enum(["profile", "availability", "question", "interest_check", "connect"]);
 export type ToolName = z.infer<typeof ToolName>;
@@ -45,7 +46,7 @@ export const ToolArgs = {
     timezone,
   }),
   question: z.strictObject({ text: z.string().min(1).max(1000) }),
-  connect: z.strictObject({}),
+  connect: z.strictObject({ share: Sharing.optional() }),
 } as const;
 
 export const ToolResultSchemas = {

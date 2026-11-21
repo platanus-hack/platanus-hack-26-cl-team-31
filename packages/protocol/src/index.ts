@@ -6,5 +6,6 @@ export * from "./grants.js";
 export * from "./owner.js";
 export * from "./principal.js";
 export * from "./request.js";
+export * from "./sharing.js";
 export * from "./tools.js";
 export * from "./wake.js";

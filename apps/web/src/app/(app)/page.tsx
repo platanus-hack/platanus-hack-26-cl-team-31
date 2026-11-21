@@ -11,7 +11,7 @@ import { toolLabels } from "./labels";
 import { card, Empty, Heading, Stamp, textLink } from "./ui";
 
 export default async function HomePage() {
-  const [pending, activity] = await readHome();
+  const [pending, activity, invitations] = await readHome();
   const inviteUrl = new URL("/invite", new URL(getAuthBaseUrl()).origin).href;
 
   return (
@@ -22,7 +22,16 @@ export default async function HomePage() {
       <div className="grid items-start gap-8 lg:grid-cols-[1.35fr_1fr]">
         <section aria-labelledby="pending-title">
           <h2 id="pending-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Por revisar</h2>
-          {pending.length === 0 ? <Empty>No tienes solicitudes pendientes.</Empty> : (
+          {invitations.length > 0 && (
+            <Link href="/contacts" className={`${card} mb-3 flex items-center justify-between gap-3 px-5 py-4 transition hover:bg-chip`}>
+              <span className="text-sm">
+                <span className="break-all font-medium">{invitations[0]!.address}</span>
+                {invitations.length > 1 ? ` y ${invitations.length - 1} más quieren conectar contigo.` : " quiere conectar contigo."}
+              </span>
+              <span className="shrink-0 text-sm font-medium text-accent">Responder ›</span>
+            </Link>
+          )}
+          {pending.length === 0 && invitations.length === 0 ? <Empty>No tienes solicitudes pendientes.</Empty> : (
             <ul className="space-y-3">
               {pending.map((item) => {
                 const slot = item.tool === "availability" ? ToolArgs.availability.parse(item.args) : undefined;
@@ -35,7 +44,6 @@ export default async function HomePage() {
                     </div>
                     <p className="mt-2 text-xs text-muted">Vence el <Stamp value={item.expiresAt} /></p>
                     {slot && <p className="mt-3 text-sm text-body">{slot.date} · {slot.start} ({slot.timezone}) · {slot.durationMinutes} min</p>}
-                    {item.tool === "connect" && <p className="mt-3 text-sm text-body">Quiere conectar contigo. Si aceptas, quedan en el círculo Amigos del otro.</p>}
                     {interest && <p className="mt-3 break-words text-sm text-body">Interés consultado · {interest}</p>}
                     <div className="mt-3 rounded-xl stage p-3 text-sm">
                       <p className="font-medium text-muted">Mensaje de un tercero</p>

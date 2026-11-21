@@ -155,16 +155,22 @@ describe("HTTP interno del broker", () => {
     expect(sent).toMatchObject({ final: false, waitingFor: "agent" });
     const { items: [invitation] } = await call(app, routes.agentInbox, { token: brunoBot });
     expect(invitation).toMatchObject({ requestId: sent.requestId, tool: "connect" });
-    await call(app, routes.agentReply, {
-      token: brunoBot,
-      body: { requestId: sent.requestId, nonce: invitation!.nonce, outcome: "answered", result: { accepted: true } },
+    const answerPath = routes.ownerAnswerInvitation.path.replace(":id", sent.requestId);
+    await call(app, routes.ownerAnswerInvitation, { token: bruno, path: answerPath, body: { accept: true } });
+    const contacts = (token: string) => call(app, routes.ownerContacts, { token });
+    expect((await contacts(alice)).contacts.map(({ address }) => address)).toEqual(["bruno@nexo.app"]);
+    expect((await contacts(bruno)).contacts.map(({ address }) => address)).toEqual(["alice@nexo.app"]);
+
+    const sharingPath = routes.ownerSetSharing.path.replace(":address", encodeURIComponent("bruno@nexo.app"));
+    await call(app, routes.ownerSetSharing, {
+      token: alice, path: sharingPath, body: { availability: "slots", interests: false, questions: false },
     });
-    expect(await call(app, routes.ownerFriends, { token: alice })).toEqual({ items: ["bruno@nexo.app"] });
-    expect(await call(app, routes.ownerFriends, { token: bruno })).toEqual({ items: ["alice@nexo.app"] });
+    expect((await contacts(bruno)).contacts[0]?.receives).toEqual({ availability: "slots", interests: false, questions: false });
 
     const path = routes.ownerRemoveFriend.path.replace(":address", encodeURIComponent("bruno@nexo.app"));
     await call(app, routes.ownerRemoveFriend, { token: alice, path });
-    expect(await call(app, routes.ownerFriends, { token: alice })).toEqual({ items: [] });
+    expect((await contacts(alice)).contacts).toEqual([]);
+    expect((await contacts(bruno)).contacts).toEqual([]);
     expect(await call(app, routes.ownerGrants, { token: alice })).toEqual({ items: [] });
   });
 

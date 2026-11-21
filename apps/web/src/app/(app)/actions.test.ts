@@ -2,13 +2,13 @@ import { BrokerError } from "@team-31/broker/client";
 import { OwnerPendingItem } from "@team-31/protocol";
 import { revalidatePath } from "next/cache";
 import { beforeEach, expect, it, vi } from "vitest";
-import { decide, saveGrant } from "./actions";
+import { decide, saveSharing } from "./actions";
 import { getOwner, requireAddress } from "./owner";
 
 const broker = vi.hoisted(() => ({
   decide: vi.fn(),
   pending: vi.fn<() => Promise<OwnerPendingItem[]>>(),
-  setGrant: vi.fn(),
+  setSharing: vi.fn(),
 }));
 
 vi.mock("@/lib/broker", () => ({ ownerClient: () => broker }));
@@ -70,27 +70,30 @@ it.each([
   expect(broker.decide).toHaveBeenCalledWith(owner, pending.requestId, { kind: "answer", result });
 });
 
-function grantForm(field: string) {
+const contact = "bob@nexo.app";
+
+function sharingForm(availability: string) {
   const form = new FormData();
-  form.set("grantee", "bob@nexo.app");
-  form.set("tool", "question");
-  form.set("fields", field);
+  form.set("availability", availability);
+  form.set("questions", "on");
   return form;
 }
 
-it("checks grant fields against their tool and revalidates only after saving", async () => {
-  await expect(saveGrant({}, grantForm("available"))).resolves.toHaveProperty("error");
-  expect(broker.setGrant).not.toHaveBeenCalled();
+it("checks sharing categories and revalidates only after saving", async () => {
+  await expect(saveSharing(contact, {}, sharingForm("available"))).resolves.toHaveProperty("error");
+  expect(broker.setSharing).not.toHaveBeenCalled();
   expect(revalidatePath).not.toHaveBeenCalled();
 
-  await expect(saveGrant({}, grantForm("answer"))).resolves.toEqual({ message: "Permiso guardado." });
-  expect(broker.setGrant).toHaveBeenCalledWith(owner, { grantee: "bob@nexo.app", tool: "question", fields: ["answer"] });
-  expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/grants");
+  await expect(saveSharing(contact, {}, sharingForm("busy"))).resolves.toEqual({ message: "Guardado." });
+  expect(broker.setSharing).toHaveBeenCalledWith(owner, contact, {
+    availability: "busy", interests: false, questions: true,
+  });
+  expect(vi.mocked(revalidatePath).mock.calls).toEqual([["/contacts"], ["/activity"], ["/"]]);
 });
 
 it("maps a broker conflict to owner feedback and preserves the cached page", async () => {
-  broker.setGrant.mockRejectedValueOnce(new BrokerError("conflict", "internal detail"));
-  await expect(saveGrant({}, grantForm("answer"))).resolves.toEqual({
+  broker.setSharing.mockRejectedValueOnce(new BrokerError("conflict", "internal detail"));
+  await expect(saveSharing(contact, {}, sharingForm("busy"))).resolves.toEqual({
     error: "La solicitud ya cambió. Actualiza la página.",
   });
   expect(revalidatePath).not.toHaveBeenCalled();

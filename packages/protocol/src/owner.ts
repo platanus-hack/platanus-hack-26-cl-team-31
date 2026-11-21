@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Address } from "./address.js";
 import { FinalOutcome, RequestStatus, SenderMessage } from "./request.js";
+import { Sharing } from "./sharing.js";
 import { ToolArgs, ToolName, ToolResult } from "./tools.js";
 import { WakeKind } from "./wake.js";
 
@@ -68,3 +69,31 @@ export const ActivityItem = z.discriminatedUnion("direction", [
   }),
 ]);
 export type ActivityItem = z.infer<typeof ActivityItem>;
+
+export const Contact = z.object({
+  address: Address,
+  gives: Sharing,
+  receives: Sharing,
+});
+export type Contact = z.infer<typeof Contact>;
+
+export const Invitation = z.object({
+  requestId: z.string(),
+  address: Address,
+  offer: Sharing,
+  expiresAt: datetime,
+});
+export type Invitation = z.infer<typeof Invitation>;
+
+export const ContactsView = z.object({
+  contacts: z.array(Contact),
+  incoming: z.array(Invitation),
+  outgoing: z.array(Invitation),
+});
+export type ContactsView = z.infer<typeof ContactsView>;
+
+export const InvitationAnswer = z.object({
+  accept: z.boolean(),
+  share: Sharing.optional(),
+});
+export type InvitationAnswer = z.infer<typeof InvitationAnswer>;

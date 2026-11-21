@@ -3,7 +3,8 @@ import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
 import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
-import { ActivityItem, AgentConnection, OwnerDecision, OwnerPendingItem } from "./owner.js";
+import { ActivityItem, AgentConnection, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem } from "./owner.js";
+import { Sharing } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
@@ -172,17 +173,35 @@ export const routes = {
   ownerConnect: {
     method: "POST",
     path: "/v1/owner/connections",
-    body: z.object({ to: Address }),
+    body: z.object({ to: Address, share: Sharing.optional() }),
     response: RequesterViewSchema,
     iss: "web",
     port: "owner.connect",
   },
-  ownerFriends: {
+  ownerContacts: {
     method: "GET",
     path: "/v1/owner/connections",
-    response: z.object({ items: z.array(Address) }),
+    response: ContactsView,
     iss: "web",
-    port: "owner.friends",
+    port: "owner.contacts",
+  },
+  ownerSetSharing: {
+    method: "PUT",
+    path: "/v1/owner/connections/:address/sharing",
+    params: z.object({ address: Address }),
+    body: Sharing,
+    ...noContent,
+    iss: "web",
+    port: "owner.setSharing",
+  },
+  ownerAnswerInvitation: {
+    method: "POST",
+    path: "/v1/owner/invitations/:id",
+    params: requestParams,
+    body: InvitationAnswer,
+    ...noContent,
+    iss: "web",
+    port: "owner.answerInvitation",
   },
   ownerRemoveFriend: {
     method: "DELETE",
