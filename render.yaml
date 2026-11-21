@@ -42,7 +42,7 @@ services:
     repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
     branch: main
     autoDeployTrigger: "off"
-    buildCommand: corepack pnpm install --frozen-lockfile --prod=false && corepack pnpm exec turbo run build --filter=@team-31/web... --filter=@team-31/mcp...
+    buildCommand: NODE_ENV=development corepack pnpm install --frozen-lockfile && corepack pnpm exec turbo run build --filter=@team-31/web... --filter=@team-31/mcp...
     preDeployCommand: >-
       export BETTER_AUTH_URL="$RENDER_EXTERNAL_URL" MCP_RESOURCE_URL="$RENDER_EXTERNAL_URL/mcp" &&
       cd apps/web && node scripts/migrate-auth.mjs
@@ -100,7 +100,7 @@ services:
     repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
     branch: main
     autoDeployTrigger: "off"
-    buildCommand: corepack pnpm install --frozen-lockfile --prod=false && corepack pnpm exec turbo run build --filter=@team-31/broker-service...
+    buildCommand: NODE_ENV=development corepack pnpm install --frozen-lockfile && corepack pnpm exec turbo run build --filter=@team-31/broker-service...
     preDeployCommand: node apps/broker/scripts/migrate.mjs
     startCommand: cd apps/broker && bash scripts/run.sh node dist/index.js
     envVars:
@@ -137,7 +137,7 @@ services:
     repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
     branch: main
     autoDeployTrigger: "off"
-    buildCommand: corepack pnpm install --frozen-lockfile --prod=false && corepack pnpm exec turbo run build --filter=@team-31/admin... --filter=@team-31/ops...
+    buildCommand: NODE_ENV=development corepack pnpm install --frozen-lockfile && corepack pnpm exec turbo run build --filter=@team-31/admin... --filter=@team-31/ops...
     preDeployCommand: >-
       export ADMIN_URL="$RENDER_EXTERNAL_URL" &&
       cd apps/admin && node_modules/.bin/tsx server/auth/migrate.ts && cd ../../packages/ops && node dist/cli.js
@@ -188,7 +188,7 @@ services:
     repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
     branch: main
     autoDeployTrigger: "off"
-    buildCommand: corepack pnpm install --frozen-lockfile --prod=false && corepack pnpm exec turbo run build --filter=@team-31/server...
+    buildCommand: NODE_ENV=development corepack pnpm install --frozen-lockfile && corepack pnpm exec turbo run build --filter=@team-31/server...
     preDeployCommand: node apps/server/scripts/schema.mjs
     startCommand: node apps/server/dist/index.js
     envVars:
