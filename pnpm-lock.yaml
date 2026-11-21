@@ -251,6 +251,9 @@ importers:
       '@team-31/broker-service':
         specifier: workspace:*
         version: link:../broker
+      '@team-31/test-db':
+        specifier: workspace:*
+        version: link:../../packages/test-db
 
   apps/mcp:
     dependencies:
