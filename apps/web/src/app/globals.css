@@ -58,6 +58,15 @@ body {
   font-family: var(--font-sans);
 }
 
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--color-accent);
+}
+
+select option {
+  background: var(--color-card);
+}
+
 ::selection {
   background: rgb(85 207 255 / 0.25);
 }
