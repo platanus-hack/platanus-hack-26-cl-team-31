@@ -1,4 +1,5 @@
 import type { ActivityItem } from "@team-31/protocol";
+import Link from "next/link";
 
 import { eventLabels, statusLabels, toolLabels } from "./labels";
 import { card, Empty, Stamp, Status } from "./ui";
@@ -17,6 +18,14 @@ export function ActivityList({ items, detailed = false }: { items: ActivityItem[
             </div>
             <Status status={item.status} />
           </div>
+          {item.direction === "received" && item.decisionReason && (
+            <p className="mt-2 text-sm">
+              <span className="font-medium">Motivo</span> · {item.decisionReason}
+              {item.status === "denied" && item.tool !== "connect" && (
+                <> <Link href="/contacts" className="font-medium text-accent-ink">Revisa qué le compartes a {item.from}</Link></>
+              )}
+            </p>
+          )}
           <p className="mt-2 text-xs text-muted"><Stamp value={item.createdAt} /></p>
           {detailed && (
             <details className="mt-3 text-sm">
