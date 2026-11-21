@@ -36,7 +36,7 @@ export default async function ConsentPage({ searchParams }: PageProps<"/consent"
       headers: requestHeaders,
       query: { client_id: request.clientId },
     }),
-    getOwnerAddress(session.user.id),
+    getOwnerAddress(),
   ]);
 
   return (
