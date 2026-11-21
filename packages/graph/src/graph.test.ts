@@ -249,8 +249,9 @@ describe("índice incremental", () => {
     index.buildLandmarks(4, "effective");
     const [s, t] = [g.people[0] as NodeId, g.people[200] as NodeId];
     expect(index.path(s, t, { algorithm: "alt" }).stats.fallback).toBeUndefined();
+    expect(index.path(s, t, { algorithm: "alt", landmarksStale: true }).stats.fallback).toMatch(/desactualizados/);
     index.apply([{ op: "upsertEdge", a: s, b: t, kind: "knows", base: 0.1 }]);
-    const res = index.path(s, t, { algorithm: "alt" });
+    const res = index.path(s, t, { algorithm: "alt", landmarksStale: false });
     expect(res.stats.fallback).toMatch(/desactualizados/);
     expect(res.paths[0]?.cost).toBeCloseTo(0.1 + (index.penalty(s) + index.penalty(t)) / 2);
   });

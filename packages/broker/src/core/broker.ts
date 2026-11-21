@@ -352,7 +352,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
   // Cancel pending work atomically if the old authorization is no longer valid.
   // Already queued notices carry only an ID and must re-read the inbox.
-  async function cancelUnauthorized(tx: StoreTx, userId: string): Promise<void> {
+  async function denyUnauthorizedInboxRequests(tx: StoreTx, userId: string): Promise<void> {
     const owner = await tx.getUser(userId);
     if (!owner?.address) return;
     for (const row of await tx.listInbox(owner.address)) {
@@ -449,7 +449,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         removed = await tx.removeFriend(userId, address) || removed;
         await tx.setContactTag(userId, address, null);
         await grants.applySharing(tx, userId, address, []);
-        await cancelUnauthorized(tx, userId);
+        await denyUnauthorizedInboxRequests(tx, userId);
       }
       if (removed) record(tx, "broker.contact.removed", { userId: o.userId });
     });
@@ -742,7 +742,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async revokeGrant(o, grantId) {
         await store.tx(async (tx) => {
           if (!await grants.revokeGrant(tx, o.userId, grantId)) throw notFound();
-          await cancelUnauthorized(tx, o.userId);
+          await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
 
@@ -895,7 +895,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         await store.tx(async (tx) => {
           if (!(await tx.listFriends(o.userId)).includes(address.data)) throw notFound();
           await grants.applySharing(tx, o.userId, address.data, parsed.data);
-          await cancelUnauthorized(tx, o.userId);
+          await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
 
@@ -907,7 +907,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (!(await tx.listFriends(o.userId)).includes(address.data)) throw notFound();
           await tagContact(tx, o.userId, address.data, label.data);
           await grants.applySharing(tx, o.userId, address.data, (await presetsOf(tx, o.userId))[label.data]);
-          await cancelUnauthorized(tx, o.userId);
+          await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
 
@@ -923,7 +923,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             if (contact.tag !== label.data || !sameSharing(contact.gives, previous)) continue;
             await grants.applySharing(tx, o.userId, contact.address, parsed.data);
           }
-          await cancelUnauthorized(tx, o.userId);
+          await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
 
@@ -945,7 +945,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (error) throw error;
       },
 
-      ...createCirclePort({ store, clock }, record, cancelUnauthorized),
+      ...createCirclePort({ store, clock }, record, denyUnauthorizedInboxRequests),
 
       removeContact,
       removeFriend: removeContact,
