@@ -214,6 +214,12 @@ export const catalog = [
     description: "Se revocó la conexión de un agente: sale de la red. Solo se emite la primera revocación.",
     attrs: { by: z.enum(["owner", "admin"]) },
   }),
+  defineEvent({
+    name: "broker.agent.revived",
+    kind: "lifecycle",
+    description: "Una conexión revocada volvió a la red al presentar su agente un token válido: entra sin el canal de aviso que tenía. Sin la etiqueta ni el destino de aviso.",
+    attrs: { kind: code() },
+  }),
   defineEvent({ name: "broker.grant.revoked", kind: "policy", description: "El dueño revocó un permiso.", attrs: { grantId: id() } }),
   defineEvent({ name: "broker.contact.connected", kind: "policy", description: "Dos titulares quedaron conectados al aceptar una invitación.", attrs: {} }),
   defineEvent({ name: "broker.vault.changed", kind: "policy", description: "Cambio de la bóveda personal, sin nombres ni valores.",

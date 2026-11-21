@@ -2,7 +2,7 @@ import {
   ActivityEvent, Address, Category, ChannelName, FinalOutcome, RequestStatus, ToolArgs, ToolName, ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
   ContactTag, Sharing,
 } from "@team-31/protocol";
-import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
@@ -516,6 +516,25 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       const connection = await getAgentConnection(row.userId, row.agentId, true);
       if (!connection) throw activeAgentConflict();
       return connection;
+    },
+
+    async reviveAgentConnection(row) {
+      const revived: AgentConnectionRow = { ...row, revokedAt: undefined, verifiedAt: undefined, wakeTarget: { kind: "none" } };
+      const [live] = await db.select({ agentId: agentConnections.agentId }).from(agentConnections).where(and(
+        eq(agentConnections.userId, row.userId), ne(agentConnections.agentId, row.agentId), isNull(agentConnections.revokedAt),
+      )).limit(1);
+      if (live) throw activeAgentConflict();
+      const { userId, agentId, ...configuration } = writeConnection(revived);
+      try {
+        await db.update(agentConnections).set(configuration)
+          .where(and(eq(agentConnections.userId, userId), eq(agentConnections.agentId, agentId)));
+      } catch (error) {
+        // Otro agente pudo conectarse entre la consulta y este UPDATE: el índice parcial
+        // agent_connections_one_active tiene la última palabra sobre quién queda vivo.
+        if (error instanceof DrizzleQueryError && (error.cause as { code?: string })?.code === "23505") throw activeAgentConflict();
+        throw error;
+      }
+      return revived;
     },
 
     async upsertAgentConnection(row) {

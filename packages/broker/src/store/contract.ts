@@ -420,6 +420,43 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("revive una conexión revocada sin devolverle el canal push ni la verificación", async () => {
+      const revoked: AgentConnectionRow = {
+        userId: "carla", agentId: "bot", label: "Bot", createdAt: now, revokedAt: now,
+        wakeTarget: { kind: "standard_webhook", url: "https://example.com/callback", secret: "whsec_test" },
+        verifiedAt: now, lastWakeAt: now,
+      };
+      const revived: AgentConnectionRow = {
+        userId: "carla", agentId: "bot", label: "Bot", createdAt: now, wakeTarget: { kind: "none" }, lastWakeAt: now,
+      };
+      await store.tx(async (tx) => {
+        await tx.upsertAgentConnection(revoked);
+        const locked = await tx.ensureAgentConnection({ ...revoked, revokedAt: undefined });
+        expect(locked).toEqual(revoked);
+        // El titular revocó este canal: la conexión vuelve sin él, sin verificación y sin revocación.
+        expect(await tx.reviveAgentConnection(locked)).toEqual(revived);
+      });
+      await store.tx(async (tx) => {
+        expect(await tx.getAgentConnection("carla", "bot")).toEqual(revived);
+      });
+    });
+
+    it("no revive una conexión revocada si su titular ya tiene otra viva", async () => {
+      const base: AgentConnectionRow = { userId: "carla", agentId: "old", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now };
+      await store.tx(async (tx) => {
+        await tx.upsertAgentConnection({ ...base, revokedAt: now });
+        await tx.ensureAgentConnection({ ...base, agentId: "new" });
+      });
+      await expect(store.tx(async (tx) => {
+        const locked = await tx.getAgentConnection("carla", "old", true);
+        return tx.reviveAgentConnection(locked!);
+      })).rejects.toMatchObject({ code: "conflict" });
+      await store.tx(async (tx) => {
+        expect(await tx.getAgentConnection("carla", "old")).toMatchObject({ revokedAt: now });
+        expect((await tx.getAgentConnection("carla", "new"))?.revokedAt).toBeUndefined();
+      });
+    });
+
     it("guarda una conexión y un canal de sondeo sin secreto y los devuelve sin campos extra", async () => {
       const polling = { kind: "polling" } as const;
       await store.tx(async (tx) => {

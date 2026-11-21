@@ -421,6 +421,9 @@ function transaction(state: State): StoreTx {
       onCreated?.();
       return structuredClone(created);
     },
+    async reviveAgentConnection(row) {
+      return structuredClone(putAgent({ ...row, revokedAt: undefined, verifiedAt: undefined, wakeTarget: { kind: "none" } }));
+    },
     async upsertAgentConnection(row) {
       putAgent(row);
     },

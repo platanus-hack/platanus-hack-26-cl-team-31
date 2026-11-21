@@ -143,6 +143,7 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | `broker.circle.changed` | policy | circleId, action (`created` \| `deleted` \| `invited` \| `joined` \| `removed`) |
 | `broker.agent.connected` | lifecycle | kind (tipo de aviso al crearse: `none`). Se emite una vez por conexión, cuando la primera llamada autenticada del agente la crea; `userId` y `agentId` en el sobre. Presencia: el agente entra a la red |
 | `broker.agent.revoked` | lifecycle | by (`owner` \| `admin`). Solo la primera revocación. Presencia: el agente sale de la red |
+| `broker.agent.revived` | lifecycle | kind (tipo de aviso con el que vuelve: siempre `none`). Una conexión revocada volvió a la red al presentar su agente un token válido. Presencia: el agente vuelve a entrar |
 | `broker.channel.set` | lifecycle | channel (`whatsapp`), kind (tipo de aviso); nunca la URL ni el secreto |
 | `worker.tick.completed` | lifecycle | expired, wakesOk, wakesRetried, wakesFailed (solo pasadas con actividad) |
 | `wake.attempt` | wake | kind, attempt, queueWaitMs, ok, httpStatus, code |

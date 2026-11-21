@@ -209,7 +209,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const connection = await tx.ensureAgentConnection({
       userId, agentId, label: agentId, wakeTarget: { kind: "none" }, createdAt: clock.now(),
     }, () => record(tx, "broker.agent.connected", { userId, agentId, attrs: { kind: "none" } }));
-    if (connection.revokedAt) throw notFound();
+    // Revocar no es irreversible: para volver, el titular pasa otra vez por el consentimiento OAuth, así que
+    // presentar un token válido ya es un acto deliberado suyo. La conexión revive como nueva —sin el canal
+    // push que apagó al revocar—, y si entretanto conectó otro agente, el conflicto se le dice en voz alta.
+    if (connection.revokedAt) {
+      const revived = await tx.reviveAgentConnection(connection);
+      record(tx, "broker.agent.revived", { userId, agentId, attrs: { kind: revived.wakeTarget.kind } });
+      return revived;
+    }
     return connection;
   }
 

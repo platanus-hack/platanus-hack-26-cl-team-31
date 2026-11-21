@@ -578,9 +578,10 @@ describe("conexiones y prueba de aviso", () => {
     const pendingItem = await inboxItem(bruno, pending.requestId);
     await broker.owner.revokeAgent(bruno, bruno.agentId);
     await broker.agent.connect(another);
-    await expect(broker.agent.reply(bruno, { ...pendingItem, outcome: "no_data" })).rejects.toMatchObject({ code: "not_found" });
-    await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "not_found" });
-    await expect(broker.agent.connectWake(bruno, { kind: "none" })).rejects.toMatchObject({ code: "not_found" });
+    // Con otro agente vivo, la conexión revocada no revive: el titular tendría dos conexiones activas.
+    await expect(broker.agent.reply(bruno, { ...pendingItem, outcome: "no_data" })).rejects.toMatchObject({ code: "conflict" });
+    await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "conflict" });
+    await expect(broker.agent.connectWake(bruno, { kind: "none" })).rejects.toMatchObject({ code: "conflict" });
     expect((await broker.owner.agents(bruno)).find(({ agentId }) => agentId === bruno.agentId)).toMatchObject({
       revokedAt: now.toISOString(), wakeKind: "standard_webhook",
     });
@@ -613,7 +614,25 @@ describe("conexiones y prueba de aviso", () => {
     // bandeja *está* sondeando. Para dejar de ser destinatario, el titular usa revokeAgent, no disconnectWake.
     expect(await broker.owner.agents(bruno)).toMatchObject([{ wakeKind: "polling" }]);
     await broker.owner.revokeAgent(bruno, bruno.agentId);
-    await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "not_found" });
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ revokedAt: now.toISOString() }]);
+  });
+
+  it("revive la conexión revocada que vuelve a presentar su token, sin devolverle el canal push", async () => {
+    await broker.agent.connectWake(bruno, webhook);
+    await deps.store.tx(async (tx) => {
+      const connection = await tx.getAgentConnection(bruno.userId, bruno.agentId);
+      await tx.upsertAgentConnection({ ...connection!, verifiedAt: now });
+    });
+    await broker.owner.revokeAgent(bruno, bruno.agentId);
+    // El titular pasa otra vez por el consentimiento OAuth para traer un token: revocar no es irreversible.
+    await broker.agent.connect(bruno);
+    const [revived] = await broker.owner.agents(bruno);
+    expect(revived).toMatchObject({ agentId: bruno.agentId, wakeKind: "none" });
+    expect(revived?.revokedAt).toBeUndefined();
+    // Revocar apagó el canal push y su verificación: revivir no los resucita.
+    expect(revived?.verifiedAt).toBeUndefined();
+    const view = await askAvailability();
+    expect(await inboxItem(bruno, view.requestId)).toMatchObject({ requestId: view.requestId });
   });
 
   it("es idempotente", async () => {

@@ -224,6 +224,10 @@ export interface StoreTx {
   // until the transaction ends. Preserves the wake configuration and revocation.
   // onCreated runs only when this call inserted the row (presence telemetry).
   ensureAgentConnection(row: AgentConnectionRow, onCreated?: () => void): Promise<AgentConnectionRow>;
+  // Devuelve a la red una conexión revocada (su fila ya bloqueada) como si fuera nueva: sin revocación,
+  // sin el canal push que el titular apagó al revocar y sin su verificación. Conserva la etiqueta y las
+  // fechas, que son historia. Si el titular ya tiene otra conexión viva, lanza "conflict": nadie la desplaza.
+  reviveAgentConnection(row: AgentConnectionRow): Promise<AgentConnectionRow>;
   upsertAgentConnection(row: AgentConnectionRow): Promise<void>;
   listPublicAgents(): Promise<PublicAgent[]>;
   // Oldest first, then by agent ID in UTF-8 byte order.

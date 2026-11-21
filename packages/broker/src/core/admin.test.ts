@@ -271,11 +271,14 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
         await broker.admin.revokeAgent(operator, "bruno", "bruno-bot", reason);
         const [connection] = await broker.owner.agents(bruno);
         expect(connection).toMatchObject({ agentId: "bruno-bot", revokedAt: now.toISOString() });
-        await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "not_found" });
 
         advance(1_000);
         await broker.admin.revokeAgent(operator, "bruno", "bruno-bot", reason);
         expect((await broker.owner.agents(bruno))[0]?.revokedAt).toBe(connection!.revokedAt);
+        // Ninguna revocación es definitiva: el agente que vuelve con un token válido revive su conexión,
+        // y el admin lo ve en broker.agent.revived. Para dejarlo fuera hay que cortarle el token.
+        await broker.agent.inbox(bruno);
+        expect((await broker.owner.agents(bruno))[0]?.revokedAt).toBeUndefined();
       });
 
       it("devuelve not_found para una conexión inexistente y valida el motivo", async () => {
