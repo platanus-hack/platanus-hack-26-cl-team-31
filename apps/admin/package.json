@@ -61,7 +61,6 @@
     "@team-31/typescript-config": "workspace:*",
     "tsx": "4.23.15",
     "vitest": "4.1.12",
-    "@team-31/auth": "workspace:*",
     "@team-31/broker": "workspace:*",
     "@team-31/ops": "workspace:*"
   }

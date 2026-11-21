@@ -35,6 +35,7 @@ import {
   WakeJobRow,
 } from "../../shared/contract.js"
 import { AdminQueryError } from "../../shared/queries.js"
+import { migrateAdminTables } from "../audit.js"
 import {
   createPgAdminQueries,
   createPgRevealer,
@@ -113,14 +114,8 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       .sort()) {
       await db.query(await readFile(new URL(file, coordination), "utf8"))
     }
-    // Forma esperada de la bitácora del servidor admin (docs/admin.md#4, ADM-04).
-    await db.query(`
-      CREATE SCHEMA admin;
-      CREATE TABLE admin.audit (
-        id uuid PRIMARY KEY, at timestamptz NOT NULL DEFAULT now(), actor_type text NOT NULL,
-        actor_id text NOT NULL, actor_label text NOT NULL, action text NOT NULL, target text,
-        reason text, ip text, meta jsonb
-      )`)
+    // Tablas del servidor admin (ADM-04). ops migra después y otorga SELECT en admin.audit.
+    await migrateAdminTables(db)
     await applyOpsMigrations({ databaseUrl })
 
     store = createPostgresStore({ databaseUrl, secretsKey })
@@ -309,7 +304,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       `INSERT INTO admin.audit (id, actor_type, actor_id, actor_label, action, target, reason, ip, meta)
        VALUES ($1, 'admin', 'adm_1', 'dev@nexo.local', 'reveal', $2, 'Depurando un reporte del usuario', '127.0.0.1',
                '{"interno": true}'),
-              ($3, 'token', 'tok_1', 'nxa_abcd1234', 'mcp.call', NULL, NULL, NULL, NULL)`,
+              ($3, 'token', 'tok_1', 'nxa_abcd1234', 'mcp.call', NULL, NULL, NULL, '{}')`,
       [randomUUID(), ids.answered, randomUUID()]
     )
   }
@@ -319,7 +314,6 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       "SELECT relname FROM pg_class WHERE relnamespace = 'ops'::regnamespace AND relkind = 'v' ORDER BY 1"
     )
     expect(rows.map((row) => row.relname)).toEqual([
-      "v_admin_audit",
       "v_agent_connections",
       "v_coordination_people",
       "v_errors",
@@ -347,7 +341,12 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     expect(reveal).toEqual(["v_request_payloads"])
     expect(readOnly).not.toContain("v_request_payloads")
     expect(readOnly).not.toContain("events")
-    expect(readOnly).toHaveLength(13)
+    expect(readOnly).toHaveLength(12)
+    const audit = await db.query<{ table: string }>(
+      `SELECT table_name AS table FROM information_schema.role_table_grants
+       WHERE table_schema = 'admin' AND grantee = 'nexo_admin_ro' AND privilege_type = 'SELECT'`
+    )
+    expect(audit.rows).toEqual([{ table: "audit" }])
   })
 
   it("nexo_admin_ro no lee las tablas ni el payload; nexo_admin_reveal solo el payload", async () => {
@@ -366,7 +365,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       await denied("nexo_admin_ro", "SELECT * FROM ops.v_request_payloads")
       await denied("nexo_admin_ro", "SELECT * FROM ops.events")
       await denied("nexo_admin_ro", 'SELECT * FROM public."user"')
-      await denied("nexo_admin_ro", "SELECT * FROM admin.audit")
+      await denied("nexo_admin_ro", "SELECT * FROM admin.tokens")
       await denied("nexo_admin_reveal", "SELECT * FROM ops.v_requests")
       await denied("nexo_admin_reveal", "SELECT * FROM nexo.requests")
       await denied("nexo_telemetry_writer", "SELECT * FROM ops.events")
@@ -666,6 +665,24 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     ])
     expect(audit.nextCursor).toBeNull()
     expect(JSON.stringify(audit)).not.toContain("interno")
+
+    await db.query(
+      `INSERT INTO admin.audit (actor_type, actor_id, actor_label, action)
+       SELECT 'token', 'tok_2', 'nxa_efgh5678', 'mcp:admin_overview' FROM generate_series(1, 58)`
+    )
+    const first = page(AuditEntry).parse(await queries.audit())
+    expect(first.items).toHaveLength(50)
+    expect(first.nextCursor).not.toBeNull()
+    const second = page(AuditEntry).parse(
+      await queries.audit(first.nextCursor!)
+    )
+    expect(second.items).toHaveLength(10)
+    expect(second.nextCursor).toBeNull()
+    const seen = new Set(
+      [...first.items, ...second.items].map((entry) => entry.id)
+    )
+    expect(seen.size).toBe(60)
+    await expectInvalid(queries.audit("no-es-un-cursor"))
   })
 
   describe("sql", () => {

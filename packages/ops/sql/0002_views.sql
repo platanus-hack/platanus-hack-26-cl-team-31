@@ -5,9 +5,10 @@
 -- La única excepción es ops.v_request_payloads, que solo puede leer nexo_admin_reveal (0003).
 --
 -- Todas se crean dentro de ops.refresh_views(), que solo crea las vistas cuyas tablas de origen
--- existen (to_regclass). Así la migración no falla si ops migra antes que el broker, Better Auth,
--- la coordinación o el esquema admin. Después de crear esas tablas, el dueño del esquema vuelve a
--- ejecutar `SELECT ops.refresh_views();` (es idempotente y reaplica los permisos de 0003).
+-- existen (to_regclass). Así la migración no falla si ops migra antes que el broker, Better Auth
+-- o la coordinación. Después de crear esas tablas, el dueño del esquema vuelve a ejecutar
+-- `SELECT ops.refresh_views();` (es idempotente y reaplica los permisos de 0003).
+-- La bitácora admin.audit (ADM-04) no tiene vista: nexo_admin_ro la lee directo (0003).
 --
 -- Las vistas usan los privilegios de su dueño: los roles del admin no necesitan acceso a las tablas.
 
@@ -270,24 +271,6 @@ BEGIN
       created := array_append(created, 'v_coordination_people');
     EXCEPTION WHEN undefined_column OR undefined_table OR datatype_mismatch OR invalid_table_definition THEN
       RAISE WARNING 'ops.v_coordination_people no se creó: %', SQLERRM;
-    END;
-  END IF;
-
-  -- ---------- Bitácora del servidor admin (esquema admin, ADM-04) ----------
-
-  IF to_regclass('admin.audit') IS NOT NULL THEN
-    BEGIN
-      -- Sin meta (puede crecer con detalles internos).
-      EXECUTE $v$
-        CREATE OR REPLACE VIEW ops.v_admin_audit AS
-        SELECT id::text AS id, at, actor_type::text AS actor_type, actor_id::text AS actor_id,
-               actor_label::text AS actor_label, action::text AS action, target::text AS target,
-               reason::text AS reason, ip::text AS ip
-        FROM admin.audit
-      $v$;
-      created := array_append(created, 'v_admin_audit');
-    EXCEPTION WHEN undefined_column OR undefined_table OR datatype_mismatch OR invalid_table_definition THEN
-      RAISE WARNING 'ops.v_admin_audit no se creó: %', SQLERRM;
     END;
   END IF;
 

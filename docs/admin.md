@@ -76,19 +76,18 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 | `ops.v_service_health` | `ops.events` (`service.heartbeat`) | service, instance, version, last_seen_at, state (`up` < 60 s, `stale` < 5 min, `down`) | |
 | `ops.v_errors` | `ops.events` kind=`error` | service, operation, type, bucket (minuto), count, first_at, last_at, sample_error_id | Para una ventana se suman los buckets. |
 | `ops.v_coordination_people` | `people` + `memberships` | person_id, groups, can_ask, can_share (arreglos de grupos) | Sin `token_hash`. Crea la vista solo si existen las tablas. |
-| `ops.v_admin_audit` | `admin.audit` (ADM-04) | id, at, actor_type, actor_id, actor_label, action, target, reason, ip | Sin `meta`. Alimenta `AdminQueries.audit`. |
 
 Roles (`NOLOGIN`, los crea ADM-02 de forma idempotente):
 
 | Rol | Permisos |
 | --- | --- |
 | `nexo_telemetry_writer` | `INSERT` en `ops.events` y uso de su secuencia. |
-| `nexo_admin_ro` | `USAGE` en `ops` y `SELECT` en todas las `ops.v_*` excepto `v_request_payloads`. |
+| `nexo_admin_ro` | `USAGE` en `ops` y `SELECT` en todas las `ops.v_*` excepto `v_request_payloads`. Si existe la bitácora del servidor admin, también `USAGE` en `admin` y `SELECT` solo en `admin.audit` (`AdminQueries.audit`, sin leer `meta`). |
 | `nexo_admin_reveal` | `SELECT` en `ops.v_request_payloads`. |
 
 Toda lectura del admin corre en `BEGIN READ ONLY; SET LOCAL ROLE nexo_admin_ro; SET LOCAL statement_timeout = '3s'`. En dev la conexión es el superusuario local, que puede asumir el rol; en producción el usuario de `ADMIN_DATABASE_URL_RO` es miembro del rol. Las vistas usan los privilegios de su dueño, así que el rol no necesita acceso a las tablas base.
 
-Las vistas se crean en `ops.refresh_views()` (0002), que solo crea las que tienen sus tablas de origen (`to_regclass`) y reaplica los permisos de 0003 (`ops.apply_view_grants()`). Si ops migra antes que el broker, Better Auth, la coordinación o el esquema `admin`, el dueño del esquema ejecuta `SELECT ops.refresh_views();` después de crearlas (es idempotente). `ops.prune_events(interval)` (0004) exige una retención de al menos 1 hora y no tiene `EXECUTE` para los roles del admin: la ejecuta el dueño o un usuario al que ADM-08 se lo otorgue. El payload se lee solo con `createPgRevealer` (`apps/admin/server/queries/reveal.ts`, rol `nexo_admin_reveal`).
+Las vistas se crean en `ops.refresh_views()` (0002), que solo crea las que tienen sus tablas de origen (`to_regclass`) y reaplica los permisos de 0003 (`ops.apply_view_grants()`). Si ops migra antes que el broker, Better Auth o la coordinación, el dueño del esquema ejecuta `SELECT ops.refresh_views();` después de crearlas (es idempotente). `ops.prune_events(interval)` (0004) exige una retención de al menos 1 hora y no tiene `EXECUTE` para los roles del admin: la ejecuta el dueño o un usuario al que ADM-08 se lo otorgue. El payload se lee solo con `createPgRevealer` (`apps/admin/server/queries/reveal.ts`, rol `nexo_admin_reveal`).
 
 ## 3. Telemetría (`@team-31/telemetry`, ADM-01)
 

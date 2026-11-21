@@ -6,6 +6,10 @@
 -- | nexo_admin_ro         | USAGE en ops y SELECT en todas las ops.v_* excepto v_request_payloads. |
 -- | nexo_admin_reveal     | SELECT en ops.v_request_payloads.                                     |
 --
+-- Además, si existe la bitácora del servidor admin (admin.audit, ADM-04), nexo_admin_ro recibe
+-- USAGE en el esquema admin y SELECT solo en admin.audit (AdminQueries.audit). ADM-04 otorga lo
+-- mismo al crear la tabla si el rol ya existe: cualquiera que corra después deja el permiso.
+--
 -- Los roles son globales del clúster: la creación tolera carreras con otras bases.
 
 DO $$
@@ -52,6 +56,11 @@ BEGIN
       EXECUTE format('GRANT SELECT ON ops.%I TO nexo_admin_ro', view_name);
     END IF;
   END LOOP;
+
+  IF to_regclass('admin.audit') IS NOT NULL THEN
+    GRANT USAGE ON SCHEMA admin TO nexo_admin_ro;
+    GRANT SELECT ON admin.audit TO nexo_admin_ro;
+  END IF;
 END
 $fn$;
 

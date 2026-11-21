@@ -113,6 +113,17 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
     expect(people).toEqual([{ person_id: "ana", groups: ["g1", "g2"], can_ask: ["g1", "g2"], can_share: ["g2"] }]);
   });
 
+  it("da a nexo_admin_ro SELECT solo en admin.audit cuando el servidor admin la crea", async () => {
+    await db.query(`
+      CREATE SCHEMA admin;
+      CREATE TABLE admin.audit (id uuid PRIMARY KEY, at timestamptz NOT NULL DEFAULT now(), action text NOT NULL);
+      CREATE TABLE admin.tokens (id uuid PRIMARY KEY, token_hash text NOT NULL);
+    `);
+    await db.query("SELECT ops.refresh_views()");
+    expect(await asRole("nexo_admin_ro", "SELECT * FROM admin.audit")).toEqual([]);
+    await expect(asRole("nexo_admin_ro", "SELECT * FROM admin.tokens")).rejects.toMatchObject({ code: "42501" });
+  });
+
   it("prune_events borra solo lo más viejo que la retención", async () => {
     await db.query(`
       INSERT INTO ops.events (at, service, instance, kind, name) VALUES

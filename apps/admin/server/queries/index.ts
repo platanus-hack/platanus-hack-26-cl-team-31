@@ -744,19 +744,28 @@ export function createPgAdminQueries({
 
     audit: (cursor) =>
       ro(async (db) => {
-        // La bitácora la crea el servidor admin (ADM-04). Sin ella, no hay entradas.
-        if (!(await viewExists(db, "ops.v_admin_audit")))
-          return { items: [], nextCursor: null }
+        // admin.audit es del servidor admin (ADM-04); nexo_admin_ro tiene SELECT solo sobre esa
+        // tabla (packages/ops/sql/0003_roles.sql). Sin ella, no hay entradas. Nunca se lee meta.
+        const { rows: found } = await db.query<{ ok: boolean }>(
+          `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c
+                          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                          WHERE n.nspname = 'admin' AND c.relname = 'audit') AS ok`
+        )
+        if (!found[0]?.ok) return { items: [], nextCursor: null }
         const where = new Where()
         if (cursor) {
           const [at, id] = decodeCursor(cursor)
+          if (!UUID_PATTERN.test(id)) {
+            throw new AdminQueryError("invalid_input", "Cursor inválido.")
+          }
           where.and(
-            `(at, id) < (${where.value(at)}::timestamptz, ${where.value(id)})`
+            `(at, id) < (${where.value(at)}::timestamptz, ${where.value(id)}::uuid)`
           )
         }
         const { rows } = await db.query(
-          `SELECT id, at, actor_type, actor_id, actor_label, action, target, reason, ip, at::text AS cursor_at
-           FROM ops.v_admin_audit ${where} ORDER BY at DESC, id DESC LIMIT ${AUDIT_PAGE + 1}`,
+          `SELECT id::text AS id, at, actor_type, actor_id, actor_label, action, target, reason, ip,
+                  at::text AS cursor_at
+           FROM admin.audit ${where} ORDER BY at DESC, id DESC LIMIT ${AUDIT_PAGE + 1}`,
           where.params
         )
         return page(
