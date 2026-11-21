@@ -4,7 +4,7 @@ import { createOwnerRuntime, localReadTool } from "@team-31/broker-client";
 import { LocalPart, WakeNotice } from "@team-31/protocol";
 import { verifyWebhookSignature } from "@team-31/wake";
 import { z } from "zod";
-import { contactAddress, contactAgent, contactPrincipal, contactWakeSecret, getDemoTelemetry } from "./contact-broker.mjs";
+import { contactAddress, contactAgent, contactPrincipal, demoWakeSecret, getDemoTelemetry } from "./contact-broker.mjs";
 import { askContactOwner } from "./contact-runtime.mjs";
 
 const maxBytes = 2048;
@@ -46,24 +46,18 @@ function interestFile(root, id, { from, purpose }) {
   return join(directory, id + "-interests.json");
 }
 
-async function answerNotice(root, id, notice, principal, traceparent) {
-  const key = id + "/" + notice.requestId;
+async function answerNotice(route, id, { principal, tools }, notice, traceparent) {
+  const key = route + "/" + id + "/" + notice.requestId;
   if (active.has(key)) return;
   active.add(key);
+  const operation = route.replace("-", "_");
   try {
     await getDemoTelemetry().span("coordination.tool.call", {
       traceparent, userId: principal.userId, agentId: principal.agentId,
-      requestId: notice.requestId, attrs: { tool: "contact_wake" },
-    }, async () => {
-      const onWake = createOwnerRuntime(contactAgent(), principal, [
-        localReadTool("interest_check", ({ interest }, context) =>
-          getDemoTelemetry().span("coordination.tool.call", { attrs: { tool: "check_interest" } },
-            () => askContactOwner(interest, interestFile(root, id, context), root))),
-      ]);
-      await onWake(notice);
-    });
+      requestId: notice.requestId, attrs: { tool: operation },
+    }, () => createOwnerRuntime(contactAgent(), principal, tools)(notice));
   } catch (error) {
-    getDemoTelemetry().error("demo.contact_wake.answer", error, {
+    getDemoTelemetry().error(`demo.${operation}.answer`, error, {
       userId: principal.userId, agentId: principal.agentId, requestId: notice.requestId,
     });
   } finally {
@@ -71,14 +65,26 @@ async function answerNotice(root, id, notice, principal, traceparent) {
   }
 }
 
-export async function handleContactWake(request, id, after, root) {
-  return getDemoTelemetry().span("http.request", {
-    traceparent: request.headers.get("traceparent"),
-    attrs: { method: "POST", route: "/api/demo/contact-wake/:id" },
-  }, span => receive(request, id, after, root, span));
+// Ana's contacts answer an interest_check by reading their private interest file.
+export function handleContactWake(request, id, after, root) {
+  return handleDemoWake(request, id, after, "contact-wake", async () => await hasContactProfile(id) && {
+    principal: contactPrincipal(id),
+    tools: [localReadTool("interest_check", ({ interest }, context) =>
+      getDemoTelemetry().span("coordination.tool.call", { attrs: { tool: "check_interest" } },
+        () => askContactOwner(interest, interestFile(root, id, context), root)))],
+  });
 }
 
-async function receive(request, id, after, root, span) {
+// Verifies the broker's signed wake for a local demo identity and answers it after responding.
+// `resolve` returns the identity's principal and read tools, or nothing for an unknown id.
+export function handleDemoWake(request, id, after, route, resolve) {
+  return getDemoTelemetry().span("http.request", {
+    traceparent: request.headers.get("traceparent"),
+    attrs: { method: "POST", route: `/api/demo/${route}/:id` },
+  }, span => receive(request, id, after, route, resolve, span));
+}
+
+async function receive(request, id, after, route, resolve, span) {
   function finish(status, code, error) {
     span.set({ status, bucket: Math.floor(status / 100) + "xx" });
     getDemoTelemetry().emit("wake.attempt", {
@@ -86,7 +92,7 @@ async function receive(request, id, after, root, span) {
     });
     const headers = new Headers({ "Cache-Control": "no-store", "X-Trace-Id": span.traceId });
     if (error) {
-      const errorId = getDemoTelemetry().error("demo.contact_wake.receive", error);
+      const errorId = getDemoTelemetry().error(`demo.${route.replace("-", "_")}.receive`, error);
       span.setErrorId(errorId);
       headers.set("X-Error-Id", errorId);
     }
@@ -109,7 +115,7 @@ async function receive(request, id, after, root, span) {
     }
     const body = await readBody(request);
     if (body === null) return finish(413, "body_too_large");
-    if (!verifyWebhookSignature(contactWakeSecret(id), eventId, Number(timestamp), body, signature)) {
+    if (!verifyWebhookSignature(demoWakeSecret(route, id), eventId, Number(timestamp), body, signature)) {
       return finish(401, "invalid_signature");
     }
     let notice;
@@ -122,11 +128,12 @@ async function receive(request, id, after, root, span) {
       return finish(400, "invalid_request_id");
     }
 
-    if (!await hasContactProfile(id)) return finish(404, "unknown_contact");
-    const principal = contactPrincipal(id);
+    const identity = await resolve();
+    if (!identity) return finish(404, "unknown_contact");
+    const { principal } = identity;
     getDemoTelemetry().identify({ userId: principal.userId, agentId: principal.agentId, requestId: notice.requestId });
     const traceparent = getDemoTelemetry().traceparent();
-    after(() => answerNotice(root, id, notice, principal, traceparent));
+    after(() => answerNotice(route, id, identity, notice, traceparent));
     return finish(202, "accepted");
   } catch (error) {
     return finish(503, "unavailable", error);
