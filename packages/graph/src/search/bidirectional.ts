@@ -1,4 +1,4 @@
-import { MinHeap } from "../heap.js";
+import { MinHeap } from "./heap.js";
 import { flip, type Arc, type NodeId } from "../model.js";
 import {
   allowAll,

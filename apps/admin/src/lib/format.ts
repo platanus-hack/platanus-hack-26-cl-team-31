@@ -91,6 +91,7 @@ let timer: ReturnType<typeof setInterval> | undefined
 function subscribe(listener: () => void) {
   listeners.add(listener)
   if (!timer) {
+    now = Date.now()
     timer = setInterval(() => {
       now = Date.now()
       for (const l of listeners) l()
@@ -107,4 +108,13 @@ function subscribe(listener: () => void) {
 
 export function useNow(): number {
   return useSyncExternalStore(subscribe, () => now)
+}
+
+export function initials(text: string) {
+  return text
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => [...part][0]!.toUpperCase())
+    .join("")
 }

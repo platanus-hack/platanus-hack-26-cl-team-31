@@ -1,6 +1,6 @@
 import { Principal } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
-import type { AgentPort } from "../ports.js";
+import type { AgentPort } from "./ports.js";
 import { createHttpClient, type ClientOptions } from "./http.js";
 
 export function createAgentClient(options: ClientOptions<Principal>): AgentPort {

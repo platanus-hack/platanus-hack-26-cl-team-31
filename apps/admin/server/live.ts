@@ -1,3 +1,4 @@
+import { flowEventNames, isFlowRow, projectFlowRow } from "@team-31/agent-flow/telemetry"
 import { setTimeout } from "node:timers/promises"
 import type { Telemetry } from "@team-31/telemetry"
 import type { Context } from "hono"
@@ -47,6 +48,28 @@ export type LiveSpec = {
   project?: (event: TelemetryEvent) => TelemetryEvent
   // Mensajes que deben llegar antes de una página (p. ej. el resumen de cada solicitud nueva).
   prelude?: (events: TelemetryEvent[]) => Promise<{ event: string; data: unknown }[]>
+}
+
+export function createFlowLiveSpec(queries: Pick<AdminQueries, "requestRefs">, principalId: string, hasAccess: LiveSpec["hasAccess"], after?: string): LiveSpec {
+  const known = new Set<string>()
+  return {
+    stream: "flow",
+    principalId,
+    hasAccess,
+    filters: { names: [...flowEventNames] },
+    after,
+    backlog: false,
+    accept: isFlowRow,
+    project: projectFlowRow,
+    prelude: async (events) => {
+      const ids = [...new Set(events.flatMap((event) => (event.requestId && !known.has(event.requestId) ? [event.requestId] : [])))]
+      const refs = []
+      for (let i = 0; i < ids.length; i += 200) refs.push(...(await queries.requestRefs(ids.slice(i, i + 200))))
+      for (const id of ids) known.add(id)
+      while (known.size > 5_000) known.delete(known.values().next().value as string)
+      return refs.map((ref) => ({ event: "request", data: ref }))
+    },
+  }
 }
 
 const PAGE = 500

@@ -1,5 +1,6 @@
-import { BrokerError, type OwnerPort } from "@team-31/broker/client";
+import { BrokerError, type OwnerPort } from "@team-31/broker-client";
 import { Address, AskInput, type Category, type Owner, type RequesterView } from "@team-31/protocol";
+import { getTelemetry } from "../telemetry";
 import { describeSharing } from "../../app/(app)/contacts/describe";
 import type { InterpretMessage } from "./claude";
 
@@ -72,13 +73,18 @@ export function summarize(view: RequesterView): string {
     return { no_data: `${view.to} no tiene datos para responder eso.`, expired: `Tu pregunta a ${view.to} venció sin respuesta.`,
       delivery_failed: `No se pudo entregar tu pregunta a ${view.to}.` }[view.outcome];
   }
-  const result = view.result;
-  const answer = "answer" in result ? result.answer :
-    "matches" in result ? result.matches ? "Sí, coincide." : "No coincide." :
-    "available" in result ? `${result.available ? "Disponible." : "No disponible."}${result.freeSlots?.length ? ` Horarios: ${result.freeSlots.join(", ")}.` : ""}` :
-    "accepted" in result ? result.accepted ? "Aceptó la solicitud de conexión." : "No aceptó la solicitud de conexión." :
-    [result.displayName, result.headline].filter(Boolean).join(" — ");
-  return `Respuesta de ${view.to}:\n${answer}`;
+  return `Respuesta de ${view.to}:\n${formatAnswer(view.result)}`;
+}
+
+function formatAnswer(result: Extract<RequesterView, { decision: "allow" }>["result"]) {
+  if ("answer" in result) return result.answer;
+  if ("matches" in result) return result.matches ? "Sí, coincide." : "No coincide.";
+  if ("available" in result) {
+    const slots = result.freeSlots?.length ? ` Horarios: ${result.freeSlots.join(", ")}.` : "";
+    return (result.available ? "Disponible." : "No disponible.") + slots;
+  }
+  if ("accepted" in result) return result.accepted ? "Aceptó la solicitud de conexión." : "No aceptó la solicitud de conexión.";
+  return [result.displayName, result.headline].filter(Boolean).join(" — ");
 }
 
 export async function runCommand(
@@ -116,7 +122,14 @@ export async function runCommand(
     if (view.decision !== "deny") return summarize(view);
     // The broker denies without a reason. What the contact shares is already in the owner's own
     // contacts view, so naming the missing category reveals nothing new.
-    const contact = (await broker.contacts(owner)).contacts.find(({ address }) => address === to);
+    let contacts;
+    try {
+      ({ contacts } = await broker.contacts(owner));
+    } catch (error) {
+      getTelemetry().error("whatsapp.denial.contacts", error, { userId: owner.userId, requestId: view.requestId });
+      return summarize(view);
+    }
+    const contact = contacts.find(({ address }) => address === to);
     if (!contact) return `${to} no está entre tus contactos.`;
     if (!contact.receives.includes(category)) return `${to} no te comparte ${notShared[category]}.`;
     return summarize(view);

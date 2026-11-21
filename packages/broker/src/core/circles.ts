@@ -30,12 +30,12 @@ type CirclePort = Pick<OwnerPort, "circles" | "createCircle" | "deleteCircle" | 
 export function createCirclePort(
   { store, clock }: Pick<BrokerDeps, "store" | "clock">,
   record: RecordEvent,
-  cancelUnauthorized: (tx: StoreTx, userId: string) => Promise<void>,
+  denyUnauthorizedInboxRequests: (tx: StoreTx, userId: string) => Promise<void>,
 ): CirclePort {
-  async function cancelForMembers(tx: StoreTx, members: CircleMemberRow[]) {
+  async function denyUnauthorizedRequestsForMembers(tx: StoreTx, members: CircleMemberRow[]) {
     for (const { address } of members) {
       const user = await tx.getUserByAddress(address);
-      if (user) await cancelUnauthorized(tx, user.userId);
+      if (user) await denyUnauthorizedInboxRequests(tx, user.userId);
     }
   }
 
@@ -73,7 +73,7 @@ export function createCirclePort(
         const members = await tx.listCircleMembers(circle.id);
         await tx.deleteCircle(circle.id);
         recordCircle(tx, o.userId, circle.id, "deleted");
-        await cancelForMembers(tx, members);
+        await denyUnauthorizedRequestsForMembers(tx, members);
       });
     },
 
@@ -116,7 +116,7 @@ export function createCirclePort(
           throw notFound();
         }
         recordCircle(tx, o.userId, circle.id, "removed");
-        await cancelForMembers(tx, members);
+        await denyUnauthorizedRequestsForMembers(tx, members);
       });
     },
   };

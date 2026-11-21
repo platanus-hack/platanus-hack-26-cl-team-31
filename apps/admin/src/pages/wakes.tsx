@@ -8,7 +8,7 @@ import { CopyId } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
 import { FilterBar } from "@/components/filters"
 import { RequestHoverCard } from "@/components/hover-cards"
-import { QueryError, Muted, Page, PageHeader, Panel } from "@/components/page"
+import { Muted, Page, PageHeader, QueryPanel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { ToneBadge } from "@/components/status"
 import { api } from "@/lib/api"
@@ -148,8 +148,7 @@ export function WakesPage() {
           <ToggleGroupItem value="done">Terminados</ToggleGroupItem>
         </ToggleGroup>
       </FilterBar>
-      <QueryError query={query} />
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={columns}
           data={query.data?.items}
@@ -157,7 +156,7 @@ export function WakesPage() {
           getRowId={(w) => w.id}
           empty={{ title: "Cola vacía" }}
         />
-      </Panel>
+      </QueryPanel>
     </Page>
   )
 }

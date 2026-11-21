@@ -3,7 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpGuard } from "@team-31/auth/resource";
 import { acceptsMcpOrigin } from "@team-31/auth";
-import { BrokerError, type AgentPort } from "@team-31/broker/client";
+import { BrokerError, type AgentPort } from "@team-31/broker-client";
 import { Scope, type Principal } from "@team-31/protocol";
 import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
 import { createServer } from "./server.js";

@@ -10,7 +10,7 @@ import { CopyId } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
 import { FilterBar, SearchInput } from "@/components/filters"
 import { PersonHoverCard } from "@/components/hover-cards"
-import { QueryError, Muted, Page, PageHeader, Panel } from "@/components/page"
+import { Muted, Page, PageHeader, QueryPanel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { api } from "@/lib/api"
 
@@ -128,8 +128,7 @@ export function UsersPage() {
           className="sm:w-72"
         />
       </FilterBar>
-      <QueryError query={query} />
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={columns}
           data={rows}
@@ -142,7 +141,7 @@ export function UsersPage() {
           }}
         />
         <LoadMore query={query} />
-      </Panel>
+      </QueryPanel>
     </Page>
   )
 }

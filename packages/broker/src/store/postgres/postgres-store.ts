@@ -7,6 +7,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { activeAgentConflict, BrokerError } from "../../errors.js";
+import { wakeClaim } from "../store.js";
 import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
@@ -211,19 +212,19 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       return revoked.length > 0;
     },
 
-    async listFriends(userId) {
+    async listContactAddresses(userId) {
       const rows = await db.select({ address: friends.address }).from(friends)
         .where(eq(friends.userId, userId)).orderBy(asc(friends.address));
       return rows.map(({ address }) => parseStored(Address, address));
     },
 
-    async addFriend(userId, address) {
+    async addContact(userId, address) {
       const inserted = await db.insert(friends).values({ userId, address }).onConflictDoNothing()
         .returning({ address: friends.address });
       return inserted.length > 0;
     },
 
-    async removeFriend(userId, address) {
+    async removeContact(userId, address) {
       const removed = await db.delete(friends).where(and(eq(friends.userId, userId), eq(friends.address, address)))
         .returning({ address: friends.address });
       return removed.length > 0;
@@ -265,7 +266,8 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
     },
 
     async insertCircle(row) {
-      await db.insert(circles).values(row);
+      const inserted = await db.insert(circles).values(row).onConflictDoNothing({ target: circles.id }).returning({ id: circles.id });
+      if (!inserted.length) throw new BrokerError("conflict", "El círculo ya existe.");
     },
 
     async getCircle(id) {
@@ -349,13 +351,14 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
     listInbox: (address) => listRecipientRequests(address, "awaiting_agent"),
     listOwnerPending: (address) => listRecipientRequests(address, "awaiting_owner"),
 
-    async listActivity(address, limit) {
+    async listActivity(address, limit, requestId) {
       const owner = ownerId(address);
+      const participant = or(
+        and(eq(requests.fromAddress, address), inArray(requests.fromUserId, owner)),
+        and(eq(requests.toAddress, address), inArray(requests.toUserId, owner)),
+      );
       const rows = await db.select().from(requests)
-        .where(or(
-          and(eq(requests.fromAddress, address), inArray(requests.fromUserId, owner)),
-          and(eq(requests.toAddress, address), inArray(requests.toUserId, owner)),
-        ))
+        .where(and(participant, requestId === undefined ? undefined : eq(requests.id, requestId)))
         .orderBy(desc(requests.createdAt), desc(requests.id)).limit(limit);
       return rows.map(readRequest);
     },
@@ -396,10 +399,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       }
       return jobs.map((job) => {
         const recovered = job.state === "running";
-        return {
-          ...readWake(job), state: "running", runAt: leaseUntil, recovered, dueAt: job.runAt,
-          attempt: job.attempt + Number(recovered),
-        };
+        return wakeClaim({ ...readWake(job), runAt: leaseUntil, attempt: job.attempt + Number(recovered) }, recovered, job.runAt);
       });
     },
 

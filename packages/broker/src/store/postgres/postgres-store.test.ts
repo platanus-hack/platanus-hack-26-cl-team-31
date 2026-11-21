@@ -2,10 +2,11 @@ import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Principal, WakeTarget } from "@team-31/protocol";
 import pg from "pg";
+import { createTelemetry, memorySink } from "@team-31/telemetry";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createBroker, type BrokerDeps } from "../../index.js";
 import { runStoreContractTests } from "../contract.js";
-import type { RequestRow, WakeJob } from "../store.js";
+import type { RequestRow, WakeClaim, WakeJob } from "../store.js";
 import { applyPostgresMigrations, createPostgresStore, type PostgresStore } from "./index.js";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? "";
@@ -91,11 +92,9 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     });
   }
 
-  it("delivers an agent reply after the owner approves once and the Store reopens", async () => {
-    const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes: ["sideband:ask", "sideband:status"] };
-    const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["sideband:inbox", "sideband:reply"] };
+  function brokerDeps(): Omit<BrokerDeps, "store"> {
     const { privateKey } = generateKeyPairSync("ed25519");
-    const deps: Omit<BrokerDeps, "store"> = {
+    return {
       clock: { now: () => now },
       signingKey: privateKey,
       nonceKey: new Uint8Array(32).fill(4),
@@ -105,6 +104,12 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       },
       config: { addressDomain: "sideband.app", requestTtlSeconds: 900, wakeRetryDelaysMs: [0] },
     };
+  }
+
+  it("delivers an agent reply after the owner approves once and the Store reopens", async () => {
+    const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes: ["sideband:ask", "sideband:status"] };
+    const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["sideband:inbox", "sideband:reply"] };
+    const deps = brokerDeps();
     await createParticipants();
     const broker = createBroker({ ...deps, store });
     const grant = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "general" });
@@ -130,6 +135,30 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await expect(reopened.agent.status(alice, requestId)).resolves.toMatchObject({
       final: true, decision: "allow", result,
     });
+  });
+
+  it("keeps grants and pending requests created between two contact removals", async () => {
+    await createParticipants();
+    const sink = memorySink();
+    const telemetry = createTelemetry({ service: "broker", sink, lifecycle: false });
+    const broker = createBroker({ ...brokerDeps(), store, telemetry });
+    const alice: Principal = { userId: "alice", agentId: "a", scopes: ["sideband:inbox", "sideband:reply"] };
+    const bruno: Principal = { userId: "bruno", agentId: "b", scopes: ["sideband:ask", "sideband:status"] };
+    const to = "bruno@sideband.app";
+    const invitation = await broker.owner.connect(alice, { to, tag: "work" });
+    await expect(broker.owner.connect(alice, { to, tag: "family" })).rejects.toMatchObject({ code: "conflict" });
+    expect((await broker.owner.connect(alice, { to })).requestId).toBe(invitation.requestId);
+    await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
+    expect((await broker.owner.contacts(alice)).contacts[0]).toMatchObject({ tag: "work", gives: ["availability"] });
+    await broker.owner.removeContact(alice, to);
+    const grant = await broker.owner.setGrant(alice, { grantee: to, category: "general" });
+    const { requestId } = await broker.agent.ask(bruno, { to: "alice@sideband.app", tool: "question", args: { text: "¿Vienes?" } });
+    await broker.owner.removeContact(alice, to);
+    expect(await broker.owner.grants(alice)).toContainEqual(grant);
+    expect(sink.find("broker.contact.removed")).toHaveLength(1);
+    const [item] = await broker.agent.inbox(alice);
+    await broker.agent.reply(alice, { requestId, nonce: item!.nonce, outcome: "answered", result: { answer: "Sí" } });
+    expect(await broker.agent.status(bruno, requestId)).toMatchObject({ final: true, decision: "allow" });
   });
 
   it("filters lists on the participant ID as well as the claimed address", async () => {
@@ -176,14 +205,14 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       for (const job of jobs) await tx.enqueueWake(job);
     });
 
-    const claimed = deferred<WakeJob[]>();
+    const claimed = deferred<WakeClaim[]>();
     const release = deferred<void>();
     const first = store.tx(async (tx) => {
       claimed.resolve(await tx.claimDueWakes(now, leaseUntil, 1));
       await release.promise;
     });
     const timeout = new AbortController();
-    let second: Promise<WakeJob[]> | undefined;
+    let second: Promise<WakeClaim[]> | undefined;
     try {
       expect(await Promise.race([claimed.promise, first])).toMatchObject([{ id: "first", state: "running" }]);
       second = store.tx((tx) => tx.claimDueWakes(now, leaseUntil, 1));
@@ -414,9 +443,9 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect(await tx.listEvents([row.id])).toMatchObject([{ kind: "received" }]);
           expect(await tx.updateRequest(row.id, { guidance: "updated by runtime" }, row.version)).toBe(true);
           const friend = "alice@sideband.app";
-          expect(await tx.addFriend("bruno", friend)).toBe(true);
-          expect(await tx.addFriend("bruno", friend)).toBe(false);
-          expect(await tx.listFriends("bruno")).toEqual([friend]);
+          expect(await tx.addContact("bruno", friend)).toBe(true);
+          expect(await tx.addContact("bruno", friend)).toBe(false);
+          expect(await tx.listContactAddresses("bruno")).toEqual([friend]);
           const groupId = randomUUID();
           const categoryId = randomUUID();
           const group = { id: groupId, name: "Instituciones", members: [friend] };
@@ -441,7 +470,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([]);
           expect(await tx.changeContactGroup("bruno", groupId, { groupId, action: "delete" })).toBe(true);
           expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
-          expect(await tx.removeFriend("bruno", friend)).toBe(true);
+          expect(await tx.removeContact("bruno", friend)).toBe(true);
         });
       } finally {
         await runtime.close();

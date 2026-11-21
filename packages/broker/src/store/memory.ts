@@ -1,5 +1,6 @@
 import type { Address, ContactGroups, ContactTag, Sharing, OwnerVault } from "@team-31/protocol";
 import { activeAgentConflict, BrokerError } from "../errors.js";
+import { wakeClaim } from "./store.js";
 import type {
   AgentConnectionRow, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "./store.js";
@@ -10,7 +11,7 @@ type State = {
   contactGroups: Map<string, ContactGroups["groups"]>;
   users: Map<string, UserRow>;
   grants: (GrantRow & { revokedAt?: Date })[];
-  friends: Map<string, Set<Address>>;
+  contacts: Map<string, Set<Address>>;
   contactTags: Map<string, Map<Address, ContactTag>>;
   tagPresets: Map<string, Partial<Record<ContactTag, Sharing>>>;
   circles: Map<string, CircleRow>;
@@ -36,7 +37,7 @@ function transaction(state: State): StoreTx {
   }
 
   function canRead(owner: string, c: OwnerVault["categories"][number], reader: Address) {
-    if (!state.friends.get(owner)?.has(reader)) return false;
+    if (!state.contacts.get(owner)?.has(reader)) return false;
     const rule = state.memberRules.get(pairKey(owner, c.id))?.get(reader);
     if (rule !== undefined) return rule;
     const tag = state.contactTags.get(owner)?.get(reader);
@@ -88,7 +89,7 @@ function transaction(state: State): StoreTx {
     },
     async vaultMembers(owner, categoryId) {
       const category = state.vaults.get(owner)?.categories.find(c => c.id === categoryId);
-      return category ? [...(state.friends.get(owner) ?? [])].filter(address => canRead(owner, category, address)).sort() : null;
+      return category ? [...(state.contacts.get(owner) ?? [])].filter(address => canRead(owner, category, address)).sort() : null;
     },
     async contactGroups(owner) {
       return { groups: structuredClone(state.contactGroups.get(owner) ?? []).sort((a, b) => a.name.localeCompare(b.name)) };
@@ -112,7 +113,7 @@ function transaction(state: State): StoreTx {
           else delete category.contactGroups;
         }
       } else if (change.action === "add_contact") {
-        if (!state.friends.get(owner)?.has(change.address)) return false;
+        if (!state.contacts.get(owner)?.has(change.address)) return false;
         if (!group.members.includes(change.address)) group.members = [...group.members, change.address].sort();
       } else {
         group.members = group.members.filter(address => address !== change.address);
@@ -136,7 +137,7 @@ function transaction(state: State): StoreTx {
           vault.categories = vault.categories.filter(item => item !== c);
           break;
         case "set_member": {
-          if (!state.friends.get(owner)?.has(change.address)) return false;
+          if (!state.contacts.get(owner)?.has(change.address)) return false;
           const key = pairKey(owner, id);
           const rules = state.memberRules.get(key) ?? new Map<Address, boolean>();
           rules.set(change.address, change.allowed);
@@ -200,20 +201,20 @@ function transaction(state: State): StoreTx {
       live.revokedAt = structuredClone(at);
       return true;
     },
-    async listFriends(userId) {
-      return [...(state.friends.get(userId) ?? [])].sort();
+    async listContactAddresses(userId) {
+      return [...(state.contacts.get(userId) ?? [])].sort();
     },
-    async addFriend(userId, address) {
-      const friends = state.friends.get(userId) ?? new Set<Address>();
-      if (friends.has(address)) return false;
-      friends.add(address);
-      state.friends.set(userId, friends);
+    async addContact(userId, address) {
+      const contacts = state.contacts.get(userId) ?? new Set<Address>();
+      if (contacts.has(address)) return false;
+      contacts.add(address);
+      state.contacts.set(userId, contacts);
       return true;
     },
-    async removeFriend(userId, address) {
+    async removeContact(userId, address) {
       for (const c of state.vaults.get(userId)?.categories ?? []) state.memberRules.get(pairKey(userId, c.id))?.delete(address);
       for (const group of state.contactGroups.get(userId) ?? []) group.members = group.members.filter(member => member !== address);
-      return state.friends.get(userId)?.delete(address) ?? false;
+      return state.contacts.get(userId)?.delete(address) ?? false;
     },
     async listContactTags(userId) {
       return new Map(state.contactTags.get(userId));
@@ -237,6 +238,7 @@ function transaction(state: State): StoreTx {
         .sort(byCreatedAt));
     },
     async insertCircle(row) {
+      if (state.circles.has(row.id)) throw new BrokerError("conflict", "El círculo ya existe.");
       state.circles.set(row.id, structuredClone(row));
     },
     async getCircle(id) {
@@ -298,12 +300,15 @@ function transaction(state: State): StoreTx {
     async listOwnerPending(address) {
       return listRecipientRequests(address, "awaiting_owner");
     },
-    async listActivity(address, limit) {
+    async listActivity(address, limit, requestId) {
       const ownerId = findUserByAddress(address)?.userId;
       if (!ownerId) return [];
-      return structuredClone([...state.requests.values()]
-        .filter((row) => (row.toAddress === address && row.toUserId === ownerId)
-          || (row.fromAddress === address && row.fromUserId === ownerId))
+      const candidates = requestId === undefined ? state.requests.values() : [state.requests.get(requestId)];
+      return structuredClone([...candidates]
+        .filter((row): row is RequestRow => row !== undefined && (
+          (row.toAddress === address && row.toUserId === ownerId) ||
+          (row.fromAddress === address && row.fromUserId === ownerId)
+        ))
         .sort((a, b) => byCreatedAt(b, a)).slice(0, limit));
     },
     async listDueForExpiry(now, limit) {
@@ -331,7 +336,7 @@ function transaction(state: State): StoreTx {
         job.state = "running";
         job.runAt = structuredClone(leaseUntil);
         if (recovered) job.attempt++;
-        return structuredClone({ ...job, state: "running", recovered, dueAt });
+        return structuredClone(wakeClaim(job, recovered, dueAt));
       });
     },
     async recordWakeAttempt(claim, now, result, nextRunAt) {
@@ -389,7 +394,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    vaults: new Map(), memberRules: new Map(), contactGroups: new Map(), users: new Map(), grants: [], friends: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
+    vaults: new Map(), memberRules: new Map(), contactGroups: new Map(), users: new Map(), grants: [], contacts: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
     events: [], wakes: new Map(), agents: new Map(), channels: new Map(),
   };
   let previous = Promise.resolve();

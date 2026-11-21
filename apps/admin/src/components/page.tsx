@@ -120,6 +120,18 @@ export function QueryError({
   ) : null
 }
 
+export function QueryPanel({ query, children }: {
+  query: { isError: boolean; error: unknown; data: unknown; refetch: () => Promise<unknown> }
+  children: React.ReactNode
+}) {
+  return (
+    <>
+      {query.isError && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
+      {(!query.isError || query.data !== undefined) && <Panel>{children}</Panel>}
+    </>
+  )
+}
+
 export function ErrorState({
   error,
   onRetry,

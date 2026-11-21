@@ -26,13 +26,15 @@ describe("createLiveFeed", () => {
     expect(feed.size).toBe(0);
   });
 
-  it("a late row that happened earlier waits for itself and does not starve the rest", () => {
+  it("releases earlier events with a due row even if older events keep arriving", () => {
     const feed = createLiveFeed(mapper(), { holdMs: 500 });
     feed.push(row("20", "broker.request.created", 2_000), 0);
     feed.push(row("19", "broker.policy.evaluated", 1_900, { attrs: { decision: "allow" } }), 400);
-    // A los 500 ms la primera fila (en orden de ocurrencia) aún no esperó: nada sale.
-    expect(feed.drain(500)).toEqual([]);
-    expect(feed.drain(900).map((e) => e.step)).toEqual(["ask", "policy", "request"]);
+    expect(feed.drain(450)).toEqual([]);
+    feed.push(row("18", "wake.attempt", 1_800, { attrs: { ok: true } }), 490);
+    feed.push(row("21", "broker.request.closed", 2_100, { attrs: { outcome: "answered" } }), 495);
+    expect(feed.drain(500).map((e) => e.step)).toEqual(["wake", "ask", "policy", "request"]);
+    expect(feed.drain(995).map((e) => e.step)).toEqual(["delivered"]);
   });
 
   it("drops duplicates from reconnects", () => {

@@ -1,6 +1,6 @@
 import type { Circle } from "@team-31/protocol";
 
-import { deleteCircle, joinCircle, readCircles, removeFromCircle } from "../actions";
+import { deleteCircle, joinCircle, readCircles, removeFromCircle } from "./actions";
 import { button, card, Empty, Heading, primaryButton, secondaryText } from "../ui";
 import { CircleButton, CreateCircle, InviteMember } from "./circle-forms";
 

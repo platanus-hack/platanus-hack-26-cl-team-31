@@ -1,4 +1,4 @@
-import { MinHeap } from "../heap.js";
+import { MinHeap } from "./heap.js";
 import type { Arc, NodeId } from "../model.js";
 import {
   allowAll,
@@ -154,7 +154,7 @@ export function* dijkstra(view: AdjacencyView, source: NodeId, opts: DijkstraOpt
 // Multi-objetivo con conjunto de candidatos conocido
 // ---------------------------------------------------------------------------
 
-export interface TargetedOptions extends DijkstraOptions {
+export interface TargetedOptions extends Omit<DijkstraOptions, "target" | "potential"> {
   /** Candidatos explícitos (p. ej. los vecinos de un tema). `match` se sigue aplicando. */
   readonly targets: readonly NodeId[];
   /** Expansiones de la fase hacia atrás. Default: 4·|targets| + 256. */
@@ -182,7 +182,8 @@ export function* targetedNearest(view: AdjacencyView, source: NodeId, opts: Targ
   const set = new Set(opts.targets);
   const userMatch = opts.match;
   const res = yield* dijkstra(view, source, {
-    ...opts,
+    viewer: ctx.viewer, filter, batchSize: opts.batchSize, k: opts.k, includeSource: opts.includeSource,
+    maxCost: opts.maxCost, maxExpanded: opts.maxExpanded,
     match: (id, arcs) => set.has(id) && (!userMatch || userMatch(id, arcs)),
     potential: (id) => {
       const d = back.dist.get(id);

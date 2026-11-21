@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { reportBrowserFailure } from "@/lib/browser-feedback";
 
-import { button, Feedback, input, primaryButton } from "./ui";
+import { button, Feedback, input, primaryButton } from "../ui";
 
 type ShareFeedback = "idle" | "copied" | "share_failed" | "copy_failed";
 

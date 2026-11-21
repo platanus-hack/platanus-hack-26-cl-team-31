@@ -70,7 +70,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.pending":
       return { items: await owner.pending(c.get("web")) };
     case "owner.activity":
-      return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query()).limit) };
+      return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query())) };
     case "owner.ask":
       return owner.ask(c.get("web"), await parseBody(c, route.body));
     case "owner.channelAsk":
@@ -92,8 +92,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.revokeAgent":
       return owner.revokeAgent(c.get("web"), parseInput(route.params, c.req.param()).agentId);
     case "owner.connect": {
-      const { to, share, tag } = await parseBody(c, route.body);
-      return owner.connect(c.get("web"), to, share, tag);
+      return owner.connect(c.get("web"), await parseBody(c, route.body));
     }
     case "owner.contacts":
       return owner.contacts(c.get("web"));
@@ -121,8 +120,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       const { id, address } = parseInput(route.params, c.req.param());
       return owner.removeFromCircle(c.get("web"), id, address);
     }
-    case "owner.removeFriend":
-      return owner.removeFriend(c.get("web"), parseInput(route.params, c.req.param()).address);
+    case "owner.removeContact":
+      return owner.removeContact(c.get("web"), parseInput(route.params, c.req.param()).address);
     case "admin.rewake":
       return admin.rewake(c.get("admin"), parseInput(route.params, c.req.param()).id, (await parseBody(c, route.body)).reason);
     case "admin.expire":

@@ -9,7 +9,7 @@ export const categoryNames = ["availability", "interests", "health", "general"] 
 export type Category = (typeof categoryNames)[number];
 
 export function sameSharing(a: readonly Category[], b: readonly Category[]): boolean {
-  return a.length === b.length && a.every((category) => b.includes(category));
+  return a.every((category) => b.includes(category)) && b.every((category) => a.includes(category));
 }
 
 // A category is what the information is about; a tool is how it is asked. A holder grants

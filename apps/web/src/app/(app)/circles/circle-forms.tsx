@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 
-import { createCircle, inviteToCircle } from "../actions";
+import { createCircle, inviteToCircle } from "./actions";
 import { Feedback, input, primaryButton } from "../ui";
 
 type Result = { error?: string; message?: string };

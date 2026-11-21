@@ -3,7 +3,7 @@ import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
 import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
-import { ActivityItem, AgentConnection, AgentContacts, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent } from "./owner.js";
+import { ActivityItem, AgentConnection, AgentContacts, ContactsView, ConnectInput, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent } from "./owner.js";
 import { ContactTag, Sharing } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
@@ -17,6 +17,12 @@ const channelParams = z.object({ name: ChannelName });
 const adminAgentParams = z.object({ userId: z.string(), agentId: z.string() });
 const noContent = { status: 204, response: z.undefined() } as const;
 const circleMemberParams = z.object({ id: z.string(), address: Address });
+
+const ownerActivityQuery = z.object({
+  limit: z.coerce.number<string | number>().int().positive().optional(),
+  requestId: z.string().min(1).optional(),
+});
+export type OwnerActivityQuery = z.output<typeof ownerActivityQuery>;
 
 export const routes = {
   agentNetworkUsers: { method: "GET", path: "/v1/agent/network/users", query: z.strictObject({ after: Address.optional() }),
@@ -137,7 +143,7 @@ export const routes = {
   ownerActivity: {
     method: "GET",
     path: "/v1/owner/activity",
-    query: z.object({ limit: z.coerce.number<string | number>().int().positive().optional() }),
+    query: ownerActivityQuery,
     response: z.object({ items: z.array(ActivityItem) }),
     iss: "web",
     port: "owner.activity",
@@ -211,7 +217,7 @@ export const routes = {
   ownerConnect: {
     method: "POST",
     path: "/v1/owner/connections",
-    body: z.object({ to: Address, share: Sharing.optional(), tag: ContactTag.optional() }),
+    body: ConnectInput,
     response: RequesterViewSchema,
     iss: "web",
     port: "owner.connect",
@@ -259,13 +265,13 @@ export const routes = {
     iss: "web",
     port: "owner.answerInvitation",
   },
-  ownerRemoveFriend: {
+  ownerRemoveContact: {
     method: "DELETE",
     path: "/v1/owner/connections/:address",
     params: z.object({ address: Address }),
     ...noContent,
     iss: "web",
-    port: "owner.removeFriend",
+    port: "owner.removeContact",
   },
   ownerCircles: {
     method: "GET",
@@ -357,3 +363,7 @@ export const routes = {
     port: null,
   },
 } as const;
+
+export type RouteInput<Route> = {
+  [Key in keyof Route & ("params" | "query" | "body")]: z.input<Route[Key]>;
+};

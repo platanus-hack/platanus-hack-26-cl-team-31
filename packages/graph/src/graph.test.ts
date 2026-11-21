@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hubPenalty } from "./cost.js";
-import { MinHeap } from "./heap.js";
+import { MinHeap } from "./search/heap.js";
 import { MemoryGraphIndex } from "./memory.js";
 import { kindOf, topicId, type Arc, type GraphMutation, type NodeId } from "./model.js";
 import { interestMutation, membershipMutation, projectCore } from "./projection.js";
@@ -121,7 +121,9 @@ describe("nearest (multi-objetivo)", () => {
           .sort((a, b) => a - b)
           .slice(0, 3);
         for (const backwardBudget of [0, 1, 3, 1000]) {
-          const res = runSync(targetedNearest(index, s, { targets, k: 3, filter, backwardBudget }));
+          // Wider JS options may include a point target; it must never preempt the candidate search.
+          const options = { targets, k: 3, filter, backwardBudget, target: s };
+          const res = runSync(targetedNearest(index, s, options));
           expect(res.paths.map((p) => p.cost).length).toBe(expected.length);
           res.paths.forEach((p, i) => {
             expect(close(p.cost, expected[i] as number), `seed=${seed} budget=${backwardBudget}`).toBe(true);
@@ -249,8 +251,9 @@ describe("índice incremental", () => {
     index.buildLandmarks(4, "effective");
     const [s, t] = [g.people[0] as NodeId, g.people[200] as NodeId];
     expect(index.path(s, t, { algorithm: "alt" }).stats.fallback).toBeUndefined();
+    expect(index.path(s, t, { algorithm: "alt", landmarksStale: true }).stats.fallback).toMatch(/desactualizados/);
     index.apply([{ op: "upsertEdge", a: s, b: t, kind: "knows", base: 0.1 }]);
-    const res = index.path(s, t, { algorithm: "alt" });
+    const res = index.path(s, t, { algorithm: "alt", landmarksStale: false });
     expect(res.stats.fallback).toMatch(/desactualizados/);
     expect(res.paths[0]?.cost).toBeCloseTo(0.1 + (index.penalty(s) + index.penalty(t)) / 2);
   });

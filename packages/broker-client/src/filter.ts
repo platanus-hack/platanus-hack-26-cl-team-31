@@ -1,5 +1,5 @@
 import { ToolResultSchemas, type ToolName, type ToolResult } from "@team-31/protocol";
-import { BrokerError } from "../errors.js";
+import { BrokerError } from "./errors.js";
 
 export type FilteredResult = {
   result: ToolResult;

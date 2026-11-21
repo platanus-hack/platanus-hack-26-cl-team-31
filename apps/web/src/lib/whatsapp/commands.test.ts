@@ -1,6 +1,9 @@
 import { expect, it, vi } from "vitest";
 import { runCommand } from "./commands";
 
+const { recordError } = vi.hoisted(() => ({ recordError: vi.fn() }));
+vi.mock("../telemetry", () => ({ getTelemetry: () => ({ error: recordError }) }));
+
 const owner = { userId: "holder" };
 const requestId = "e9ca0fa6-fd8b-426b-9db6-9be9005126e6";
 const to = "simon@sideband.app";
@@ -118,4 +121,15 @@ it("explica una denegación con lo que el contacto no comparte, según la agenda
   broker.contacts.mockResolvedValue({ contacts: [] });
   await expect(runCommand(broker, owner, `${to} tiene sangre O negativo?`, report, health))
     .resolves.toBe(`${to} no está entre tus contactos.`);
+});
+
+
+it("returns the completed denial when its optional contact lookup fails", async () => {
+  const { broker, report } = fixture();
+  broker.ask.mockResolvedValue({ requestId, to, decision: "deny", final: true });
+  const error = new Error("unavailable");
+  broker.contacts.mockRejectedValue(error);
+  expect(await runCommand(broker, owner, `Pregunta a ${to} si viene`, report)).toBe(`No se pudo obtener una respuesta de ${to}.`);
+  expect(recordError).toHaveBeenCalledWith("whatsapp.denial.contacts", error, { requestId, userId: owner.userId });
+  expect(broker.ask).toHaveBeenCalledOnce();
 });

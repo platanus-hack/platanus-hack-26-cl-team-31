@@ -72,7 +72,7 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 | `ops.v_circles` | `sideband.circles` + `sideband.circle_members` | circle_id, name, owner_user_id, created_at, members, invitations | Sin las direcciones de los miembros |
 | `ops.v_channels` | `sideband.channels` | user_id, name, wake_kind, wake_host, created_at | Solo el host de la URL. Nunca `wake_secret`. `audience = 'origin'` en `ops.v_wake_jobs` marca sus avisos. |
 | `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions, has_phone_number | Sin tokens de sesión. Del teléfono solo se ve si existe, nunca el número. `user.id` es el mismo `user_id` de `sideband.users`. |
-| `ops.v_whatsapp` | Better Auth y esquema `whatsapp` (migración de web antes de ops) | linked_accounts, active_pairings, inbound_receipts, pending_deliveries | Solo recuentos. En Eventos, filtra por `whatsapp.link`, `whatsapp.request`, `whatsapp.send` o `whatsapp.delivery` para seguir el flujo. |
+| `ops.v_whatsapp` | Better Auth y esquema `whatsapp` (migración de web antes de ops) | linked_accounts, active_pairings, inbound_receipts, pending_deliveries, pending_registrations | Solo recuentos. En Eventos, filtra por `whatsapp.link`, `whatsapp.request`, `whatsapp.send` o `whatsapp.delivery` para seguir el flujo. |
 | `ops.v_oauth_clients` | `public."oauthClient"`, `"oauthAccessToken"`, `"oauthRefreshToken"` | client_id, name, user_id, redirect_hosts, created_at, last_token_at, active_tokens | Sin `client_secret` ni tokens. Token activo: sin revocar y sin vencer (access o refresh). |
 | `ops.v_oauth_grants` | mismas tablas OAuth | user_id, client_id, client_name, last_token_at, active_tokens | Clientes que autorizó cada persona (los del registro dinámico no tienen dueño). Alimenta `UserDetail.identity.oauthClients`. |
 | `ops.v_events` | `ops.events` | todas | Ya viene redactada. |
@@ -138,6 +138,7 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | `broker.agent.connected` | lifecycle | kind (tipo de aviso al crearse: `none`). Se emite una vez por conexión, cuando la primera llamada autenticada del agente la crea; `userId` y `agentId` en el sobre. Presencia: el agente entra a la red |
 | `broker.agent.revoked` | lifecycle | by (`owner` \| `admin`). Solo la primera revocación. Presencia: el agente sale de la red |
 | `broker.channel.set` | lifecycle | channel (`whatsapp`), kind (tipo de aviso); nunca la URL ni el secreto |
+| `worker.tick.completed` | lifecycle | expired, wakesOk, wakesRetried, wakesFailed (solo pasadas con actividad) |
 | `wake.attempt` | wake | kind, attempt, queueWaitMs, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
 | `wake.lease_recovered` | wake | attempt |

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { mintServiceToken, parseServicePrivateKey } from "@team-31/auth/service";
-import { createOwnerClient, type OwnerPort } from "@team-31/broker/client";
+import { createOwnerClient, type OwnerPort } from "@team-31/broker-client";
 import type { Owner } from "@team-31/protocol";
 import { tracedFetch } from "@team-31/telemetry";
 

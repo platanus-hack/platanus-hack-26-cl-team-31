@@ -40,7 +40,16 @@ export function createAdminApp(deps: AdminAppDeps) {
 
   mountAdminMcp(app, {
     queries: deps.queries,
-    authenticate: (bearer) => deps.authenticateToken(bearer),
+    authenticate: async (bearer) => {
+      const principal = await deps.authenticateToken(bearer)
+      if (!principal) return null
+      const role = deps.roleOf(principal.createdBy)
+      if (!role) return null
+      if (role === "viewer" && principal.scopes.includes("admin:sql")) {
+        return { ...principal, scopes: ["admin:read"] }
+      }
+      return principal
+    },
     audit: async ({ actor, action, target }) => {
       await deps.audit.record({ actor: { type: "token", id: actor.tokenId, label: actor.label }, action, target })
     },

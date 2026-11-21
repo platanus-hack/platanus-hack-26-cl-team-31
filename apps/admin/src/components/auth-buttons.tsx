@@ -27,8 +27,7 @@ export function AuthButtons({
   const probe = useQuery({
     queryKey: ["dev-login-probe"],
     queryFn: probeDevLogin,
-    staleTime: Infinity,
-    retry: false,
+    staleTime: 60_000,
   })
   const showDev = !devHidden && (isMock || probe.data === true)
 
@@ -36,7 +35,7 @@ export function AuthButtons({
     setPending("google")
     try {
       await signInWithGoogle()
-      await onSuccess()
+      if (isMock) await onSuccess()
     } catch (error) {
       toast.error("No se pudo iniciar sesión con Google.", {
         description: error instanceof Error ? error.message : undefined,
