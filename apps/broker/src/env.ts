@@ -1,3 +1,4 @@
+import { ed25519PrivateKey, ed25519PublicKey } from "@team-31/auth/service";
 import { z } from "zod";
 
 const base64Key = z.string().refine((value) => {
@@ -5,9 +6,6 @@ const base64Key = z.string().refine((value) => {
   const canonical = bytes.toString("base64");
   return bytes.length === 32 && (value === canonical || value === canonical.slice(0, -1));
 }, "Se requieren 32 bytes en base64.");
-const jwkCoordinate = z.base64url().refine((value) => Buffer.from(value, "base64url").length === 32, "Se requieren 32 bytes en base64url.");
-const ed25519Key = z.object({ kty: z.literal("OKP"), crv: z.literal("Ed25519"), x: jwkCoordinate });
-const publicKey = ed25519Key.extend({ d: z.never().optional() });
 
 function json<S extends z.ZodType>(schema: S) {
   return z.string().transform((value, ctx): unknown => {
@@ -34,7 +32,7 @@ const settings = z.object({
   BROKER_HOST: z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1"),
   BROKER_PORT: z.coerce.number().int().min(1).max(65_535),
   DATABASE_URL: z.preprocess(optional, z.url({ protocol: /^postgres(ql)?$/ }).optional()),
-  BROKER_SIGNING_KEY: json(ed25519Key.extend({ d: jwkCoordinate })),
+  BROKER_SIGNING_KEY: json(ed25519PrivateKey),
   NONCE_KEY: base64Key.transform((key) => Buffer.from(key, "base64")),
   WAKE_SECRETS_KEY: z.preprocess(optional, base64Key.optional()),
   REQUEST_TTL_SECONDS: z.coerce.number().int().min(1).max(2_147_483_647).default(900),
@@ -43,7 +41,7 @@ const settings = z.object({
     .transform((value) => value.split(",").map(Number))
     .pipe(z.array(z.number().int().min(0).max(2_147_483_647)).length(2)),
   // `admin` is optional: without it every /v1/admin/* request answers 401.
-  SERVICE_JWT_PUBLIC_KEYS: json(z.object({ mcp: publicKey, web: publicKey, admin: publicKey.optional() })),
+  SERVICE_JWT_PUBLIC_KEYS: json(z.object({ mcp: ed25519PublicKey, web: ed25519PublicKey, admin: ed25519PublicKey.optional() })),
   WAKE_ALLOW_INSECURE: z.enum(["0", "1"]).default("0").transform((flag) => flag === "1"),
 }).superRefine((env, ctx) => {
   if (env.NODE_ENV === "production" && env.WAKE_ALLOW_INSECURE) {

@@ -111,7 +111,7 @@ Cada capacidad tiene un dueño. Búscalo con `git grep` antes de crear un archiv
 | Receptor falso de avisos | `startFakeReceivers` de `e2e/src/fake-receivers.ts` |
 | Base Postgres propia en un test | `createTestDatabase` de `@team-31/test-db` (crea desde `TEST_DATABASE_URL` y `drop()` espera a que cierren los backends) |
 
-- **La segunda copia se mueve.** Cuando dos módulos necesitan lo mismo, mueve el original a `packages/*` en ese PR e importa desde ambos. Deuda actual: tres limitadores de ventana fija (`apps/broker/src/http/rate-limit.ts`, `apps/admin/server/rate-limit.ts`, `apps/admin/server/mcp/rate-limit.ts`) y el esquema zod de la JWK Ed25519 repetido en `apps/broker/src/env.ts` y `apps/admin/server/env.ts`. Unifícalos antes de sumar otro uso.
+- **La segunda copia se mueve.** Cuando dos módulos necesitan lo mismo, mueve el original a `packages/*` en ese PR e importa desde ambos. Para limitar solicitudes por ventana fija usa `@team-31/auth/rate-limit`; para validar una JWK Ed25519 usa los esquemas de `@team-31/auth/service`.
 - **El reparto de archivos de un issue define quién edita. Importar siempre está permitido.** Si lo que necesitas vive en la carpeta de otro issue, impórtalo. Si falta, pídelo en el PR.
 - **Programa contra código que existe en `main`.** Si tu issue depende de un módulo pendiente, entrega ambos juntos o deja el PR en draft hasta que llegue. Un stub que lanza, un `Proxy` que simula la interfaz o un `import()` con ruta variable pasan el build y dejan el servicio respondiendo 502.
 - **Un camino por capacidad.** Hay cinco servidores MCP, tres receptores de avisos de prueba y tres demos. Uno nuevo, o un cliente HTTP nuevo, lleva en el PR una línea que explica por qué el existente no sirve.
