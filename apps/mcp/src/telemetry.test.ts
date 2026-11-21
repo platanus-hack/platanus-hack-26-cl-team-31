@@ -59,6 +59,7 @@ function port(overrides: Partial<AgentPort> = {}): AgentPort {
   return {
     capabilities: vi.fn(), ask: vi.fn(), inbox: vi.fn(), reply: vi.fn(), status: vi.fn(), contacts: vi.fn(),
     vaultCatalog: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
+    contactGroups: vi.fn(), changeContactGroup: vi.fn(),
     connectWake: vi.fn(), disconnectWake: vi.fn(), ...overrides,
   };
 }

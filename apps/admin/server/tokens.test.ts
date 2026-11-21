@@ -26,7 +26,7 @@ describe.skipIf(!TEST_DATABASE_URL)("tokens sba_ (Postgres)", () => {
   })
 
   it("crea un token sba_ de 32 bytes, guarda solo sha256 y lo autentica", async () => {
-    const tokens = createPgTokenStore(pool)
+    const tokens = createPgTokenStore(pool, () => Date.UTC(2026, 10, 21))
     const { token, meta } = await tokens.create({ name: "claude local", ttlDays: 7, scopes: ["admin:read", "admin:sql"] }, "op@test.cl")
 
     expect(token).toMatch(/^sba_[A-Za-z0-9_-]{43}$/)

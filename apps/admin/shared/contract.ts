@@ -310,6 +310,7 @@ export type UserSummary = z.infer<typeof UserSummary>
 
 export const UserDetail = z.object({
   vault: z.object({ categories: z.number(), entries: z.number(), permissions: z.number() }).optional(),
+  vaultContactGroups: z.object({ groups: z.number(), memberships: z.number(), permissions: z.number() }).optional(),
   summary: UserSummary,
   identity: z.object({
     email: z.string().nullable(),

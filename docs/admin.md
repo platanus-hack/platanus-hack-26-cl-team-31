@@ -415,3 +415,5 @@ En Postgres administrado el usuario de la base no es superusuario. En Postgres 1
 El admin detecta el modo una vez por pool con `pg_has_role(current_user, rol, 'SET')`. Los tres casos se probaron contra un Postgres 17 limpio con usuarios no superusuario.
 
 La ficha del titular incluye `vault`: cantidades de categorías, datos y permisos en `ops.v_vault_summary`. Los eventos `broker.vault.changed` y `broker.vault.queried` registran cambios y consultas sin nombres de categorías, etiquetas de datos ni valores.
+
+La ficha también incluye `vaultContactGroups`: cantidades de grupos privados, membresías y permisos en `ops.v_vault_contact_group_summary`. No expone nombres de grupos, direcciones ni datos de la bóveda. `broker.vault.changed` registra las acciones sobre grupos con el prefijo `contact_group_` y los permisos de categoría con `set_contact_group`.

@@ -32,6 +32,7 @@ import {
   type RequesterView,
   type Scope,
   type ToolResult,
+  ContactGroupChange,
 } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
@@ -501,12 +502,34 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const categoryId = change.action === "create" ? randomUUID() : change.categoryId;
     if (!await tx.changeVault(userId, categoryId, change)) throw notFound();
     record(tx, "broker.vault.changed", { userId, agentId, attrs: { action: change.action,
-      ...(change.action === "set_group" ? { group: change.group, allowed: change.allowed } : {}) } });
+      ...(change.action === "set_group" ? { group: change.group, allowed: change.allowed } : {}),
+      ...(change.action === "set_contact_group" ? { allowed: change.allowed } : {}) } });
     return { categoryId };
   }
 
   return {
     agent: {
+      async contactGroups(p) {
+        requireScope(p, "sideband:vault", "agent.contactGroups");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          return tx.contactGroups(p.userId);
+        });
+      },
+      async changeContactGroup(p, input) {
+        requireScope(p, "sideband:vault", "agent.changeContactGroup");
+        const parsed = ContactGroupChange.safeParse(input);
+        if (!parsed.success) throw new BrokerError("invalid_input", "Revisa el grupo y el contacto.");
+        const change = parsed.data;
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          if (!(await tx.getUser(p.userId))?.address) throw new BrokerError("invalid_input", "Primero elige tu dirección Sideband.");
+          const groupId = change.action === "create" ? randomUUID() : change.groupId;
+          if (!await tx.changeContactGroup(p.userId, groupId, change)) throw notFound();
+          record(tx, "broker.vault.changed", { userId: p.userId, agentId: p.agentId, attrs: { action: `contact_group_${change.action}` } });
+          return { groupId };
+        });
+      },
       async vaultCatalog(p) {
         requireScope(p, "sideband:vault", "agent.vaultCatalog");
         return store.tx(async tx => {
