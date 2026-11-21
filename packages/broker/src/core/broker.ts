@@ -234,6 +234,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   // Leer la bandeja *es* sondear: ningún CLI declara su canal, así que la primera lectura de una
   // conexión sin canal la marca como destinataria de sondeo. Nunca degrada un canal push ya configurado,
   // y repetir la lectura no vuelve a escribir. Va en el núcleo para que la obtenga todo cliente del AgentPort.
+  // "none" es el valor por defecto —nunca configuró canal push, o lo quitó con disconnectWake—, no una baja:
+  // "polling" describe lo observado, no una suscripción, y quien sigue leyendo su bandeja está sondeando.
+  // Por eso una conexión puesta en "none" a propósito vuelve a promoverse en la siguiente lectura.
+  // Para que un agente deje de ser destinatario, el titular usa revokeAgent; disconnectWake no sirve para eso.
   async function markPolling(tx: StoreTx, connection: AgentConnectionRow): Promise<void> {
     if (connection.wakeTarget.kind !== "none") return;
     await tx.upsertAgentConnection({ ...connection, wakeTarget: { kind: "polling" } });
@@ -704,6 +708,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
 
+      // Quita el canal push de la conexión y la deja en "none". No la da de baja como destinataria:
+      // si el agente sigue leyendo su bandeja, markPolling la vuelve a marcar como sondeo. La baja es revokeAgent.
       async disconnectWake(p, subscriptionId) {
         requireScope(p, WAKE_SUBSCRIPTION_SCOPE, "agent.disconnectWake");
         await store.tx(async (tx) => {

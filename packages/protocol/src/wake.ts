@@ -13,6 +13,8 @@ export type WakeKind = z.infer<typeof WakeKind>;
 const webhookSecret = z.string().startsWith("whsec_");
 
 export const WakeTarget = z.discriminatedUnion("kind", [
+  // The default: no push channel configured, or one that was removed. Not an opt-out from being a
+  // recipient — an agent that keeps reading its inbox is promoted to "polling". The opt-out is revokeAgent.
   z.object({ kind: z.literal("none") }),
   // A CLI agent that reads its inbox on its own. Nobody writes to it: no URL, no secret.
   z.strictObject({ kind: z.literal("polling") }),

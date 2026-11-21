@@ -44,6 +44,7 @@ export interface AgentPort {
   // The caller's contacts and joined circles, so its agent knows whom it can ask.
   contacts(p: Principal): Promise<AgentContacts>;
   connectWake(p: Principal, target: WakeTarget): Promise<AgentConnection>;
+  // Removes the push channel. It does not stop the agent from receiving requests: the owner uses revokeAgent.
   disconnectWake(p: Principal, subscriptionId: string): Promise<void>;
 }
 

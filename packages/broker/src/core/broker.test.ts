@@ -433,6 +433,21 @@ describe("conexiones y prueba de aviso", () => {
     expect(await broker.owner.agents(bruno)).toMatchObject([{ wakeKind: "standard_webhook" }]);
   });
 
+  it("vuelve a promover a sondeo una conexión desconectada a propósito: es la decisión, no un descuido", async () => {
+    const target: WakeTarget = {
+      kind: "mcp_events", callbackUrl: "https://example.com/mcp", secret: "whsec_demo", subscriptionId: "sub", refreshBefore: null,
+    };
+    await broker.agent.connectWake(bruno, target);
+    await broker.agent.disconnectWake(bruno, target.subscriptionId);
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ wakeKind: "none" }]);
+    await broker.agent.inbox(bruno);
+    // "polling" describe lo observado, no una suscripción: quien se da de baja del push y sigue leyendo su
+    // bandeja *está* sondeando. Para dejar de ser destinatario, el titular usa revokeAgent, no disconnectWake.
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ wakeKind: "polling" }]);
+    await broker.owner.revokeAgent(bruno, bruno.agentId);
+    await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "not_found" });
+  });
+
   it("es idempotente", async () => {
     const writes: string[] = [];
     const inner = deps.store;
