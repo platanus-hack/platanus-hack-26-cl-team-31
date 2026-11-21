@@ -139,11 +139,12 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   app.notFound((c) => c.json(ErrorBody.parse({ error: { code: "not_found", message: "No se encontró la ruta." } }), 404));
   app.onError((error, c) => {
     if (error instanceof BrokerError && error.code !== "internal") {
-      const { code, message } = error;
+      const { code, message, reason, errorId } = error;
       if (code === "unauthorized") c.header("WWW-Authenticate", "Bearer");
       // An expected domain error is not an internal error: the span keeps its 4xx status.
+      if (errorId) c.header("X-Error-Id", errorId);
       c.error = undefined;
-      return c.json(ErrorBody.parse({ error: { code, message } }), httpStatusOf(code));
+      return c.json(ErrorBody.parse({ error: { code, message, ...(reason ? { reason } : {}) } }), httpStatusOf(code));
     }
     c.header("X-Error-Id", telemetry.error(`${c.req.method} ${routePath(c)}`, error));
     return c.json(ErrorBody.parse({ error: { code: "internal", message: "Ocurrió un error interno en el broker." } }), 500);

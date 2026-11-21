@@ -6,7 +6,7 @@ Contrato de código (fuente de verdad, no lo cambies sin actualizar este documen
 
 - `apps/admin/shared/contract.ts`: tipos y tabla de rutas de la API del admin.
 - `apps/admin/shared/queries.ts`: interfaz `AdminQueries` (módulo profundo de lectura).
-- `apps/admin/server/mcp/index.ts`: firma de `mountAdminMcp` y `TokenPrincipal`.
+- `apps/admin/server/mcp/index.ts` y `types.ts` en la misma carpeta definen `mountAdminMcp` y `TokenPrincipal`.
 - `packages/ops/sql/0001_events.sql`: tabla `ops.events`.
 
 ## 1. Arquitectura
@@ -66,7 +66,7 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 | `ops.v_requests` | `nexo.requests` + `nexo.wake_jobs` | id, tool, from_address, to_address, from_user_id, to_user_id, status, outcome, rule, escalated, target_agent_id, answered_by_agent_id, allowed_fields, dropped_fields, decision_reason, internal_reason, args_keys, result_keys, has_purpose, response_signed, created_at, expires_at, closed_at, duration_ms, stuck, wake_attempts, last_wake_ok | Sin `args`, `result`, `purpose`, firmas ni nonce. Solo las llaves de args y result. |
 | `ops.v_request_payloads` | `nexo.requests` | id, args, purpose, result | **Solo** rol `nexo_admin_reveal`. Se usa únicamente en `POST /requests/:id/reveal`. |
 | `ops.v_request_events` | `nexo.request_events` | request_id, id, at, kind, status, code | `detail` se reduce a status y code. |
-| `ops.v_wake_jobs` | `nexo.wake_jobs` + conexión | id, request_id, attempt, state, run_at, kind, ok, http_status, code, latency_ms, user_id, agent_id | Sin cuerpo de respuesta. `code` es `ok`, `retryable`, `failed` o un código `[a-z_]` del adaptador. |
+| `ops.v_wake_jobs` | `nexo.wake_jobs` + conexión | id, request_id, attempt, state, run_at, kind, ok, http_status, code, latency_ms, user_id, agent_id | Sin cuerpo de respuesta. `code` es `ok`, `retryable`, `failed` o un código `[a-z_]` del adaptador.  Cuando el estado es `running`, `run_at` indica cuándo vence la concesión. |
 | `ops.v_agent_connections` | `nexo.agent_connections` | user_id, agent_id, label, wake_kind, wake_host, verified_at, last_wake_at, revoked_at, created_at | Solo el host de la URL. Nunca `wake_secret`. |
 | `ops.v_users` | `nexo.users` + `nexo.sharing_rules` | user_id, address, display_name, created_at, rules | |
 | `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions, has_phone_number | Sin tokens de sesión. Del teléfono solo se ve si existe, nunca el número. `user.id` es el mismo `user_id` de `nexo.users`. |
@@ -129,6 +129,8 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `broker.grant.set` / `broker.grant.revoked` | policy | grantId, tool, fields (cantidad) |
 | `wake.attempt` | wake | kind, attempt, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
+| `wake.lease_recovered` | wake | attempt |
+| `wake.callback_verification` | wake | ok, reason |
 | `coordination.tool.call` | tool | tool, outcome |
 | `whatsapp.link` | auth | action |
 | `whatsapp.request` | tool | action, decision, tool |
@@ -344,7 +346,7 @@ Conflictos esperables: `pnpm-lock.yaml`. Al rebasar, toma la versión de `main` 
 
 ### ADM-05 · MCP de administración
 
-- Implementa `mountAdminMcp(app, deps)` en `apps/admin/server/mcp/`: `McpServer` + `StreamableHTTPServerTransport` sin estado, una instancia por request (patrón de `apps/mcp/src/http.ts`), `POST /mcp` y 405 para otros métodos.
+- `mountAdminMcp(app, deps, telemetry)` recibe la instancia de telemetría del servidor. Crea un `McpServer` y un `StreamableHTTPServerTransport` sin estado por solicitud a `POST /mcp`. Responde 405 a los demás métodos.
 - Tools de la sección 6 con entradas tomadas de los esquemas del contrato, `readOnlyHint: true` y `openWorldHint: false`, salida `structuredContent` más un texto breve (por ejemplo «3 solicitudes atascadas; la más vieja req_… hace 12 min»). `admin_sql` exige el scope `admin:sql`.
 - Recurso `admin://schema` e `instructions` del servidor (sección 6).
 - 401 con `WWW-Authenticate: Bearer` si el token falta o es inválido; 60 req/min por token; `audit()` en cada llamada.

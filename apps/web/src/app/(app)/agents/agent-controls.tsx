@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 
-import { manageAgent } from "../actions";
+import { pingOrRevokeAgent } from "../actions";
 import { button, Feedback } from "../ui";
 
 export function AgentControls({ agentId, revoked }: { agentId: string; revoked: boolean }) {
   const [confirm, setConfirm] = useState(false);
-  const [state, submit, pending] = useActionState(manageAgent.bind(null, agentId), {});
+  const [state, submit, pending] = useActionState(pingOrRevokeAgent.bind(null, agentId), {});
 
   return (
     <form action={submit} className="space-y-2">

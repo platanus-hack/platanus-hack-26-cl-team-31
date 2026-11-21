@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// Deben coincidir con apps/admin/shared/contract.ts y con los CHECK de ops.events
-// (packages/ops/sql/0001_events.sql). Hay un test que lo verifica contra el SQL.
+// El contrato del admin importa estos esquemas. catalog.test.ts los compara con los
+// CHECK de ops.events en packages/ops/sql/0001_events.sql.
 export const Service = z.enum(["web", "mcp", "broker", "worker", "admin", "coordination"]);
 export type Service = z.infer<typeof Service>;
 

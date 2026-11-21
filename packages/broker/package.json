@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@team-31/protocol": "workspace:*",
+    "@team-31/telemetry": "workspace:*",
     "drizzle-orm": "0.45.4",
     "pg": "8.23.1",
     "@team-31/telemetry": "workspace:*"

@@ -1,10 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer, type ServerResponse } from "node:http";
 import {
   ErrorCode,
+  WakeVerificationReason,
   httpStatusOf,
   type Owner,
   type Principal,
+  type ReplyInput,
 } from "@team-31/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import { BrokerError, createAgentClient, createOwnerClient } from "./index.js";
@@ -224,18 +227,43 @@ it.each(ErrorCode.options)("returns BrokerError(%s) without upstream text", asyn
   expect(requests).toHaveLength(1);
 });
 
-it.each(["challenge_failed", "timeout", "https_required", "blocked_address"])(
+it("preserves an upstream error ID even when a response body cannot be decoded", async () => {
+  const errorId = randomUUID();
+  const { ownerClient } = await broker((response, count) => {
+    response.setHeader("X-Error-Id", count === 1 ? errorId : "unexpected-upstream-value");
+    response.writeHead(500).end("invalid JSON");
+  });
+
+  await expect(ownerClient.me(owner)).rejects.toMatchObject({
+    code: "internal", stage: "decoding", errorId,
+  });
+  await expect(ownerClient.me(owner)).rejects.toMatchObject({
+    code: "internal", stage: "decoding", errorId: undefined,
+  });
+});
+
+it.each(WakeVerificationReason.options)(
   "preserves the wake verification reason %s",
-  async (message) => {
+  async (reason) => {
     const { agent } = await broker((response) => {
-      send(response, 400, { error: { code: "invalid_input", message } });
+      send(response, 400, { error: { code: "invalid_input", reason, message: "raw upstream message" } });
     });
     await expect(agent.connectWake(principal, target)).rejects.toMatchObject({
       code: "invalid_input",
-      message,
+      reason,
+      message: reason,
     });
   },
 );
+
+it("does not infer a callback reason from a generic error message", async () => {
+  const { agent } = await broker((response) => {
+    send(response, 400, { error: { code: "invalid_input", message: "challenge_failed" } });
+  });
+  await expect(agent.connectWake(principal, target)).rejects.toMatchObject({
+    code: "invalid_input", reason: undefined,
+  });
+});
 
 it("rejects invalid bodies, query values and path segments before signing or sending", async () => {
   const { agent, ownerClient, requests, getAgentToken, getOwnerToken } = await broker((response) => {
@@ -247,6 +275,8 @@ it("rejects invalid bodies, query values and path segments before signing or sen
   });
   await expect(agent.reply(principal, { ...replyInput, outcome: "answered", result: () => "invalid" }))
     .rejects.toMatchObject({ code: "invalid_input" });
+  const missingResult = { ...replyInput, outcome: "answered" } as unknown as ReplyInput;
+  await expect(agent.reply(principal, missingResult)).rejects.toMatchObject({ code: "invalid_input" });
   await expect(ownerClient.activity(owner, 0)).rejects.toMatchObject({ code: "invalid_input" });
   await expect(ownerClient.revokeAgent(owner, "..")).rejects.toMatchObject({ code: "invalid_input" });
   expect(requests).toEqual([]);
@@ -311,7 +341,7 @@ it("sanitizes signer failures before sending the request", async () => {
   });
 
   const result = agent.inbox(principal);
-  await expect(result).rejects.toMatchObject({ code: "internal" });
+  await expect(result).rejects.toMatchObject({ code: "internal", stage: "signing" });
   await expect(result).rejects.not.toThrow("private signing material");
   expect(getAgentToken).toHaveBeenCalledTimes(1);
   expect(requests).toEqual([]);

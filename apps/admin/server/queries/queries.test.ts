@@ -223,8 +223,11 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       })
     })
     // El primer aviso falla y se reintenta; el segundo termina bien.
-    const claimed = await store.tx((tx) => tx.claimDueWakes(new Date(), 10))
-    expect(claimed).toHaveLength(2)
+    const now = new Date()
+    const leaseUntil = new Date(now.getTime() + 60_000)
+    const claimed = await store.tx((tx) => tx.claimDueWakes(now, leaseUntil, 10))
+    expect(claimed.map(({ id }) => id)).toEqual(["wake_answered_1", "wake_open_1"])
+    const [answered, open] = claimed
     await store.tx(async (tx) => {
       await tx.appendEvent({
         requestId: ids.open,
@@ -232,13 +235,15 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
         kind: "wake",
         code: "failed",
       })
-      await tx.completeWake(
-        "wake_open_1",
+      await tx.recordWakeAttempt(
+        open!,
+        now,
         { ok: false, status: 503, retryable: true, ms: 120 },
         minutesAgo(-1)
       )
-      await tx.completeWake(
-        "wake_answered_1",
+      await tx.recordWakeAttempt(
+        answered!,
+        now,
         { ok: true, status: 200, retryable: false, ms: 80 },
         null
       )

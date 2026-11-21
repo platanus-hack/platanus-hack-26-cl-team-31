@@ -37,22 +37,17 @@ async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string
   }
   const role = pg.escapeIdentifier(runtimeRole);
   await client.query("BEGIN");
-  try {
-    await client.query(`GRANT USAGE ON SCHEMA nexo TO ${role}`);
-    await client.query(`
-      GRANT SELECT, INSERT, UPDATE ON
-        nexo.users, nexo.sharing_rules, nexo.grants, nexo.requests, nexo.wake_jobs, nexo.agent_connections
-      TO ${role}
-    `);
-    await client.query(`GRANT SELECT, INSERT, DELETE ON nexo.friends TO ${role}`);
-    await client.query(`REVOKE UPDATE, DELETE, TRUNCATE ON nexo.request_events FROM ${role}`);
-    await client.query(`GRANT SELECT, INSERT ON nexo.request_events TO ${role}`);
-    await client.query(`GRANT USAGE ON SEQUENCE nexo.request_events_id_seq TO ${role}`);
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  }
+  await client.query(`GRANT USAGE ON SCHEMA nexo TO ${role}`);
+  await client.query(`
+    GRANT SELECT, INSERT, UPDATE ON
+      nexo.users, nexo.sharing_rules, nexo.grants, nexo.requests, nexo.wake_jobs, nexo.agent_connections
+    TO ${role}
+  `);
+  await client.query(`GRANT SELECT, INSERT, DELETE ON nexo.friends TO ${role}`);
+  await client.query(`REVOKE UPDATE, DELETE, TRUNCATE ON nexo.request_events FROM ${role}`);
+  await client.query(`GRANT SELECT, INSERT ON nexo.request_events TO ${role}`);
+  await client.query(`GRANT USAGE ON SEQUENCE nexo.request_events_id_seq TO ${role}`);
+  await client.query("COMMIT");
 }
 
 export async function applyPostgresMigrations({ databaseUrl, runtimeRole, runtimePassword }: PostgresMigrationOptions): Promise<void> {
@@ -70,7 +65,7 @@ export async function applyPostgresMigrations({ databaseUrl, runtimeRole, runtim
       await migrate(drizzle(client), { migrationsFolder, migrationsSchema: "nexo" });
       if (runtimeRole !== undefined) await grantRuntimePrivileges(client, runtimeRole);
     } finally {
-      // Closing the dedicated migration session also releases its advisory lock.
+      // Closing the dedicated migration session rolls back unfinished grants and releases its lock.
       client.release(true);
     }
   } finally {

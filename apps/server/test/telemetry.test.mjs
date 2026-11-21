@@ -46,7 +46,8 @@ test("cada tool emite coordination.tool.call con su resultado y sin datos", asyn
   assert.equal(ok.status, 200);
   assert.equal(ok.headers.get("x-trace-id"), "4bf92f3577b34da6a3ce929d0e0e4736");
   assert.equal((await call("/tools/deny_tool", {})).status, 200);
-  assert.equal((await call("/tools/echo_tool", { other: 1 })).status, 400);
+  const invalid = await call("/tools/echo_tool", { other: 1 });
+  assert.equal(invalid.status, 400);
   const broken = await call("/tools/broken_tool", {});
   assert.equal(broken.status, 503);
 
@@ -59,8 +60,9 @@ test("cada tool emite coordination.tool.call con su resultado y sin datos", asyn
   ]);
   assert.equal(calls[0].traceId, "4bf92f3577b34da6a3ce929d0e0e4736");
   const errors = sink.find("error");
-  assert.equal(errors.length, 1);
-  assert.equal(broken.headers.get("x-error-id"), errors[0].errorId);
+  assert.equal(errors.length, 2);
+  assert.equal(invalid.headers.get("x-error-id"), errors[0].errorId);
+  assert.equal(broken.headers.get("x-error-id"), errors[1].errorId);
   const spans = sink.find("http.request");
   assert.deepEqual(spans.at(-1).attrs, { method: "POST", route: "/tools/:name", status: 503, bucket: "5xx" });
   assert.ok(!JSON.stringify(sink.records).includes(secret));

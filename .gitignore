@@ -12,3 +12,5 @@ coverage/
 *.log
 
 .agents-local/
+
+.desloppify/

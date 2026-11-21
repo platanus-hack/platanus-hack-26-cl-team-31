@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { BrokerError, type AgentPort } from "@team-31/broker/client";
-import { WAKE_EVENT, WAKE_SUBSCRIPTION_SCOPE, type Principal, type Waker } from "@team-31/protocol";
+import { WAKE_EVENT, WAKE_SUBSCRIPTION_SCOPE, type Principal } from "@team-31/protocol";
 import { z } from "zod";
 import type { ToolTelemetry } from "./tools/result.js";
 
@@ -42,10 +42,6 @@ const subscribe = eventTarget.extend({
 
 const unsubscribe = z.union([eventTarget, z.object({ id: z.string().regex(/^sub_[0-9a-f]{16}$/) })]);
 const retentionMs = 7 * 24 * 60 * 60 * 1000;
-type CallbackFailure = Extract<Awaited<ReturnType<Waker["verifyCallback"]>>, { ok: false }>["reason"];
-const callbackFailures: ReadonlySet<string> = new Set<CallbackFailure>([
-  "challenge_failed", "timeout", "https_required", "blocked_address",
-]);
 
 function subscriptionId(principal: Principal, target: z.output<typeof eventTarget>) {
   // No filters are supported, so the only canonical arguments object is {}.
@@ -108,8 +104,10 @@ export function registerEvents(server: McpServer, principal: Principal, agent: A
           refreshBefore,
         });
       } catch (error) {
-        if (error instanceof BrokerError && error.code === "invalid_input" && callbackFailures.has(error.message)) {
-          throw new McpError(-32015, "CallbackEndpointError", { reason: error.message });
+        if (error instanceof BrokerError && error.code === "invalid_input" && error.reason) {
+          throw new McpError(-32015, "CallbackEndpointError", {
+            reason: error.reason, ...(error.errorId ? { errorId: error.errorId } : {}),
+          });
         }
         throw eventError("events/subscribe", error);
       }

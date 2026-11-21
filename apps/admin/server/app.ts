@@ -5,7 +5,8 @@ import { Hono } from "hono"
 import { secureHeaders } from "hono/secure-headers"
 import { ErrorBody } from "../shared/contract.js"
 import { createAdminApi, loginRateLimit, type AdminApiDeps } from "./api.js"
-import { mountAdminMcp, type AdminMcpDeps } from "./mcp/index.js"
+import { mountAdminMcp } from "./mcp/index.js"
+import type { AdminMcpDeps } from "./mcp/types.js"
 
 // Composición del servidor admin: /healthz, Better Auth en /api/auth/*, API en /api/admin/*,
 // MCP en /mcp y, en producción (ADMIN_SERVE_SPA=1), la SPA de dist/client.
@@ -39,15 +40,11 @@ export function createAdminApp(deps: AdminAppDeps) {
 
   mountAdminMcp(app, {
     queries: deps.queries,
-    authenticate: async (bearer) => {
-      const principal = await deps.authenticateToken(bearer)
-      if (!principal) deps.telemetry.emit("auth.token.rejected", { attrs: { issuer: "admin", reason: "invalid_token" } })
-      return principal
-    },
+    authenticate: (bearer) => deps.authenticateToken(bearer),
     audit: async ({ actor, action, target }) => {
       await deps.audit.record({ actor: { type: "token", id: actor.tokenId, label: actor.label }, action, target })
     },
-  })
+  }, deps.telemetry)
 
   const notFound = () => ErrorBody.parse({ error: { code: "not_found", message: "No se encontró la ruta." } })
   if (deps.serveSpa) {

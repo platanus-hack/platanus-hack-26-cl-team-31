@@ -1,130 +1,143 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Telemetry } from "@team-31/telemetry";
-import type { PoolClient } from "pg";
+import type pg from "pg";
 import { z } from "zod";
+import { availabilityTools } from "./availability.js";
+import { contactTools } from "./contacts.js";
+import { meetingTools } from "./meetings.js";
 
-export type CoordinationTool = {
+const tools = [...availabilityTools, ...meetingTools, ...contactTools];
+const maxInputBytes = 64 * 1024;
+type Database = Pick<pg.Pool, "query" | "connect">;
+type Tool = {
   name: string;
   description: string;
   inputSchema: unknown;
-  run(db: PoolClient, me: string, input: unknown): Promise<object>;
+  run(db: pg.PoolClient, person: string, input: unknown): Promise<object>;
 };
 
-export type CoordinationPool = {
-  query<R extends object>(sql: string, values?: unknown[]): Promise<{ rows: R[] }>;
-  connect(): Promise<Pick<PoolClient, "query" | "release">>;
-};
-
-function json(response: ServerResponse, code: number, value: unknown) {
-  response.writeHead(code, {"content-type": "application/json", "cache-control": "no-store"});
-  response.end(JSON.stringify(value));
+function json(response: ServerResponse, status: number, value: unknown) {
+  const body = JSON.stringify(value);
+  response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+  response.end(body);
 }
 
-// Route pattern for http.request: the tool name is a fixed identifier, never user input.
-function routeOf(method: string | undefined, url: string | undefined, tools: Map<string, CoordinationTool>): string {
-  if (url === "/health") return "/health";
-  if (url === "/tools") return "/tools";
-  const name = /^\/tools\/([a-z_]+)$/.exec(url ?? "")?.[1];
-  return method === "POST" && name && tools.has(name) ? "/tools/:name" : "unmatched";
+async function readInput(request: IncomingMessage, telemetry: Telemetry) {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > maxInputBytes) return { status: 413, code: "input_too_large" } as const;
+    chunks.push(chunk);
+  }
+  try {
+    const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return { status: 200, value } as const;
+  } catch (error) {
+    return { status: 400, code: "invalid_input", errorId: telemetry.error("coordination.input", error) } as const;
+  }
 }
 
-export function createCoordinationHandler({ pool, tools, telemetry }: {
-  pool: CoordinationPool;
-  tools: CoordinationTool[];
-  telemetry: Telemetry;
-}) {
-  const byName = new Map(tools.map(tool => [tool.name, tool]));
-
-  async function serve(request: IncomingMessage, response: ServerResponse) {
-    if (request.method === "GET" && request.url === "/health") {
-      await pool.query("SELECT 1");
-      return json(response, 200, {status: "ok"});
-    }
-    const token = /^Bearer (\S+)$/.exec(request.headers.authorization ?? "")?.[1];
-    if (!token) {
-      telemetry.emit("auth.token.rejected", {attrs: {issuer: "coordination", reason: "missing_token"}});
-      return json(response, 401, {error: "unauthorized"});
-    }
-    const hash = createHash("sha256").update(token).digest("hex");
-    const person = await pool.query<{id:string}>("SELECT id FROM people WHERE token_hash=$1", [hash]);
-    const me = person.rows[0]?.id;
-    if (!me) {
-      telemetry.emit("auth.token.rejected", {attrs: {issuer: "coordination", reason: "unknown_token"}});
-      return json(response, 401, {error: "unauthorized"});
-    }
-    telemetry.identify({userId: me});
-
-    if (request.method === "GET" && request.url === "/tools") {
-      return json(response, 200, {tools: tools.map(({name, description, inputSchema}) => ({name, description, inputSchema}))});
-    }
-    const name = /^\/tools\/([a-z_]+)$/.exec(request.url ?? "")?.[1];
-    const tool = byName.get(name ?? "");
-    if (request.method !== "POST" || !tool) return json(response, 404, {error: "unknown_tool"});
-    const chunks: Buffer[] = [];
-    let size = 0;
-    for await (const chunk of request) {
-      size += chunk.length;
-      if (size > 64 * 1024) return json(response, 413, {error: "input_too_large"});
-      chunks.push(chunk);
-    }
-    let input: unknown;
-    try { input = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
-    catch { return json(response, 400, {error: "invalid_input"}); }
-
-    // coordination.tool.call: tool and outcome only, never the input or the result.
-    return telemetry.span("coordination.tool.call", {attrs: {tool: tool.name}}, async (span) => {
-      const db = await pool.connect();
+async function runTool(pool: Database, telemetry: Telemetry, tool: Tool, person: string, input: unknown) {
+  const client = await pool.connect();
+  let discard = true;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+    try {
+      const result = await tool.run(client, person, input);
+      await client.query("COMMIT");
+      discard = false;
+      return result;
+    } catch (error) {
       try {
-        await db.query("BEGIN ISOLATION LEVEL READ COMMITTED");
-        const result = await tool.run(db as PoolClient, me, input);
-        await db.query("COMMIT");
-        const status = (result as {status?: unknown}).status;
-        span.set({outcome: status === "not_shareable" ? "not_shareable" : "ok"});
-        json(response, 200, result);
+        await client.query("ROLLBACK");
+        discard = false;
+      } catch (rollbackError) {
+        telemetry.error("coordination.rollback", rollbackError);
+      }
+      throw error;
+    }
+  } finally {
+    client.release(discard);
+  }
+}
+
+export function createCoordinationHandler({ pool, tools: registeredTools = tools, telemetry }: {
+  pool: Database; tools?: Tool[]; telemetry: Telemetry;
+}) {
+  const toolsByName = new Map(registeredTools.map((tool) => [tool.name, tool]));
+  const catalog = registeredTools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }));
+  async function serve(request: IncomingMessage, response: ServerResponse, route: string, tool: Tool | undefined) {
+    if (route === "/health") {
+      await pool.query("SELECT 1");
+      return json(response, 200, { status: "ok" });
+    }
+
+    const token = /^Bearer (\S+)$/.exec(request.headers.authorization ?? "")?.[1];
+    const hash = token ? createHash("sha256").update(token).digest("hex") : undefined;
+    const person = hash ? (await pool.query<{ id: string }>("SELECT id FROM people WHERE token_hash=$1", [hash])).rows[0] : undefined;
+    if (!person) {
+      telemetry.emit("auth.token.rejected", { attrs: { issuer: "coordination", reason: token ? "unknown_token" : "missing_token" } });
+      return json(response, 401, { error: "unauthorized" });
+    }
+    telemetry.identify({ userId: person.id });
+    telemetry.emit("auth.token.verified", { attrs: { issuer: "coordination" } });
+    if (route === "/tools") return json(response, 200, { tools: catalog });
+    if (!tool) return json(response, 404, { error: "unknown_tool" });
+
+    const input = await readInput(request, telemetry);
+    if (input.status !== 200) {
+      if (input.errorId) response.setHeader("X-Error-Id", input.errorId);
+      return json(response, input.status, { error: input.code });
+    }
+    const result = await telemetry.span("coordination.tool.call", { attrs: { tool: tool.name } }, async (span) => {
+      try {
+        const result = await runTool(pool, telemetry, tool, person.id, input.value);
+        span.set({ outcome: "status" in result && result.status === "not_shareable" ? "not_shareable" : "ok" });
+        return result;
       } catch (error) {
-        await db.query("ROLLBACK");
-        if (error instanceof z.ZodError) {
-          span.set({outcome: "invalid_input"});
-          return json(response, 400, {error: "invalid_input"});
-        }
-        span.set({outcome: "error"});
+        span.set({ outcome: error instanceof z.ZodError ? "invalid_input" : "error" });
         throw error;
-      } finally { db.release(); }
+      }
+    }).catch((error: unknown) => {
+      if (!(error instanceof z.ZodError)) throw error;
+      response.setHeader("X-Error-Id", telemetry.error("coordination.tool.input", error));
+      return null;
     });
+    if (result === null) return json(response, 400, { error: "invalid_input" });
+    json(response, 200, result);
   }
 
-  return function handle(request: IncomingMessage, response: ServerResponse) {
-    const route = routeOf(request.method, request.url, byName);
-    const fail = (error: unknown) => {
-      const errorId = telemetry.error(`${request.method ?? "UNKNOWN"} ${route}`, error);
-      if (!response.headersSent) {
-        response.setHeader("X-Error-Id", errorId);
-        json(response, 503, {error: "unavailable"});
-      } else if (!response.writableEnded) {
-        response.end();
-      }
-      return errorId;
-    };
-    if (route === "/health") {
-      void serve(request, response).catch(fail);
-      return;
-    }
-    void telemetry.span("http.request", {
-      traceparent: typeof request.headers.traceparent === "string" ? request.headers.traceparent : null,
-      attrs: {method: request.method ?? "UNKNOWN", route},
+  return async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const method = request.method ?? "UNKNOWN";
+    const name = method === "POST" ? /^\/tools\/([a-z_]+)$/.exec(request.url ?? "")?.[1] : undefined;
+    const tool = name ? toolsByName.get(name) : undefined;
+    const route = method === "GET" && (request.url === "/health" || request.url === "/tools")
+      ? request.url
+      : tool ? "/tools/:name" : "unmatched";
+    const traceparent = request.headers.traceparent;
+    await telemetry.span("http.request", {
+      traceparent: typeof traceparent === "string" ? traceparent : null,
+      attrs: { method, route },
     }, async (span) => {
-      response.setHeader("X-Trace-Id", span.traceId);
       try {
-        await serve(request, response);
+        response.setHeader("X-Trace-Id", span.traceId);
+        await serve(request, response, route, tool);
       } catch (error) {
-        span.setErrorId(fail(error));
-      }
-      const status = response.statusCode;
-      span.set({status, bucket: `${Math.floor(status / 100)}xx`});
-      if (status >= 500) {
+        const errorId = telemetry.error(`${method} ${route}`, error);
+        span.setErrorId(errorId);
         span.setStatus("error");
         span.setLevel("error");
+        if (response.headersSent || response.destroyed) {
+          response.destroy();
+        } else {
+          response.setHeader("X-Error-Id", errorId);
+          json(response, 503, { error: "unavailable" });
+        }
+      } finally {
+        const status = response.statusCode;
+        span.set({ status, bucket: `${Math.floor(status / 100)}xx` });
       }
     });
   };

@@ -11,7 +11,7 @@ import { onboardingFlow, type OnboardingSource } from "@/lib/onboarding-flow";
 import { getTelemetry, observeWebRequest } from "@/lib/telemetry";
 
 import { getOwner, requireAddress } from "./owner";
-import { activityPageSize, validPage } from "./labels";
+import { activityPageSize, parseActivityPage } from "./labels";
 
 type Feedback = { error?: string; message?: string; errorId?: string };
 
@@ -110,7 +110,7 @@ export async function revokeGrant(grantId: string): Promise<Feedback> {
 export async function readActivity(input: unknown) {
   await requireAddress();
   const owner = await getOwner();
-  const page = validPage(input);
+  const page = parseActivityPage(input);
   const last = page * activityPageSize;
   const items = await ownerClient().activity(owner, last + 1);
   return { items: items.slice(last - activityPageSize, last), hasNext: items.length > last };
@@ -170,7 +170,7 @@ export async function readAgents() {
   return ownerClient().agents(owner);
 }
 
-export async function manageAgent(agentId: string, _: Feedback, form: FormData): Promise<Feedback> {
+export async function pingOrRevokeAgent(agentId: string, _: Feedback, form: FormData): Promise<Feedback> {
   await requireAddress();
   const owner = await getOwner();
   const operation = form instanceof FormData ? form.get("operation") : undefined;
