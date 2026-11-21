@@ -2,6 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
   - "e2e"
+  - "infra/titular/mock-mcp"
 
 ignoredBuiltDependencies:
   - sharp
