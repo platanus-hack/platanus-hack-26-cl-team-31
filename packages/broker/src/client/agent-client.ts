@@ -8,6 +8,8 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
 
   return {
     vaultCatalog: (p) => request(routes.agentVaultCatalog, p),
+    contactGroups: (p) => request(routes.agentContactGroups, p),
+    changeContactGroup: (p, body) => request(routes.agentChangeContactGroup, p, { body }),
     changeVault: (p, body) => request(routes.agentChangeVault, p, { body }),
     queryVault: (p, body) => request(routes.agentQueryVault, p, { body }),
     capabilities: (principal, to) => request(routes.agentCapabilities, principal, { query: { to } }),

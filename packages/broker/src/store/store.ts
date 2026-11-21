@@ -13,6 +13,7 @@ import type {
   ToolResult,
   WakeResult,
   WakeTarget,
+  ContactGroupChange, ContactGroups,
 } from "@team-31/protocol";
 
 export type UserRow = {
@@ -119,6 +120,8 @@ export interface StoreTx {
   vaultCatalog(owner: string): Promise<VaultCatalog>;
   ownerVault(owner: string): Promise<OwnerVault>;
   changeVault(owner: string, id: string, change: VaultChange): Promise<boolean>;
+  contactGroups(owner: string): Promise<ContactGroups>;
+  changeContactGroup(owner: string, id: string, change: ContactGroupChange): Promise<boolean>;
   sharedVault(reader: Address, to: Address, categoryId?: string): Promise<VaultResult>;
   getUser(userId: string): Promise<UserRow | null>;
   getUserByAddress(address: Address): Promise<UserRow | null>;

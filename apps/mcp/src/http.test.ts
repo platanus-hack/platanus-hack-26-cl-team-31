@@ -27,6 +27,7 @@ function testPort(): AgentPort {
   return {
     capabilities: vi.fn(),
     vaultCatalog: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
+    contactGroups: vi.fn(), changeContactGroup: vi.fn(),
     ask: vi.fn(),
     inbox: vi.fn(),
     reply: vi.fn(),
@@ -119,12 +120,17 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const answer = { requestId: inbox.requestId, nonce: inbox.nonce, outcome: "answered", result: { answer: "Sí" } };
   const receipt = { requestId: inbox.requestId, status: "answered", deliveredFields: ["answer"], droppedFields: [] };
   const final = { ...request, final: true, decision: "allow", outcome: "answered", result: answer.result, signature: "firma" };
+  const groupId = "11111111-1111-4111-8111-111111111111";
+  const createGroup = { action: "create", name: "Instituciones" };
+  const groups = { groups: [{ id: groupId, name: createGroup.name, members: [] }] };
   const requests: unknown[] = [];
   const replies: Record<string, unknown> = {
     "POST /v1/agent/ask": pending,
     "GET /v1/agent/inbox": { items: [inbox] },
     "POST /v1/agent/reply": receipt,
     "GET /v1/agent/requests/request-1": final,
+    "POST /v1/agent/contact-groups": { groupId },
+    "GET /v1/agent/contact-groups": groups,
   };
 
   const broker = await listen(createServer(async (req, res) => {
@@ -150,6 +156,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
+    ["sideband_contact_groups", true], ["sideband_contact_group_change", undefined],
     ["sideband_vault_catalog", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
@@ -158,12 +165,16 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   expect((await bob.callTool({ name: "sideband_reply", arguments: answer })).structuredContent).toEqual(receipt);
   expect((await ana.callTool({ name: "sideband_check", arguments: { requestId: inbox.requestId } })).structuredContent)
     .toEqual(final);
+  expect((await ana.callTool({ name: "sideband_contact_group_change", arguments: { change: createGroup } })).structuredContent).toEqual({ groupId });
+  expect((await ana.callTool({ name: "sideband_contact_groups" })).structuredContent).toEqual(groups);
 
   expect(requests).toEqual([
     { path: "POST /v1/agent/ask", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: question },
     { path: "GET /v1/agent/inbox", userId: "bob", agentId: "bob-bot", scopes: Scope.options, body: undefined },
     { path: "POST /v1/agent/reply", userId: "bob", agentId: "bob-bot", scopes: Scope.options, body: answer },
     { path: "GET /v1/agent/requests/request-1", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "POST /v1/agent/contact-groups", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: createGroup },
+    { path: "GET /v1/agent/contact-groups", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
   ]);
 });
 

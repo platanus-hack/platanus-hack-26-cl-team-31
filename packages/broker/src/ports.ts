@@ -1,7 +1,7 @@
 import type { KeyObject, webcrypto } from "node:crypto";
 import type {
   ActivityItem,
-  OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
+  ContactGroupChange, ContactGroups, OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
   AdminActor,
   Capability,
   Circle,
@@ -33,6 +33,8 @@ import type { SanitizeContext } from "./sanitize/types.js";
 import type { Store } from "./store/store.js";
 
 export interface AgentPort {
+  contactGroups(p: Principal): Promise<ContactGroups>;
+  changeContactGroup(p: Principal, input: ContactGroupChange): Promise<{ groupId: string }>;
   vaultCatalog(p: Principal): Promise<VaultCatalog>;
   changeVault(p: Principal, change: VaultChange): Promise<VaultReceipt>;
   queryVault(p: Principal, query: VaultQuery): Promise<VaultResult>;

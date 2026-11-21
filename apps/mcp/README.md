@@ -1,5 +1,12 @@
 # MCP de Sideband
 
+## Grupos privados de la bóveda
+
+- `sideband_contacts` lista los contactos aceptados. `sideband_contact_groups` lista tus grupos privados y sus miembros.
+- `sideband_contact_group_change` permite `create`, `delete`, `add_contact` y `remove_contact`; todas las operaciones salvo `create` usan el ID del grupo. Puedes agregar solo contactos aceptados.
+- Con `sideband_vault_change`, `set_contact_group` permite dar o quitar acceso a una categoría completa del grupo. Para compartirla solo con una persona, usa un grupo que la tenga como único miembro y no otorgues otros permisos a esa categoría.
+- Los grupos son privados, no son círculos ni etiquetas. Crear un grupo no comparte nada. Agregar un miembro le da acceso a lo ya compartido con el grupo. Quitar al contacto o eliminar el grupo revoca ese acceso, sin borrar datos ni tocar otros permisos. Administrar grupos requiere `sideband:vault`.
+
 El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `sideband_ask`, `sideband_inbox`, `sideband_reply` y `sideband_check`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
 
 ## Arranque local

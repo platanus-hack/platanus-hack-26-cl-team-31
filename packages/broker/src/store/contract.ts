@@ -91,6 +91,43 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("limits custom vault groups to accepted contacts and revokes access on removal", async () => {
+      const categoryId = randomUUID();
+      const groupId = randomUUID();
+      await store.tx(async tx => {
+        const share = { action: "set_contact_group", categoryId, groupId, allowed: true } as const;
+        const add = { action: "add_contact", groupId, address: fromAddress } as const;
+        await tx.changeContactGroup("bruno", groupId, { action: "create", name: "Instituciones" });
+        await tx.changeVault("bruno", categoryId, { action: "create", name: "Privada" });
+        await tx.changeVault("bruno", categoryId, { action: "put_entry", categoryId, label: "Dato", value: "Prueba" });
+        expect(await tx.changeContactGroup("bruno", groupId, add)).toBe(false);
+        await tx.addFriend("bruno", fromAddress);
+        expect(await tx.changeContactGroup("alice", groupId, add)).toBe(false);
+        await tx.changeContactGroup("bruno", groupId, add);
+        await tx.changeContactGroup("bruno", groupId, add);
+        expect(await tx.contactGroups("bruno")).toEqual({ groups: [{ id: groupId, name: "Instituciones", members: [fromAddress] }] });
+        expect(await tx.contactGroups("alice")).toEqual({ groups: [] });
+        expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
+        await tx.changeVault("bruno", categoryId, share);
+        expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [{ id: categoryId, name: "Privada" }] });
+        expect((await tx.sharedVault(fromAddress, toAddress, categoryId)).categories[0]?.entries).toEqual([{ label: "Dato", value: "Prueba" }]);
+        expect(await tx.sharedVault("eva@sideband.app", toAddress, categoryId)).toEqual({ categories: [] });
+        expect((await tx.ownerVault("bruno")).categories[0]?.contactGroups).toEqual([{ id: groupId, name: "Instituciones" }]);
+        await tx.changeContactGroup("bruno", groupId, { ...add, action: "remove_contact" });
+        expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [] });
+        await tx.changeContactGroup("bruno", groupId, add);
+        await tx.removeFriend("bruno", fromAddress);
+        await tx.addFriend("bruno", fromAddress);
+        expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
+        await tx.changeContactGroup("bruno", groupId, add);
+        await tx.changeContactGroup("bruno", groupId, { action: "delete", groupId });
+        expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
+        expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
+        expect((await tx.ownerVault("bruno")).categories[0]).toMatchObject({ entries: [{ label: "Dato", value: "Prueba" }] });
+        expect((await tx.ownerVault("bruno")).categories[0]?.contactGroups).toBeUndefined();
+      });
+    });
+
     it("lists each active agent with an address and exposes only its public fields", async () => {
       await store.tx(async (tx) => {
         const agent = { userId: "alice", agentId: "client-1", label: "Alba", wakeTarget: { kind: "none" }, createdAt: now } as const;

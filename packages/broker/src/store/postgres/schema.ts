@@ -66,6 +66,23 @@ export const friends = sideband.table("friends", {
   address: text("address").notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.address] })]);
 
+export const vaultContactGroups = sideband.table("vault_contact_groups", {
+  owner: text("owner_id").notNull().references(() => users.userId),
+  id: text("group_id").notNull(), name: text("name").notNull(),
+}, t => [primaryKey({ columns: [t.owner, t.id] }), uniqueIndex("vault_contact_group_name").on(t.owner, sql`lower(${t.name})`)]);
+
+export const vaultContactGroupMembers = sideband.table("vault_contact_group_members", {
+  owner: text("owner_id").notNull(), groupId: text("group_id").notNull(), address: text("address").notNull(),
+}, t => [primaryKey({ columns: [t.owner, t.groupId, t.address] }),
+  foreignKey({ columns: [t.owner, t.groupId], foreignColumns: [vaultContactGroups.owner, vaultContactGroups.id] }).onDelete("cascade"),
+  foreignKey({ columns: [t.owner, t.address], foreignColumns: [friends.userId, friends.address] }).onDelete("cascade")]);
+
+export const vaultContactGroupPermissions = sideband.table("vault_contact_group_permissions", {
+  owner: text("owner_id").notNull(), id: text("category_id").notNull(), groupId: text("group_id").notNull(),
+}, t => [primaryKey({ columns: [t.owner, t.id, t.groupId] }),
+  foreignKey({ columns: [t.owner, t.id], foreignColumns: [vaultCategories.owner, vaultCategories.id] }).onDelete("cascade"),
+  foreignKey({ columns: [t.owner, t.groupId], foreignColumns: [vaultContactGroups.owner, vaultContactGroups.id] }).onDelete("cascade")]);
+
 export const contactTags = sideband.table("contact_tags", {
   userId: text("user_id").notNull().references(() => users.userId),
   address: text("address").notNull(),

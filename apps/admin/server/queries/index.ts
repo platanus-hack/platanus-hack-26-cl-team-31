@@ -728,6 +728,9 @@ export function createPgAdminQueries({
             )
         )
         return UserDetail.parse({
+          vaultContactGroups: await viewExists(db, "ops.v_vault_contact_group_summary")
+            ? (await db.query("SELECT groups::int, memberships::int, permissions::int FROM ops.v_vault_contact_group_summary WHERE user_id = $1", [userId])).rows[0]
+              ?? { groups: 0, memberships: 0, permissions: 0 } : undefined,
           vault: await viewExists(db, "ops.v_vault_summary")
             ? (await db.query("SELECT categories::int, entries::int, permissions::int FROM ops.v_vault_summary WHERE user_id = $1", [userId])).rows[0]
               ?? { categories: 0, entries: 0, permissions: 0 } : undefined,
