@@ -88,6 +88,40 @@ services:
     ports:
       - "127.0.0.1:${MCP_PORT}:${MCP_PORT}"
 
+  # Admin de Nexo (SPA + API + MCP admin en un solo puerto). Compila antes con
+  # `pnpm build --filter @team-31/admin...`. Ver apps/admin/README.md.
+  admin:
+    profiles: ["nexo"]
+    image: node:24-alpine
+    working_dir: /workspace/apps/admin
+    command: ["node", "dist/server/server/index.js"]
+    volumes:
+      - .:/workspace:ro
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      ADMIN_HOST: 0.0.0.0
+      ADMIN_PORT: ${ADMIN_PORT}
+      ADMIN_SERVE_SPA: "1"
+      ADMIN_URL: ${ADMIN_URL}
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app
+      ADMIN_AUTH_SECRET: ${ADMIN_AUTH_SECRET:-}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      ADMIN_GOOGLE_CLIENT_ID: ${ADMIN_GOOGLE_CLIENT_ID:-}
+      ADMIN_GOOGLE_CLIENT_SECRET: ${ADMIN_GOOGLE_CLIENT_SECRET:-}
+      ADMIN_OPERATORS: ${ADMIN_OPERATORS:-}
+      ADMIN_VIEWERS: ${ADMIN_VIEWERS:-}
+      ADMIN_DEV_AUTH: ${ADMIN_DEV_AUTH:-0}
+      ADMIN_FRESH_SECONDS: ${ADMIN_FRESH_SECONDS:-600}
+      ADMIN_SERVICE_PRIVATE_KEY: ${ADMIN_SERVICE_PRIVATE_KEY:-}
+      BROKER_URL: http://broker:${BROKER_PORT:-}
+      TELEMETRY_SINK: ${TELEMETRY_SINK:-postgres}
+      TELEMETRY_RETENTION_DAYS: ${TELEMETRY_RETENTION_DAYS:-14}
+    ports:
+      - "127.0.0.1:${ADMIN_PORT}:${ADMIN_PORT}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
   models:
