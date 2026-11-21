@@ -4,5 +4,5 @@
     "declaration": true,
     "sourceMap": true
   },
-  "exclude": ["src/**/*.test.ts", "src/store/contract.ts"]
+  "exclude": ["src/**/*.test.ts", "src/store/contract.ts", "src/**/test-helpers.ts"]
 }
