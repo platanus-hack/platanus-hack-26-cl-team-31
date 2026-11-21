@@ -1,0 +1,11 @@
+# Override para corridas efímeras (demo/tests): sin puertos en el host y
+# Postgres en memoria, así no choca con el stack de desarrollo ni con otros worktrees.
+services:
+  postgres:
+    ports: !reset []
+    volumes: !override
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+  coordination:
+    ports: !reset []
