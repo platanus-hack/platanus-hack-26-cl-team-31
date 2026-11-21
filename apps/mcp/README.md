@@ -106,4 +106,4 @@ La cola del runtime es efímera. PostgreSQL conserva las agendas. Ejecuta la CLI
 
 Puedes escribir los nombres de participantes como `Bob` o `bob`. Sólo se entrega la proyección de disponibilidad. La agenda ficticia y los hashes de las credenciales se guardan en la base del worktree. Volver a correr el seed conserva permisos revocados y salidas del grupo.
 
-Los clientes generados por `agents:seed` eligen este adaptador stdio al pasar su `AGENT_TOKEN` y `COORDINATION_API_URL`.
+Los clientes generados por `agents:seed` usan el adaptador stdio `apps/server/dist/mcp.js` con su `AGENT_TOKEN` y `COORDINATION_API_URL`. El binario de `apps/mcp` sólo sirve Nexo.

@@ -1,8 +1,10 @@
+#!/usr/bin/env node
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 // One stdio process per principal. Tool arguments cannot select a credential or endpoint.
-export function coordinationServer(base: string, token: string) {
+function coordinationServer(base: string, token: string) {
   const server = new Server({name: "team-31-mcp", version: "0.1.0"}, {capabilities: {tools: {}}});
   async function call(path: string, args?: unknown) {
     const response = await fetch(new URL(path, base), {
@@ -24,4 +26,13 @@ export function coordinationServer(base: string, token: string) {
     }
   });
   return server;
+}
+
+const { COORDINATION_API_URL: url, AGENT_TOKEN: token } = process.env;
+if (!url || !token) {
+  console.error("[team-31-coordination] Se requieren COORDINATION_API_URL y AGENT_TOKEN.");
+  process.exitCode = 1;
+} else {
+  await coordinationServer(url, token).connect(new StdioServerTransport());
+  console.error("[team-31-coordination] Coordinación lista en stdio.");
 }

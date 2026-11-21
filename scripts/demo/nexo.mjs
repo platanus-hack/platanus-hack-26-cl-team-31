@@ -11,7 +11,7 @@ async function start({ db, web }) {
 
   const env = {
     ...process.env, DATABASE_URL: db.href, MCP_DEV_AUTH: "0", WAKE_ALLOW_INSECURE: "1",
-    REQUEST_TTL_SECONDS: "75", WAKE_RETRY_DELAYS_MS: "0,0", AGENT_TOKEN: "",
+    REQUEST_TTL_SECONDS: "75", WAKE_RETRY_DELAYS_MS: "0,0",
     BROKER_HOST: web.hostname, MCP_HOST: web.hostname, GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "",
     AUTH_ISSUER: new URL("/api/auth", web).href, AUTH_JWKS_URL: new URL("/api/auth/jwks", web).href,
   };
