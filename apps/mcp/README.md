@@ -2,6 +2,23 @@
 
 El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `sideband_ask`, `sideband_inbox`, `sideband_reply` y `sideband_check`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
 
+## Avisos en la terminal
+
+Con Node 24 y pnpm, desde la raíz:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build --filter @team-31/mcp
+brew install cloudflared # macOS; omite si ya tienes cloudflared o tu propio túnel
+pnpm sideband watch --mcp-url <URL-HTTPS-del-MCP>
+```
+
+Abre en el navegador el enlace que imprime el comando y autoriza **Sideband Terminal**. No hace falta dejar abierto el navegador ni OpenCode. La terminal imprime una línea con el ID por solicitud nueva entregada a esta conexión; no abre la bandeja ni responde. El broker elige un solo destino de avisos por solicitud: si ya tienes otro agente con avisos configurados, puede recibirlos él.
+
+- Usa `--check` para verificar que el servidor ofrece el webhook, sin abrir un túnel ni suscribirte.
+- Para usar un túnel propio, apunta un origen HTTPS público a `127.0.0.1` y al puerto que indiques con `--webhook-origin <origen> --port <puerto>`. De lo contrario el comando abre un túnel temporal con `cloudflared`.
+- Sal con `Ctrl+C` para cancelar la suscripción. Si el proceso se interrumpe sin poder cancelarla, revoca la conexión desde Agentes. Si el broker sigue usando un túnel cerrado, puede marcar solicitudes nuevas como no entregadas.
+
 ## Arranque local
 
 1. Ejecuta `pnpm bootstrap` para generar `.env` con `MCP_PORT`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL`. Si tu emisor o recurso público usa otro origen, configura esas URL en `.env.local`.
