@@ -97,3 +97,12 @@ test("a different proposal requires fresh acceptances and can have no shared slo
   await call("carla", "respond", { id: changed.id });
   assert.equal((await call("bob", "decide", { id: changed.id, accept: true })).status, "proposed");
 });
+
+test("keeps the organizer's priority when multiple options are free", async () => {
+  const later = "2026-11-28T18:00:00.000Z";
+  const { id } = await call("bob", "propose", { ...args, slots: [later, first, second] });
+  await call("ana", "respond", { id });
+  const proposal = await call("carla", "respond", { id });
+  assert.equal(proposal.status, "proposed");
+  assert.equal(proposal.slot, later);
+});

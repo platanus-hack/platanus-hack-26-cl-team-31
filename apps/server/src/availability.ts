@@ -31,13 +31,21 @@ export async function groupAllowed(db: PoolClient, requester: string, recipients
   return result.rows[0].allowed as boolean;
 }
 
-// Only for an agent consulting its own calendar.
-export async function isFree(db: PoolClient, person: string, slot: string, minutes: number) {
-  const result = await db.query("SELECT calendar_is_free($1, $2, $3) AS free", [person, slot, minutes]);
-  return result.rows[0].free as boolean;
+// A meeting organizer may check their own calendar; sharing another participant's slots needs a grant.
+export async function readMeetingFreeSlots(
+  db: PoolClient, organizer: string, participant: string, group: string, slots: Date[], minutes: number,
+): Promise<Date[] | null> {
+  const { rows } = await db.query<{ free_slots: Date[] }>(`
+    SELECT ARRAY(
+      SELECT slot FROM unnest($4::timestamptz[]) WITH ORDINALITY AS options(slot, priority)
+      WHERE calendar_is_free($2, slot, $5) ORDER BY priority
+    ) AS free_slots
+    WHERE $1::text = $2::text OR EXISTS (${permission})
+  `, [organizer, participant, group, slots, minutes]);
+  return rows[0]?.free_slots ?? null;
 }
 
-export async function readAvailability(
+async function readAvailability(
   db: PoolClient, requester: string, recipient: string, group: string, slot: string, minutes: number,
 ): Promise<boolean | null> {
   // Evaluate permission and the bounded calendar projection in the same snapshot.
