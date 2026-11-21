@@ -1,16 +1,16 @@
 import {
-  ActivityEvent, Address, FinalOutcome, RequestStatus, SharingRules, ToolArgs, ToolName,
+  ActivityEvent, Address, FinalOutcome, RequestStatus, ToolArgs, ToolName,
   ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
 } from "@team-31/protocol";
-import { and, asc, desc, DrizzleQueryError, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, DrizzleQueryError, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { BrokerError } from "../../errors.js";
 import type {
-  AgentConnectionRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
+  AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
 import { createWakeCodec } from "./crypto.js";
-import { agentConnections, requestEvents, requests, sharingRules, users, wakeJobs } from "./schema.js";
+import { agentConnections, grants, requestEvents, requests, users, wakeJobs } from "./schema.js";
 
 export type PostgresStoreOptions = {
   databaseUrl: string;
@@ -39,6 +39,10 @@ function readUser(row: typeof users.$inferSelect): UserRow {
     address: row.address === null ? undefined : parseStored(Address, row.address),
     displayName: row.displayName ?? undefined,
   };
+}
+
+function readGrant({ revokedAt: _revokedAt, ...row }: typeof grants.$inferSelect): GrantRow {
+  return { ...row, granteeAddress: parseStored(Address, row.granteeAddress), tool: parseStored(ToolName, row.tool) };
 }
 
 function readRequest(row: typeof requests.$inferSelect): RequestRow {
@@ -145,16 +149,36 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       }
     },
 
-    async getRules(userId) {
-      const [row] = await db.select({ rules: sharingRules.rules }).from(sharingRules).where(eq(sharingRules.userId, userId));
-      return row ? parseStored(SharingRules, row.rules) : null;
+    async putGrant(row) {
+      await ensureUser(row.grantorUserId);
+      const [stored] = await db.insert(grants).values(row).onConflictDoUpdate({
+        target: [grants.grantorUserId, grants.granteeAddress, grants.tool],
+        targetWhere: sql`revoked_at is null`,
+        set: { fields: row.fields },
+      }).returning();
+      return readGrant(stored!);
     },
 
-    async putRules(userId, rules) {
-      await ensureUser(userId);
-      await db.insert(sharingRules).values({ userId, rules }).onConflictDoUpdate({
-        target: sharingRules.userId, set: { rules, updatedAt: sql`now()` },
-      });
+    async listGrants(grantorUserId) {
+      const rows = await db.select().from(grants)
+        .where(and(eq(grants.grantorUserId, grantorUserId), isNull(grants.revokedAt)))
+        .orderBy(asc(grants.createdAt), asc(grants.id));
+      return rows.map(readGrant);
+    },
+
+    async getGrant(grantorUserId, granteeAddress, tool) {
+      const [row] = await db.select().from(grants).where(and(
+        eq(grants.grantorUserId, grantorUserId), eq(grants.granteeAddress, granteeAddress),
+        eq(grants.tool, tool), isNull(grants.revokedAt),
+      ));
+      return row ? readGrant(row) : null;
+    },
+
+    async revokeGrant(id, grantorUserId, at) {
+      const revoked = await db.update(grants).set({ revokedAt: at })
+        .where(and(eq(grants.id, id), eq(grants.grantorUserId, grantorUserId), isNull(grants.revokedAt)))
+        .returning({ id: grants.id });
+      return revoked.length > 0;
     },
 
     async insertRequest(row) {

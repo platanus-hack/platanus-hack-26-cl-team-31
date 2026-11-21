@@ -1,4 +1,5 @@
 import {
+  Grant,
   ToolArgs,
   type ActivityItem,
   type AgentConnection,
@@ -7,7 +8,13 @@ import {
   type RequesterView,
 } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import type { AgentConnectionRow, RequestEvent, RequestRow } from "../store/store.js";
+import type { AgentConnectionRow, GrantRow, RequestEvent, RequestRow } from "../store/store.js";
+
+export function toGrant(row: GrantRow): Grant {
+  return Grant.parse({
+    id: row.id, grantee: row.granteeAddress, tool: row.tool, fields: row.fields, createdAt: row.createdAt.toISOString(),
+  });
+}
 
 export function toRequesterView(row: RequestRow): RequesterView {
   const base = { requestId: row.id, to: row.toAddress, tool: row.tool, expiresAt: row.expiresAt.toISOString() };

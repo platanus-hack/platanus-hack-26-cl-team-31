@@ -3,6 +3,8 @@ import type {
   ActivityItem,
   AdminActor,
   Capability,
+  Grant,
+  GrantInput,
   Address,
   AgentConnection,
   AskInput,
@@ -14,7 +16,6 @@ import type {
   ReplyInput,
   ReplyReceipt,
   RequesterView,
-  SharingRules,
   WakeTarget,
   Waker,
 } from "@team-31/protocol";
@@ -33,8 +34,10 @@ export interface AgentPort {
 export interface OwnerPort {
   me(o: Owner): Promise<{ userId: string; address?: Address; displayName?: string }>;
   claimAddress(o: Owner, localPart: string): Promise<Address>;
-  getRules(o: Owner): Promise<SharingRules>;
-  setRules(o: Owner, rules: SharingRules): Promise<void>;
+  grants(o: Owner): Promise<Grant[]>;
+  // Replaces the fields of the owner's live grant for the same grantee and tool.
+  setGrant(o: Owner, input: GrantInput): Promise<Grant>;
+  revokeGrant(o: Owner, grantId: string): Promise<void>;
   pending(o: Owner): Promise<OwnerPendingItem[]>;
   activity(o: Owner, limit?: number): Promise<ActivityItem[]>;
   decide(o: Owner, requestId: string, decision: OwnerDecision): Promise<void>;

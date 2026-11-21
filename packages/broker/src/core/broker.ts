@@ -4,11 +4,11 @@ import {
   AskInput,
   fieldsOf,
   describeTool,
+  GrantInput,
   ToolName,
   LocalPart,
   OwnerDecision,
   ReplyInput,
-  SharingRules,
   WakeTarget,
   WAKE_SUBSCRIPTION_SCOPE,
   type FinalOutcome,
@@ -18,26 +18,23 @@ import {
   type ToolResult,
 } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import { evaluate, filterResult } from "../policy/index.js";
+import { filterResult } from "../policy/index.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import type { RequestRow, StoreTx } from "../store/store.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
 import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
 import {
-  toActivityItem, toAgentConnection, toInboxItem, toOwnerPendingItem, toRequesterView,
+  toActivityItem, toAgentConnection, toGrant, toInboxItem, toOwnerPendingItem, toRequesterView,
 } from "./views.js";
 import { createWorker } from "./worker.js";
 
-const noRules = SharingRules.parse({ circles: {}, grants: {} });
-
-function stillAuthorized(row: RequestRow, rules: SharingRules): boolean {
-  if (row.fromUserId === null) return true; // A connection test requested by the owner.
-  if (rules.blocked.includes(row.fromAddress)) return false;
-  if (row.approvedOnce) return true;
-  const current = evaluate({ rules, from: row.fromAddress, to: row.toAddress, tool: row.tool });
-  return current.kind === "allow" && current.guidance === row.guidance &&
-    row.allowedFields.every(field => current.allowedFields.includes(field));
+// A request stays authorized while the recipient's grant to the sender still covers its fields.
+async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
+  // A connection test requested by the owner, or a request the owner approved once.
+  if (row.fromUserId === null || row.approvedOnce) return true;
+  const grant = await tx.getGrant(toUserId, row.fromAddress, row.tool);
+  return grant !== null && row.allowedFields.every(field => grant.fields.includes(field));
 }
 
 function notFound(): BrokerError {
@@ -147,6 +144,20 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (row.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: row.status });
   }
 
+  // Cancel pending work atomically if the old authorization is no longer valid.
+  // Already queued notices carry only an ID and must re-read the inbox.
+  async function cancelUnauthorized(tx: StoreTx, userId: string): Promise<void> {
+    const owner = await tx.getUser(userId);
+    if (!owner?.address) return;
+    for (const row of await tx.listInbox(owner.address)) {
+      if (await stillAuthorized(tx, row, userId)) continue;
+      const now = clock.now();
+      const denied = await finalize(transition(row, "denied"), "denied", now);
+      if (!await saveTransition(tx, row, denied)) throw closed();
+      await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: "denied" });
+    }
+  }
+
   return {
     agent: {
       async capabilities(p, to) {
@@ -156,13 +167,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const from = (await tx.getUser(p.userId))?.address;
           const owner = await tx.getUserByAddress(to);
           if (!from || !owner || from === to) return { tools: [] };
-          const rules = await tx.getRules(owner.userId) ?? noRules;
-          return { tools: ToolName.options.flatMap(tool => {
-            const decision = evaluate({ rules, from, to, tool });
-            if (decision.kind === "public") return [describeTool(tool, Object.keys(decision.result))];
-            if (decision.kind === "allow") return [describeTool(tool, decision.allowedFields)];
-            return [];
-          }) };
+          const grants = await Promise.all(ToolName.options.map(tool => tx.getGrant(owner.userId, from, tool)));
+          return { tools: grants.flatMap(grant => grant ? [describeTool(grant.tool, grant.fields)] : []) };
         });
       },
 
@@ -181,22 +187,13 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           let row = await initialRequest({
             fromUserId: p.userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
           }, now);
-          const decision = recipient
-            ? evaluate({ rules: await tx.getRules(recipient.userId) ?? noRules, from, to, tool })
-            : { kind: "deny" as const, reason: "Dirección sin destinatario." };
-          switch (decision.kind) {
-            case "public":
-              row = await finalize(row, "answered", now, decision.result);
-              break;
-            case "allow":
-              row = { ...row, status: "awaiting_agent", allowedFields: decision.allowedFields, rule: decision.rule, guidance: decision.guidance };
-              break;
-            case "ask_owner":
-              row = { ...row, decisionReason: decision.reason };
-              break;
-            case "deny":
-              row = await finalize({ ...row, decisionReason: decision.reason }, "denied", now);
-              break;
+          const grant = recipient && await tx.getGrant(recipient.userId, from, tool);
+          if (grant) {
+            const rule = `Permiso para ${tool}: ${grant.fields.join(", ")}`;
+            row = { ...row, status: "awaiting_agent", allowedFields: grant.fields, rule };
+          } else {
+            const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
+            row = await finalize({ ...row, decisionReason }, "denied", now);
           }
           await recordNew(tx, row, now);
           return toRequesterView(row);
@@ -284,11 +281,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           await activeAgent(tx, p);
           const row = await tx.getRequest(id, { fromUserId: p.userId });
           if (!row) return notFound();
-          if (row.status === "answered" && row.answeredByAgentId && row.toUserId) {
-            const rules = await tx.getRules(row.toUserId) ?? noRules;
-            if (!stillAuthorized(row, rules)) {
-              return toRequesterView(await finalize(row, "denied", clock.now()));
-            }
+          if (row.status === "answered" && row.answeredByAgentId && row.toUserId &&
+              !await stillAuthorized(tx, row, row.toUserId)) {
+            return toRequesterView(await finalize(row, "denied", clock.now()));
           }
           return toRequesterView(row);
         });
@@ -332,8 +327,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async me(o) {
         return store.tx(async (tx) => {
           const user = await tx.getUser(o.userId);
-          const rules = await tx.getRules(o.userId);
-          return { userId: o.userId, address: user?.address, displayName: user?.displayName ?? rules?.publicProfile?.displayName };
+          return { userId: o.userId, address: user?.address, displayName: user?.displayName };
         });
       },
 
@@ -346,27 +340,33 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return address;
       },
 
-      async getRules(o) {
-        return store.tx(async (tx) => await tx.getRules(o.userId) ?? structuredClone(noRules));
+      async grants(o) {
+        return store.tx(async (tx) => (await tx.listGrants(o.userId)).map(toGrant));
       },
 
-      async setRules(o, input) {
-        const parsed = SharingRules.safeParse(input);
-        if (!parsed.success) throw new BrokerError("invalid_input", "Las reglas para compartir no son válidas.");
-        const rules = parsed.data;
-        await store.tx(async tx => {
-          await tx.putRules(o.userId, rules);
-          const owner = await tx.getUser(o.userId);
-          if (!owner?.address) return;
-          // Cancel pending work atomically if the old authorization is no longer valid.
-          // Already queued notices carry only an ID and must re-read the inbox.
-          for (const row of await tx.listInbox(owner.address)) {
-            if (stillAuthorized(row, rules)) continue;
-            const now = clock.now();
-            const denied = await finalize(transition(row, "denied"), "denied", now);
-            if (!await saveTransition(tx, row, denied)) throw closed();
-            await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: "denied" });
+      async setGrant(o, input) {
+        // TODO(admin): emitir grant.set con userId cuando el broker tenga telemetría (ADM-07).
+        const parsed = GrantInput.safeParse(input);
+        if (!parsed.success) throw new BrokerError("invalid_input", "El permiso no es válido.");
+        const { grantee, tool, fields } = parsed.data;
+        return store.tx(async (tx) => {
+          if ((await tx.getUser(o.userId))?.address === grantee) {
+            throw new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
           }
+          const grant = await tx.putGrant({
+            id: randomUUID(), grantorUserId: o.userId, granteeAddress: grantee, tool, fields, createdAt: clock.now(),
+          });
+          // Narrowing an existing grant leaves pending requests that expect the old fields.
+          await cancelUnauthorized(tx, o.userId);
+          return toGrant(grant);
+        });
+      },
+
+      async revokeGrant(o, grantId) {
+        // TODO(admin): emitir grant.revoked con userId cuando el broker tenga telemetría (ADM-07).
+        await store.tx(async (tx) => {
+          if (!await tx.revokeGrant(grantId, o.userId, clock.now())) throw notFound();
+          await cancelUnauthorized(tx, o.userId);
         });
       },
 

@@ -2,7 +2,6 @@ import { once } from "node:events";
 import { createServer, type ServerResponse } from "node:http";
 import {
   ErrorCode,
-  fixtureSharingRules,
   httpStatusOf,
   type Owner,
   type Principal,
@@ -165,8 +164,10 @@ it("implements the owner port, including optional queries, wrapper responses and
     expiresAt,
     events: [],
   };
+  const grantInput = { grantee: askInput.to, tool: "question", fields: ["answer"] } as const;
+  const grant = { ...grantInput, id: requestId, createdAt: expiresAt };
   const replies = [
-    ownerInfo, { address: ownerInfo.address }, fixtureSharingRules, undefined,
+    ownerInfo, { address: ownerInfo.address }, { items: [grant] }, grant, undefined,
     { items: [pending] }, { items: [activity] }, { items: [] }, undefined,
     { items: [connection] }, undefined, { requestId }, undefined,
   ];
@@ -178,8 +179,9 @@ it("implements the owner port, including optional queries, wrapper responses and
 
   expect(await ownerClient.me(owner)).toEqual(ownerInfo);
   expect(await ownerClient.claimAddress(owner, "alice")).toBe(ownerInfo.address);
-  expect(await ownerClient.getRules(owner)).toEqual(fixtureSharingRules);
-  expect(await ownerClient.setRules(owner, fixtureSharingRules)).toBeUndefined();
+  expect(await ownerClient.grants(owner)).toEqual([grant]);
+  expect(await ownerClient.setGrant(owner, { ...grantInput, fields: ["answer"] })).toEqual(grant);
+  expect(await ownerClient.revokeGrant(owner, requestId)).toBeUndefined();
   expect(await ownerClient.pending(owner)).toEqual([pending]);
   expect(await ownerClient.activity(owner, 3)).toEqual([activity]);
   expect(await ownerClient.activity(owner)).toEqual([]);
@@ -192,8 +194,9 @@ it("implements the owner port, including optional queries, wrapper responses and
   expect(requests.map(({ method, path, body }) => [method, path, body])).toEqual([
     ["GET", "/v1/owner/me", undefined],
     ["POST", "/v1/owner/address", { localPart: "alice" }],
-    ["GET", "/v1/owner/rules", undefined],
-    ["PUT", "/v1/owner/rules", fixtureSharingRules],
+    ["GET", "/v1/owner/grants", undefined],
+    ["PUT", "/v1/owner/grants", grantInput],
+    ["DELETE", `/v1/owner/grants/${encodedId}`, undefined],
     ["GET", "/v1/owner/pending", undefined],
     ["GET", "/v1/owner/activity?limit=3", undefined],
     ["GET", "/v1/owner/activity", undefined],
@@ -204,9 +207,9 @@ it("implements the owner port, including optional queries, wrapper responses and
     ["DELETE", `/v1/owner/agents/${encodedId}`, undefined],
   ]);
   expect(requests.map((request) => request.authorization)).toEqual(
-    Array.from({ length: 12 }, (_, index) => `Bearer owner-token-${index + 1}`),
+    Array.from({ length: 13 }, (_, index) => `Bearer owner-token-${index + 1}`),
   );
-  expect(getOwnerToken.mock.calls).toEqual(Array.from({ length: 12 }, () => [owner]));
+  expect(getOwnerToken.mock.calls).toEqual(Array.from({ length: 13 }, () => [owner]));
 });
 
 it.each(ErrorCode.options)("returns BrokerError(%s) without upstream text", async (code) => {
@@ -282,7 +285,8 @@ it("stops after the first GET retry and never retries mutations", async () => {
 
   await expect(ownerClient.me(owner)).rejects.toMatchObject({ code: "internal" });
   await expect(agent.ask(principal, askInput)).rejects.toMatchObject({ code: "internal" });
-  await expect(ownerClient.setRules(owner, fixtureSharingRules)).rejects.toMatchObject({ code: "internal" });
+  await expect(ownerClient.setGrant(owner, { grantee: askInput.to, tool: "question", fields: ["answer"] }))
+    .rejects.toMatchObject({ code: "internal" });
   await expect(ownerClient.revokeAgent(owner, "agent")).rejects.toMatchObject({ code: "internal" });
   expect(requests.map((request) => request.method)).toEqual(["GET", "GET", "POST", "PUT", "DELETE"]);
 });

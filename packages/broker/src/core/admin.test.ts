@@ -1,5 +1,5 @@
 import { generateKeyPairSync, randomUUID } from "node:crypto";
-import { SharingRules, type AdminActor, type Principal, type WakeTarget, type Waker } from "@team-31/protocol";
+import { type AdminActor, type Principal, type WakeTarget, type Waker } from "@team-31/protocol";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
@@ -12,10 +12,6 @@ const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["nexo
 const operator: AdminActor = { adminId: "admin-1", email: "ops@nexo.app" };
 const reason = "La solicitud quedó atascada durante la demo";
 const webhook: WakeTarget = { kind: "standard_webhook", url: "https://example.com/callback", secret: "whsec_demo" };
-const rules = SharingRules.parse({
-  circles: { amigos: ["alice@nexo.app"] },
-  grants: { amigos: [{ tool: "question", fields: ["answer"] }] },
-});
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 
 type StoreFactory = { make(): Promise<Store>; close(): Promise<void> };
@@ -83,7 +79,7 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
       broker = createBroker(deps);
       await broker.owner.claimAddress(alice, "alice");
       await broker.owner.claimAddress(bruno, "bruno");
-      await broker.owner.setRules(bruno, rules);
+      await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
       await broker.agent.connectWake(bruno, webhook);
     });
 
@@ -100,9 +96,11 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
     }
 
     async function askOwner() {
-      const view = await broker.agent.ask(bruno, { to: "alice@nexo.app", tool: "question", args: { text: "¿Vienes?" } });
-      expect(view).toMatchObject({ final: false, waitingFor: "owner" });
-      return view.requestId;
+      const requestId = await askAgent();
+      const [item] = await broker.agent.inbox(bruno);
+      expect(await broker.agent.reply(bruno, { requestId, nonce: item!.nonce, outcome: "needs_owner" }))
+        .toMatchObject({ status: "awaiting_owner" });
+      return requestId;
     }
 
     const events = (id: string) => store.tx((tx) => tx.listEvents([id]));
@@ -168,10 +166,9 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
     describe("expire", () => {
       it.each(["awaiting_agent", "awaiting_owner"] as const)("cierra %s como expired firmado con un único evento final", async (status) => {
         const requestId = status === "awaiting_agent" ? await askAgent() : await askOwner();
-        const requester = status === "awaiting_agent" ? alice : bruno;
         await broker.admin.expire(operator, requestId, reason);
 
-        const view = await broker.agent.status(requester, requestId);
+        const view = await broker.agent.status(alice, requestId);
         expect(view).toMatchObject({ final: true, decision: "unanswered", outcome: "expired" });
         if (view.final) {
           expect(await verifyJson(publicKey, { requestId, outcome: "expired", result: undefined }, view.signature)).toBe(true);

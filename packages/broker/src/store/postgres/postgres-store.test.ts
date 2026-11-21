@@ -93,11 +93,16 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     };
     await createParticipants();
     const broker = createBroker({ ...deps, store });
+    const grant = await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
     const { requestId } = await broker.agent.ask(alice, {
       to: "bruno@nexo.app", tool: "question", args: { text: "¿Disponible?" },
     });
+    const [escalated] = await broker.agent.inbox(bruno);
+    await broker.agent.reply(bruno, { requestId, nonce: escalated!.nonce, outcome: "needs_owner" });
     expect(await broker.agent.status(alice, requestId)).toMatchObject({ final: false, waitingFor: "owner" });
     await broker.owner.decide(bruno, requestId, { kind: "approve_once" });
+    // The approval outlives the grant that let the request in.
+    await broker.owner.revokeGrant(bruno, grant.id);
 
     await store.close();
     store = createPostgresStore({ databaseUrl, secretsKey });
@@ -239,7 +244,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM nexo.__drizzle_migrations");
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
   });
 
   it("recovers only legacy one-time approvals with an audit event", async () => {
@@ -258,6 +263,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     });
     // Restore the legacy schema and migration journal while keeping the fixture rows.
     await isolated.query("ALTER TABLE nexo.requests DROP COLUMN approved_once");
+    await isolated.query("DROP TABLE nexo.grants");
     await isolated.query("DELETE FROM nexo.__drizzle_migrations WHERE id > 1");
 
     await applyPostgresMigrations({ databaseUrl });

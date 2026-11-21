@@ -10,29 +10,35 @@ El MVP conserva MCP, server y broker como servicios separados, con bóvedas aloj
 | --- | --- | --- |
 | `apps/web` | Login OAuth, interfaz del titular y dashboard local `/demo`. | Conservar como interfaz. El dashboard y la CLI deben consumir las mismas operaciones. |
 | `apps/mcp` | Expone las tools de Nexo a los asistentes y llama al broker con la identidad delegada. | Conservar como adaptador MCP común, incluidas las consultas a contactos. |
-| `apps/broker`, `packages/broker` | La app expone HTTP y arranca el worker. El paquete implementa reglas de acceso, solicitudes, aprobación del titular, almacenamiento y clientes. | Conservar como autoridad sobre permisos, solicitudes y entrega de resultados. |
+| `apps/broker`, `packages/broker` | La app expone HTTP y arranca el worker. El paquete implementa grants, solicitudes, aprobación del titular, almacenamiento y clientes. | Conservar como autoridad sobre permisos, solicitudes y entrega de resultados. |
 | `apps/server` | API de coordinación con contactos, membresías, calendario, publicaciones y reuniones en PostgreSQL. Hoy también autentica tokens de la seed y expone su propio adaptador MCP. | Conservar bóvedas, grupos y reuniones. Retirar el directorio y las publicaciones. Migrar los consumidores y el historial antes de retirar `people.token_hash`, `availability_requests` y `apps/server/src/mcp.ts`. |
-| `packages/protocol`, `packages/auth`, `packages/wake` | `protocol` define herramientas, reglas y mensajes. `auth` implementa OAuth y JWT de servicio. `wake` envía avisos a agentes. | Conservar y reutilizar desde los servicios y sus clientes. |
+| `packages/protocol`, `packages/auth`, `packages/wake` | `protocol` define herramientas, grants y mensajes. `auth` implementa OAuth y JWT de servicio. `wake` envía avisos a agentes. | Conservar y reutilizar desde los servicios y sus clientes. |
 | `apps/admin`, `packages/telemetry`, `packages/ops` | Panel y MCP de administración, instrumentación y esquema operativo de PostgreSQL. | Conservar para seguir las solicitudes por `requestId`. |
-| `apps/demo` | Ejecuta Contactos de Ana desde la CLI y el dashboard. Ambos llaman al broker del worktree. Web aloja el receptor de avisos de los contactos en desarrollo. | Conservar el escenario y los datos de prueba. Las reglas y las solicitudes ya se mantienen en el broker persistente. |
+| `apps/demo` | Ejecuta Contactos de Ana desde la CLI y el dashboard. Ambos llaman al broker del worktree. Web aloja el receptor de avisos de los contactos en desarrollo. | Conservar el escenario y los datos de prueba. Los grants y las solicitudes ya se mantienen en el broker persistente. |
 | `infra/`, `scripts/`, `packages/typescript-config`, `e2e/` | Preparación del entorno, comandos de desarrollo y ensayos, configuración TypeScript y pruebas del stack. | Conservar como soporte. Para probar OAuth, web, MCP y broker juntos, usar el [guion de scripts/demo](docs/demo.md). |
 
 Las guías viven en `docs/`. [docs/poc](docs/poc/README.md) conserva el prototipo anterior al monorepo como referencia histórica.
 
 ## Modelo de producto
 
-Un titular pregunta al agente de otro titular. El broker decide si la pregunta llega y qué campos de la respuesta vuelven.
+Un titular pregunta al agente de otro titular. El broker deja pasar la pregunta solo si existe un grant y devuelve los campos que ese grant permite.
 
 ### Permisos
 
-`SharingRules` (`packages/protocol/src/rules.ts`) es el único modelo de permisos. Cada titular guarda las suyas en el broker y `evaluate` (`packages/broker/src/policy/evaluate.ts`) decide por remitente, tool y campos. Un permiso nuevo es una tool o un campo en `packages/protocol/src/tools.ts` más una regla en `SharingRules`.
+El grant es el único modelo de permisos. Un grant dice que un titular deja a una dirección Nexo usar una tool y recibir ciertos campos de su respuesta. Sin un grant vivo, el broker deniega. Todo lo demás se construye creando y revocando grants.
 
-Decisión del 2026-11-21: Nexo deja de publicar información. Estas piezas se retiran y solo reciben cambios que las migren:
+- El tipo es `Grant` (`packages/protocol/src/grants.ts`) y se guarda en `nexo.grants`. Un titular tiene un solo grant vivo por dirección y tool.
+- El titular los administra con `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`). Web los muestra en `/grants`.
+- Un permiso nuevo es una tool o un campo en `packages/protocol/src/tools.ts`. El grant ya lo cubre.
+- Los grants no se componen. Que Bob le dé un grant a Ana y Ana a Carla no le da a Carla nada de Bob.
 
-- `publicProfile` y la tool `profile`, que el broker responde sin consultar al agente del titular.
-- El directorio y `interests.audience` en `apps/server`.
-- `memberships.can_ask` y `can_share` en `apps/server`, que pasan a `circles` y `grants`.
-- `demo_profiles.interest_readers` en `apps/demo`, que pasa a `people`.
+Pendiente, cada uno en su PR:
+
+- Grupos. Entrar a un grupo crea grants entre sus miembros y salir los revoca. Solo quien creó el grupo invita y saca miembros, y cada invitado acepta antes de entrar.
+- Retirar la tool `profile`. Sigue declarada y no admite grants, así que toda solicitud `profile` se deniega.
+- Vista `ops.v_grants` para el admin y borrar la tabla `nexo.sharing_rules`, que `ops.v_users` todavía lee.
+- Pasar `memberships.can_ask` y `can_share` de `apps/server` a grants y retirar el directorio con `interests.audience`.
+- `demo_profiles.interest_readers` solo alimenta el seed de `apps/demo`, que la convierte en grants.
 
 ### Vocabulario
 
@@ -40,14 +46,12 @@ Usa un término por concepto, en el código y en los textos.
 
 | Término | En el código | Qué es |
 | --- | --- | --- |
-| Titular | `Owner`, `userId` | Persona que define sus reglas y responde por sus datos. «Dueño» en textos anteriores. |
+| Titular | `Owner`, `userId` | Persona que da los grants y responde por sus datos. «Dueño» en textos anteriores. |
 | Agente | `Principal`, `agentId` | Asistente conectado que actúa por un titular con sus `scopes`. |
 | Dirección Nexo | `Address` | Identificador `nombre@dominio` con el que otros titulares le escriben. |
 | Solicitud | `AskInput`, `requestId` | Pregunta de un titular a otro con una tool. Termina en un `FinalOutcome`. |
 | Tool | `ToolName` | Operación que se puede pedir: `availability`, `question`, `interest_check`. `profile` está en retiro. |
-| Regla | `SharingRules` | Lo que un titular permite: `circles`, `grants`, `people`, `blocked` y `defaultForUnknown`. |
-| Círculo | `circles` | Lista de direcciones con nombre que arma el titular. |
-| Permiso | entrada de `grants` o `people` | Una tool, los campos de respuesta permitidos y una guía para el agente. |
+| Grant | `Grant`, `GrantInput` | Permiso de un titular a una dirección: una tool y los campos de respuesta que entrega. En la interfaz se llama «permiso». |
 | Aviso | `WakeTarget`, `WakeNotice` | Notificación al agente del destinatario de que tiene una solicitud. |
 | Bandeja | `InboxItem` | Solicitudes pendientes que lee el agente del destinatario. |
 
@@ -56,9 +60,9 @@ Usa un término por concepto, en el código y en los textos.
 Todo cambio en `packages/broker`, `packages/protocol` o `apps/mcp` conserva estas seis. Sus pruebas viven en `packages/broker/src/core/broker.test.ts`; si cambias una, cambia su prueba en el mismo PR.
 
 1. La identidad del remitente sale del token. `AskInput` carece de campo de remitente.
-2. Una denegación llega firmada y sin motivo, y la solicitud nunca despierta al destinatario.
+2. Sin grant, la denegación llega firmada y sin motivo, y la solicitud nunca despierta al destinatario.
 3. La respuesta pasa por `filterResult` y sale solo con los campos permitidos.
-4. Antes de entregar, `stillAuthorized` evalúa de nuevo las reglas. Revocar a mitad de camino impide la entrega.
+4. Antes de entregar, `stillAuthorized` comprueba que el grant siga vivo y cubra los campos. Revocar a mitad de camino impide la entrega.
 5. Cada solicitud termina en un solo estado final. Una segunda respuesta recibe `conflict`.
 6. El aviso lleva solo `requestId` y `event`. El contenido se lee de la bandeja con la identidad del destinatario.
 
@@ -77,7 +81,7 @@ Cada capacidad tiene un dueño. Búscalo con `git grep` antes de crear un archiv
 | Enviar un aviso o verificar su firma | `createWaker` y `verifyWebhookSignature` de `@team-31/wake` |
 | Eventos, errores y `fetch` con traza | `@team-31/telemetry` |
 | Generar llaves | `infra/gen-keys.ts` |
-| Usuarios y reglas de prueba | `fixtureUsers` y `fixtureSharingRules` de `@team-31/protocol` |
+| Usuarios de prueba | `fixtureUsers` de `@team-31/protocol` |
 | Receptor falso de avisos | `startFakeReceivers` de `e2e/src/fake-receivers.ts` |
 
 - **La segunda copia se mueve.** Cuando dos módulos necesitan lo mismo, mueve el original a `packages/*` en ese PR e importa desde ambos. Deuda actual: tres limitadores de ventana fija (`apps/broker/src/http/rate-limit.ts`, `apps/admin/server/rate-limit.ts`, `apps/admin/server/mcp/rate-limit.ts`) y el esquema zod de la JWK Ed25519 repetido en `apps/broker/src/env.ts` y `apps/admin/server/env.ts`. Unifícalos antes de sumar otro uso.
@@ -161,7 +165,7 @@ En el dashboard de desarrollo `/demo`, **Fútbol del sábado** llama por HTTP a 
 
 ## Qué ejecuta apps/demo · Contactos de Ana
 
-Desde un worktree preparado con `pnpm bootstrap`, inicia web y broker en el host con `pnpm with-env env WAKE_ALLOW_INSECURE=1 pnpm exec turbo run dev --filter @team-31/broker-service --filter @team-31/web`. En otra terminal, `pnpm agents:contacts:seed` prepara los 15 perfiles ficticios y registra sus direcciones, reglas iniciales y avisos. El comando respeta las reglas y conexiones existentes cuando se repite.
+Desde un worktree preparado con `pnpm bootstrap`, inicia web y broker en el host con `pnpm with-env env WAKE_ALLOW_INSECURE=1 pnpm exec turbo run dev --filter @team-31/broker-service --filter @team-31/web`. En otra terminal, `pnpm agents:contacts:seed` prepara los 15 perfiles ficticios y registra sus direcciones, grants iniciales y avisos. El comando respeta los grants y conexiones existentes cuando se repite.
 
 1. Con Claude Code autenticado, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A alguien le interesa la cerámica?"` o pregunta desde **Contactos de Ana** en `/demo`. Ambos usan [runContactSession](apps/demo/src/contact-session.mjs) y leen la agenda de Ana de PostgreSQL.
 2. Claude usa el MCP stdio de la demo con `list_contacts`, `ask_contact` y `await_contact`. El MCP llama a `BROKER_URL` con la identidad de Ana. [apps/broker](apps/broker/src/index.ts) atiende HTTP y ejecuta el worker. [packages/broker](packages/broker/src/core/broker.ts) evalúa las reglas y conserva el estado en PostgreSQL, incluso después de cerrar el chat.

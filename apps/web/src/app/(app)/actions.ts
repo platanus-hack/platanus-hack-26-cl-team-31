@@ -1,7 +1,7 @@
 "use server";
 
 import { BrokerError } from "@team-31/broker/client";
-import { fieldsOf, LocalPart, OwnerDecision, SharingRules, ToolResultSchemas } from "@team-31/protocol";
+import { GrantInput, LocalPart, OwnerDecision, ToolResultSchemas } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -50,33 +50,43 @@ export async function readHome() {
   return Promise.all([broker.pending(owner), broker.activity(owner, 4)]);
 }
 
-export async function readRules() {
+export async function readGrants() {
   await requireAddress();
   const owner = await getOwner();
-  return ownerClient().getRules(owner);
+  return ownerClient().grants(owner);
 }
 
-export async function saveRules(input: unknown): Promise<Feedback> {
+export async function saveGrant(_: Feedback, form: FormData): Promise<Feedback> {
   await requireAddress();
   const owner = await getOwner();
-  const parsed = SharingRules.safeParse(input);
-  if (!parsed.success) return { error: "Revisa el perfil y las direcciones de tus reglas." };
-
-  if (parsed.data.publicProfile && !parsed.data.publicProfile.displayName.trim()) {
-    return { error: "Escribe un nombre para el perfil público." };
-  }
-  const grants = [...Object.values(parsed.data.grants).flat(), ...Object.values(parsed.data.people).flat()];
-  if (grants.some((grant) => grant.fields.some((field) => !fieldsOf(grant.tool).includes(field)))) {
-    return { error: "Algún campo no pertenece a su tipo de solicitud." };
-  }
+  const parsed = GrantInput.safeParse(form instanceof FormData
+    ? { grantee: form.get("grantee"), tool: form.get("tool"), fields: form.getAll("fields") }
+    : undefined);
+  if (!parsed.success) return { error: "Escribe una dirección Nexo válida y elige al menos un dato." };
 
   try {
-    await ownerClient().setRules(owner, parsed.data);
+    await ownerClient().setGrant(owner, parsed.data);
   } catch (error) {
-    return { error: actionError(error, "No se pudieron guardar las reglas. Intenta de nuevo.") };
+    if (error instanceof BrokerError && error.code === "invalid_input") return { error: "Elige una dirección distinta a la tuya." };
+    return { error: actionError(error, "No se pudo guardar el permiso. Intenta de nuevo.") };
   }
-  revalidatePath("/rules");
-  return { message: "Reglas guardadas." };
+  revalidatePath("/grants");
+  return { message: "Permiso guardado." };
+}
+
+export async function revokeGrant(grantId: string): Promise<Feedback> {
+  await requireAddress();
+  const owner = await getOwner();
+  if (!routes.ownerRevokeGrant.params.safeParse({ id: grantId }).success || !grantId) return { error: "Elige un permiso válido." };
+
+  try {
+    await ownerClient().revokeGrant(owner, grantId);
+  } catch (error) {
+    return { error: actionError(error, "No se pudo revocar el permiso. Intenta de nuevo.") };
+  }
+  revalidatePath("/grants");
+  revalidatePath("/activity");
+  return {};
 }
 
 export async function readActivity(input: unknown) {

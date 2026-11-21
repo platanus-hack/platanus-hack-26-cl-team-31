@@ -15,6 +15,13 @@
       "when": 1795263960415,
       "tag": "0001_persist_owner_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795268505000,
+      "tag": "0002_grants",
+      "breakpoints": true
     }
   ]
 }
