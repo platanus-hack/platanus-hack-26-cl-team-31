@@ -105,7 +105,7 @@ El MCP de Ana ofrece `list_contacts` para descubrir nombres y direcciones, `ask_
 
 Las preguntas abiertas usan `query: {"text":"…"}`. El broker verifica el permiso del destinatario para la operación. Cuando autoriza un interés, envía un webhook firmado al agente de ese contacto. Su herramienta `check_interest` compara el tema con su archivo y entrega sólo `matches`. El broker valida la respuesta y la CLI muestra la dirección y el resultado de cada solicitud.
 
-Las identidades ficticias usan direcciones `demo-<id>@sideband.app`. La preparación inicial importa los lectores de cada perfil como grants de Sideband. Volver a ejecutar la seed conserva las decisiones posteriores del titular. PostgreSQL guarda reglas, solicitudes y avisos entre sesiones. Puedes correlacionar el ID de **Ver datos** con la actividad del broker.
+Las identidades ficticias usan direcciones `demo-<id>@sideband.app`. La preparación inicial importa los lectores de cada perfil como grants de Sideband. Volver a ejecutar la seed conserva las decisiones posteriores del titular. PostgreSQL guarda reglas, solicitudes y avisos entre sesiones. En la demo, `await_contact` solo lee solicitudes creadas por `ask_contact` en la misma sesión MCP. Puedes correlacionar el ID de **Ver datos** con la actividad del broker.
 
 ### Herramientas
 

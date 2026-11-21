@@ -6,7 +6,7 @@ import { expect, it, onTestFinished, vi } from "vitest";
 import { configureBroker, isolatedDatabase, listenForWakes, startBroker } from "./contact-stack.mjs";
 
 vi.mock("../src/contact-runtime.mjs", () => ({
-  askContactOwner: vi.fn(async (_name, interest, source) => {
+  askContactOwner: vi.fn(async (interest, source) => {
     const interests = JSON.parse(await readFile(source, "utf8"));
     return { matches: interests.includes(interest) };
   }),
@@ -33,7 +33,7 @@ it("expone solamente la agenda de Ana y rechaza otra dirección antes de pedirle
   expect(agent.ask).not.toHaveBeenCalled();
 });
 
-it.skipIf(!process.env.TEST_DATABASE_URL)("comparte solicitudes entre sesiones, respeta los permisos y recupera las respuestas después de reiniciar el broker", async () => {
+it.skipIf(!process.env.TEST_DATABASE_URL)("aísla las solicitudes por sesión y recupera sus propias respuestas después de reiniciar el broker", async () => {
   const cleanup = new AsyncDisposableStack();
   cleanup.defer(() => vi.unstubAllEnvs());
   onTestFinished(() => cleanup.disposeAsync());
@@ -80,7 +80,8 @@ it.skipIf(!process.env.TEST_DATABASE_URL)("comparte solicitudes entre sesiones, 
   expect(regular.requestId).not.toBe(overridden.requestId);
   expect(privateQuestion.decision).toBe("deny");
   expect(blocked.decision).toBe("deny");
-  const answers = await Promise.all([second.result(regular.requestId), first.result(overridden.requestId), first.result(other.requestId)]);
+  await expect(second.result(regular.requestId)).rejects.toThrow(/fuera de esta sesión/);
+  const answers = await Promise.all([first.result(regular.requestId), second.result(overridden.requestId), second.result(other.requestId)]);
   expect(answers).toMatchObject([
     { to: bob, decision: "allow", result: { matches: true } },
     { to: bob, decision: "allow", result: { matches: false } },
@@ -98,6 +99,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)("comparte solicitudes entre sesiones, 
   await stop();
   await startBroker(cleanup);
   const reopened = createContactQueries(contacts);
-  expect(await reopened.result(regular.requestId)).toEqual(answers[0]);
-  expect(await reopened.result(privateQuestion.requestId)).toEqual(privateQuestion);
+  await expect(reopened.result(regular.requestId)).rejects.toThrow(/fuera de esta sesión/);
+  expect(await first.result(regular.requestId)).toEqual(answers[0]);
+  expect(await first.result(privateQuestion.requestId)).toEqual(privateQuestion);
 }, 40_000);

@@ -62,6 +62,7 @@ export function contactOwner() {
 export function createContactQueries(contacts, { agent = contactAgent(), fixtureId } = {}) {
   const ana = { ...contactPrincipal("ana"), scopes: ["sideband:ask", "sideband:status"] };
   const directory = new Map(contacts.map(contact => [contactAddress(contact.id), contact]));
+  const sessionRequests = new Set();
   return {
     listContacts() {
       return Array.from(directory, ([address, { name }]) => ({ name, address }));
@@ -74,12 +75,18 @@ export function createContactQueries(contacts, { agent = contactAgent(), fixture
       }, async span => {
         const purpose = fixtureId && contact.override ? `demo-fixture:${fixtureId}` : undefined;
         const view = await agent.ask(ana, { to, tool, args, purpose });
+        sessionRequests.add(view.requestId);
         demoTelemetry.identify({ requestId: view.requestId });
         span.set({ outcome: view.decision });
         return view;
       });
     },
     async result(requestId) {
+      if (!sessionRequests.has(requestId)) {
+        demoTelemetry.emit("coordination.tool.call", { userId: ana.userId, agentId: ana.agentId,
+          attrs: { tool: "await_contact", outcome: "not_shareable" } });
+        throw new Error("Solicitud fuera de esta sesión.");
+      }
       return demoTelemetry.span("coordination.tool.call", {
         requestId, userId: ana.userId, agentId: ana.agentId, attrs: { tool: "await_contact" },
       }, async span => {
