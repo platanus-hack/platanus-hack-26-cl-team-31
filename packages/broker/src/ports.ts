@@ -16,6 +16,7 @@ import type {
   WakeTarget,
   Waker,
 } from "@team-31/protocol";
+import type { Store } from "./store/store.js";
 
 export interface AgentPort {
   ask(p: Principal, input: AskInput): Promise<RequesterView>;
@@ -53,8 +54,7 @@ export type BrokerCore = {
   tick(now: Date): Promise<TickReport>;
 };
 
-// Lo completa NX-04.
-export interface Store {}
+export type { Store } from "./store/store.js";
 
 export type BrokerDeps = {
   store: Store;
