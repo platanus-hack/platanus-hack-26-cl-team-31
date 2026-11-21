@@ -458,7 +458,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (change.action === "set_tag") await tags.knownTags(tx, userId, [change.tagId]);
     if (!await tx.changeVault(userId, categoryId, change)) throw notFound();
     record(tx, "broker.vault.changed", { userId, agentId, attrs: { action: change.action,
-      ...(change.action === "set_tag" || change.action === "set_member" ? { allowed: change.allowed } : {}) } });
+      ...(change.action === "set_tag" || change.action === "set_member" ? { allowed: change.allowed } : {}),
+      ...(change.action === "set_visibility" ? { visibility: change.visibility } : {}) } });
     return { categoryId };
   }
 

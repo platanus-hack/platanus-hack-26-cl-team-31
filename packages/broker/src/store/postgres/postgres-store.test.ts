@@ -372,6 +372,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   async function undoCustomTags() {
     await isolated.query(`
+      ALTER TABLE sideband.vault_categories DROP COLUMN visibility;
       ALTER TABLE sideband.vault_categories DROP COLUMN description;
       ALTER TABLE sideband.users DROP COLUMN vault_seeded;
       DROP TABLE sideband.vault_documents;
@@ -569,11 +570,12 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
           expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: true });
-          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([{ id: categoryId, name: "Prueba" }]);
+          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories.filter(c => c.canRead))
+            .toEqual([{ id: categoryId, name: "Prueba", visibility: "private", canRead: true }]);
           expect(await tx.deleteTag("bruno", tagId)).toBe(true);
           expect(await tx.vaultMembers("bruno", categoryId)).toEqual([friend]);
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
-          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([]);
+          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories.filter(c => c.canRead)).toEqual([]);
           expect(await tx.deleteTag("bruno", "friend")).toBe(true);
           expect(await tx.setContactTags("bruno", friend, [])).toBe(true);
           expect(await tx.removeContact("bruno", friend)).toBe(true);

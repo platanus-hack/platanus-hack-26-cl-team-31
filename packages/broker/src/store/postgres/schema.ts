@@ -43,6 +43,7 @@ export const vaultCategories = sideband.table("vault_categories", {
   id: text("category_id").notNull(),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
+  visibility: text("visibility").$type<"public" | "private">().notNull().default("private"),
 }, (t) => [primaryKey({ columns: [t.owner, t.id] })]);
 
 export const vaultEntries = sideband.table("vault_entries", {

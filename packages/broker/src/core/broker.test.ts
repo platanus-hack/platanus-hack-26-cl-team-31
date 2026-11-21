@@ -83,14 +83,17 @@ it("solo el titular concede lectura individual; rechazar no crea ni modifica cat
   const grant = { kind: "grant_vault_read" } as const;
   await expect(broker.owner.decide(alice, pending.requestId, grant)).rejects.toMatchObject({ code: "not_found" });
   await expect(broker.owner.decide(bruno, pending.requestId, { kind: "approve_once" })).rejects.toMatchObject({ code: "invalid_input" });
-  expect(await broker.agent.queryVault(alice, { to: input.to })).toEqual({ categories: [] });
+  const readable = async (p: Principal) => (await broker.agent.queryVault(p, { to: input.to })).categories.filter(c => c.canRead);
+  expect(await readable(alice)).toEqual([]);
   await broker.owner.decide(bruno, pending.requestId, grant);
-  const { categories: visible } = await broker.agent.queryVault(alice, { to: input.to });
-  expect(visible).toEqual([{ id: expect.any(String), name: input.args.categoryName }]);
+  const visible = await readable(alice);
+  expect(visible).toEqual([{ id: expect.any(String), name: input.args.categoryName, visibility: "private", canRead: true }]);
   const existing = await broker.agent.ask(alice, input);
   await broker.owner.decide(bruno, existing.requestId, grant);
-  expect((await broker.agent.queryVault(alice, { to: input.to })).categories).toEqual(visible);
-  expect(await broker.agent.queryVault(carla, { to: input.to })).toEqual({ categories: [] });
+  expect(await readable(alice)).toEqual(visible);
+  expect(await readable(carla)).toEqual([]);
+  // Any Sideband user sees the name of the category without being able to open it.
+  expect((await broker.agent.queryVault(carla, { to: input.to })).categories.map(c => c.name)).toContain(input.args.categoryName);
   await expect(broker.owner.decide(bruno, pending.requestId, grant)).rejects.toMatchObject({ code: "conflict" });
 });
 
@@ -160,7 +163,7 @@ it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de
   expect((await broker.agent.vaultCatalog(p)).categories.map(({ id, description, entries }) => ({ id, described: !!description, entries })))
     .toEqual(expect.arrayContaining([{ id: "health", described: true }, { id: categoryId, described: true }]));
   expect((await broker.agent.vaultCatalog(p, categoryId)).categories)
-    .toEqual([{ id: categoryId, name: "Deseos", description: "Regalos que quiero.", tags: [], entries: [{ label: "Regalo", value: "Cafetera" }], members: [] }]);
+    .toEqual([{ id: categoryId, name: "Deseos", description: "Regalos que quiero.", visibility: "private", tags: [], entries: [{ label: "Regalo", value: "Cafetera" }], members: [] }]);
   await expect(broker.agent.vaultCatalog(p, "interests")).resolves.toMatchObject({ categories: [{ name: "Intereses", entries: [] }] });
   await expect(broker.agent.vaultCatalog(bruno, categoryId)).rejects.toMatchObject({ code: "forbidden" });
   for (const [recipient, tag] of [[alice, "friend"], [carla, "family"]] as const) {

@@ -182,12 +182,13 @@ class Turn {
       const query = this.context.ops.queryVault!;
       const plan: ReadPlan = { action: "vault", selector: intent.selector, circleId: this.circleId };
       if (!this.categoryId && !intent.categoryName) return this.readPlan(plan);
-      const catalog = await query({ to });
-      if (!catalog.categories.length) {
+      // The catalog lists every category of the contact. Only the readable ones can be opened.
+      const readable = (await query({ to })).categories.filter(c => c.canRead);
+      if (!readable.length) {
         // A missing named category stays empty on replay, even if a new category is later shared.
         return this.readPlan({ ...plan, empty: true });
       }
-      const match = this.matchCategory(catalog.categories, intent.categoryName);
+      const match = this.matchCategory(readable, intent.categoryName);
       if (typeof match !== "string") return this.clarify({ field: "categoryId", question: "¿Qué categoría compartida quieres leer?", choices: match });
       return this.readPlan({ ...plan, categoryId: match });
     }

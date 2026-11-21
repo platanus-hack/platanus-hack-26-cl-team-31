@@ -146,7 +146,7 @@ function contactsText(contacts: { address: string; receives: Category[] }[]): st
 }
 
 type OwnCategory = VaultCatalog["categories"][number];
-const vaultTitle = (c: OwnCategory) => `${c.name}: ${c.description ?? "sin descripción"}`;
+const vaultTitle = (c: OwnCategory) => `${c.name}${c.visibility === "public" ? " (pública)" : ""}: ${c.description ?? "sin descripción"}`;
 
 function vaultListText(categories: OwnCategory[]): string {
   if (!categories.length) return "Tu bóveda no tiene categorías. Créalas desde Mi bóveda en Sideband.";
@@ -175,7 +175,10 @@ export function formatMessageReply(reply: MessageReply): string {
     case "profiles":
       return reply.items.map(p => [`${p.displayName} (${p.address})`, p.headline].filter(Boolean).join(" — ")).join("\n") || "No encontré perfiles públicos con ese nombre.";
     case "vault":
-      return reply.data.categories.map(c => [c.name, ...(c.entries ?? []).map(e => `• ${e.label}: ${e.value}`)].join("\n")).join("\n") || "No encontré categorías compartidas para esa consulta.";
+      return reply.data.categories.map(c => [
+        `${c.name}${c.description ? `: ${c.description}` : ""}${c.canRead ? "" : " (sin acceso)"}`,
+        ...(c.entries ?? []).map(e => `• ${e.label}: ${e.value}`),
+      ].join("\n")).join("\n") || "No encontré categorías para esa consulta.";
     case "own_vault": {
       // Entries come only for an opened category.
       const { categories } = reply.data;

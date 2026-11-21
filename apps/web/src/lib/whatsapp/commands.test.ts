@@ -90,14 +90,14 @@ it("lista los contactos con lo que cada uno comparte, con o sin Claude", async (
 it("lista las bóvedas propias con su descripción y abre una por nombre sin usar el modelo", async () => {
   const { broker, report } = fixture();
   broker.vault.mockResolvedValue({ categories: [
-    { id: "health", name: "Salud", description: "Alergias y tratamientos.", tags: [], entries: [{ label: "Alergia", value: "Maní" }] },
-    { id: "interests", name: "Intereses", tags: [], entries: [] },
+    { id: "health", name: "Salud", description: "Alergias y tratamientos.", visibility: "private", tags: [], entries: [{ label: "Alergia", value: "Maní" }] },
+    { id: "interests", name: "Intereses", visibility: "public", tags: [], entries: [] },
   ] });
   const interpret = vi.fn();
   await expect(runCommand(broker, owner, "bóvedas", report, interpret)).resolves.toBe(
-    "Tus bóvedas:\n• Salud: Alergias y tratamientos.\n• Intereses: sin descripción\nEscribe «bóveda» y un nombre para ver lo que guarda.");
+    "Tus bóvedas:\n• Salud: Alergias y tratamientos.\n• Intereses (pública): sin descripción\nEscribe «bóveda» y un nombre para ver lo que guarda.");
   await expect(runCommand(broker, owner, "Boveda salud?", report, interpret)).resolves.toBe("Salud: Alergias y tratamientos.\n• Alergia: Maní");
-  await expect(runCommand(broker, owner, "bóveda Intereses", report, interpret)).resolves.toBe("Intereses: sin descripción\nAún no guarda datos.");
+  await expect(runCommand(broker, owner, "bóveda Intereses", report, interpret)).resolves.toBe("Intereses (pública): sin descripción\nAún no guarda datos.");
   await expect(runCommand(broker, owner, "bóveda Viajes", report, interpret)).resolves.toContain("No tienes una bóveda llamada «Viajes»");
   expect(interpret).not.toHaveBeenCalled();
   expect(broker.ask).not.toHaveBeenCalled();
@@ -105,7 +105,7 @@ it("lista las bóvedas propias con su descripción y abre una por nombre sin usa
 
 it("escribe la respuesta del flujo sobre las bóvedas propias igual que los comandos", async () => {
   const { broker, report } = fixture();
-  const health = { id: "health", name: "Salud", description: "Alergias y tratamientos.", tags: [] };
+  const health = { id: "health", name: "Salud", description: "Alergias y tratamientos.", visibility: "private", tags: [] };
   const flow = vi.fn()
     .mockResolvedValueOnce({ kind: "own_vault", data: { categories: [health] } })
     .mockResolvedValueOnce({ kind: "own_vault", data: { categories: [{ ...health, entries: [{ label: "Alergia", value: "Maní" }] }] } })
@@ -115,6 +115,16 @@ it("escribe la respuesta del flujo sobre las bóvedas propias igual que los coma
   await expect(runCommand(broker, owner, "qué guardo en salud", report, flow)).resolves.toBe("Salud: Alergias y tratamientos.\n• Alergia: Maní");
   await expect(runCommand(broker, owner, "qué guardo", report, flow)).resolves.toContain("Tu bóveda no tiene categorías");
   expect(broker.vault).not.toHaveBeenCalled();
+});
+
+it("muestra el catálogo de un contacto con su descripción y marca lo que no se puede leer", async () => {
+  const { broker, report } = fixture();
+  const flow = vi.fn().mockResolvedValue({ kind: "vault", data: { categories: [
+    { id: "health", name: "Salud", description: "Alergias y tratamientos.", visibility: "private", canRead: false },
+    { id: "interests", name: "Intereses", visibility: "public", canRead: true },
+  ] } });
+  await expect(runCommand(broker, owner, "qué bóvedas tiene Simón", report, flow)).resolves.toBe(
+    "Salud: Alergias y tratamientos. (sin acceso)\nIntereses");
 });
 
 it("avisa cuando todavía no hay contactos", async () => {
