@@ -61,6 +61,7 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0002_views.sql",
       "0003_roles.sql",
       "0004_prune.sql",
+      "0005_identity_phone.sql",
     ]);
     expect(await applyOpsMigrations({ databaseUrl })).toEqual([]);
     expect(await views()).toEqual(["v_errors", "v_events", "v_service_health"]);
