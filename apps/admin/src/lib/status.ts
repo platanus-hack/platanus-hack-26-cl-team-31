@@ -44,6 +44,7 @@ export const wakeKindLabel: Record<WakeKind, string> = {
   grokbot_routine: "Grok",
   standard_webhook: "Webhook",
   mcp_events: "MCP events",
+  polling: "Sondeo",
 }
 
 export const serviceLabel: Record<Service, string> = {
