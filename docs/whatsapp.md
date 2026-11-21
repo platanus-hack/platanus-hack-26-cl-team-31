@@ -26,7 +26,7 @@ La prueba crea dos cuentas locales, concede el permiso de pregunta y ejecuta el 
 
 ## Probar con dos cuentas
 
-Para habilitar texto libre, configura `ANTHROPIC_API_KEY` en el **proceso web**. No hace falta volver a vincular los números. Sin la clave funcionan los comandos `Pregunta a …` y `estado`. Las consultas por texto libre envían el mensaje original a Claude; el número vinculado, la agenda de contactos y las respuestas del broker no se envían como contexto al modelo.
+Para habilitar texto libre, configura `ANTHROPIC_API_KEY` en el **proceso web**. No hace falta volver a vincular los números. Sin la clave funcionan los comandos `Pregunta a …`, `estado`, `contactos` y `bóvedas`. `bóvedas` lista las categorías de tu bóveda con su descripción y `bóveda Salud` muestra los datos de una. Las consultas por texto libre envían el mensaje original a Claude; el número vinculado, la agenda de contactos y las respuestas del broker no se envían como contexto al modelo.
 
 1. Con sesión iniciada, abre **Agentes → Conectar con Sideband → WhatsApp**. Genera y envía el código de **Sideband**. Vuelve a la web y confirma que el número detectado sea el tuyo.
 2. Escribe `Pregunta a carla@sideband.app si puede jugar el sábado` (usa la dirección real del destinatario). Verifica el ID en **Actividad** y en `sideband_check` desde el MCP autorizado por la misma cuenta.

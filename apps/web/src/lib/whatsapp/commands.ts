@@ -1,5 +1,5 @@
 import { BrokerError, type OwnerPort } from "@team-31/broker-client";
-import { Address, AskInput, type Category, type Owner, type RequesterView } from "@team-31/protocol";
+import { Address, AskInput, type Category, type Owner, type OwnerVault, type RequesterView } from "@team-31/protocol";
 import { getTelemetry } from "../telemetry";
 import { describeSharing } from "../../app/(app)/contacts/describe";
 import { parseSharingCategories, type MessageReply } from "@team-31/message-flow";
@@ -13,8 +13,8 @@ const notShared: Record<Category, string> = {
 };
 
 export const askExample = "Pregunta a carla@sideband.app si puede jugar el sábado";
-const askHelp = `Prueba: «${askExample}», escribe «estado» para revisar tu última solicitud enviada o «contactos» para ver tu agenda.`;
-type WhatsAppBroker = Pick<OwnerPort, "ask" | "status" | "activity" | "contacts" | "answerInvitation">;
+const askHelp = `Prueba: «${askExample}», escribe «estado» para revisar tu última solicitud enviada, «contactos» para ver tu agenda o «bóvedas» para ver lo que guardas.`;
+type WhatsAppBroker = Pick<OwnerPort, "ask" | "status" | "activity" | "contacts" | "answerInvitation" | "vault">;
 
 const words = (text: string) =>
   text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").match(/[\p{L}\p{N}]+/gu)?.join(" ") ?? "";
@@ -67,9 +67,11 @@ function formatAnswer(result: Extract<RequesterView, { decision: "allow" }>["res
 const statusCommand = /^\/?estado(?:\s+([a-f0-9-]{36}))?$/i;
 const contactsCommand = /^\/?contactos$/iu;
 const acceptCommand = /^acepta\b/iu;
+// «bóvedas» lists the holder's own categories; «bóveda Salud» opens one.
+const vaultCommand = /^\/?b[oó]vedas?(?:\s+(\S.*?))?[.?!]*$/iu;
 
 export function isConversationInput(text: string): boolean {
-  return !!text && !statusCommand.test(text) && !contactsCommand.test(text) && !acceptCommand.test(text);
+  return !!text && !statusCommand.test(text) && !contactsCommand.test(text) && !acceptCommand.test(text) && !vaultCommand.test(text);
 }
 
 type ReportResult = (action: "ask" | "status", view: RequesterView) => void;
@@ -124,6 +126,8 @@ export async function runCommand(
   const status = statusCommand.exec(text);
   if (status) return readStatus(broker, owner, onResult, status[1]);
   if (contactsCommand.test(text)) return contactsText((await broker.contacts(owner)).contacts);
+  const vault = vaultCommand.exec(text);
+  if (vault) return vaultText(await broker.vault(owner), vault[1]);
   if (acceptCommand.test(text)) return acceptInvitation(broker, owner, text);
   if (messageFlow && text) return formatMessageReply(await messageFlow(text));
   if (/^¿?\s*ya respondi[oó]\s*\??$/i.test(text)) return readStatus(broker, owner, onResult);
@@ -133,6 +137,17 @@ export async function runCommand(
 function contactsText(contacts: { address: string; receives: Category[] }[]): string {
   if (!contacts.length) return "Aún no tienes contactos. Conecta con alguien desde Sideband para poder preguntarle.";
   return ["Tus contactos:", ...contacts.map(({ address, receives }) => `• ${address}: te comparte ${describeSharing(receives)}`)].join("\n");
+}
+
+function vaultText({ categories }: OwnerVault, name?: string): string {
+  const title = (c: OwnerVault["categories"][number]) => `${c.name}: ${c.description ?? "sin descripción"}`;
+  if (!name) {
+    if (!categories.length) return "Tu bóveda no tiene categorías. Créalas desde Mi bóveda en Sideband.";
+    return ["Tus bóvedas:", ...categories.map(c => `• ${title(c)}`), "Escribe «bóveda» y un nombre para ver lo que guarda."].join("\n");
+  }
+  const matches = categories.filter(c => words(c.name) === words(name));
+  if (!matches.length) return `No tienes una bóveda llamada «${name}». Escribe «bóvedas» para verlas.`;
+  return matches.map(c => [title(c), ...(c.entries.length ? c.entries.map(e => `• ${e.label}: ${e.value}`) : ["Aún no guarda datos."])].join("\n")).join("\n\n");
 }
 
 function requestRepliesText(reply: Extract<MessageReply, { kind: "requests" }>): string {
