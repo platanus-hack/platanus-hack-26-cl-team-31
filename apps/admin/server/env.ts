@@ -1,3 +1,4 @@
+import { ed25519PrivateKey } from "@team-31/auth/service"
 import { createHash } from "node:crypto"
 import { ed25519PrivateKey } from "@team-31/auth/service"
 import { z } from "zod"
