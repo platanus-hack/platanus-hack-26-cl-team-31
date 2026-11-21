@@ -164,6 +164,24 @@ describe("scenario", () => {
 });
 
 describe("presence mapping", () => {
+  it("keeps directory order for owners and their active agents in a snapshot", () => {
+    const dir = createFlowDirectory({
+      users: [{ userId: "u1" }, { userId: "u2" }, { userId: "u3", address: "luz@sideband.app" }],
+      agents: [
+        { agentId: "b1", userId: "u2" },
+        { agentId: "a2", userId: "u1" },
+        { agentId: "old", userId: "u1", revokedAt: "2026-01-01" },
+        { agentId: "a1", userId: "u1" },
+        { agentId: "unassigned" },
+      ],
+    });
+
+    const snapshot = createTelemetryMapper(dir).snapshot(5);
+    expect(snapshot.map((event) => actor(event.from))).toEqual([
+      "agent:a2", "agent:a1", "agent:b1", "agent@luz@sideband.app",
+    ]);
+  });
+
   it("builds the initial network and maps WhatsApp links and first MCP calls", () => {
     const dir = createFlowDirectory({
       users: [
