@@ -6,18 +6,22 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
+      "@team-31/source": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./client": {
       "types": "./src/client/index.ts",
+      "@team-31/source": "./src/client/index.ts",
       "default": "./dist/client/index.js"
     },
     "./postgres": {
       "types": "./src/store/postgres/index.ts",
+      "@team-31/source": "./src/store/postgres/index.ts",
       "default": "./dist/store/postgres/index.js"
     },
     "./sanitize/claude": {
       "types": "./src/sanitize/claude-redactor.ts",
+      "@team-31/source": "./src/sanitize/claude-redactor.ts",
       "default": "./dist/sanitize/claude-redactor.js"
     }
   },

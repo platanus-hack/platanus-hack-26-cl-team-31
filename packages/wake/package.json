@@ -6,6 +6,7 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
+      "@team-31/source": "./src/index.ts",
       "default": "./dist/index.js"
     }
   },

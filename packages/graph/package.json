@@ -6,10 +6,12 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
+      "@team-31/source": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./pg": {
       "types": "./src/pg/index.ts",
+      "@team-31/source": "./src/pg/index.ts",
       "default": "./dist/pg/index.js"
     }
   },

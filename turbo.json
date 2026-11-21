@@ -35,11 +35,14 @@
     "clean": {
       "cache": false
     },
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
     "test": {
-      "dependsOn": [
-        "^build"
-      ],
-      "cache": false
+      "dependsOn": ["transit"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/vitest.shared.ts"],
+      "env": ["TEST_DATABASE_URL", "DATABASE_URL", "E2E_*", "REDTEAM_*"],
+      "outputs": []
     }
   }
 }
