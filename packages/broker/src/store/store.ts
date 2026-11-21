@@ -30,6 +30,7 @@ export type RequestRow = {
   status: RequestStatus;
   outcome?: FinalOutcome;
   allowedFields: string[];
+  approvedOnce?: boolean;
   guidance: string;
   rule: string;
   decisionReason?: string;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Address, LocalPart } from "./address.js";
 import { ActivityItem, AgentConnection, OwnerDecision, OwnerPendingItem } from "./owner.js";
+import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
 import { SharingRules } from "./rules.js";
@@ -11,6 +12,10 @@ const agentParams = z.object({ agentId: z.string() });
 const noContent = { status: 204, response: z.undefined() } as const;
 
 export const routes = {
+  agentCapabilities: {
+    method: "GET", path: "/v1/agent/capabilities", query: z.object({ to: Address }),
+    response: z.object({ tools: z.array(Capability) }), iss: "mcp", port: "agent.capabilities",
+  },
   agentAsk: {
     method: "POST",
     path: "/v1/agent/ask",

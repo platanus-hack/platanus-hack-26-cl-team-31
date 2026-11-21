@@ -134,7 +134,7 @@ export const capabilities = defineTool("agent_capabilities", "Discover the quest
     const target = { type: "string", const: recipient };
     if (groups.length) {
       tools.push({
-        name: check.name, description: check.description,
+        name: check.name, description: check.description, execution: "stored",
         inputSchema: { ...check.inputSchema, properties: {
           ...check.inputSchema.properties, recipient: target, group: { type: "string", enum: groups },
         } },
@@ -142,7 +142,7 @@ export const capabilities = defineTool("agent_capabilities", "Discover the quest
     }
     if (interests) {
       tools.push({
-        name: interestsForPerson.name, description: interestsForPerson.description,
+        name: interestsForPerson.name, description: interestsForPerson.description, execution: "stored",
         inputSchema: { ...interestsForPerson.inputSchema, properties: { recipient: target } },
       });
     }

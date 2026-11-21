@@ -41,6 +41,16 @@ Ana envía su pregunta al servidor a través de MCP. El servicio verifica la ide
 
 La lista de contactos empieza vacía. Guardar una dirección es unilateral. La disponibilidad sigue las reglas de la agenda y cada interés conserva su audiencia. Un catálogo vacío se devuelve tanto para una dirección desconocida como para una persona que no comparte información con el solicitante.
 
+## Cuando la respuesta necesita al runtime de Bob
+
+Ejecuta `corepack pnpm agents:runtime-demo` desde la raíz. Esta demo del broker Nexo levanta un proceso separado para Bob. Usa intereses ficticios locales y un almacén en memoria para las solicitudes. El MCP de coordinación descrito arriba sigue consultando PostgreSQL.
+
+El catálogo del broker indica `tool`, `execution`, `inputSchema` y `allowedFields` para el solicitante autenticado. En modo `stored`, el broker entrega un resultado ya autorizado. En modo `owner_runtime`, Ana envía sólo la operación y sus argumentos. Recibe un identificador y el estado pendiente.
+
+El aviso contiene sólo el evento y el identificador. El runtime de Bob relee su bandeja autenticada, resuelve la operación con una función de lectura registrada localmente y envía los campos permitidos. Por ejemplo, `interest_check({interest: "guitarra"})` puede devolver `{matches: true}`. El broker verifica identidad, nonce, vencimiento y esquema antes de firmar la respuesta. Ana consulta el resultado con el identificador original. La revocación bloquea una respuesta en tránsito y su relectura posterior.
+
+Para conectar otra fuente se registra un lector en el runtime del titular con `localReadTool`. El lector recibe argumentos tipados y el contexto de autorización. Debe ser de sólo lectura y tolerar reintentos. El transporte de la demo es IPC local; un despliegue necesita el adaptador de avisos, el cliente autenticado y almacenamiento persistente para la cola.
+
 ## Herramientas
 
 | Acción | Herramientas |

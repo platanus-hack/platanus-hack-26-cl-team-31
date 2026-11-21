@@ -3,7 +3,7 @@ import { BrokerError } from "../errors.js";
 import type { RequestRow } from "../store/store.js";
 
 const transitions: Record<RequestStatus, readonly RequestStatus[]> = {
-  awaiting_agent: ["awaiting_owner", "answered", "no_data", "declined", "expired", "delivery_failed"],
+  awaiting_agent: ["denied", "awaiting_owner", "answered", "no_data", "declined", "expired", "delivery_failed"],
   awaiting_owner: ["awaiting_agent", "answered", "declined", "expired"],
   answered: [],
   no_data: [],
@@ -26,6 +26,7 @@ export function approveOnce(row: RequestRow): RequestRow {
   return {
     ...transition(row, "awaiting_agent"),
     allowedFields: required.map(([field]) => field),
+    approvedOnce: true,
     rule: "Permiso del dueño por única vez",
     guidance: "",
   };
