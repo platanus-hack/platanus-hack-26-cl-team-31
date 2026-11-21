@@ -14,6 +14,9 @@ const ROOT = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const ALL = ["availability", "interests", "health", "general"];
 const FINAL_STATES = ["answered", "denied", "no_data", "declined", "expired", "delivery_failed"];
 const DEADLINE_MS = 120_000;
+// Identidades de prueba del arnés. Revocar una conexión de agente es irreversible, así que un
+// juego de titulares quemado se abandona subiendo esta generación en vez de intentar repararlo.
+const OWNER_PREFIX = "Sim2";
 const brain = scriptedBrain;
 
 const n = Number.parseInt(process.argv[2] ?? "3", 10);
@@ -59,17 +62,30 @@ function factsFor(name, index) {
 async function setUpOwners() {
   const owners = [];
   for (let index = 0; index < n; index += 1) {
-    const name = `Sim${String(index + 1).padStart(2, "0")}`;
+    const name = `${OWNER_PREFIX}${String(index + 1).padStart(2, "0")}`;
     await stack.web("/api/dev-login", { name });
     const token = await stack.web("/api/dev-token", { name });
-    // Un titular solo admite una conexión de agente viva y dev-token emite un cliente nuevo cada
-    // vez, así que la anterior se revoca antes de que el MCP intente conectar.
+
+    // dev-token reusa un único cliente OAuth por titular, así que `clientId` es estable y el
+    // arnés siempre vuelve con el mismo `agentId`. Revocarlo es definitivo: ensureAgentConnection
+    // inserta con onConflictDoNothing, nunca resucita una fila revocada, y entonces cada
+    // `tools/call` muere en agent.connect con not_found —HTTP 403, "No se encontró el recurso
+    // solicitado"— antes de ejecutar la tool. Por eso el arnés nunca revoca su propia conexión.
     const agents = await stack.owner(token.userId, "GET", "/v1/owner/agents");
+    const mine = agents.items.find((agent) => agent.agentId === token.clientId);
+    if (mine?.revokedAt) {
+      throw new Error(
+        `${name} tiene su conexión de agente revocada (${mine.revokedAt}) y el broker no la resucita. ` +
+        "Cambia OWNER_PREFIX en infra/sim/run.mjs para usar identidades nuevas.",
+      );
+    }
+    // Una conexión ajena viva sí bloquea: agent_connections_one_active admite una por titular.
     for (const agent of agents.items) {
-      if (agent.agentId !== token.clientId) {
+      if (agent.agentId !== token.clientId && !agent.revokedAt) {
         await stack.owner(token.userId, "DELETE", `/v1/owner/agents/${agent.agentId}`);
       }
     }
+
     let me = await stack.owner(token.userId, "GET", "/v1/owner/me");
     if (!me.address) {
       me = { ...me, ...await stack.owner(token.userId, "POST", "/v1/owner/address", { localPart: `sim-${name.toLowerCase()}` }) };
