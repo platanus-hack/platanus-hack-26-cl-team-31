@@ -145,6 +145,7 @@ export function createHttpClient<Identity>(
           },
           body,
           signal,
+          cache: "no-store",
           redirect: "error",
         });
       };
