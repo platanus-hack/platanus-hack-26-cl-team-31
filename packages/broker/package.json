@@ -11,6 +11,10 @@
     "./client": {
       "types": "./src/client/index.ts",
       "default": "./dist/client/index.js"
+    },
+    "./postgres": {
+      "types": "./src/store/postgres/index.ts",
+      "default": "./dist/store/postgres/index.js"
     }
   },
   "scripts": {
@@ -20,11 +24,14 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
-    "@team-31/protocol": "workspace:*"
+    "@team-31/protocol": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@team-31/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
     "typescript": "5.9.3"
   }
 }

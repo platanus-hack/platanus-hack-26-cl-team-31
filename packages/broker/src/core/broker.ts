@@ -3,6 +3,8 @@ import {
   Address,
   AskInput,
   fieldsOf,
+  describeTool,
+  ToolName,
   LocalPart,
   OwnerDecision,
   ReplyInput,
@@ -26,6 +28,15 @@ import {
 import { createWorker } from "./worker.js";
 
 const noRules = SharingRules.parse({ circles: {}, grants: {} });
+
+function stillAuthorized(row: RequestRow, rules: SharingRules): boolean {
+  if (row.fromUserId === null) return true; // A connection test requested by the owner.
+  if (rules.blocked.includes(row.fromAddress)) return false;
+  if (row.approvedOnce) return true;
+  const current = evaluate({ rules, from: row.fromAddress, to: row.toAddress, tool: row.tool });
+  return current.kind === "allow" && current.guidance === row.guidance &&
+    row.allowedFields.every(field => current.allowedFields.includes(field));
+}
 
 function notFound(): BrokerError {
   return new BrokerError("not_found", "No se encontró el recurso.");
@@ -133,6 +144,23 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
   return {
     agent: {
+      async capabilities(p, to) {
+        requireScope(p, "nexo:ask");
+        return store.tx(async tx => {
+          await activeAgent(tx, p);
+          const from = (await tx.getUser(p.userId))?.address;
+          const owner = await tx.getUserByAddress(to);
+          if (!from || !owner || from === to) return { tools: [] };
+          const rules = await tx.getRules(owner.userId) ?? noRules;
+          return { tools: ToolName.options.flatMap(tool => {
+            const decision = evaluate({ rules, from, to, tool });
+            if (decision.kind === "public") return [describeTool(tool, Object.keys(decision.result))];
+            if (decision.kind === "allow") return [describeTool(tool, decision.allowedFields)];
+            return [];
+          }) };
+        });
+      },
+
       async ask(p, input) {
         requireScope(p, "nexo:ask");
         const parsed = AskInput.safeParse(input);
@@ -250,7 +278,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         const view = await store.tx(async (tx) => {
           await activeAgent(tx, p);
           const row = await tx.getRequest(id, { fromUserId: p.userId });
-          return row ? toRequesterView(row) : notFound();
+          if (!row) return notFound();
+          if (row.status === "answered" && row.answeredByAgentId && row.toUserId) {
+            const rules = await tx.getRules(row.toUserId) ?? noRules;
+            if (!stillAuthorized(row, rules)) {
+              return toRequesterView(await finalize(row, "denied", clock.now()));
+            }
+          }
+          return toRequesterView(row);
         });
         if (view instanceof BrokerError) throw view;
         return view;
@@ -306,10 +341,24 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return store.tx(async (tx) => await tx.getRules(o.userId) ?? structuredClone(noRules));
       },
 
-      async setRules(o, rules) {
-        const parsed = SharingRules.safeParse(rules);
+      async setRules(o, input) {
+        const parsed = SharingRules.safeParse(input);
         if (!parsed.success) throw new BrokerError("invalid_input", "Las reglas para compartir no son válidas.");
-        await store.tx((tx) => tx.putRules(o.userId, parsed.data));
+        const rules = parsed.data;
+        await store.tx(async tx => {
+          await tx.putRules(o.userId, rules);
+          const owner = await tx.getUser(o.userId);
+          if (!owner?.address) return;
+          // Cancel pending work atomically if the old authorization is no longer valid.
+          // Already queued notices carry only an ID and must re-read the inbox.
+          for (const row of await tx.listInbox(owner.address)) {
+            if (stillAuthorized(row, rules)) continue;
+            const now = clock.now();
+            const denied = await finalize(transition(row, "denied"), "denied", now);
+            if (!await saveTransition(tx, row, denied)) throw closed();
+            await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: "denied" });
+          }
+        });
       },
 
       async pending(o) {

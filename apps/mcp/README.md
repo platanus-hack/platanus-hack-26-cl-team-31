@@ -1,6 +1,24 @@
-# Coordinar asistentes en local
+# MCP de Nexo
 
-## Probar dos identidades
+El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `nexo_ask`, `nexo_inbox`, `nexo_reply` y `nexo_check`. El evento `nexo.request.created` se suscribe por webhook y entrega solo el `requestId`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
+
+## Arranque local
+
+1. Ejecuta `pnpm bootstrap` para generar `.env` con `MCP_PORT`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL`. Si tu emisor o recurso público usa otro origen, configura esas URL en `.env.local`.
+2. Configura `BROKER_URL` con la URL interna del broker y `MCP_SERVICE_PRIVATE_KEY` con su JWK privada Ed25519 en `.env.local`. La JWK pública correspondiente se registra como `mcp` en `SERVICE_JWT_PUBLIC_KEYS` del broker.
+3. Ejecuta `pnpm build --filter @team-31/mcp^...` para compilar los paquetes compartidos y `pnpm dev --filter @team-31/mcp` para iniciar el servidor.
+
+`GET /healthz` devuelve `{"ok":true}`. El descubrimiento OAuth está disponible en `/.well-known/oauth-protected-resource` y `/.well-known/oauth-protected-resource/mcp`. El servidor escucha en `127.0.0.1` por defecto. Puedes elegir otra interfaz con `MCP_HOST`.
+
+Si prefieres Compose, compila con `pnpm build --filter @team-31/mcp` y usa `docker compose --env-file .env --env-file .env.local --profile nexo up -d mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile nexo stop mcp`.
+
+## Modo de desarrollo
+
+`MCP_DEV_AUTH=1` habilita `Authorization: Bearer dev:<userId>:<agentId>` con los cuatro scopes de Nexo. Para usar stdio en desarrollo, añade `NEXO_DEV_USER_ID` y `NEXO_DEV_AGENT_ID` a `.env.local`, compila con `pnpm build --filter @team-31/mcp` y ejecuta `pnpm with-env pnpm --filter @team-31/mcp start --stdio`. La conexión al broker conserva el JWT de servicio. `MCP_DEV_AUTH=1` aborta el arranque con `NODE_ENV=production`.
+
+## Coordinar asistentes en local
+
+### Probar dos identidades
 
 Desde la raíz del repo, con Docker corriendo, usa Node 24 y pnpm 10. Si usas nvm, ejecuta `nvm use` y `corepack enable pnpm` una vez.
 
@@ -12,7 +30,7 @@ Puedes editar las personas, sus permisos iniciales y los bloques ocupados en [lo
 
 El sábado ficticio es el **28 de noviembre de 2026**. Ana ve a Bob ocupado a las 16:00 y disponible a las 18:00 de Santiago. Eva, externa al grupo `futbol`, recibe `not_shareable`. El guion publica y retira un interés, revoca y restablece el permiso de Bob, y prueba las bandejas por persona. La última aceptación confirma el encuentro y muestra su ID. Cada corrida crea una propuesta nueva en PostgreSQL.
 
-## Hablar con Ana y Bob en Claude Code
+### Hablar con Ana y Bob en Claude Code
 
 Con la API abierta, inicia estos comandos en **dos terminales distintas** desde la raíz. Cada sesión carga una sola identidad y usa las herramientas del MCP de coordinación. Claude Code requiere su propia sesión iniciada.
 
@@ -31,10 +49,37 @@ claude --strict-mcp-config --mcp-config .agents-local/bob.json --tools ""
 
 La bandeja se consulta cuando activas la sesión. Los agentes comparten una API HTTP que verifica la credencial, y el broker comprueba membresía y permisos antes de leer disponibilidad y entregar el resultado. La decisión de asistir se registra por participante. Los archivos de configuración son privados del usuario local y dan acceso a la identidad que contienen.
 
-## Herramientas
+### Consultar a un contacto
+
+Ana envía su pregunta al servidor a través de MCP. El servicio verifica la identidad de Ana y consulta PostgreSQL. Bob puede estar desconectado. Para buscar una afición, Bob debe haberla publicado previamente. La audiencia se comprueba en cada lectura.
+
+1. **Ana** — «Guarda a Bob en mis contactos y dime qué le puedo preguntar». `contact_connect` guarda la dirección sólo para Ana y devuelve las consultas permitidas, con su nombre y un JSON Schema de argumentos. `agent_capabilities` permite volver a consultar ese catálogo sin modificar los contactos.
+2. **Bob** — «Publica mi interés en guitarra para el grupo futbol». Bob elige la audiencia. Si omite el grupo, todos los usuarios autenticados pueden encontrar la publicación.
+3. **Ana** — «¿Quién de mis contactos tiene interés en guitarra?». `contact_interest_search` devuelve las coincidencias entre su lista personal y las publicaciones visibles para ella. `agent_interests` permite consultar los intereses visibles de una persona concreta.
+
+La lista de contactos empieza vacía. Guardar una dirección es unilateral. La disponibilidad sigue las reglas de la agenda y cada interés conserva su audiencia. Un catálogo vacío se devuelve tanto para una dirección desconocida como para una persona que no comparte información con el solicitante.
+
+### Cuando la respuesta necesita al runtime de Bob
+
+La demo inicia una sesión de Claude Code para Ana y despierta a Bob cuando el broker autoriza la consulta. Ana usa `ask_bob` para comprobar un interés, `ask_bob_question` para enviar una pregunta abierta y `await_bob` para una solicitud pendiente. Bob recibe sólo `check_interest`, que lee el archivo elegido por su operador.
+
+1. Prepara un archivo JSON privado de Bob con una lista de intereses. Por ejemplo, `["cerámica", "senderismo"]`. La ruta predeterminada es `.agents-local/bob-interests.json`.
+2. Desde la raíz, ejecuta `corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica?"`. Puedes indicar otra ruta como segundo argumento. Ejecuta el comando sin argumentos para conversar con Ana.
+3. Cambia los intereses en el archivo de Bob y repite la pregunta. Una lista vacía devuelve `matches: false`. Si falta el archivo, el resultado es `no_data`.
+4. Prueba una consulta privada con `corepack pnpm agents:runtime-demo "¿Cuál es el domicilio de Bob?"`. Bob sólo autorizó a Ana a comprobar un interés concreto. La operación `question` queda fuera de ese permiso. El broker devuelve `deny` de inmediato, sin encolar un webhook ni consultar datos de Bob. Puedes probar también «¿Cuáles son todos los intereses de Bob?» con el mismo resultado.
+
+Ana envía la operación `interest_check` a la dirección de Bob. El broker verifica la regla de Bob para Ana, encola el aviso y entrega un ID pendiente. El worker envía un webhook HTTP firmado al receptor local registrado para `bob-bot`. El receptor devuelve HTTP 202 y usa su identidad para buscar la solicitud en la bandeja. Claude Code ejecuta la lectura aprobada y devuelve el JSON observado. La herramienta compara el interés solicitado con la lista sin distinguir mayúsculas. La lista completa permanece en el equipo.
+
+El broker comprueba titular, nonce, vigencia, esquema y campos autorizados antes de firmar el resultado. Ana lo obtiene con el ID de la solicitud. La última línea de la demo en modo comando muestra el resultado leído del broker. Si Bob falla antes de responder, la solicitud queda pendiente hasta vencer.
+
+Las dos sesiones usan el mismo login de Claude Code y distintas identidades de la demo. El receptor escucha en loopback en un puerto efímero. Esta prueba crea una regla inicial que permite a Ana consultar `matches` y mantiene la cola en memoria durante la sesión. La demo MCP de coordinación con PostgreSQL descrita arriba se ejecuta por separado.
+
+### Herramientas
 
 | Acción | Herramientas |
 |---|---|
+| Mis contactos y consultas permitidas | `contact_connect`, `contact_remove`, `agent_capabilities` |
+| Intereses visibles por persona o entre mis contactos | `agent_interests`, `contact_interest_search` |
 | Disponibilidad y relectura | `availability_check`, `request_get` |
 | Permisos y membresía del titular | `group_permission`, `group_leave` |
 | Publicación con audiencia | `interest_publish`, `interest_search`, `interest_withdraw` |
@@ -43,4 +88,4 @@ La bandeja se consulta cuando activas la sesión. Los agentes comparten una API 
 
 Puedes escribir los nombres de participantes como `Bob` o `bob`. Sólo se entrega la proyección de disponibilidad. La agenda ficticia y los hashes de las credenciales se guardan en la base del worktree. Volver a correr el seed conserva permisos revocados y salidas del grupo.
 
-El MCP original de diagnóstico sigue disponible con `pnpm --filter @team-31/mcp inspect` cuando se inicia sin las dos variables de coordinación.
+Los clientes generados por `agents:seed` eligen este adaptador stdio al pasar su `AGENT_TOKEN` y `COORDINATION_API_URL`.

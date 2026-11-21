@@ -12,7 +12,7 @@ type AuthOptions = {
   databaseUrl: string;
   baseUrl: string;
   secret: string;
-  google: { clientId: string; clientSecret: string };
+  google?: { clientId: string; clientSecret: string };
   mcpResource: string;
 };
 
@@ -24,7 +24,7 @@ function authConfig({ databaseUrl, baseUrl, secret, google, mcpResource }: AuthO
     baseURL: baseUrl,
     basePath: "/api/auth",
     secret,
-    socialProviders: { google },
+    socialProviders: google ? { google } : {},
     disabledPaths: ["/token"],
     telemetry: { enabled: false },
     hooks: {

@@ -7,7 +7,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "bootstrap": "pnpm install && pnpm env:init && pnpm infra:up",
+    "bootstrap": "pnpm install && pnpm env:init && node infra/gen-keys.ts && pnpm infra:up && pnpm nexo:auth:migrate",
+    "nexo:auth:migrate": "pnpm build --filter @team-31/auth && ./scripts/with-env.sh pnpm --filter @team-31/web auth:migrate",
     "env:init": "./scripts/env-init.sh",
     "with-env": "./scripts/with-env.sh",
     "infra:up": "docker compose up -d --wait",
@@ -23,7 +24,8 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "agents:up": "bash scripts/agents-up.sh",
     "agents:demo": "node apps/mcp/scripts/demo.mjs",
-    "agents:seed": "./scripts/with-env.sh node apps/server/scripts/seed.mjs"
+    "agents:seed": "./scripts/with-env.sh node apps/server/scripts/seed.mjs",
+    "agents:runtime-demo": "node \"$npm_execpath\" --filter @team-31/broker... --filter @team-31/wake... build && node packages/broker/scripts/runtime-demo.mjs"
   },
   "devDependencies": {
     "turbo": "^2.11.13",

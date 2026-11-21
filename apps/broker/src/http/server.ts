@@ -1,0 +1,114 @@
+import { BrokerError, type BrokerCore } from "@team-31/broker";
+import { ErrorBody, httpStatusOf } from "@team-31/protocol";
+import { routes } from "@team-31/protocol/http";
+import { Hono, type Context } from "hono";
+import type { z } from "zod";
+import { logFailure } from "../log.js";
+import { requireServiceIdentity, type AuthContext, type ServiceKeys } from "./auth.js";
+import { createMemoryRateLimiter, rateLimitError, type RateLimiter } from "./rate-limit.js";
+import { ownerStream } from "./stream.js";
+
+type Route = (typeof routes)[keyof typeof routes];
+type HttpContext = Context<AuthContext>;
+
+function parseInput<S extends z.ZodType>(schema: S, value: unknown): z.output<S> {
+  const result = schema.safeParse(value);
+  if (!result.success) throw new BrokerError("invalid_input", "La solicitud no cumple el formato requerido.");
+  return result.data;
+}
+
+async function parseBody<S extends z.ZodType>(c: HttpContext, schema: S): Promise<z.output<S>> {
+  let value: unknown;
+  try {
+    value = await c.req.json();
+  } catch {
+    throw new BrokerError("invalid_input", "El cuerpo debe ser JSON válido.");
+  }
+  return parseInput(schema, value);
+}
+
+async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, { agent, owner }: BrokerCore) {
+  switch (route.port) {
+    case "agent.capabilities":
+      return agent.capabilities(c.get("mcp"), parseInput(route.query, c.req.query()).to);
+    case "agent.ask":
+      return agent.ask(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.inbox":
+      return { items: await agent.inbox(c.get("mcp")) };
+    case "agent.reply":
+      return agent.reply(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.status":
+      return agent.status(c.get("mcp"), parseInput(route.params, c.req.param()).id);
+    case "agent.connectWake":
+      return agent.connectWake(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.disconnectWake":
+      return agent.disconnectWake(c.get("mcp"), parseInput(route.params, c.req.param()).subscriptionId);
+    case "owner.me":
+      return owner.me(c.get("web"));
+    case "owner.claimAddress":
+      return { address: await owner.claimAddress(c.get("web"), (await parseBody(c, route.body)).localPart) };
+    case "owner.getRules":
+      return owner.getRules(c.get("web"));
+    case "owner.setRules":
+      return owner.setRules(c.get("web"), await parseBody(c, route.body));
+    case "owner.pending":
+      return { items: await owner.pending(c.get("web")) };
+    case "owner.activity":
+      return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query()).limit) };
+    case "owner.decide":
+      return owner.decide(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
+    case "owner.agents":
+      return { items: await owner.agents(c.get("web")) };
+    case "owner.setWake":
+      return owner.setWake(c.get("web"), parseInput(route.params, c.req.param()).agentId, await parseBody(c, route.body));
+    case "owner.ping":
+      return owner.ping(c.get("web"), parseInput(route.params, c.req.param()).agentId);
+    case "owner.revokeAgent":
+      return owner.revokeAgent(c.get("web"), parseInput(route.params, c.req.param()).agentId);
+  }
+}
+
+export function createHttpServer({ broker, publicKeys, limiter = createMemoryRateLimiter(), shutdown }: {
+  broker: BrokerCore;
+  publicKeys: ServiceKeys;
+  limiter?: RateLimiter;
+  shutdown?: AbortSignal;
+}) {
+  const app = new Hono<AuthContext>();
+  const auth = {
+    mcp: requireServiceIdentity("mcp", publicKeys),
+    web: requireServiceIdentity("web", publicKeys),
+  };
+
+  for (const route of Object.values(routes)) {
+    app.on([route.method], [route.path], ...(route.iss ? [auth[route.iss]] : []), async (c: HttpContext) => {
+      if (route.iss) {
+        c.header("Cache-Control", "no-store");
+        const bucket = route.port === "agent.ask" ? "ask" : route.port === "agent.reply" ? "reply" : "other";
+        const blocked = await limiter.consume(c.get(route.iss).userId, bucket);
+        if (blocked) {
+          c.header("Retry-After", String(blocked.retryAfter));
+          throw rateLimitError();
+        }
+      }
+      if ("contentType" in route) return ownerStream(c, broker.owner, route.response, shutdown);
+
+      const result = route.port === null ? { ok: true } : await callPort(route, c, broker);
+      const response = route.response.parse(result);
+      if ("status" in route) return c.body(null, route.status);
+      return c.json(response);
+    });
+  }
+
+  app.notFound((c) => c.json(ErrorBody.parse({ error: { code: "not_found", message: "No se encontró la ruta." } }), 404));
+  app.onError((error, c) => {
+    if (error instanceof BrokerError && error.code !== "internal") {
+      const { code, message } = error;
+      if (code === "unauthorized") c.header("WWW-Authenticate", "Bearer");
+      return c.json(ErrorBody.parse({ error: { code, message } }), httpStatusOf(code));
+    }
+    c.header("X-Error-Id", logFailure(c.req.routePath, error));
+    return c.json(ErrorBody.parse({ error: { code: "internal", message: "Ocurrió un error interno en el broker." } }), 500);
+  });
+  return app;
+}

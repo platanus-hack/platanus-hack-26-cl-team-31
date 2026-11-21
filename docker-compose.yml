@@ -18,6 +18,31 @@ services:
       timeout: 3s
       retries: 20
 
+  broker:
+    profiles: ["nexo"]
+    image: node:24-alpine
+    working_dir: /workspace
+    command: ["node", "apps/broker/dist/index.js"]
+    volumes:
+      - .:/workspace:ro
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app
+      BROKER_PORT: ${BROKER_PORT:-}
+      BROKER_HOST: 0.0.0.0
+      BROKER_SIGNING_KEY: ${BROKER_SIGNING_KEY:-}
+      NONCE_KEY: ${NONCE_KEY:-}
+      WAKE_SECRETS_KEY: ${WAKE_SECRETS_KEY:-}
+      SERVICE_JWT_PUBLIC_KEYS: ${SERVICE_JWT_PUBLIC_KEYS:-}
+      REQUEST_TTL_SECONDS: ${REQUEST_TTL_SECONDS:-900}
+      WAKE_RETRY_DELAYS_MS: ${WAKE_RETRY_DELAYS_MS:-10000,30000}
+      WAKE_ALLOW_INSECURE: ${WAKE_ALLOW_INSECURE:-0}
+    ports:
+      - "127.0.0.1:${BROKER_PORT:-}:${BROKER_PORT:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   coordination:
     profiles: ["agents"]
     image: node:24-alpine
@@ -39,9 +64,29 @@ services:
     profiles: ["demo-model"]
     image: ollama/ollama:0.40.17
     ports:
-      - "127.0.0.1:${DEMO_MODEL_PORT}:11434"
+      - "127.0.0.1:${DEMO_MODEL_PORT:-}:11434"
     volumes:
       - models:/root/.ollama
+
+  mcp:
+    profiles: ["nexo"]
+    image: node:24-alpine
+    working_dir: /workspace
+    command: ["node", "apps/mcp/dist/index.js"]
+    volumes:
+      - .:/workspace:ro
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: ${MCP_PORT}
+      MCP_RESOURCE_URL: ${MCP_RESOURCE_URL}
+      AUTH_ISSUER: ${AUTH_ISSUER}
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL}
+      BROKER_URL: ${BROKER_URL:-}
+      MCP_SERVICE_PRIVATE_KEY: ${MCP_SERVICE_PRIVATE_KEY:-}
+      MCP_DEV_AUTH: ${MCP_DEV_AUTH:-0}
+    ports:
+      - "127.0.0.1:${MCP_PORT}:${MCP_PORT}"
 
 volumes:
   pgdata:
