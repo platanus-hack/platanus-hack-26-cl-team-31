@@ -38,3 +38,8 @@ export function getAuthOptions() {
     devAuth: getDevAuth(),
   };
 }
+
+/** Identificador del recurso MCP: es la audiencia que el MCP exige en el access token. */
+export function getMcpResource() {
+  return required("MCP_RESOURCE_URL");
+}

@@ -6,24 +6,14 @@
 // Google tampoco cambia: este camino convive con él.
 import { getAuth } from "../../../lib/auth";
 import { getAuthBaseUrl, getDevAuth } from "../../../lib/auth-env.mjs";
+import { devOwnerEmail } from "../../../lib/dev-owner";
 import { getTelemetry, observeRoute } from "../../../lib/telemetry";
 
 const ROUTE = "/api/dev-login";
-const DEV_DOMAIN = "sideband.local";
 const noStore = { "Cache-Control": "no-store" } as const;
 
 function notFound() {
   return Response.json({ error: { code: "not_found" } }, { status: 404, headers: noStore });
-}
-
-/** «Ana Pérez» → «ana-perez». Deja un correo estable por nombre: repetir el login reusa el titular. */
-function localPart(name: string): string {
-  return name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 /** Le dice a /sign-in si debe ofrecer «Entrar como titular de prueba». */
@@ -45,12 +35,11 @@ export async function POST(request: Request): Promise<Response> {
     const name = typeof body === "object" && body !== null && "name" in body && typeof body.name === "string"
       ? body.name.trim()
       : "";
-    const local = localPart(name);
-    if (!name || name.length > 100 || !local) {
+    const email = devOwnerEmail(name);
+    if (!email) {
       return Response.json({ error: { code: "invalid_name" } }, { status: 400, headers: noStore });
     }
 
-    const email = `${local}@${DEV_DOMAIN}`;
     const { response, headers } = await getAuth().api.devSignIn({ body: { email, name }, returnHeaders: true });
     getTelemetry().identify({ userId: response.userId });
 
