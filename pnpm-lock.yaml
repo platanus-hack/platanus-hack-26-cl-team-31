@@ -32,9 +32,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@4.6.7)
-      '@tailwindcss/vite':
-        specifier: ^4
-        version: 4.3.5(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
       '@tanstack/react-query':
         specifier: ^5
         version: 5.108.2(@types/react@19.3.0)(react@19.3.1)
@@ -98,12 +95,6 @@ importers:
       sonner:
         specifier: ^2.0.8
         version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      tailwindcss:
-        specifier: ^4
-        version: 4.3.3
-      tw-animate-css:
-        specifier: ^1.4.0
-        version: 1.4.0
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -111,6 +102,9 @@ importers:
       '@eslint/js':
         specifier: ^10
         version: 10.0.1(eslint@10.15.0(jiti@2.7.0))
+      '@tailwindcss/vite':
+        specifier: ^4
+        version: 4.3.5(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
       '@team-31/broker':
         specifier: workspace:*
         version: link:../../packages/broker
@@ -150,6 +144,9 @@ importers:
       globals:
         specifier: ^17
         version: 17.14.0
+      happy-dom:
+        specifier: ^21.0.4
+        version: 21.0.4
       prettier:
         specifier: ^3.9.10
         version: 3.10.1
@@ -159,9 +156,15 @@ importers:
       shadcn:
         specifier: ^4.23.0
         version: 4.23.0
+      tailwindcss:
+        specifier: ^4
+        version: 4.3.3
       tsx:
         specifier: 4.23.15
         version: 4.23.15
+      tw-animate-css:
+        specifier: ^1.4.0
+        version: 1.4.0
       typescript:
         specifier: ~6.0.2
         version: 6.0.3
@@ -232,9 +235,9 @@ importers:
       '@team-31/auth':
         specifier: workspace:*
         version: link:../../packages/auth
-      '@team-31/broker':
+      '@team-31/broker-client':
         specifier: workspace:*
-        version: link:../../packages/broker
+        version: link:../../packages/broker-client
       '@team-31/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -251,6 +254,9 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
+      '@team-31/broker':
+        specifier: workspace:*
+        version: link:../../packages/broker
       '@team-31/broker-service':
         specifier: workspace:*
         version: link:../broker
