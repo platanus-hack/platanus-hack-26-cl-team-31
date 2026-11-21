@@ -44,10 +44,16 @@ RUN set -eux; \
     mkdir -p /usr/local/lib/nodejs; \
     tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs; \
     rm /tmp/node.tar.xz; \
-    ln -sf "/usr/local/lib/nodejs/node-${NODE_VERSION}-linux-${node_arch}/bin/node" /usr/local/bin/node; \
-    ln -sf "/usr/local/lib/nodejs/node-${NODE_VERSION}-linux-${node_arch}/bin/npm" /usr/local/bin/npm; \
-    ln -sf "/usr/local/lib/nodejs/node-${NODE_VERSION}-linux-${node_arch}/bin/npx" /usr/local/bin/npx; \
-    node --version
+    ln -sfn "/usr/local/lib/nodejs/node-${NODE_VERSION}-linux-${node_arch}" /usr/local/lib/nodejs/actual
+
+# El bin de Node va en el PATH, no en symlinks sueltos: `npm install -g` deja ahí
+# los ejecutables de claude y de pi, y con symlinks no quedarían alcanzables.
+ENV PATH="/usr/local/lib/nodejs/actual/bin:${PATH}"
+# Y además symlinks en /usr/local/bin: `bash -l` vuelve a leer /etc/profile y pisa el PATH,
+# así que sin ellos `node` desaparecería en una shell de login dentro del contenedor.
+RUN set -eux; \
+    for b in node npm npx; do ln -sf "/usr/local/lib/nodejs/actual/bin/${b}" "/usr/local/bin/${b}"; done; \
+    node --version; npm --version
 
 ARG USERNAME=agent
 RUN useradd -m -s /bin/bash -U "${USERNAME}"
