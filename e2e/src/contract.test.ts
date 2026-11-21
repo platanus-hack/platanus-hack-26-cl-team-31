@@ -1,25 +1,15 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { SharingRules, WAKE_EVENT } from "@team-31/protocol";
+import { WAKE_EVENT } from "@team-31/protocol";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { startFakeReceivers } from "./fake-receivers.js";
-import { enabled, inboxItem, rulesFor, seedAgents } from "./fixtures.js";
+import { enabled, grantTo, inboxItem, seedAgents } from "./fixtures.js";
 
 describe.skipIf(!enabled)("Contrato MCP", () => {
-  test("perfiles públicos, disponibilidad, aprobación y outcomes del agente", async () => {
+  test("disponibilidad filtrada, denegación sin permiso y outcomes del agente", async () => {
     const { ownerPort, agents: [sender, recipient, unknown] } = await seedAgents("contract", 3);
     if (!sender || !recipient || !unknown) throw new Error("Faltan agentes de prueba.");
-    const rules = rulesFor([sender.address], "availability", ["available"]);
-    rules.publicProfile = { displayName: "Luna de prueba" };
-    rules.grants.testers!.push({ tool: "question", fields: ["answer"], never: false, guidance: "" });
-    await ownerPort.setRules(recipient.owner, SharingRules.parse(rules));
-
-    const profile = await sender.agent.ask({ to: recipient.address, tool: "profile", args: {} });
-    expect(profile).toMatchObject({
-      final: true, decision: "allow", outcome: "answered", result: { displayName: "Luna de prueba" },
-      signature: expect.stringMatching(/^[\w-]{86}$/),
-    });
-    expect(await sender.agent.check(profile.requestId)).toEqual(profile);
-    expect(await recipient.agent.inbox()).toEqual([]);
+    await grantTo(ownerPort, recipient.owner, [sender.address], "availability", ["available"]);
+    await grantTo(ownerPort, recipient.owner, [sender.address], "question", ["answer"]);
 
     const availability = {
       to: recipient.address, tool: "availability",
@@ -47,24 +37,24 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     await expect(recipient.agent.reply(answer)).rejects.toMatchObject({ code: "conflict" });
     expect(await sender.agent.check(pending.requestId)).toEqual(filtered);
 
-    const approval = await unknown.agent.ask(availability);
-    expect(approval).toMatchObject({ final: false, decision: "pending", waitingFor: "owner" });
+    expect(await unknown.agent.ask(availability)).toMatchObject({ final: true, decision: "deny" });
     expect(await recipient.agent.inbox()).toEqual([]);
-    expect(await ownerPort.pending(recipient.owner)).toContainEqual(expect.objectContaining({
-      requestId: approval.requestId, from: unknown.address,
-    }));
-    await ownerPort.decide(recipient.owner, approval.requestId, { kind: "approve_once" });
-    expect(await unknown.agent.check(approval.requestId)).toMatchObject({ waitingFor: "agent" });
-    const approvedItem = await inboxItem(recipient.agent, approval.requestId);
+    expect(await ownerPort.pending(recipient.owner)).toEqual([]);
+
+    const granted = await ownerPort.setGrant(recipient.owner, { grantee: unknown.address, tool: "availability", fields: ["available"] });
+    const empty = await unknown.agent.ask(availability);
+    const emptyItem = await inboxItem(recipient.agent, empty.requestId);
     const internalReason = "Nota interna de prueba";
     expect(await recipient.agent.reply({
-      requestId: approvedItem.requestId, nonce: approvedItem.nonce, outcome: "no_data", internalReason,
+      requestId: emptyItem.requestId, nonce: emptyItem.nonce, outcome: "no_data", internalReason,
     })).toMatchObject({ status: "no_data" });
-    const noData = await unknown.agent.check(approval.requestId);
+    const noData = await unknown.agent.check(empty.requestId);
     expect(noData).toMatchObject({
       final: true, decision: "unanswered", outcome: "no_data", signature: expect.stringMatching(/^[\w-]{86}$/),
     });
     expect(JSON.stringify(noData)).not.toContain(internalReason);
+    await ownerPort.revokeGrant(recipient.owner, granted.id);
+    expect(await unknown.agent.ask(availability)).toMatchObject({ final: true, decision: "deny" });
 
     const text = "¿Podemos revisar el proyecto de prueba mañana?";
     const question = { to: recipient.address, tool: "question", args: { text } } as const;
@@ -104,7 +94,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     const setWake = (target: Parameters<typeof ownerPort.setWake>[2]) =>
       ownerPort.setWake(recipient.owner, recipient.agentId, target);
     onTestFinished(() => setWake({ kind: "none" }));
-    await ownerPort.setRules(recipient.owner, rulesFor([sender.address], "question", ["answer"]));
+    await grantTo(ownerPort, recipient.owner, [sender.address], "question", ["answer"]);
 
     const verifyNotice = async (kind: "openclaw_hooks" | "grokbot_routine" | "mcp_events") => {
       const text = `Contenido reservado de la prueba ${randomUUID()}`;

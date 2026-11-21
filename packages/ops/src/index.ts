@@ -35,6 +35,12 @@ export async function applyOpsMigrations({ databaseUrl }: { databaseUrl: string 
         throw error;
       }
     }
+    // Views over tables created after ops (broker, Better Auth, coordination) appear here.
+    // Idempotent: run it again after migrating those modules.
+    const { rows: [refresh] } = await client.query<{ exists: boolean }>(
+      "SELECT to_regprocedure('ops.refresh_views()') IS NOT NULL AS exists",
+    );
+    if (refresh?.exists) await client.query("SELECT ops.refresh_views()");
   } finally {
     await client.query(`SELECT pg_advisory_unlock(${LOCK})`).catch(() => undefined);
     await client.end();

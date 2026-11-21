@@ -158,13 +158,6 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     await store.tx(async (tx) => {
       await tx.createAddress("alice", "alice@nexo.app")
       await tx.createAddress("bruno", "bruno@nexo.app")
-      await tx.putRules("bruno", {
-        circles: { friends: ["alice@nexo.app"] },
-        grants: { friends: [] },
-        people: {},
-        blocked: [],
-        defaultForUnknown: "ask_owner",
-      })
       await tx.upsertAgentConnection({
         userId: "bruno",
         agentId: "main",
@@ -252,6 +245,10 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     })
 
     // Better Auth: identidad, sesión y un cliente OAuth con token activo.
+    // The broker no longer writes sharing rules. ops.v_users still shows the stored ones.
+    await db.query(`INSERT INTO nexo.sharing_rules (user_id, rules) VALUES ('bruno', $1)`, [
+      { circles: { friends: ["alice@nexo.app"] } },
+    ])
     await db.query(
       `INSERT INTO public."user" (id, name, email, "emailVerified") VALUES
          ('alice', 'Alice', 'alice@example.com', true), ('bruno', 'Bruno', 'bruno@example.com', true)`

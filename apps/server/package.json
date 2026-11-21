@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@team-31/telemetry": "workspace:*",
     "pg": "^8.16.3",
     "zod": "^4.6.7"
   },

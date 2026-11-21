@@ -1,10 +1,11 @@
-import type { SharingRules } from "@team-31/protocol";
+import type { Address } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import type { AgentConnectionRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob } from "./store.js";
+import type { AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob } from "./store.js";
 
 type State = {
   users: Map<string, UserRow>;
-  rules: Map<string, SharingRules>;
+  grants: (GrantRow & { revokedAt?: Date; friendDefault?: boolean })[];
+  friends: Map<string, Set<Address>>;
   requests: Map<string, RequestRow>;
   events: RequestEvent[];
   wakes: Map<string, WakeJob>;
@@ -29,6 +30,18 @@ function transaction(state: State): StoreTx {
     return stored;
   }
 
+  function liveGrants(grantorUserId: string) {
+    return state.grants.filter((grant) => grant.grantorUserId === grantorUserId && !grant.revokedAt);
+  }
+
+  function findGrant({ grantorUserId, granteeAddress, tool }: Pick<GrantRow, "grantorUserId" | "granteeAddress" | "tool">) {
+    return liveGrants(grantorUserId).find((grant) => grant.granteeAddress === granteeAddress && grant.tool === tool);
+  }
+
+  function readGrant({ friendDefault: _friendDefault, ...row }: State["grants"][number]): GrantRow {
+    return structuredClone(row);
+  }
+
   return {
     async getUser(userId) {
       return structuredClone(state.users.get(userId) ?? null);
@@ -43,12 +56,52 @@ function transaction(state: State): StoreTx {
       }
       state.users.set(userId, { userId, createdAt: new Date(), ...user, address });
     },
-    async getRules(userId) {
-      return structuredClone(state.rules.get(userId) ?? null);
+    async putGrant(row) {
+      if (!state.users.has(row.grantorUserId)) state.users.set(row.grantorUserId, { userId: row.grantorUserId, createdAt: new Date() });
+      const live = findGrant(row);
+      if (!live) {
+        state.grants.push(structuredClone(row));
+        return structuredClone(row);
+      }
+      live.fields = structuredClone(row.fields);
+      delete live.friendDefault;
+      return readGrant(live);
     },
-    async putRules(userId, rules) {
-      if (!state.users.has(userId)) state.users.set(userId, { userId, createdAt: new Date() });
-      state.rules.set(userId, structuredClone(rules));
+    async listGrants(grantorUserId) {
+      return liveGrants(grantorUserId).map(readGrant);
+    },
+    async getGrant(grantorUserId, granteeAddress, tool) {
+      const live = findGrant({ grantorUserId, granteeAddress, tool });
+      return live ? readGrant(live) : null;
+    },
+    async revokeGrant(id, grantorUserId, at) {
+      const live = liveGrants(grantorUserId).find((grant) => grant.id === id);
+      if (!live) return false;
+      live.revokedAt = structuredClone(at);
+      return true;
+    },
+    async listFriends(userId) {
+      return [...(state.friends.get(userId) ?? [])].sort();
+    },
+    async addFriend(userId, address) {
+      const friends = state.friends.get(userId) ?? new Set<Address>();
+      if (friends.has(address)) return false;
+      friends.add(address);
+      state.friends.set(userId, friends);
+      return true;
+    },
+    async removeFriend(userId, address) {
+      return state.friends.get(userId)?.delete(address) ?? false;
+    },
+    async insertFriendGrant(row) {
+      if (findGrant(row)) return false;
+      state.grants.push(structuredClone({ ...row, friendDefault: true }));
+      return true;
+    },
+    async revokeFriendGrants(userId, address, at) {
+      const defaults = liveGrants(userId).filter((grant) => grant.granteeAddress === address && grant.friendDefault);
+      for (const grant of defaults) grant.revokedAt = structuredClone(at);
+      return defaults.map((grant) => grant.id);
     },
     async insertRequest(row) {
       if (state.requests.has(row.id)) throw new BrokerError("conflict", "La solicitud ya existe.");
@@ -130,7 +183,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    users: new Map(), rules: new Map(), requests: new Map(),
+    users: new Map(), grants: [], friends: new Map(), requests: new Map(),
     events: [], wakes: new Map(), agents: new Map(),
   };
   let previous = Promise.resolve();

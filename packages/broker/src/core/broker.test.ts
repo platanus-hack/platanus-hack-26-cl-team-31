@@ -3,9 +3,10 @@ import {
   ActivityItem,
   InboxItem,
   RequesterView,
-  SharingRules,
   WAKE_EVENT,
   type AskInput,
+  type Grant,
+  type GrantInput,
   type Principal,
   type WakeTarget,
   type Waker,
@@ -29,14 +30,11 @@ const availability: AskInput = {
 const webhook: WakeTarget = { kind: "standard_webhook", url: "https://example.com/callback", secret: "whsec_demo" };
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 const nonceKey = new Uint8Array(32).fill(4);
-const defaultRules = SharingRules.parse({
-  publicProfile: { displayName: "Bruno", headline: "Ingeniero" },
-  circles: { amigos: ["alice@nexo.app"] },
-  grants: { amigos: [{ tool: "availability", fields: ["available"], guidance: "Solo libre u ocupado" }] },
-});
+const toAlice: GrantInput = { grantee: "alice@nexo.app", tool: "availability", fields: ["available"] };
 
 let now: Date;
 let broker: BrokerCore;
+let aliceGrant: Grant;
 let deps: BrokerDeps;
 const verifyCallback = vi.fn<Waker["verifyCallback"]>();
 const wake = vi.fn<Waker["wake"]>();
@@ -57,7 +55,7 @@ beforeEach(async () => {
   for (const p of Object.values(principals)) {
     await broker.owner.claimAddress(p, p.userId);
   }
-  await broker.owner.setRules(bruno, defaultRules);
+  aliceGrant = await broker.owner.setGrant(bruno, toAlice);
 });
 
 function advance(ms: number): void {
@@ -66,6 +64,13 @@ function advance(ms: number): void {
 
 async function askAvailability() {
   return broker.agent.ask(alice, availability);
+}
+
+// A request waits for the owner only after the recipient's agent escalates it.
+async function askAndEscalate() {
+  const view = await askAvailability();
+  await broker.agent.reply(bruno, { ...await inboxItem(bruno, view.requestId), outcome: "needs_owner" });
+  return view;
 }
 
 async function inboxItem(p = bruno, requestId?: string): Promise<InboxItem> {
@@ -85,17 +90,18 @@ async function expectFinal(
 }
 
 describe("contrato del broker", () => {
-  it("responde el perfil público al instante con sobre y respuesta firmados", async () => {
-    const view = await broker.agent.ask(alice, { to: availability.to, tool: "profile", args: {} });
-    expect(view).toMatchObject({ final: true, decision: "allow", result: defaultRules.publicProfile });
-    expect(await expectFinal(alice, view.requestId, "allow", "answered", defaultRules.publicProfile)).toEqual(view);
+  it("firma el sobre de la solicitud y avisa al agente solo cuando hay un grant", async () => {
+    const view = await askAvailability();
     const row = await deps.store.tx((tx) => tx.getRequest(view.requestId));
-    expect(row).toBeTruthy();
     expect(await verifyJson(publicKey, {
-      id: view.requestId, from: "alice@nexo.app", to: availability.to, tool: "profile",
-      args: {}, createdAt: now.toISOString(), expiresAt: view.expiresAt,
+      id: view.requestId, from: "alice@nexo.app", to: availability.to, tool: "availability",
+      args: availability.args, createdAt: now.toISOString(), expiresAt: view.expiresAt,
     }, row!.envelopeSignature)).toBe(true);
-    expect(await broker.agent.inbox(bruno)).toEqual([]);
+    await broker.agent.connectWake(bruno, webhook);
+    expect((await broker.tick(now)).wakesOk).toBe(1);
+
+    wake.mockClear();
+    expect(await broker.agent.ask(carla, availability)).toMatchObject({ final: true, decision: "deny" });
     expect((await broker.tick(now)).wakesOk).toBe(0);
     expect(wake).not.toHaveBeenCalled();
   });
@@ -106,7 +112,7 @@ describe("contrato del broker", () => {
     const item = await inboxItem(bruno, pending.requestId);
     expect(item).toMatchObject({
       requestId: pending.requestId, allowedFields: ["available"],
-      ownerAuthorization: { guidance: "Solo libre u ocupado", verifiedBy: "broker" },
+      ownerAuthorization: { guidance: "", verifiedBy: "broker" },
       senderMessage: { text: "", purpose: "Coordinar", trusted: false },
     });
     await expect(broker.agent.reply(bruno, { ...item, nonce: "abcdefghijklmnop", outcome: "no_data" }))
@@ -165,13 +171,14 @@ describe("contrato del broker", () => {
     expect(await expectFinal(alice, item.requestId, "deny", "deny")).not.toHaveProperty("outcome");
   });
 
-  it("deja una solicitud sin regla en espera y permite una respuesta manual del dueño", async () => {
+  it("permite una respuesta manual del dueño cuando su agente escala la solicitud", async () => {
+    await broker.owner.setGrant(bruno, { grantee: "carla@nexo.app", tool: "question", fields: ["answer"] });
     const pending = await broker.agent.ask(carla, {
       to: availability.to, tool: "question", args: { text: "¿Disponible?" }, purpose: "Coordinar",
     });
-    expect(pending).toMatchObject({ final: false, waitingFor: "owner" });
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, pending.requestId), outcome: "needs_owner" });
     expect(await broker.owner.pending(bruno)).toMatchObject([{
-      requestId: pending.requestId, escalated: false, senderMessage: { text: "¿Disponible?", purpose: "Coordinar", trusted: false },
+      requestId: pending.requestId, escalated: true, senderMessage: { text: "¿Disponible?", purpose: "Coordinar", trusted: false },
     }]);
     await expect(broker.owner.decide(bruno, pending.requestId, { kind: "answer", result: { available: true } }))
       .rejects.toMatchObject({ code: "invalid_input" });
@@ -179,15 +186,18 @@ describe("contrato del broker", () => {
     expect(await expectFinal(carla, pending.requestId, "allow", "answered", { answer: "Sí" })).toMatchObject({ result: { answer: "Sí" } });
   });
 
-  it("devuelve denegaciones firmadas sin motivos para bloqueados y direcciones desconocidas", async () => {
-    await broker.owner.setRules(bruno, { ...defaultRules, blocked: ["alice@nexo.app"] });
-    for (const to of ["bruno@nexo.app", "unknown@nexo.app"]) {
-      const denied = await broker.agent.ask(alice, { to, tool: "profile", args: {} });
+  it("devuelve denegaciones firmadas sin motivos cuando falta el grant o la dirección no existe", async () => {
+    for (const [sender, input] of [
+      [carla, availability],
+      [alice, { ...availability, to: "unknown@nexo.app" }],
+      [alice, { to: availability.to, tool: "profile", args: {} }],
+    ] as const) {
+      const denied = await broker.agent.ask(sender, input);
       expect(denied).toEqual({
-        requestId: expect.any(String), to, tool: "profile", expiresAt: expect.any(String),
+        requestId: expect.any(String), to: input.to, tool: input.tool, expiresAt: expect.any(String),
         final: true, decision: "deny", signature: expect.any(String),
       });
-      await expectFinal(alice, denied.requestId, "deny", "deny");
+      await expectFinal(sender, denied.requestId, "deny", "deny");
     }
     expect(await broker.owner.activity(alice)).not.toEqual(expect.arrayContaining([expect.objectContaining({ decisionReason: expect.anything() })]));
     await expect(broker.agent.ask(alice, { ...availability, to: "alice@nexo.app" })).rejects.toMatchObject({ code: "invalid_input" });
@@ -197,10 +207,9 @@ describe("contrato del broker", () => {
 describe("aislamiento y concurrencia", () => {
   it("aísla 80 solicitudes concurrentes entre tres usuarios", async () => {
     for (const p of Object.values(principals)) {
-      await broker.owner.setRules(p, SharingRules.parse({
-        circles: { todos: ["alice@nexo.app", "bruno@nexo.app", "carla@nexo.app"] },
-        grants: { todos: [{ tool: "question", fields: ["answer"] }] },
-      }));
+      for (const { userId } of Object.values(principals).filter((other) => other !== p)) {
+        await broker.owner.setGrant(p, { grantee: `${userId}@nexo.app`, tool: "question", fields: ["answer"] });
+      }
     }
     const users = [alice, bruno, carla] as const;
     const rows = await Promise.all(Array.from({ length: 80 }, async (_, number) => {
@@ -254,23 +263,23 @@ describe("aislamiento y concurrencia", () => {
 describe("cierre y avisos", () => {
   it("vence solicitudes de agente y dueño en el plazo exacto", async () => {
     const agent = await askAvailability();
-    const owner = await broker.agent.ask(carla, { ...availability });
+    const owner = await askAndEscalate();
     advance(900_000);
     expect(await broker.tick(now)).toEqual({ expired: 2, wakesOk: 0, wakesRetried: 0, wakesFailed: 0 });
     await expectFinal(alice, agent.requestId, "unanswered", "expired");
-    await expectFinal(carla, owner.requestId, "unanswered", "expired");
+    await expectFinal(alice, owner.requestId, "unanswered", "expired");
     expect(wake).not.toHaveBeenCalled();
   });
 
   it("conserva el cierre firmado cuando una respuesta o aprobación llega vencida", async () => {
     const agent = await askAvailability();
     const item = await inboxItem(bruno, agent.requestId);
-    const owner = await broker.agent.ask(carla, availability);
+    const owner = await askAndEscalate();
     advance(900_000);
     await expect(broker.agent.reply(bruno, { ...item, outcome: "no_data" })).rejects.toMatchObject({ code: "expired" });
     await expect(broker.owner.decide(bruno, owner.requestId, { kind: "approve_once" })).rejects.toMatchObject({ code: "expired" });
     await expectFinal(alice, agent.requestId, "unanswered", "expired");
-    await expectFinal(carla, owner.requestId, "unanswered", "expired");
+    await expectFinal(alice, owner.requestId, "unanswered", "expired");
     expect((await broker.tick(now)).expired).toBe(0);
   });
 
@@ -287,7 +296,11 @@ describe("cierre y avisos", () => {
     advance(30_000);
     expect((await broker.tick(now)).wakesFailed).toBe(1);
     await expectFinal(alice, view.requestId, "unanswered", "delivery_failed");
-    expect(wake.mock.calls).toEqual(Array.from({ length: 3 }, () => [webhook, { requestId: view.requestId, event: WAKE_EVENT }]));
+    expect(wake.mock.calls).toEqual([1, 2, 3].map((attempt) => [
+      webhook,
+      { requestId: view.requestId, event: WAKE_EVENT },
+      { attempt, final: attempt === 3, userId: bruno.userId, agentId: bruno.agentId },
+    ]));
     expect((await broker.owner.agents(bruno))[0]).toMatchObject({ lastWakeAt: now.toISOString(), wakeKind: "standard_webhook" });
     expect(JSON.stringify(await broker.owner.activity(bruno))).not.toContain("diagnóstico sensible");
   });
@@ -337,7 +350,7 @@ describe("cierre y avisos", () => {
     await broker.agent.reply(bruno, { ...item, outcome: "needs_owner" });
     await broker.owner.decide(bruno, view.requestId, { kind: "approve_once" });
     expect((await broker.tick(now)).wakesOk).toBe(1);
-    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: view.requestId, event: WAKE_EVENT });
+    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: view.requestId, event: WAKE_EVENT }, expect.objectContaining({ attempt: 1, final: false, userId: bruno.userId }));
   });
 });
 
@@ -354,7 +367,7 @@ describe("conexiones y prueba de aviso", () => {
     await expect(broker.agent.reply(another, { ...item, nonce: deriveNonce(nonceKey, ping.requestId), outcome: "no_data" }))
       .rejects.toMatchObject({ code: "not_found" });
     await broker.tick(now);
-    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: ping.requestId, event: WAKE_EVENT });
+    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: ping.requestId, event: WAKE_EVENT }, expect.objectContaining({ attempt: 1, final: false, userId: bruno.userId }));
     await broker.agent.reply(bruno, { ...item, outcome: "no_data" });
     const agents = await broker.owner.agents(bruno);
     expect(agents.find(({ agentId }) => agentId === bruno.agentId)).toMatchObject({ verifiedAt: now.toISOString(), wakeKind: "standard_webhook" });
@@ -399,13 +412,11 @@ describe("ejecución en el runtime del titular", () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); });
   afterEach(() => vi.useRealTimers());
   const notice = (requestId: string) => ({ event: WAKE_EVENT, requestId });
-  const revoke = () => broker.owner.setRules(bruno, { ...defaultRules, blocked: ["alice@nexo.app"] });
+  const revoke = () => broker.owner.revokeGrant(bruno, aliceGrant.id);
 
   it("un permiso de intereses no autoriza una pregunta sobre el domicilio ni despierta al titular", async () => {
-    await broker.owner.setRules(bruno, SharingRules.parse({
-      circles: {}, grants: {}, defaultForUnknown: "deny",
-      people: { "alice@nexo.app": [{ tool: "interest_check", fields: ["matches"] }] },
-    }));
+    await revoke();
+    await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "interest_check", fields: ["matches"] });
     await broker.agent.connectWake(bruno, webhook);
     const { tools } = await broker.agent.capabilities(alice, availability.to);
     expect(tools.map(({ tool }) => tool)).toEqual(["interest_check", "connect"]);
@@ -419,15 +430,15 @@ describe("ejecución en el runtime del titular", () => {
     expect(await broker.agent.inbox(bruno)).toEqual([]);
   });
 
-  it("descubre las dos fuentes y ofrece sólo las capacidades autorizadas al solicitante", async () => {
+  it("ofrece los permisos del titular junto con la invitación a conectar", async () => {
     const { tools } = await broker.agent.capabilities(alice, availability.to);
     expect(tools).toMatchObject([
-      { tool: "profile", execution: "stored", inputSchema: { type: "object" } },
-      { tool: "availability", execution: "owner_runtime", allowedFields: ["available"] },
+      { tool: "availability", execution: "owner_runtime", inputSchema: { type: "object" }, allowedFields: ["available"] },
       { tool: "connect", execution: "owner_runtime", allowedFields: ["accepted"] },
     ]);
     await revoke();
-    expect(await broker.agent.capabilities(alice, availability.to)).toEqual({ tools: [] });
+    expect(await broker.agent.capabilities(alice, availability.to))
+      .toMatchObject({ tools: [{ tool: "connect", allowedFields: ["accepted"] }] });
   });
 
   it("un aviso tardío tras una revocación no ejecuta el conector", async () => {
@@ -484,27 +495,51 @@ describe("solicitudes de conexión", () => {
 
     await broker.agent.reply(bruno, { requestId: item.requestId, nonce: item.nonce, outcome: "answered", result: { accepted: true } });
     await expectFinal(carla, request.requestId, "allow", "answered", { accepted: true });
-    expect((await broker.owner.getRules(bruno)).circles.Amigos).toEqual(["carla@nexo.app"]);
-    expect((await broker.owner.getRules(bruno)).circles.amigos).toEqual(["alice@nexo.app"]);
-    expect((await broker.owner.getRules(carla)).circles.Amigos).toEqual(["bruno@nexo.app"]);
+    expect(await broker.owner.friends(bruno)).toEqual(["carla@nexo.app"]);
+    expect(await broker.owner.grants(bruno)).toContainEqual(aliceGrant);
+    expect(await broker.owner.grants(bruno)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ grantee: "carla@nexo.app", tool: "availability", fields: ["available", "freeSlots"] }),
+      expect.objectContaining({ grantee: "carla@nexo.app", tool: "interest_check", fields: ["matches"] }),
+    ]));
+    expect(await broker.owner.friends(carla)).toEqual(["bruno@nexo.app"]);
 
     const followUp = await broker.agent.ask(carla, { ...availability });
     expect(followUp).toMatchObject({ final: false, waitingFor: "agent" });
   });
 
-  it("no cambia reglas cuando el destinatario rechaza", async () => {
+  it("no crea amigos ni permisos cuando el destinatario rechaza", async () => {
     const request = await broker.agent.ask(carla, connect);
     const item = await inboxItem(bruno, request.requestId);
     await broker.agent.reply(bruno, { requestId: item.requestId, nonce: item.nonce, outcome: "answered", result: { accepted: false } });
-    expect((await broker.owner.getRules(bruno)).circles.Amigos).toBeUndefined();
-    expect((await broker.owner.getRules(carla)).circles.Amigos).toBeUndefined();
+    await expectFinal(carla, request.requestId, "allow", "answered", { accepted: false });
+    expect(await broker.owner.friends(bruno)).toEqual([]);
+    expect(await broker.owner.friends(carla)).toEqual([]);
+    expect(await broker.owner.grants(bruno)).toEqual([aliceGrant]);
+    expect(await broker.owner.grants(carla)).toEqual([]);
   });
 
-  it("deniega sin despertar al destinatario si el remitente está bloqueado", async () => {
-    await broker.owner.setRules(bruno, { ...defaultRules, blocked: ["carla@nexo.app"] });
-    const request = await broker.agent.ask(carla, connect);
+  it("deniega las invitaciones a direcciones sin destinatario", async () => {
+    const request = await broker.agent.ask(carla, { ...connect, to: "nadie@nexo.app" });
     expect(request).toMatchObject({ final: true, decision: "deny" });
-    expect(await broker.agent.inbox(bruno)).toEqual([]);
+    expect((await broker.tick(now)).wakesOk).toBe(0);
+    expect(wake).not.toHaveBeenCalled();
+  });
+
+  it("quitar a un amigo revoca los permisos automáticos y conserva los configurados por el titular", async () => {
+    const grantee = "carla@nexo.app";
+    const manual = await broker.owner.setGrant(bruno, { grantee, tool: "interest_check", fields: ["matches"] });
+    const request = await broker.agent.ask(carla, connect);
+    const item = await inboxItem(bruno, request.requestId);
+    await broker.agent.reply(bruno, { ...item, outcome: "answered", result: { accepted: true } });
+    const pending = await broker.agent.ask(carla, availability);
+    expect(pending).toMatchObject({ final: false, waitingFor: "agent" });
+
+    await broker.owner.removeFriend(bruno, grantee);
+    expect(await broker.owner.friends(bruno)).toEqual([]);
+    expect(await broker.owner.friends(carla)).toEqual(["bruno@nexo.app"]);
+    expect(await broker.owner.grants(bruno)).toEqual([aliceGrant, manual]);
+    expect(await broker.agent.status(carla, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
+    await expectFinal(carla, request.requestId, "allow", "answered", { accepted: true });
   });
 
   it("permite que el titular acepte desde la app cuando el agente escala", async () => {
@@ -512,8 +547,8 @@ describe("solicitudes de conexión", () => {
     const item = await inboxItem(bruno, request.requestId);
     await broker.agent.reply(bruno, { requestId: item.requestId, nonce: item.nonce, outcome: "needs_owner" });
     await broker.owner.decide(bruno, request.requestId, { kind: "answer", result: { accepted: true } });
-    expect((await broker.owner.getRules(bruno)).circles.Amigos).toEqual(["carla@nexo.app"]);
-    expect((await broker.owner.getRules(carla)).circles.Amigos).toEqual(["bruno@nexo.app"]);
+    expect(await broker.owner.friends(bruno)).toEqual(["carla@nexo.app"]);
+    expect(await broker.owner.friends(carla)).toEqual(["bruno@nexo.app"]);
   });
 });
 
@@ -524,10 +559,58 @@ describe("conexión iniciada desde la app", () => {
     const item = await inboxItem(bruno, request.requestId);
     expect(item.from).toBe("carla@nexo.app");
     await broker.agent.reply(bruno, { requestId: item.requestId, nonce: item.nonce, outcome: "answered", result: { accepted: true } });
-    expect((await broker.owner.getRules(carla)).circles.Amigos).toEqual(["bruno@nexo.app"]);
+    expect(await broker.owner.friends(carla)).toEqual(["bruno@nexo.app"]);
   });
 
   it("rechaza conectar consigo mismo", async () => {
     await expect(broker.owner.connect(carla, "carla@nexo.app")).rejects.toMatchObject({ code: "invalid_input" });
+  });
+});
+
+describe("grants", () => {
+  const toCarla: GrantInput = { grantee: "carla@nexo.app", tool: "availability", fields: ["available"] };
+
+  it("permite la tool con los campos del grant y deniega al revocarlo", async () => {
+    const ask = () => broker.agent.ask(carla, availability);
+    expect(await ask()).toMatchObject({ final: true, decision: "deny" });
+
+    const grant = await broker.owner.setGrant(bruno, toCarla);
+    expect(await broker.agent.capabilities(carla, availability.to))
+      .toMatchObject({ tools: [
+        { tool: "availability", allowedFields: ["available"] },
+        { tool: "connect", allowedFields: ["accepted"] },
+      ] });
+    const answered = await ask();
+    const item = await inboxItem(bruno, answered.requestId);
+    await broker.agent.reply(bruno, { ...item, outcome: "answered", result: { available: true, freeSlots: ["10:00-10:30"] } });
+    expect(await broker.agent.status(carla, answered.requestId)).toMatchObject({ result: { available: true } });
+
+    const pending = await ask();
+    await broker.owner.revokeGrant(bruno, grant.id);
+    expect(await broker.owner.grants(bruno)).toEqual([aliceGrant]);
+    expect(await broker.agent.inbox(bruno)).toEqual([]);
+    for (const { requestId } of [answered, pending, await ask()]) {
+      expect(await broker.agent.status(carla, requestId)).toMatchObject({ final: true, decision: "deny" });
+    }
+  });
+
+  it("conserva un grant por destinatario y tool, y solo su titular lo revoca", async () => {
+    const grant = await broker.owner.setGrant(bruno, toCarla);
+    const widened = await broker.owner.setGrant(bruno, { ...toCarla, fields: ["available", "freeSlots"] });
+    expect(widened).toEqual({ ...grant, fields: ["available", "freeSlots"] });
+    expect(await broker.owner.grants(bruno)).toEqual([aliceGrant, widened]);
+
+    await expect(broker.owner.revokeGrant(alice, grant.id)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.owner.setGrant(bruno, { ...toCarla, grantee: availability.to }))
+      .rejects.toMatchObject({ code: "invalid_input" });
+    await expect(broker.owner.setGrant(bruno, { ...toCarla, fields: ["answer"] }))
+      .rejects.toMatchObject({ code: "invalid_input" });
+  });
+
+  it("reducir los campos de un grant cierra la solicitud que esperaba más", async () => {
+    await broker.owner.setGrant(bruno, { ...toCarla, fields: ["available", "freeSlots"] });
+    const pending = await broker.agent.ask(carla, availability);
+    await broker.owner.setGrant(bruno, toCarla);
+    expect(await broker.agent.status(carla, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
   });
 });

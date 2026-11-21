@@ -41,9 +41,10 @@ async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string
     await client.query(`GRANT USAGE ON SCHEMA nexo TO ${role}`);
     await client.query(`
       GRANT SELECT, INSERT, UPDATE ON
-        nexo.users, nexo.sharing_rules, nexo.requests, nexo.wake_jobs, nexo.agent_connections
+        nexo.users, nexo.sharing_rules, nexo.grants, nexo.requests, nexo.wake_jobs, nexo.agent_connections
       TO ${role}
     `);
+    await client.query(`GRANT SELECT, INSERT, DELETE ON nexo.friends TO ${role}`);
     await client.query(`REVOKE UPDATE, DELETE, TRUNCATE ON nexo.request_events FROM ${role}`);
     await client.query(`GRANT SELECT, INSERT ON nexo.request_events TO ${role}`);
     await client.query(`GRANT USAGE ON SEQUENCE nexo.request_events_id_seq TO ${role}`);

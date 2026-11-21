@@ -16,7 +16,8 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
-    "@team-31/protocol": "workspace:*"
+    "@team-31/protocol": "workspace:*",
+    "@team-31/telemetry": "workspace:*"
   },
   "devDependencies": {
     "@team-31/typescript-config": "workspace:*",

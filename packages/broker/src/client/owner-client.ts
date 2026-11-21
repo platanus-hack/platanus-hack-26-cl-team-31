@@ -10,8 +10,9 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     me: (owner) => request(routes.ownerMe, owner),
     claimAddress: async (owner, localPart) =>
       (await request(routes.ownerClaimAddress, owner, { body: { localPart } })).address,
-    getRules: (owner) => request(routes.ownerGetRules, owner),
-    setRules: (owner, body) => request(routes.ownerSetRules, owner, { body }),
+    grants: async (owner) => (await request(routes.ownerGrants, owner)).items,
+    setGrant: (owner, body) => request(routes.ownerSetGrant, owner, { body }),
+    revokeGrant: (owner, id) => request(routes.ownerRevokeGrant, owner, { params: { id } }),
     pending: async (owner) => (await request(routes.ownerPending, owner)).items,
     activity: async (owner, limit) =>
       (await request(routes.ownerActivity, owner, { query: { limit } })).items,
@@ -22,5 +23,7 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     ping: (owner, agentId) => request(routes.ownerPing, owner, { params: { agentId } }),
     revokeAgent: (owner, agentId) => request(routes.ownerRevokeAgent, owner, { params: { agentId } }),
     connect: (owner, to) => request(routes.ownerConnect, owner, { body: { to } }),
+    friends: async (owner) => (await request(routes.ownerFriends, owner)).items,
+    removeFriend: (owner, address) => request(routes.ownerRemoveFriend, owner, { params: { address } }),
   };
 }

@@ -1,12 +1,6 @@
 import { pathToFileURL } from "node:url";
-import { isDeepStrictEqual } from "node:util";
-import { SharingRules } from "@team-31/protocol";
 import pg from "pg";
 import { contactAddress, contactAgent, contactOwner, contactPrincipal, contactWakeSecret, contactWakeUrl, demoTelemetry } from "./contact-broker.mjs";
-
-const defaultRules = SharingRules.parse({ circles: {}, grants: {} });
-// An empty circle grants nothing. It marks a new identity until every reader's address is verified.
-const pendingRules = SharingRules.parse({ circles: { "demo-contact-seed-pending": [] }, grants: {}, defaultForUnknown: "deny" });
 
 function seeded(principal, action) {
   demoTelemetry.emit("demo.contact.seeded", { userId: principal.userId, agentId: principal.agentId, attrs: { action } });
@@ -36,10 +30,6 @@ async function importProfiles() {
       const me = await owner.me(principal);
       if (me.address === address) continue;
       if (me.address) throw new Error("La identidad de demo ya tiene otra dirección.");
-      if (isDeepStrictEqual(await owner.getRules(principal), defaultRules)) {
-        await owner.setRules(principal, pendingRules);
-        seeded(principal, "rules");
-      }
       const claimed = await owner.claimAddress(principal, address.split("@")[0]);
       if (claimed !== address) throw new Error("El dominio del broker no coincide con el de la demo.");
       seeded(principal, "address");
@@ -47,16 +37,14 @@ async function importProfiles() {
 
     for (const { person_id: id, interest_readers: readers } of rows) {
       const principal = contactPrincipal(id);
-      if (isDeepStrictEqual(await owner.getRules(principal), pendingRules)) {
-        const people = Object.fromEntries(readers.filter(reader => roster.has(reader)).map(reader => [
-          contactAddress(reader), [{ tool: "interest_check", fields: ["matches"] }],
-        ]));
-        await owner.setRules(principal, SharingRules.parse({ circles: {}, grants: {}, people, defaultForUnknown: "deny" }));
-        seeded(principal, "rules");
-      }
-      // Existing connections, including disabled or revoked ones, belong to the owner.
+      // The connection is created last, so it marks a seeded identity. From then on its grants and
+      // its connection, even disabled or revoked, belong to the owner.
       const connections = await owner.agents(principal);
       if (connections.some(connection => connection.agentId === principal.agentId)) continue;
+      for (const reader of readers.filter(reader => roster.has(reader))) {
+        await owner.setGrant(principal, { grantee: contactAddress(reader), tool: "interest_check", fields: ["matches"] });
+      }
+      seeded(principal, "grants");
       await agent.connectWake(principal, { kind: "standard_webhook", url: contactWakeUrl(id), secret: contactWakeSecret(id) });
       seeded(principal, "wake");
     }

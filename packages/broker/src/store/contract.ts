@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { SharingRules } from "@team-31/protocol";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { AgentConnectionRow, RequestRow, Store, WakeJob } from "./store.js";
+import type { AgentConnectionRow, GrantRow, RequestRow, Store, WakeJob } from "./store.js";
 
 // makeStore supplies an isolated store per test, including an empty wake queue.
 export function runStoreContractTests(makeStore: () => Store | Promise<Store>): void {
   const now = new Date("2026-11-21T15:00:00Z");
-  const rules = SharingRules.parse({ circles: {}, grants: {} });
   const fromAddress = "alice@nexo.app";
   const toAddress = "bruno@nexo.app";
   let store: Store;
+
+  function grantTo(granteeAddress: string): GrantRow {
+    return { id: randomUUID(), grantorUserId: "alice", granteeAddress, tool: "question", fields: ["answer"], createdAt: now };
+  }
 
   async function makeRequest(overrides: Partial<RequestRow> = {}): Promise<RequestRow> {
     const row: RequestRow = {
@@ -31,11 +33,11 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
-    it("rolls back addresses, rules, requests and their events when a transaction rejects", async () => {
+    it("rolls back addresses, grants, requests and their events when a transaction rejects", async () => {
       const row = await makeRequest();
       await expect(store.tx(async (tx) => {
         await tx.createAddress("carla", "carla@nexo.app");
-        await tx.putRules("alice", rules);
+        await tx.putGrant(grantTo(toAddress));
         await tx.updateRequest(row.id, { status: "awaiting_owner" }, row.version);
         await tx.appendEvent({ requestId: row.id, at: now, kind: "permission" });
         throw new Error("rollback");
@@ -43,7 +45,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
 
       await store.tx(async (tx) => {
         expect(await tx.getUser("carla")).toBeNull();
-        expect(await tx.getRules("alice")).toBeNull();
+        expect(await tx.listGrants("alice")).toEqual([]);
         expect(await tx.getRequest(row.id)).toMatchObject({ status: "awaiting_agent", version: 0 });
         expect(await tx.listEvents([row.id])).toEqual([]);
       });
@@ -53,10 +55,10 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       await expect(store.tx((tx) => tx.createAddress("carla", fromAddress))).rejects.toMatchObject({ code: "conflict" });
       await expect(store.tx((tx) => tx.createAddress("alice", "other@nexo.app"))).rejects.toMatchObject({ code: "conflict" });
       await store.tx(async (tx) => {
-        await tx.putRules("carla", rules);
+        const grant = await tx.putGrant({ ...grantTo(fromAddress), grantorUserId: "carla" });
         expect(await tx.getUser("carla")).toMatchObject({ userId: "carla" });
         await tx.createAddress("carla", "carla@nexo.app");
-        expect(await tx.getRules("carla")).toEqual(rules);
+        expect(await tx.listGrants("carla")).toEqual([grant]);
         expect(await tx.getUserByAddress("carla@nexo.app")).toMatchObject({ userId: "carla" });
       });
     });
@@ -138,6 +140,30 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.ensureAgentConnection(base)).toMatchObject(configured);
         expect(await tx.listAgentConnections("carla")).toMatchObject([configured]);
         expect(await tx.getAgentConnection("bruno", "bot", true)).toBeNull();
+      });
+    });
+
+    it("keeps one live grant per grantor, grantee and tool, and hides revoked grants", async () => {
+      const grant: GrantRow = {
+        id: randomUUID(), grantorUserId: "bruno", granteeAddress: fromAddress,
+        tool: "availability", fields: ["available"], createdAt: now,
+      };
+      await store.tx(async (tx) => {
+        expect(await tx.putGrant(grant)).toEqual(grant);
+        const widened = { ...grant, fields: ["available", "freeSlots"] };
+        expect(await tx.putGrant({ ...widened, id: randomUUID() })).toEqual(widened);
+        expect(await tx.listGrants("bruno")).toEqual([widened]);
+        expect(await tx.getGrant("bruno", fromAddress, "question")).toBeNull();
+        expect(await tx.getGrant("alice", fromAddress, "availability")).toBeNull();
+
+        expect(await tx.revokeGrant(grant.id, "alice", now)).toBe(false);
+        expect(await tx.revokeGrant(grant.id, "bruno", now)).toBe(true);
+        expect(await tx.revokeGrant(grant.id, "bruno", now)).toBe(false);
+        expect(await tx.getGrant("bruno", fromAddress, "availability")).toBeNull();
+
+        const again = { ...grant, id: randomUUID() };
+        expect(await tx.putGrant(again)).toEqual(again);
+        expect(await tx.listGrants("bruno")).toEqual([again]);
       });
     });
   });

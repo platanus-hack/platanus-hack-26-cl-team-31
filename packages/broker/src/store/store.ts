@@ -3,7 +3,6 @@ import type {
   Address,
   FinalOutcome,
   RequestStatus,
-  SharingRules,
   ToolName,
   ToolResult,
   WakeResult,
@@ -77,6 +76,16 @@ export type AgentConnectionRow = {
   createdAt: Date;
 };
 
+// A live grant: the grantor lets the grantee use the tool and receive these result fields.
+export type GrantRow = {
+  id: string;
+  grantorUserId: string;
+  granteeAddress: Address;
+  tool: ToolName;
+  fields: string[];
+  createdAt: Date;
+};
+
 export interface Store {
   // A rejected callback rolls back all its writes. Keep external I/O outside it.
   tx<T>(fn: (tx: StoreTx) => Promise<T>): Promise<T>;
@@ -88,9 +97,22 @@ export interface StoreTx {
   // Creates a user if needed and fails with conflict if either address is occupied.
   createAddress(userId: string, address: Address): Promise<void>;
 
-  getRules(userId: string): Promise<SharingRules | null>;
-  // Creates the address-less user if needed.
-  putRules(userId: string, rules: SharingRules): Promise<void>;
+  // Creates the address-less grantor if needed. A grantor keeps one live grant per grantee and
+  // tool: a second put replaces its fields and returns the stored row.
+  putGrant(row: GrantRow): Promise<GrantRow>;
+  // The three readers below ignore revoked grants.
+  listGrants(grantorUserId: string): Promise<GrantRow[]>;
+  getGrant(grantorUserId: string, granteeAddress: Address, tool: ToolName): Promise<GrantRow | null>;
+  // False when the grantor has no live grant with that id.
+  revokeGrant(id: string, grantorUserId: string, at: Date): Promise<boolean>;
+
+  listFriends(userId: string): Promise<Address[]>;
+  // True when this transaction creates a new membership.
+  addFriend(userId: string, address: Address): Promise<boolean>;
+  removeFriend(userId: string, address: Address): Promise<boolean>;
+  // An existing live grant takes precedence over the friendship default.
+  insertFriendGrant(row: GrantRow): Promise<boolean>;
+  revokeFriendGrants(userId: string, address: Address, at: Date): Promise<string[]>;
 
   insertRequest(row: RequestRow): Promise<void>;
   getRequest(id: string, participant?: { fromUserId: string } | { toUserId: string }): Promise<RequestRow | null>;
