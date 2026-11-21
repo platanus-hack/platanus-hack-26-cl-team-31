@@ -3,10 +3,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Address, ToolArgs } from "@team-31/protocol";
 import { z } from "zod";
-import { startDemoBroker } from "./demo-broker.mjs";
+import { createContactQueries, demoTelemetry } from "./contact-broker.mjs";
 
-const [directoryJson, receipt] = process.argv.slice(2);
-const demo = await startDemoBroker(JSON.parse(directoryJson));
+const [directoryJson, receipt, fixtureId] = process.argv.slice(2);
+const demo = createContactQueries(JSON.parse(directoryJson), { fixtureId });
 const server = new McpServer({ name: "ana", version: "1" });
 async function observed(value) {
   const text = JSON.stringify(value);
@@ -30,4 +30,4 @@ server.registerTool("await_contact", {
 }, async ({ requestId }) => observed(await demo.result(requestId)));
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stdin.once("end", () => demo.close());
+process.stdin.once("end", () => { void demoTelemetry.shutdown(); });

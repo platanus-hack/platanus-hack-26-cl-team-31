@@ -1,47 +1,59 @@
 import { execFile, spawn } from "node:child_process";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 import { promisify } from "node:util";
 import pg from "pg";
-import { LocalPart } from "@team-31/protocol";
+import { claudeEnv, contactAddress, contactOwner, contactPrincipal, demoTelemetry } from "./contact-broker.mjs";
 
 const run = promisify(execFile);
 const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-// Load only Ana's saved demo contacts and their individual grants. The owner tools read the interests.
-async function loadContacts(root, bobFile, janeFile) {
+async function loadContacts() {
   if (!process.env.DATABASE_URL) throw new Error("Ejecuta agents:runtime-demo con pnpm with-env.");
   const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await db.connect();
   try {
     const { rows } = await db.query(`
-      SELECT p.person_id AS id, p.display_name AS name, c.owner_id = ANY(p.interest_readers) AS allowed
+      SELECT p.person_id AS id, p.display_name AS name
       FROM contacts c JOIN demo_profiles p ON p.person_id = c.contact_id
       WHERE c.owner_id = $1 ORDER BY p.person_id`, ["ana"]);
-    const overrides = new Map([["bob", bobFile && resolve(bobFile)], ["jane", janeFile && resolve(janeFile)]]);
-    return rows.map(({ id, name, allowed }) => ({
-      id, name, allowsInterest: allowed, source: resolve(root, overrides.get(id) ?? `.agents-local/${LocalPart.parse(id)}-interests.json`),
-    }));
+    return rows;
   } finally {
     await db.end();
   }
 }
-export async function checkContactRuntime(root = cliRoot) {
+async function checkSeed() {
+  const { address } = await contactOwner().me({ userId: contactPrincipal("ana").userId });
+  if (address !== contactAddress("ana")) throw new Error("Prepara el broker local con pnpm agents:contacts:seed.");
+}
+
+export async function checkContactRuntime() {
   await Promise.all([
-    loadContacts(root), run("claude", ["--version"], { timeout: 8000 }),
-    access(join(root, "apps/broker/dist/index.js")),
+    loadContacts(), checkSeed(), run("claude", ["--version"], { env: claudeEnv(), timeout: 8000 }),
   ]);
 }
 
+export function reportContactError(error) {
+  return error?.errorId ?? demoTelemetry.error("contact.session", error, { userId: contactPrincipal("ana").userId });
+}
+
 export async function runContactSession(question, { root = cliRoot, bobFile, janeFile, signal } = {}) {
-  const contacts = await loadContacts(root, bobFile, janeFile);
+  const [contacts] = await Promise.all([loadContacts(), checkSeed()]);
   const toolScript = join(root, "apps/demo/src/ana-runtime-tools.mjs");
   const dir = await mkdtemp(join(tmpdir(), "nexo-ana-"));
   const receipt = join(dir, "broker-responses.jsonl");
+  const overrides = Object.entries({ bob: bobFile, jane: janeFile }).filter(([, path]) => path);
+  const fixtureId = overrides.length ? randomUUID() : undefined;
+  const fixtureDir = fixtureId && join(root, ".agents-local", "contact-sessions", fixtureId);
+  const directory = contacts.map(contact => ({
+    ...contact, override: overrides.some(([id]) => id === contact.id),
+  }));
   const config = { mcpServers: { ana: {
-    command: process.execPath, args: [toolScript, JSON.stringify(contacts), receipt],
+    command: join(root, "scripts/with-env.sh"),
+    args: [process.execPath, toolScript, JSON.stringify(directory), receipt, ...(fixtureId ? [fixtureId] : [])],
   } } };
   const args = [
     "--strict-mcp-config", "--mcp-config", JSON.stringify(config), "--tools", "",
@@ -60,14 +72,18 @@ export async function runContactSession(question, { root = cliRoot, bobFile, jan
     ].join(" "),
   ];
   try {
+    if (fixtureDir) {
+      await mkdir(fixtureDir, { recursive: true, mode: 0o700 });
+      for (const [id, path] of overrides) await symlink(resolve(path), join(fixtureDir, `${id}.json`));
+    }
     if (!question) {
-      const child = spawn("claude", args, { cwd: dir, stdio: "inherit" });
+      const child = spawn("claude", args, { cwd: dir, env: claudeEnv(), stdio: "inherit", signal });
       const [code] = await once(child, "exit");
       if (code !== 0) throw new Error("La sesión interactiva de Ana terminó con un error.");
       return;
     }
     args.push("-p", "--no-session-persistence", "--", question);
-    const job = run("claude", args, { cwd: dir, signal, maxBuffer: 512_000 });
+    const job = run("claude", args, { cwd: dir, env: claudeEnv(), signal, maxBuffer: 512_000 });
     job.child.stdin.end();
     const { stdout } = await job;
     const traces = [];
@@ -83,7 +99,11 @@ export async function runContactSession(question, { root = cliRoot, bobFile, jan
       traces.push({ tool: view.tool, input: { contact: to }, data: { to, requestId, decision, result, outcome, waitingFor } });
     }
     return { text: stdout.trim(), traces };
+  } catch (error) {
+    const errorId = reportContactError(error);
+    throw Object.assign(new Error("La sesión de Contactos de Ana no terminó."), { errorId });
   } finally {
+    if (fixtureDir) await rm(fixtureDir, { recursive: true, force: true });
     await rm(dir, { recursive: true, force: true });
   }
 }

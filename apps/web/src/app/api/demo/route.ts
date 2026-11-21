@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
-import { checkContactRuntime, runContactSession } from "@team-31/demo/contact-session";
+import { checkContactRuntime, reportContactError, runContactSession } from "@team-31/demo/contact-session";
 import { resolve } from "node:path";
 import { IncompleteModelReply, readHistory, runDemoAgent, selectTools } from "../../../lib/demo-chat";
 import { asRecord, identities, isPerson, maxMessage, type ModelState, type Person } from "../../../lib/demo";
 
-function json(body: object, status = 200) {
-  return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+function json(body: object, status = 200, errorId?: string) {
+  return Response.json(body, { status, headers: { "Cache-Control": "no-store", ...(errorId && { "X-Error-Id": errorId }) } });
 }
 
 function isLocal(request: Request, mutation = false) {
@@ -62,10 +62,10 @@ export async function GET(request: Request) {
   if (!isLocal(request)) return json({ api: false, model: "offline" }, 404);
   if (new URL(request.url).searchParams.get("mode") === "contacts") {
     try {
-      await checkContactRuntime(resolve(process.cwd(), "../.."));
+      await checkContactRuntime();
       return json({ contacts: true });
-    } catch {
-      return json({ contacts: false }, 503);
+    } catch (error) {
+      return json({ contacts: false }, 503, reportContactError(error));
     }
   }
   const [api, model] = await Promise.all([checkApi(), checkModel()]);
@@ -96,13 +96,7 @@ export async function POST(request: Request) {
       const signal = AbortSignal.any([request.signal, AbortSignal.timeout(180_000)]);
       return json(await runContactSession(prompt, { signal, root: resolve(process.cwd(), "../..") }));
     } catch (error) {
-      const failure = asRecord(error);
-      console.error("Contact runtime failed", {
-        code: failure?.code, name: error instanceof Error ? error.name : "unknown",
-        syscall: failure?.syscall,
-        receiptMissing: typeof failure?.path === "string" && failure.path.endsWith("broker-responses.jsonl"),
-      });
-      return json({ text: "La consulta no terminó. Revisa la sesión de Claude Code, el proxy y el seed local.", error: "api" }, 503);
+      return json({ text: "Revisa el broker del worktree, la sesión de Claude Code y el proxy.", error: "api" }, 503, reportContactError(error));
     }
   }
   let backend: string;

@@ -4,6 +4,7 @@ import { GET, POST } from "./route";
 
 vi.mock("@team-31/demo/contact-session", () => ({
   checkContactRuntime: vi.fn(),
+  reportContactError: vi.fn(() => "demo-error-id"),
   runContactSession: vi.fn(),
 }));
 

@@ -9,7 +9,9 @@ type Args<K extends RuntimeTool> = ReturnType<(typeof ToolArgs)[K]["parse"]>;
 type Result<K extends RuntimeTool> = ReturnType<(typeof ToolResultSchemas)[K]["parse"]>;
 
 // Bind only read-only, retryable operations. Credentials stay inside the owner's callback.
-type ReadContext = Pick<InboxItem, "from" | "allowedFields" | "ownerAuthorization">;
+type ReadContext = Pick<InboxItem, "from" | "allowedFields" | "ownerAuthorization"> & {
+  purpose?: string;
+};
 
 export function localReadTool<K extends RuntimeTool>(
   name: K,
@@ -54,6 +56,7 @@ export function createOwnerRuntime(
       }
       const result = await binding.execute(item.args, {
         from: item.from, allowedFields: item.allowedFields, ownerAuthorization: item.ownerAuthorization,
+        purpose: item.senderMessage.purpose,
       });
       await agent.reply(principal, result === null
         ? { ...reply, outcome: "no_data" }

@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   outputFileTracingExcludes: {
     "/api/demo": ["../../.agents-local/**/*"],
+    "/api/demo/contact-wake/*": ["../../.agents-local/**/*"],
   },
   turbopack: {
     rules: {

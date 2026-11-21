@@ -199,7 +199,7 @@ export function Dashboard() {
         </button>
       </header>
       {services && !ready && (contactChat ? services.contacts !== undefined : services.model !== undefined) && <p className="notice" role="status">
-        {contactChat ? <>Revisa Claude Code y prepara la agenda con <code>pnpm agents:seed</code>.</> : !services.api ? <>Levanta la API con <code>pnpm agents:up 3</code>.</>
+        {contactChat ? <>Inicia el broker local y prepara la agenda con <code>pnpm agents:contacts:seed</code>.</> : !services.api ? <>Levanta la API con <code>pnpm agents:up 3</code>.</>
           : services.model === "missing" ? "Ollama está conectado. Si el modelo se está descargando, el chat se habilitará al terminar. Si no, sigue los pasos del README."
             : "No hay conexión con Ollama. Inícialo siguiendo los pasos del README."}
       </p>}

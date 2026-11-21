@@ -24,6 +24,7 @@ type RouteInput<Route> = {
 export type ClientOptions<Identity> = {
   baseUrl: string;
   getServiceToken: (identity: Identity) => Promise<string>;
+  fetch?: typeof globalThis.fetch;
 };
 
 const timeoutMs = 10_000;
@@ -106,7 +107,7 @@ function responseError(route: HttpRoute, input: unknown): BrokerError {
 }
 
 export function createHttpClient<Identity>(
-  { baseUrl, getServiceToken }: ClientOptions<Identity>,
+  { baseUrl, getServiceToken, fetch: sendHttp = globalThis.fetch }: ClientOptions<Identity>,
   identitySchema: Schema<Identity>,
 ) {
   function request<Route extends HttpRoute>(
@@ -141,7 +142,7 @@ export function createHttpClient<Identity>(
         signal.throwIfAborted();
         const serviceToken = Promise.resolve().then(() => getServiceToken(caller));
         const token = await Promise.race([serviceToken, deadline]);
-        return fetch(url, {
+        return sendHttp(url, {
           method: route.method,
           headers: {
             Accept: "application/json",

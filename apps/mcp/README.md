@@ -61,10 +61,16 @@ El seed precarga las agendas de los perfiles de la demo. Guardar una dirección 
 
 ### Buscar entre los agentes de la agenda
 
-El código de esta demo vive en `apps/demo` y habla con un `apps/broker` propio por HTTP. Con PostgreSQL del worktree en ejecución y Claude Code autenticado:
+La CLI y el dashboard de desarrollo usan el broker persistente del worktree. Después de `pnpm bootstrap`, inicia web y broker en el host. Web recibe los avisos firmados de los contactos aunque el navegador esté cerrado.
 
 ```sh
-corepack pnpm agents:seed
+pnpm with-env env WAKE_ALLOW_INSECURE=1 pnpm exec turbo run dev --filter @team-31/broker-service --filter @team-31/web
+```
+
+En otra terminal, prepara las identidades y abre una sesión con Claude Code autenticado.
+
+```sh
+corepack pnpm agents:contacts:seed
 corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A alguien le interesa la cerámica?"
 ```
 
@@ -78,19 +84,19 @@ El seed crea 15 perfiles ficticios (14 participantes y Eva). Cada par dentro de 
 | Montaña | Mateo, Leo, Tomás y Vera |
 | Lectura | Vera, Alma, Nico y Eva |
 
-Cada sesión carga desde PostgreSQL los contactos directos de Ana con perfil de demo y sus permisos individuales. Si Ana pregunta por «alguien», Claude descubre las direcciones y pregunta por el tema a **cada agente**. El broker evalúa cada solicitud y entrega un resultado por ID. Luz reservó sus intereses y recibe cero avisos para esa operación. Cada uno de los demás contactos autorizados recibe un webhook y su propia sesión de Claude consulta el archivo privado. Los contactos de segundo grado quedan fuera de la búsqueda.
+Cada sesión carga de PostgreSQL los contactos directos de Ana con perfil de demo. Si Ana pregunta por «alguien», Claude descubre las direcciones y consulta el tema a **cada agente**. El broker evalúa sus reglas vigentes y entrega un resultado por ID. En las reglas iniciales, Luz reserva sus intereses y recibe cero avisos para esa operación. Cada contacto autorizado recibe un webhook y su propia sesión de Claude consulta el archivo privado.
 
 Para cambiar un dato, edita la lista JSON `.agents-local/<id>-interests.json` de ese contacto y repite la pregunta. El seed conserva los archivos existentes y los contactos que alguien haya eliminado. Para una prueba temporal puedes pasar dos rutas tras la pregunta que sustituyen los archivos de Bob y Jane durante esa ejecución. Una lista vacía da `matches: false`; un archivo ausente da `no_data`. Sin pregunta se abre una sesión interactiva.
 
 El MCP de Ana ofrece `list_contacts` para descubrir nombres y direcciones, `ask_contact` para consultar una dirección y `await_contact` para recoger el resultado por ID. Por ejemplo:
 
 ```json
-{"contact":"jane@nexo.app","query":{"interest":"cerámica"}}
+{"contact":"demo-jane@nexo.app","query":{"interest":"cerámica"}}
 ```
 
 Las preguntas abiertas usan `query: {"text":"…"}`. El broker verifica el permiso del destinatario para la operación. Cuando autoriza un interés, envía un webhook firmado al agente de ese contacto. Su herramienta `check_interest` compara el tema con su archivo y entrega sólo `matches`. El broker valida la respuesta y la CLI muestra la dirección y el resultado de cada solicitud.
 
-La cola del runtime es efímera. PostgreSQL conserva las agendas. Ejecuta la CLI de nuevo después de modificar contactos o permisos para cargar la nueva configuración.
+Las identidades ficticias usan direcciones `demo-<id>@nexo.app`. La preparación inicial importa los lectores de cada perfil como reglas de Nexo. Volver a ejecutar la seed conserva las decisiones posteriores del titular. PostgreSQL guarda reglas, solicitudes y avisos entre sesiones. Puedes correlacionar el ID de **Ver datos** con la actividad del broker.
 
 ### Herramientas
 

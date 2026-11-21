@@ -7,6 +7,10 @@
     "./contact-session": {
       "types": "./src/contact-session.d.mts",
       "default": "./src/contact-session.mjs"
+    },
+    "./contact-wake": {
+      "types": "./src/contact-wake.d.mts",
+      "default": "./src/contact-wake.mjs"
     }
   },
   "scripts": {
@@ -18,10 +22,13 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@team-31/auth": "workspace:*",
     "@team-31/broker": "workspace:*",
-    "@team-31/broker-service": "workspace:*",
     "@team-31/protocol": "workspace:*",
+    "@team-31/telemetry": "workspace:*",
     "@team-31/wake": "workspace:*",
     "pg": "8.23.1",
     "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@team-31/broker-service": "workspace:*"
   }
 }
