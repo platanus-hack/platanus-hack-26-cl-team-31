@@ -11,6 +11,7 @@ import { edgeCurve, layoutFlow, pointOnCurve, stageHeightFor, type LayoutInput }
 import { BROKER, type FlowActor, type FlowEvent, type FlowOwner, type FlowStatus } from "./model.js";
 import { EDGE_MS, LABEL_MS, PULSE_MS } from "./schedule.js";
 import { activities, eventEndpoints, resolveId, type ActorEntry, type Activity, type AppliedEvent, type FlowState } from "./state.js";
+import { useFlowViewport } from "./use-flow-viewport.js";
 import { useFlowPlayback } from "./use-flow-playback.js";
 import { css, statusColor, statusTone } from "./styles.js";
 
@@ -112,79 +113,19 @@ export function AgentFlow({
 }: AgentFlowProps) {
   const flowEvents = useMemo(() => (presence ? events : events.filter((e) => e.step !== "joined" && e.step !== "left")), [events, presence]);
   const reducedMotion = usePrefersReducedMotion();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 880, root: 1200 });
+  const { rootRef, stageRef, layoutRef, frameRef, visibleRef, full, fillMode, cssFull, toggleFullscreen, frame, size, scale } = useFlowViewport(fill);
   const [showPanels, setShowPanels] = useState(panels);
-  const [nativeFull, setNativeFull] = useState(false);
-  const [cssFull, setCssFull] = useState(false);
-  const [frame, setFrame] = useState({ width: 0, height: 0, available: 0 });
-  const layoutRef = useRef<HTMLDivElement>(null);
-  const frameRef = useRef<HTMLDivElement>(null);
   const [ownerQuery, setOwnerQuery] = useState<string[] | null>(() => (defaultOwners?.length ? defaultOwners.map((o) => o.toLowerCase()) : null));
   const [selection, setSelection] = useState<Selection>(null);
   const [shownOwners, setShownOwners] = useState<Set<string> | null>(null);
   const [hiddenActors, setHiddenActors] = useState<Set<string>>(() => new Set(defaultHiddenActors ?? []));
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
-  const visibleRef = useRef(true);
   const selectEvent = useCallback((id: string | null) => setSelection(id === null ? null : { kind: "event", id }), []);
   const {
     flow, clock, paused, setPaused, speed, setSpeed, history, seeking, announcement, inspect, pending,
     reset, inspectEvent, inspectMany, inspectRequest, exitInspect, stepInspect,
   } = useFlowPlayback({ flowEvents, mode, loop, autoPlay, initialSpeed, controls, reducedMotion, visibleRef, selectEvent });
 
-  // Tamaño del contenedor (responsive) y visibilidad (la repetición se detiene fuera de pantalla).
-  useEffect(() => {
-    const root = rootRef.current;
-    const stage = stageRef.current;
-    const frameEl = frameRef.current;
-    const layoutEl = layoutRef.current;
-    if (!root || !stage || !frameEl || !layoutEl) return;
-    const measure = () => {
-      setSize({ width: Math.round(stage.clientWidth) || 880, root: Math.round(frameEl.clientWidth) || 1200 });
-      setFrame((current) => {
-        const next = { width: root.clientWidth, height: root.clientHeight, available: layoutEl.clientHeight };
-        return current.width === next.width && current.height === next.height && current.available === next.available ? current : next;
-      });
-    };
-    measure();
-    const resize = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : undefined;
-    resize?.observe(root);
-    resize?.observe(stage);
-    resize?.observe(layoutEl);
-    const intersection = typeof IntersectionObserver !== "undefined"
-      ? new IntersectionObserver(([entry]) => { visibleRef.current = entry?.isIntersecting ?? true; })
-      : undefined;
-    intersection?.observe(root);
-    return () => {
-      resize?.disconnect();
-      intersection?.disconnect();
-    };
-  }, []);
-
-  // ---------- Pantalla completa ----------
-  const full = nativeFull || cssFull;
-  const fillMode = fill || full;
-  useEffect(() => {
-    const onChange = () => setNativeFull(typeof document !== "undefined" && document.fullscreenElement === rootRef.current);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
-  const toggleFullscreen = useCallback(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    if (document.fullscreenElement) {
-      void document.exitFullscreen();
-      return;
-    }
-    if (cssFull) {
-      setCssFull(false);
-      return;
-    }
-    // Sin la API (iframe sin allowfullscreen, Safari iOS) se usa un modo expandido con CSS.
-    if (document.fullscreenEnabled && root.requestFullscreen) root.requestFullscreen().catch(() => setCssFull(true));
-    else setCssFull(true);
-  }, [cssFull]);
   // Atajos: f pantalla completa, p pausa, ←/→ pasos, Esc vuelve al presente o sale del modo expandido.
   // En embed y pantalla completa escuchan en todo el documento; si no, solo con el foco dentro.
   const onShortcut = (event: KeyboardEvent | ReactKeyboardEvent) => {
@@ -203,7 +144,7 @@ export function AgentFlow({
       stepInspect(event.key === "ArrowLeft" ? -1 : 1);
     } else if (event.key === "Escape") {
       if (inspect) exitInspect();
-      else if (cssFull) setCssFull(false);
+      else if (cssFull) toggleFullscreen();
     }
   };
   const shortcutRef = useRef(onShortcut);
@@ -216,9 +157,6 @@ export function AgentFlow({
     document.addEventListener("keydown", listener);
     return () => document.removeEventListener("keydown", listener);
   }, [fillMode]);
-  // En pantalla completa y embed todo escala desde un lienzo lógico de 1440 × 810 para que se lea a distancia.
-  const scale = fillMode && frame.width > 0 ? Math.min(1.75, Math.max(1, Math.min(frame.width / 1440, frame.height / 810))) : 1;
-
   // Paneles al costado solo si al grafo le quedan al menos ~760 px.
   const wide = size.root >= 1100;
   // En embed angosto no hay espacio para los paneles: el grafo ocupa todo.

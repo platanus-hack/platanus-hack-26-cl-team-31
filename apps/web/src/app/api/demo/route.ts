@@ -93,19 +93,25 @@ async function chat(request: Request) {
   }
 
   const { person, message } = input;
-  if (input.mode === "contacts") {
-    if (person !== "ana") return json({ text: "Esta agenda pertenece a Ana.", error: "api" }, 403);
-    const history = readHistory(input.history).filter(turn => turn.role === "user");
-    const prompt = history.length
-      ? `Preguntas anteriores (contexto): ${JSON.stringify(history.map(turn => turn.content))}\nPregunta actual: ${message}`
-      : message;
-    try {
-      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(180_000)]);
-      return json(await runContactSession(prompt, { signal, root: resolve(process.cwd(), "../..") }));
-    } catch (error) {
-      return json({ text: "Revisa el broker del worktree, la sesión de Claude Code y el proxy.", error: "api" }, 503, reportContactError(error));
-    }
+  if (input.mode === "contacts") return contactChat(person, message, input.history, request.signal);
+  return coordinationChat(person, message, input, request.signal);
+}
+
+async function contactChat(person: Person, message: string, historyInput: unknown, requestSignal: AbortSignal) {
+  if (person !== "ana") return json({ text: "Esta agenda pertenece a Ana.", error: "api" }, 403);
+  const history = readHistory(historyInput).filter(turn => turn.role === "user");
+  const prompt = history.length
+    ? `Preguntas anteriores (contexto): ${JSON.stringify(history.map(turn => turn.content))}\nPregunta actual: ${message}`
+    : message;
+  try {
+    const signal = AbortSignal.any([requestSignal, AbortSignal.timeout(180_000)]);
+    return json(await runContactSession(prompt, { signal, root: resolve(process.cwd(), "../..") }));
+  } catch (error) {
+    return json({ text: "Revisa el broker del worktree, la sesión de Claude Code y el proxy.", error: "api" }, 503, reportContactError(error));
   }
+}
+
+async function coordinationChat(person: Person, message: string, input: Record<string, unknown>, requestSignal: AbortSignal) {
   let backend: string;
   let headers: HeadersInit;
   let tools: ReturnType<typeof selectTools>;
@@ -128,7 +134,7 @@ async function chat(request: Request) {
       : "No pude conectar con Ollama. Verifica que esté corriendo." }, 503);
   }
 
-  const deadline = AbortSignal.any([request.signal, AbortSignal.timeout(90_000)]);
+  const deadline = AbortSignal.any([requestSignal, AbortSignal.timeout(90_000)]);
   const reply = await runDemoAgent({
     person, message, history: readHistory(input.history), meetingId: input.meetingId, requestId: input.requestId, tools,
     async ask(messages, tools) {

@@ -151,7 +151,7 @@ export function isFlowRow(row: Pick<TelemetryRow, "name" | "attrs" | "service">)
 }
 
 /** Copia de la fila con `attrs` recortado a `flowAttrKeys`. La usa el servidor antes de enviarla. */
-export function projectFlowRow<R extends TelemetryRow>(row: R): R {
+export function projectFlowRow<R extends TelemetryRow>(row: R): Omit<R, "attrs"> & { attrs: Record<string, Scalar> } {
   const keys = flowAttrKeys[row.name] ?? [];
   const attrs: Record<string, Scalar> = {};
   for (const key of keys) {

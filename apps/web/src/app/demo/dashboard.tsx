@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { asRecord, formatSlot, identities, maxHistory, maxMessage, people, statuses, type ChatReply, type ChatTurn, type ModelState, type Person, type ToolTrace } from "@/lib/demo";
+import { asRecord, formatSlot, identities, maxHistory, maxMessage, people, statuses, ChatReply, type ChatTurn, type ModelState, type Person, type ToolTrace } from "@/lib/demo";
 
 type Message = { id: number; prompt: string; reply: ChatReply | null };
 type Services = { api?: boolean; model?: ModelState; contacts?: boolean };
@@ -127,7 +127,7 @@ export function Dashboard() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ person: sender, mode: contactChat ? "contacts" : "coordination", message: prompt, meetingId, requestId: requests[sender], history: context }),
       });
-      reply = await response.json();
+      reply = ChatReply.parse(await response.json());
       if (reply.error) {
         if (reply.modelState) setDraft(current => current || prompt);
         setRefresh(value => value + 1);

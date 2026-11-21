@@ -21,7 +21,7 @@ describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
       const text = `Pregunta de aislamiento ${index} de ${from.address} a ${to.address}`;
       const pending = await from.agent.ask({ to: to.address, tool: "question", args: { text, category: "general" } });
       expect(pending).toMatchObject({ final: false, waitingFor: "agent" });
-      return { from, to, text, requestId: pending.requestId, answer: `Respuesta de prueba ${index}` };
+      return { from, to, text, requestId: pending.requestId, answer: `Respuesta de prueba número ${index}.` };
     }));
     expect(new Set(messages.map(({ requestId }) => requestId)).size).toBe(count);
 

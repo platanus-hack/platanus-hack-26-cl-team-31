@@ -76,8 +76,8 @@ export function useFlowPlayback({
   useEffect(() => {
     const events = flowEvents;
     const previous = eventsRef.current;
-    eventsRef.current = events;
     if (mode === "replay") {
+      eventsRef.current = events;
       // Un arreglo nuevo con los mismos pasos (p. ej. scenarioEvents() en cada render) no reinicia.
       const same = previous.length === events.length && previous.every((event, i) => event.id === events[i]!.id);
       if (same && scheduleRef.current.length === events.length) return;
@@ -106,6 +106,7 @@ export function useFlowPlayback({
       scheduleRef.current = [];
       reset();
     }
+    eventsRef.current = events;
     // Mientras se inspecciona el pasado, lo nuevo espera sin programarse.
     if (inspectRef.current) {
       setPending(events.length - scheduleRef.current.length);

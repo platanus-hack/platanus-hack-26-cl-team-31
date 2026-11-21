@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { AgentFlow, type FlowEvent } from "@team-31/agent-flow";
+import { AgentFlow, describeEvent, type FlowEvent } from "@team-31/agent-flow";
 import { scenarioEvents } from "@team-31/agent-flow/scenario";
 
 const events = scenarioEvents().filter((event) => !event.meta.snapshot && event.step !== "joined").slice(0, 3);
@@ -47,5 +47,5 @@ it("returns to live playback when the host trims the event under inspection", as
   await render("live", events.slice(1));
   await advance(1_000);
   expect(host.textContent).not.toContain("Volver al vivo");
-  expect(timeline()).toHaveLength(3);
+  expect(timeline().map((button) => button.getAttribute("aria-label"))).toEqual(events.map(describeEvent).reverse());
 });
