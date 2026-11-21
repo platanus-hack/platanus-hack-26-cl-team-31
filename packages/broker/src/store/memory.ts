@@ -1,7 +1,7 @@
 import type { Address, ContactTag, Sharing } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import type {
-  AgentConnectionRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
+  AgentConnectionRow, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "./store.js";
 
 type State = {
@@ -16,10 +16,11 @@ type State = {
   events: RequestEvent[];
   wakes: Map<string, WakeJob>;
   agents: Map<string, AgentConnectionRow>;
+  channels: Map<string, ChannelRow>;
 };
 
-function agentKey(userId: string, agentId: string): string {
-  return JSON.stringify([userId, agentId]);
+function pairKey(userId: string, name: string): string {
+  return JSON.stringify([userId, name]);
 }
 
 function byCreatedAt(a: RequestRow, b: RequestRow): number {
@@ -43,12 +44,14 @@ function transaction(state: State): StoreTx {
     return state.circleMembers.find((member) => member.circleId === circleId && member.address === address);
   }
 
+  function ensureUser(userId: string, createdAt: Date) {
+    if (!state.users.has(userId)) state.users.set(userId, { userId, createdAt: structuredClone(createdAt) });
+  }
+
   function putAgent(row: AgentConnectionRow): AgentConnectionRow {
-    if (!state.users.has(row.userId)) {
-      state.users.set(row.userId, { userId: row.userId, createdAt: structuredClone(row.createdAt) });
-    }
+    ensureUser(row.userId, row.createdAt);
     const stored = structuredClone(row);
-    state.agents.set(agentKey(row.userId, row.agentId), stored);
+    state.agents.set(pairKey(row.userId, row.agentId), stored);
     return stored;
   }
 
@@ -242,7 +245,7 @@ function transaction(state: State): StoreTx {
       if (job?.state === "queued" && job.runAt > now) job.runAt = structuredClone(now);
     },
     async ensureAgentConnection(row) {
-      const existing = state.agents.get(agentKey(row.userId, row.agentId));
+      const existing = state.agents.get(pairKey(row.userId, row.agentId));
       return structuredClone(existing ?? putAgent(row));
     },
     async upsertAgentConnection(row) {
@@ -261,7 +264,14 @@ function transaction(state: State): StoreTx {
       return structuredClone(connections);
     },
     async getAgentConnection(userId, agentId) {
-      return structuredClone(state.agents.get(agentKey(userId, agentId)) ?? null);
+      return structuredClone(state.agents.get(pairKey(userId, agentId)) ?? null);
+    },
+    async putChannel(row) {
+      ensureUser(row.userId, row.createdAt);
+      state.channels.set(pairKey(row.userId, row.name), structuredClone(row));
+    },
+    async getChannel(userId, name) {
+      return structuredClone(state.channels.get(pairKey(userId, name)) ?? null);
     },
   };
 }
@@ -269,7 +279,7 @@ function transaction(state: State): StoreTx {
 export function createMemoryStore(): Store {
   let state: State = {
     users: new Map(), grants: [], friends: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
-    events: [], wakes: new Map(), agents: new Map(),
+    events: [], wakes: new Map(), agents: new Map(), channels: new Map(),
   };
   let previous = Promise.resolve();
 

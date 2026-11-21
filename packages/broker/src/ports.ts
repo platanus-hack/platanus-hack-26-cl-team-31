@@ -11,6 +11,7 @@ import type {
   PublicAgent,
   AgentContacts,
   AskInput,
+  ChannelName,
   ContactsView,
   ContactTag,
   InboxItem,
@@ -51,12 +52,15 @@ export interface OwnerPort {
   revokeGrant(o: Owner, grantId: string): Promise<void>;
   pending(o: Owner): Promise<OwnerPendingItem[]>;
   activity(o: Owner, limit?: number): Promise<ActivityItem[]>;
-  ask(o: Owner, input: AskInput): Promise<RequesterView>;
+  // A channel marks where the owner wrote the request: the broker notifies it when the request
+  // waits for the recipient's owner or closes.
+  ask(o: Owner, input: AskInput, channel?: ChannelName): Promise<RequesterView>;
   status(o: Owner, requestId: string): Promise<RequesterView>;
   decide(o: Owner, requestId: string, decision: OwnerDecision): Promise<void>;
   agentDirectory(o: Owner): Promise<PublicAgent[]>;
   agents(o: Owner): Promise<AgentConnection[]>;
   setWake(o: Owner, agentId: string, target: WakeTarget): Promise<void>;
+  setChannel(o: Owner, name: ChannelName, target: WakeTarget): Promise<void>;
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;
   revokeAgent(o: Owner, agentId: string): Promise<void>;
   // With a tag and no share, the invitation offers the tag's preset and the contact gets the tag.

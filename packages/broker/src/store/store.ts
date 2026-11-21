@@ -2,6 +2,7 @@ import type {
   ActivityEvent,
   Address,
   Category,
+  ChannelName,
   ContactTag,
   FinalOutcome,
   RequestStatus,
@@ -27,6 +28,8 @@ export type RequestRow = {
   fromUserId: string | null;
   toUserId: string | null;
   targetAgentId?: string;
+  // Channel where the owner wrote the request. It receives a notice on each later change.
+  originChannel?: ChannelName;
   tool: ToolName;
   args: unknown;
   purpose?: string;
@@ -63,6 +66,8 @@ export type WakeJob = {
   id: string;
   requestId: string;
   requestVersion: number;
+  // recipient: the agent that must answer. origin: the channel the request came from.
+  audience: "recipient" | "origin";
   attempt: number;
   // Next eligible time. A running job becomes eligible again when its lease expires.
   runAt: Date;
@@ -80,6 +85,13 @@ export type AgentConnectionRow = {
   verifiedAt?: Date;
   lastWakeAt?: Date;
   revokedAt?: Date;
+  createdAt: Date;
+};
+
+export type ChannelRow = {
+  userId: string;
+  name: ChannelName;
+  wakeTarget: WakeTarget;
   createdAt: Date;
 };
 
@@ -178,4 +190,8 @@ export interface StoreTx {
   listPublicAgents(): Promise<PublicAgent[]>;
   listAgentConnections(userId: string): Promise<AgentConnectionRow[]>;
   getAgentConnection(userId: string, agentId: string, forUpdate?: boolean): Promise<AgentConnectionRow | null>;
+
+  // Creates the user if needed and replaces the channel's wake configuration.
+  putChannel(row: ChannelRow): Promise<void>;
+  getChannel(userId: string, name: ChannelName): Promise<ChannelRow | null>;
 }
