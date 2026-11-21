@@ -1,5 +1,6 @@
 import { BrokerError, type OwnerPort } from "@team-31/broker-client";
 import { Address, AskInput, type Category, type Owner, type RequesterView } from "@team-31/protocol";
+import { getTelemetry } from "../telemetry";
 import { describeSharing } from "../../app/(app)/contacts/describe";
 import type { InterpretMessage } from "./claude";
 
@@ -121,7 +122,14 @@ export async function runCommand(
     if (view.decision !== "deny") return summarize(view);
     // The broker denies without a reason. What the contact shares is already in the owner's own
     // contacts view, so naming the missing category reveals nothing new.
-    const contact = (await broker.contacts(owner)).contacts.find(({ address }) => address === to);
+    let contacts;
+    try {
+      ({ contacts } = await broker.contacts(owner));
+    } catch (error) {
+      getTelemetry().error("whatsapp.denial.contacts", error, { userId: owner.userId, requestId: view.requestId });
+      return summarize(view);
+    }
+    const contact = contacts.find(({ address }) => address === to);
     if (!contact) return `${to} no está entre tus contactos.`;
     if (!contact.receives.includes(category)) return `${to} no te comparte ${notShared[category]}.`;
     return summarize(view);

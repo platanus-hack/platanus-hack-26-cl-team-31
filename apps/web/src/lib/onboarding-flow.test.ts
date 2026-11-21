@@ -21,8 +21,7 @@ vi.mock("next/navigation", () => ({
   redirect: (path: string) => { throw new Error(path); },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/auth", () => ({ getSession: mocks.getSession }));
-vi.mock("@/lib/auth-env.mjs", () => ({ getGoogleOptions: () => ({}) }));
+vi.mock("@/lib/auth", () => ({ getSession: mocks.getSession, getAuth: () => ({ options: { socialProviders: { google: {} } } }) }));
 vi.mock("@/lib/auth-owner", () => ({ getOwnerAddress: mocks.getAddress }));
 vi.mock("@/lib/auth-request", () => ({ getOAuthRequest: mocks.getOAuthRequest }));
 vi.mock("@/lib/broker", () => ({ ownerClient: () => ({ claimAddress: mocks.claimAddress }) }));

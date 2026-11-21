@@ -4,10 +4,10 @@ import { getAuthBaseUrl } from "@/lib/auth-env.mjs";
 
 import { readHome } from "./actions";
 import { ActivityList } from "./activity-list";
-import { DecisionForm } from "./decision-form";
-import { InviteActions } from "./invite-actions";
+import { DecisionForm } from "./_home/decision-form";
+import { InviteActions } from "./_home/invite-actions";
 import { toolLabels } from "./labels";
-import { OwnerProfile } from "./owner-profile";
+import { OwnerProfile } from "./_home/owner-profile";
 import { card, Empty, Heading, Stamp, textLink } from "./ui";
 
 export default async function HomePage() {

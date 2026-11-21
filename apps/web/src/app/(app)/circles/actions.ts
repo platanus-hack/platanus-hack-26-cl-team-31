@@ -17,7 +17,7 @@ async function changeCircle(operation: string, fallback: string, change: (owner:
   try {
     await change(owner);
   } catch (error) {
-    return { error: actionError(operation, error, fallback) };
+    return actionError(operation, error, fallback);
   }
   revalidatePath("/circles");
   revalidatePath("/agents");

@@ -56,7 +56,7 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
     }
     await broker.decide(owner, requestId, parsed.data);
   } catch (error) {
-    return { error: actionError("decide", error, "No se pudo registrar la decisión. Intenta de nuevo.") };
+    return actionError("decide", error, "No se pudo registrar la decisión. Intenta de nuevo.");
   }
 
   revalidatePath("/");

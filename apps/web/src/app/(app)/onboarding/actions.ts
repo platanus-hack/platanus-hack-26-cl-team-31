@@ -30,12 +30,10 @@ export async function claimAddress(source: OnboardingSource, _: Feedback, form: 
         telemetry.emit("web.invite.progress", { attrs: { step: "address_claimed" } });
       }
     } catch (error) {
-      const errorId = telemetry.error("action claimAddress", error);
+      const feedback = actionError("claimAddress", error, "No se pudo guardar la dirección. Intenta de nuevo.");
+      const errorId = feedback.errorId ?? telemetry.error("action claimAddress", error);
       span.setErrorId(errorId);
-      const message = error instanceof BrokerError && error.code === "conflict"
-        ? "Esa dirección ya está tomada"
-        : actionError("claimAddress", error, "No se pudo guardar la dirección. Intenta de nuevo.");
-      return { error: message, errorId };
+      return { error: error instanceof BrokerError && error.code === "conflict" ? "Esa dirección ya está tomada" : feedback.error, errorId };
     }
   });
   if (feedback) return feedback;

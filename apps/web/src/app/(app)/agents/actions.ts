@@ -22,7 +22,7 @@ export async function pingOrRevokeAgent(agentId: string, _: Feedback, form: Form
     if (operation === "ping") await ownerClient().ping(owner, agentId);
     else await ownerClient().revokeAgent(owner, agentId);
   } catch (error) {
-    return { error: actionError("manageAgent", error, "No se pudo completar la acción. Intenta de nuevo.") };
+    return actionError("manageAgent", error, "No se pudo completar la acción. Intenta de nuevo.");
   }
   revalidatePath("/agents");
   revalidatePath("/activity");

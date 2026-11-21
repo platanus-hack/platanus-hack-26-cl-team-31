@@ -3,8 +3,8 @@
 import { useActionState, useState } from "react";
 import type { ToolName } from "@team-31/protocol";
 
-import { decide } from "./actions";
-import { button, Feedback, input, primaryButton } from "./ui";
+import { decide } from "../actions";
+import { button, Feedback, input, primaryButton } from "../ui";
 
 export function DecisionForm({ id, tool, escalated }: { id: string; tool: ToolName; escalated: boolean }) {
   const [state, submit, pending] = useActionState(decide.bind(null, id), {});
