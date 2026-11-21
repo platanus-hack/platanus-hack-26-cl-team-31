@@ -199,6 +199,31 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("lets whoever holds a live grant read the default category of the same id", async () => {
+      const entries = [{ label: "Lunes", value: "Libre desde las 18:00" }];
+      await store.tx(async tx => {
+        await tx.changeVault("bruno", "availability", { action: "put_entry", categoryId: "availability", ...entries[0]! });
+        expect(readable(await tx.sharedVault(fromAddress, toAddress))).toEqual([]);
+
+        const grant = await tx.putGrant({ ...grantTo(fromAddress), grantorUserId: "bruno", category: "availability" });
+        expect(readable(await tx.sharedVault(fromAddress, toAddress)).map(c => c.id)).toEqual(["availability"]);
+        expect((await tx.sharedVault(fromAddress, toAddress, "availability")).categories[0]?.entries).toEqual(entries);
+        // The roster lists contacts only.
+        expect(await tx.vaultMembers("bruno", "availability")).toEqual([]);
+        await tx.addContact("bruno", fromAddress);
+        expect(await tx.vaultMembers("bruno", "availability")).toEqual([fromAddress]);
+
+        // The holder's decision about the contact still wins over the grant.
+        await tx.changeVault("bruno", "availability", { action: "set_member", categoryId: "availability", address: fromAddress, allowed: false });
+        expect(readable(await tx.sharedVault(fromAddress, toAddress))).toEqual([]);
+        await tx.changeVault("bruno", "availability", { action: "set_member", categoryId: "availability", address: fromAddress, allowed: true });
+        await tx.revokeGrant(grant.id, "bruno", now);
+        expect(readable(await tx.sharedVault(fromAddress, toAddress)).map(c => c.id)).toEqual(["availability"]);
+        await tx.removeContact("bruno", fromAddress);
+        expect(readable(await tx.sharedVault(fromAddress, toAddress))).toEqual([]);
+      });
+    });
+
     it("lists every category to any reader and lets any Sideband user open a public one", async () => {
       const id = randomUUID();
       const stranger = "eva@sideband.app";

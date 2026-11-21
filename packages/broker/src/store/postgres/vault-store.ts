@@ -5,7 +5,7 @@ import type { drizzle } from "drizzle-orm/node-postgres";
 import { BrokerError } from "../../errors.js";
 import type { StoreTx } from "../store.js";
 import {
-  users, friends, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e, vaultDocuments as d, vaultMemberRules as r,
+  users, friends, grants as g, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e, vaultDocuments as d, vaultMemberRules as r,
 } from "./schema.js";
 
 type Tx = Parameters<Parameters<ReturnType<typeof drizzle>["transaction"]>[0]>[0];
@@ -52,11 +52,15 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
   // The roster, the listing and the data read apply this one predicate to a (category, reader) pair.
   // The holder's decision about a contact wins. Without one, a public category is read by any
   // Sideband user and a private one by an accepted contact that carries an allowed tag.
+  // A default category shares its id with a grant category, so whoever may ask about it may read it.
   // Aliased so the roster can join friends on the outside and still ask whether the reader is a contact.
   const contact = alias(friends, "reader_contact");
   const canRead = (reader: SQLWrapper) => sql<boolean>`coalesce(
     (select ${r.allowed} from ${r} where ${r.owner} = ${c.owner} and ${r.id} = ${c.id} and ${r.address} = ${reader}),
-    ${c.visibility} = 'public' or exists(select 1 from ${p}
+    ${c.visibility} = 'public'
+    or exists(select 1 from ${g} where ${g.grantorUserId} = ${c.owner} and ${g.category} = ${c.id}
+      and ${g.granteeAddress} = ${reader} and ${g.revokedAt} is null)
+    or exists(select 1 from ${p}
       join ${t} on ${t.userId} = ${p.owner} and ${t.tagId} = ${p.tagId}
       join ${friends} as ${sql.identifier("reader_contact")} on ${contact.userId} = ${t.userId} and ${contact.address} = ${t.address}
       where ${p.owner} = ${c.owner} and ${p.id} = ${c.id} and ${t.address} = ${reader}))`;

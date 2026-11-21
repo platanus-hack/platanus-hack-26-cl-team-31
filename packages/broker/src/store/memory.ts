@@ -44,6 +44,8 @@ function transaction(state: State): StoreTx {
     const rule = state.memberRules.get(pairKey(owner, c.id))?.get(reader);
     if (rule !== undefined) return rule;
     if (c.visibility === "public") return true;
+    // A default category shares its id with a grant category: whoever may ask about it may read it.
+    if (state.grants.some(g => g.grantorUserId === owner && g.granteeAddress === reader && g.category === c.id && !g.revokedAt)) return true;
     return !!state.contacts.get(owner)?.has(reader) && (state.contactTags.get(owner)?.get(reader) ?? []).some(tag => c.tags.includes(tag));
   }
 
