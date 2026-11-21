@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import type { OwnerVault, Tag } from "@team-31/protocol";
+import { categoryNames } from "@team-31/protocol/constants";
 
 import { tagStyles } from "../contacts/tags";
 import { Modal, ModalCancel, useCloseModal } from "../modal";
@@ -145,6 +146,9 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
             <p className="text-xs text-muted">{category.members.length === 1 ? `${category.members[0]} puede leerla` : `${category.members.length} personas pueden leerla`}</p>
           </div>
         ) : <p className="text-xs text-muted">{allowed.length ? "Ningún contacto tiene esas etiquetas todavía." : "Solo tú. Hazla pública o elige etiquetas para compartirla."}</p>}
+        {!isPublic && categoryNames.some((id) => id === category.id) && (
+          <p className="text-xs text-muted">También la lee cada contacto al que le compartes esta categoría en Contactos.</p>
+        )}
       </Section>
 
       <Feedback error={state.error} errorId={state.errorId} />

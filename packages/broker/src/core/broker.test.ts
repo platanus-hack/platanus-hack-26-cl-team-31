@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import {
   ActivityItem,
   basicSharing,
+  Category,
   defaultTags,
   InboxItem,
   RequesterView,
@@ -83,7 +84,9 @@ it("solo el titular concede lectura individual; rechazar no crea ni modifica cat
   const grant = { kind: "grant_vault_read" } as const;
   await expect(broker.owner.decide(alice, pending.requestId, grant)).rejects.toMatchObject({ code: "not_found" });
   await expect(broker.owner.decide(bruno, pending.requestId, { kind: "approve_once" })).rejects.toMatchObject({ code: "invalid_input" });
-  const readable = async (p: Principal) => (await broker.agent.queryVault(p, { to: input.to })).categories.filter(c => c.canRead);
+  // Alice's grants already open the default categories of the same id to her.
+  const readable = async (p: Principal) => (await broker.agent.queryVault(p, { to: input.to })).categories
+    .filter(c => c.canRead && !Category.options.some(id => id === c.id));
   expect(await readable(alice)).toEqual([]);
   await broker.owner.decide(bruno, pending.requestId, grant);
   const visible = await readable(alice);
