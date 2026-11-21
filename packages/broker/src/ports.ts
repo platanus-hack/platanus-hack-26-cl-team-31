@@ -33,10 +33,12 @@ import type { SanitizeContext } from "./sanitize/types.js";
 import type { Store } from "./store/store.js";
 
 export interface AgentPort {
+  networkUsers(p: Principal, after?: Address): Promise<{ addresses: Address[]; nextCursor?: Address }>;
   connect(p: Principal): Promise<void>;
   contactGroups(p: Principal): Promise<ContactGroups>;
   changeContactGroup(p: Principal, input: ContactGroupChange): Promise<{ groupId: string }>;
   vaultCatalog(p: Principal): Promise<VaultCatalog>;
+  vaultMembers(p: Principal, categoryId: string): Promise<{ members: Address[] }>;
   changeVault(p: Principal, change: VaultChange): Promise<VaultReceipt>;
   queryVault(p: Principal, query: VaultQuery): Promise<VaultResult>;
   capabilities(p: Principal, to: Address): Promise<{ tools: Capability[] }>;

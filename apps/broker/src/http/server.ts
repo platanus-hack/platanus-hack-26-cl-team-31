@@ -31,8 +31,12 @@ async function parseBody<S extends z.ZodType>(c: HttpContext, schema: S): Promis
 
 async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, { agent, owner, admin }: BrokerCore) {
   switch (route.port) {
+    case "agent.networkUsers": return agent.networkUsers(c.get("mcp"), parseInput(route.query, c.req.query()).after);
     case "agent.connect": return agent.connect(c.get("mcp"));
     case "agent.vaultCatalog": return agent.vaultCatalog(c.get("mcp"));
+    case "agent.contactGroups": return agent.contactGroups(c.get("mcp"));
+    case "agent.changeContactGroup": return agent.changeContactGroup(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.vaultMembers": return agent.vaultMembers(c.get("mcp"), parseInput(route.query, c.req.query()).categoryId);
     case "agent.changeVault": return agent.changeVault(c.get("mcp"), await parseBody(c, route.body));
     case "agent.queryVault": return agent.queryVault(c.get("mcp"), await parseBody(c, route.body));
     case "owner.vault": return owner.vault(c.get("web"));

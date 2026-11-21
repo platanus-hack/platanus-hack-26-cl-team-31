@@ -71,6 +71,13 @@ export const friends = sideband.table("friends", {
   address: text("address").notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.address] })]);
 
+export const vaultMemberRules = sideband.table("vault_member_rules", {
+  owner: text("owner_id").notNull(), id: text("category_id").notNull(),
+  address: text("address").notNull(), allowed: boolean("allowed").notNull(),
+}, t => [primaryKey({ columns: [t.owner, t.id, t.address] }),
+  foreignKey({ columns: [t.owner, t.id], foreignColumns: [vaultCategories.owner, vaultCategories.id] }).onDelete("cascade"),
+  foreignKey({ columns: [t.owner, t.address], foreignColumns: [friends.userId, friends.address] }).onDelete("cascade")]);
+
 export const vaultContactGroups = sideband.table("vault_contact_groups", {
   owner: text("owner_id").notNull().references(() => users.userId),
   id: text("group_id").notNull(), name: text("name").notNull(),

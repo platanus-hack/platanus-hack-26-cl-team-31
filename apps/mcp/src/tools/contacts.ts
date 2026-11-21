@@ -16,4 +16,10 @@ export function registerContacts(server: McpServer, principal: Principal, agent:
     outputSchema: routes.agentContacts.response,
   }, () => runTool(telemetry, principal, { tool: "sideband_contacts", scope: "sideband:ask" },
     () => agent.contacts(principal)));
+  server.registerTool("sideband_network_users", {
+    description: "Lista las direcciones de quienes conectaron un agente a Sideband alguna vez, incluidos quienes no son contactos. Para la página siguiente pasa nextCursor como after.",
+    annotations: { readOnlyHint: true },
+    inputSchema: routes.agentNetworkUsers.query, outputSchema: routes.agentNetworkUsers.response,
+  }, ({ after }) => runTool(telemetry, principal, { tool: "sideband_network_users", scope: "sideband:ask" },
+    () => agent.networkUsers(principal, after)));
 }

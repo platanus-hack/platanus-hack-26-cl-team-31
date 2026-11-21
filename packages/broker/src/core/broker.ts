@@ -431,7 +431,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (!await tx.changeVault(userId, categoryId, change)) throw notFound();
     record(tx, "broker.vault.changed", { userId, agentId, attrs: { action: change.action,
       ...(change.action === "set_group" ? { group: change.group, allowed: change.allowed } : {}),
-      ...(change.action === "set_contact_group" ? { allowed: change.allowed } : {}) } });
+      ...(change.action === "set_contact_group" || change.action === "set_member" ? { allowed: change.allowed } : {}) } });
     return { categoryId };
   }
 
@@ -466,6 +466,15 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return tx.vaultCatalog(p.userId);
+        });
+      },
+      async vaultMembers(p, categoryId) {
+        requireScope(p, "sideband:vault", "agent.vaultMembers");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          const members = await tx.vaultMembers(p.userId, categoryId);
+          if (!members) throw notFound();
+          return { members };
         });
       },
       async changeVault(p, change) {
@@ -602,6 +611,16 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return result;
       },
 
+      async networkUsers(p, after) {
+        requireScope(p, "sideband:ask", "agent.networkUsers");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          const pageSize = 50;
+          const rows = await tx.networkAddresses(after, pageSize + 1);
+          const addresses = rows.slice(0, pageSize);
+          return { addresses, ...(rows.length > pageSize ? { nextCursor: addresses.at(-1) } : {}) };
+        });
+      },
       async contacts(p) {
         requireScope(p, "sideband:ask", "agent.contacts");
         return store.tx(async (tx) => {

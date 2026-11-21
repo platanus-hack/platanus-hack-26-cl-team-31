@@ -4,7 +4,9 @@
 
 - `sideband_contacts` lista los contactos aceptados. `sideband_contact_groups` lista tus grupos privados y sus miembros.
 - `sideband_contact_group_change` permite `create`, `delete`, `add_contact` y `remove_contact`; todas las operaciones salvo `create` usan el ID del grupo. Puedes agregar solo contactos aceptados.
-- Con `sideband_vault_change`, `set_contact_group` permite dar o quitar acceso a una categoría completa del grupo. Para compartirla solo con una persona, usa un grupo que la tenga como único miembro y no otorgues otros permisos a esa categoría.
+- `sideband_vault_members` lista los contactos con acceso efectivo a una categoría propia. Busca primero su ID con `sideband_vault_catalog`.
+- Con `sideband_vault_change`, `set_contact_group` cambia el acceso de un grupo. `set_member` con `categoryId`, `address` y `allowed` agrega o quita un contacto aceptado de esa categoría. La decisión individual prevalece sobre grupos y etiquetas hasta que se cambie o se elimine el contacto.
+- `sideband_network_users` (`sideband:ask`) lista direcciones con historial de conexión de agente, incluidas las que hoy no tienen agente activo. Devuelve hasta 50 por página; pasa `nextCursor` en `after` para continuar. Aparecer en el directorio no crea contactos ni permisos.
 - Los grupos son privados, no son círculos ni etiquetas. Crear un grupo no comparte nada. Agregar un miembro le da acceso a lo ya compartido con el grupo. Quitar al contacto o eliminar el grupo revoca ese acceso, sin borrar datos ni tocar otros permisos. Administrar grupos requiere `sideband:vault`.
 
 El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `sideband_ask`, `sideband_inbox`, `sideband_reply` y `sideband_check`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.

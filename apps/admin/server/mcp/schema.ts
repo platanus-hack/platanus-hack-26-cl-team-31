@@ -44,7 +44,7 @@ const STATIC_VIEWS: Record<string, string[]> = {
   ],
   v_users: ["user_id", "address", "display_name", "created_at", "rules"],
   v_circles: ["circle_id", "name", "owner_user_id", "created_at", "members", "invitations"],
-  v_vault_summary: ["user_id", "categories", "entries", "permissions"],
+  v_vault_summary: ["user_id", "categories", "entries", "permissions", "member_rules"],
   v_vault_contact_group_summary: ["user_id", "groups", "memberships", "permissions"],
   v_identities: ["user_id", "email", "name", "created_at", "active_sessions", "has_phone_number"],
   v_whatsapp: ["linked_accounts", "active_pairings", "inbound_receipts", "pending_deliveries"],

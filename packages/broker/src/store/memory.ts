@@ -6,6 +6,7 @@ import type {
 
 type State = {
   vaults: Map<string, OwnerVault>;
+  memberRules: Map<string, Map<Address, boolean>>;
   contactGroups: Map<string, ContactGroups["groups"]>;
   users: Map<string, UserRow>;
   grants: (GrantRow & { revokedAt?: Date })[];
@@ -32,6 +33,15 @@ function byCreatedAt(a: RequestRow, b: RequestRow): number {
 function transaction(state: State): StoreTx {
   function findUserByAddress(address: Address): UserRow | undefined {
     return [...state.users.values()].find((user) => user.address === address);
+  }
+
+  function canRead(owner: string, c: OwnerVault["categories"][number], reader: Address) {
+    if (!state.friends.get(owner)?.has(reader)) return false;
+    const rule = state.memberRules.get(pairKey(owner, c.id))?.get(reader);
+    if (rule !== undefined) return rule;
+    const tag = state.contactTags.get(owner)?.get(reader);
+    return (tag && c.groups.includes(tag)) || state.contactGroups.get(owner)?.some(group =>
+      group.members.includes(reader) && c.contactGroups?.some(g => g.id === group.id));
   }
 
   function listRecipientRequests(address: Address, status: "awaiting_agent" | "awaiting_owner"): RequestRow[] {
@@ -68,8 +78,17 @@ function transaction(state: State): StoreTx {
   }
 
   return {
+    async networkAddresses(after, limit) {
+      const connected = new Set([...state.agents.values()].map(agent => agent.userId));
+      return [...state.users.values()].flatMap(({ userId, address }) =>
+        address && connected.has(userId) && (!after || address > after) ? [address] : []).sort().slice(0, limit);
+    },
     async vaultCatalog(owner) {
       return { categories: (state.vaults.get(owner)?.categories ?? []).map(({ id, name }) => ({ id, name })) };
+    },
+    async vaultMembers(owner, categoryId) {
+      const category = state.vaults.get(owner)?.categories.find(c => c.id === categoryId);
+      return category ? [...(state.friends.get(owner) ?? [])].filter(address => canRead(owner, category, address)).sort() : null;
     },
     async contactGroups(owner) {
       return { groups: structuredClone(state.contactGroups.get(owner) ?? []).sort((a, b) => a.name.localeCompare(b.name)) };
@@ -112,7 +131,18 @@ function transaction(state: State): StoreTx {
       if (!c) return false;
       switch (change.action) {
         case "rename": c.name = change.name; break;
-        case "delete": vault.categories = vault.categories.filter(item => item !== c); break;
+        case "delete":
+          state.memberRules.delete(pairKey(owner, id));
+          vault.categories = vault.categories.filter(item => item !== c);
+          break;
+        case "set_member": {
+          if (!state.friends.get(owner)?.has(change.address)) return false;
+          const key = pairKey(owner, id);
+          const rules = state.memberRules.get(key) ?? new Map<Address, boolean>();
+          rules.set(change.address, change.allowed);
+          state.memberRules.set(key, rules);
+          break;
+        }
         case "set_group":
           c.groups = c.groups.filter(group => group !== change.group);
           if (change.allowed) c.groups.push(change.group);
@@ -135,11 +165,8 @@ function transaction(state: State): StoreTx {
     },
     async sharedVault(reader, to, id) {
       const owner = findUserByAddress(to)?.userId;
-      const group = owner && state.contactTags.get(owner)?.get(reader);
-      if (!owner || !state.friends.get(owner)?.has(reader)) return { categories: [] };
-      const memberships = (state.contactGroups.get(owner) ?? []).filter(g => g.members.includes(reader)).map(g => g.id);
-      return { categories: (state.vaults.get(owner)?.categories ?? []).filter(c => (!id || id === c.id) &&
-        ((group && c.groups.includes(group)) || c.contactGroups?.some(g => memberships.includes(g.id))))
+      if (!owner) return { categories: [] };
+      return { categories: (state.vaults.get(owner)?.categories ?? []).filter(c => (!id || id === c.id) && canRead(owner, c, reader))
         .map(c => ({ id: c.id, name: c.name, ...(id ? { entries: structuredClone(c.entries) } : {}) })) };
     },
     async getUser(userId) {
@@ -184,6 +211,7 @@ function transaction(state: State): StoreTx {
       return true;
     },
     async removeFriend(userId, address) {
+      for (const c of state.vaults.get(userId)?.categories ?? []) state.memberRules.get(pairKey(userId, c.id))?.delete(address);
       for (const group of state.contactGroups.get(userId) ?? []) group.members = group.members.filter(member => member !== address);
       return state.friends.get(userId)?.delete(address) ?? false;
     },
@@ -361,7 +389,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    vaults: new Map(), contactGroups: new Map(), users: new Map(), grants: [], friends: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
+    vaults: new Map(), memberRules: new Map(), contactGroups: new Map(), users: new Map(), grants: [], friends: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
     events: [], wakes: new Map(), agents: new Map(), channels: new Map(),
   };
   let previous = Promise.resolve();

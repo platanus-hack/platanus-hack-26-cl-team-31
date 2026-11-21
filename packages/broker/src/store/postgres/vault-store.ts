@@ -1,11 +1,11 @@
 import { Address, ContactTag, type OwnerVault } from "@team-31/protocol";
-import { and, DrizzleQueryError, eq, inArray, or } from "drizzle-orm";
+import { and, DrizzleQueryError, eq, exists, inArray, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import type { StoreTx } from "../store.js";
 import { BrokerError } from "../../errors.js";
 import {
   users, friends, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e,
-  vaultContactGroups as g, vaultContactGroupMembers as m, vaultContactGroupPermissions as gp,
+  vaultContactGroups as g, vaultContactGroupMembers as m, vaultContactGroupPermissions as gp, vaultMemberRules as r,
 } from "./schema.js";
 
 type Tx = Parameters<Parameters<ReturnType<typeof drizzle>["transaction"]>[0]>[0];
@@ -22,12 +22,26 @@ async function insertWithParents(db: Tx, insert: (tx: Tx) => Promise<unknown>) {
   }
 }
 
-export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "ownerVault" | "changeVault" | "sharedVault" | "contactGroups" | "changeContactGroup"> {
+export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "contactGroups" | "changeContactGroup"> {
   function listCategories(owner: string) {
     return db.select({ id: c.id, name: c.name }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
   }
 
+  // Both the roster and the data read apply this predicate to a (category, accepted contact) pair.
+  const canRead = sql<boolean>`coalesce(
+    (select ${r.allowed} from ${r} where ${r.owner} = ${c.owner} and ${r.id} = ${c.id} and ${r.address} = ${friends.address}),
+    exists(select 1 from ${p} join ${t} on ${t.userId} = ${p.owner} and ${t.tag} = ${p.group}
+      where ${p.owner} = ${c.owner} and ${p.id} = ${c.id} and ${t.address} = ${friends.address}) or
+    exists(select 1 from ${gp} join ${m} on ${m.owner} = ${gp.owner} and ${m.groupId} = ${gp.groupId}
+      where ${gp.owner} = ${c.owner} and ${gp.id} = ${c.id} and ${m.address} = ${friends.address}))`;
+
   return {
+    async vaultMembers(owner, categoryId) {
+      const rows = await db.select({ address: friends.address }).from(c)
+        .leftJoin(friends, and(eq(friends.userId, c.owner), canRead))
+        .where(and(eq(c.owner, owner), eq(c.id, categoryId))).orderBy(friends.address);
+      return rows.length ? rows.flatMap(({ address }) => address ? [Address.parse(address)] : []) : null;
+    },
     async vaultCatalog(owner) {
       return { categories: await listCategories(owner) };
     },
@@ -86,6 +100,9 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "ownerVault" 
       switch (change.action) {
         case "rename": await db.update(c).set({ name: change.name }).where(category); break;
         case "delete": await db.delete(c).where(category); break;
+        case "set_member":
+          return insertWithParents(db, async tx => tx.insert(r).values({ owner, id, address: change.address, allowed: change.allowed })
+            .onConflictDoUpdate({ target: [r.owner, r.id, r.address], set: { allowed: change.allowed } }));
         case "set_group":
           if (change.allowed) await db.insert(p).values({ owner, id, group: change.group }).onConflictDoNothing();
           else await db.delete(p).where(and(eq(p.owner, owner), eq(p.id, id), eq(p.group, change.group)));
@@ -111,14 +128,8 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "ownerVault" 
       // Authorization is part of the same SELECT that reads entries. A tag from an outgoing
       // invitation is insufficient: the reader must also be an accepted contact.
       const owner = db.select({ owner: users.userId }).from(users).where(eq(users.address, to));
-      const allowed = db.select({ id: p.id }).from(p)
-        .innerJoin(t, and(eq(t.userId, p.owner), eq(t.tag, p.group), eq(t.address, reader)))
-        .innerJoin(friends, and(eq(friends.userId, t.userId), eq(friends.address, t.address)))
-        .where(inArray(p.owner, owner));
-      const customAllowed = db.select({ id: gp.id }).from(gp)
-        .innerJoin(m, and(eq(m.owner, gp.owner), eq(m.groupId, gp.groupId), eq(m.address, reader)))
-        .where(inArray(gp.owner, owner));
-      const visible = and(inArray(c.owner, owner), or(inArray(c.id, allowed), inArray(c.id, customAllowed)));
+      const visible = and(inArray(c.owner, owner), exists(db.select({ address: friends.address }).from(friends)
+        .where(and(eq(friends.userId, c.owner), eq(friends.address, reader), canRead))));
       if (!id) return { categories: await db.select({ id: c.id, name: c.name }).from(c).where(visible).orderBy(c.name, c.id) };
       const rows = await db.select({ name: c.name, entry: { label: e.label, value: e.value } }).from(c)
         .leftJoin(e, and(eq(e.owner, c.owner), eq(e.id, c.id))).where(and(visible, eq(c.id, id))).orderBy(e.label);
