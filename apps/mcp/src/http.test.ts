@@ -158,6 +158,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     "GET /v1/agent/tags": tags,
     "GET /v1/agent/network/users": { addresses: [pending.to] },
     [`GET /v1/agent/vault/members?categoryId=${tagId}`]: { members: [pending.to] },
+    "POST /v1/agent/vault/query": { categories: [{ id: tagId, name: "Plan de salud" }] },
   };
 
   const broker = await listen(createServer(async (req, res) => {
@@ -188,7 +189,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
     ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_tags", true], ["sideband_tag_change", undefined],
-    ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
+    ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_access", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
     ["sideband_vault_request_access", undefined],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
@@ -207,6 +208,8 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   expect((await ana.callTool({ name: "sideband_tags" })).structuredContent).toEqual(tags);
   expect((await ana.callTool({ name: "sideband_network_users" })).structuredContent).toEqual({ addresses: [pending.to] });
   expect((await ana.callTool({ name: "sideband_vault_members", arguments: { categoryId: tagId } })).structuredContent).toEqual({ members: [pending.to] });
+  expect((await ana.callTool({ name: "sideband_vault_access", arguments: { to: pending.to } })).structuredContent)
+    .toEqual({ categories: [{ id: tagId, name: "Plan de salud" }] });
 
   expect(requests).toEqual([
     { path: "POST /v1/agent/ask", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: question },
@@ -217,6 +220,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     { path: "GET /v1/agent/tags", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "GET /v1/agent/network/users", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: `GET /v1/agent/vault/members?categoryId=${tagId}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "POST /v1/agent/vault/query", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: { to: pending.to } },
   ]);
 });
 
