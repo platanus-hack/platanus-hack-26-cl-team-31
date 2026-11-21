@@ -121,8 +121,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       const { id, address } = parseInput(route.params, c.req.param());
       return owner.removeFromCircle(c.get("web"), id, address);
     }
-    case "owner.removeFriend":
-      return owner.removeFriend(c.get("web"), parseInput(route.params, c.req.param()).address);
+    case "owner.removeContact":
+      return owner.removeContact(c.get("web"), parseInput(route.params, c.req.param()).address);
     case "admin.rewake":
       return admin.rewake(c.get("admin"), parseInput(route.params, c.req.param()).id, (await parseBody(c, route.body)).reason);
     case "admin.expire":

@@ -175,8 +175,8 @@ describe("HTTP interno del broker", () => {
     });
     expect((await contacts(bruno)).contacts[0]?.receives).toEqual(["availability", "general"]);
 
-    const path = routes.ownerRemoveFriend.path.replace(":address", encodeURIComponent("bruno@sideband.app"));
-    await call(app, routes.ownerRemoveFriend, { token: alice, path });
+    const path = routes.ownerRemoveContact.path.replace(":address", encodeURIComponent("bruno@sideband.app"));
+    await call(app, routes.ownerRemoveContact, { token: alice, path });
     expect((await contacts(alice)).contacts).toEqual([]);
     expect((await contacts(bruno)).contacts).toEqual([]);
     expect(await call(app, routes.ownerGrants, { token: alice })).toEqual({ items: [] });

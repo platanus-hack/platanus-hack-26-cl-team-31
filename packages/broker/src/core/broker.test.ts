@@ -717,7 +717,7 @@ describe("solicitudes de conexión", () => {
     expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tag: "friend", gives: contactTags.friend.sharing });
     await expect(broker.owner.setContactTag(carla, "diego@sideband.app", "friend")).rejects.toMatchObject({ code: "not_found" });
 
-    await broker.owner.removeFriend(carla, "bruno@sideband.app");
+    await broker.owner.removeContact(carla, "bruno@sideband.app");
     const again = await broker.owner.connect(carla, "bruno@sideband.app");
     await broker.owner.answerInvitation(bruno, again.requestId, { accept: true });
     expect((await broker.owner.contacts(carla)).contacts[0]).not.toHaveProperty("tag");
@@ -756,7 +756,7 @@ describe("solicitudes de conexión", () => {
     await broker.owner.answerInvitation(bruno, request.requestId, { accept: true });
     const pending = await broker.agent.ask(carla, availability);
 
-    await broker.owner.removeFriend(bruno, "carla@sideband.app");
+    await broker.owner.removeContact(bruno, "carla@sideband.app");
     expect(await friends(bruno)).toEqual([]);
     expect(await friends(carla)).toEqual([]);
     expect(await broker.owner.grants(bruno)).toEqual([aliceGrant]);
@@ -889,7 +889,7 @@ describe("círculos", () => {
     });
     expect(directRequest).toMatchObject({ final: false, waitingFor: "agent" });
 
-    await broker.owner.removeFriend(bruno, carlaAddress);
+    await broker.owner.removeContact(bruno, carlaAddress);
     expect((await broker.owner.contacts(bruno)).contacts).toEqual([]);
     expect(await inboxItem(bruno, circleRequest.requestId)).toMatchObject({ allowedFields: ["available", "freeSlots"] });
     expect(await broker.agent.status(carla, directRequest.requestId)).toMatchObject({ final: true, decision: "deny" });

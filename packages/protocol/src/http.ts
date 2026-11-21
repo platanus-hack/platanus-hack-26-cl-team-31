@@ -259,13 +259,13 @@ export const routes = {
     iss: "web",
     port: "owner.answerInvitation",
   },
-  ownerRemoveFriend: {
+  ownerRemoveContact: {
     method: "DELETE",
     path: "/v1/owner/connections/:address",
     params: z.object({ address: Address }),
     ...noContent,
     iss: "web",
-    port: "owner.removeFriend",
+    port: "owner.removeContact",
   },
   ownerCircles: {
     method: "GET",

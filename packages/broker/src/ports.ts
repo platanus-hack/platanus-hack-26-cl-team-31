@@ -93,7 +93,9 @@ export interface OwnerPort {
   joinCircle(o: Owner, circleId: string): Promise<void>;
   // A member leaves with their own address. The creator removes any other address.
   removeFromCircle(o: Owner, circleId: string, address: Address): Promise<void>;
-  removeFriend(o: Owner, friend: Address): Promise<void>;
+  removeContact(o: Owner, contact: Address): Promise<void>;
+  /** @deprecated Use removeContact. */
+  removeFriend(o: Owner, contact: Address): Promise<void>;
 }
 
 // Operational mutations for apps/admin. The broker keeps the invariant that each request ends in

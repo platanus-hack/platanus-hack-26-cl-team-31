@@ -25,6 +25,7 @@ import {
   agentScopes,
   ChannelName,
   type FinalOutcome,
+  type Owner,
   type Principal,
   type ReplyReceipt,
   type RequesterView,
@@ -433,6 +434,25 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       ...(change.action === "set_group" ? { group: change.group, allowed: change.allowed } : {}),
       ...(change.action === "set_contact_group" || change.action === "set_member" ? { allowed: change.allowed } : {}) } });
     return { categoryId };
+  }
+
+  async function removeContact(o: Owner, contact: Address) {
+    if (!Address.safeParse(contact).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
+    await store.tx(async (tx) => {
+      const me = (await tx.getUser(o.userId))?.address;
+      const other = await tx.getUserByAddress(contact);
+      const sides = [{ userId: o.userId, address: contact }];
+      if (other && me) sides.push({ userId: other.userId, address: me });
+      sides.sort((a, b) => a.userId.localeCompare(b.userId));
+      let removed = false;
+      for (const { userId, address } of sides) {
+        removed = await tx.removeFriend(userId, address) || removed;
+        await tx.setContactTag(userId, address, null);
+        await grants.applySharing(tx, userId, address, []);
+        await cancelUnauthorized(tx, userId);
+      }
+      if (removed) record(tx, "broker.contact.removed", { userId: o.userId });
+    });
   }
 
   return {
@@ -927,24 +947,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       ...createCirclePort({ store, clock }, record, cancelUnauthorized),
 
-      async removeFriend(o, friend) {
-        if (!Address.safeParse(friend).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
-        await store.tx(async (tx) => {
-          const me = (await tx.getUser(o.userId))?.address;
-          const other = await tx.getUserByAddress(friend);
-          const sides = [{ userId: o.userId, address: friend }];
-          if (other && me) sides.push({ userId: other.userId, address: me });
-          sides.sort((a, b) => a.userId.localeCompare(b.userId));
-          let removed = false;
-          for (const { userId, address } of sides) {
-            removed = await tx.removeFriend(userId, address) || removed;
-            await tx.setContactTag(userId, address, null);
-            await grants.applySharing(tx, userId, address, []);
-            await cancelUnauthorized(tx, userId);
-          }
-          if (removed) record(tx, "broker.contact.removed", { userId: o.userId });
-        });
-      },
+      removeContact,
+      removeFriend: removeContact,
 
       async revokeAgent(o, agentId) {
         await store.tx((tx) => revokeConnection(tx, o.userId, agentId, clock.now(), (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "owner" } })));

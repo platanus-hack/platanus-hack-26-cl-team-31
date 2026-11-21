@@ -6,6 +6,9 @@ import { createHttpClient, type ClientOptions } from "./http.js";
 export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
   const request = createHttpClient(options, Owner);
 
+  const removeContact: OwnerPort["removeContact"] = (owner, contact) =>
+    request(routes.ownerRemoveContact, owner, { params: { address: contact } });
+
   return {
     vault: (o) => request(routes.ownerVault, o),
     changeVault: (o, body) => request(routes.ownerChangeVault, o, { body }),
@@ -42,6 +45,7 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     inviteToCircle: (owner, id, address) => request(routes.ownerInviteToCircle, owner, { params: { id, address } }),
     joinCircle: (owner, id) => request(routes.ownerJoinCircle, owner, { params: { id } }),
     removeFromCircle: (owner, id, address) => request(routes.ownerRemoveFromCircle, owner, { params: { id, address } }),
-    removeFriend: (owner, address) => request(routes.ownerRemoveFriend, owner, { params: { address } }),
+    removeContact,
+    removeFriend: removeContact,
   };
 }

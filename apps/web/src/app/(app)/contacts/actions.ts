@@ -115,7 +115,7 @@ export async function removeContact(contact: string): Promise<Feedback> {
   if (!address.success) return { error: "La dirección no es válida." };
 
   try {
-    await ownerClient().removeFriend(owner, address.data);
+    await ownerClient().removeContact(owner, address.data);
   } catch (error) {
     return { error: actionError("removeContact", error, "No se pudo quitar. Intenta de nuevo.") };
   }
