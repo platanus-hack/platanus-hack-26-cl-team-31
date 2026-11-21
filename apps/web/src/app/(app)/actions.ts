@@ -11,11 +11,21 @@ import { getOwner, readAsOwner, requireAddress } from "./owner";
 import { actionError, type Feedback } from "./action-feedback";
 
 export async function readHome() {
-  const { data: [pending, activity, { incoming }] } = await readAsOwner((owner) => {
+  const { data: [pending, activity, { incoming, contacts }, agents] } = await readAsOwner((owner) => {
     const broker = ownerClient();
-    return Promise.all([broker.pending(owner), broker.activity(owner, 4), broker.contacts(owner)]);
+    return Promise.all([broker.pending(owner), broker.activity(owner, 50), broker.contacts(owner), broker.agents(owner)]);
   });
-  return [pending.filter((item) => item.tool !== "connect"), activity, incoming] as const;
+  const now = Date.now();
+  return {
+    pending: pending.filter((item) => item.tool !== "connect"),
+    activity: activity.slice(0, 6),
+    answered: activity.filter((item) => item.direction === "received" && item.status === "answered"
+      && now - new Date(item.closedAt ?? item.createdAt).getTime() < 86_400_000).length,
+    invitations: incoming,
+    contacts: contacts.length,
+    agents: agents.filter((agent) => !agent.revokedAt).length,
+    now,
+  };
 }
 
 export async function decide(requestId: string, _: Feedback, form: FormData): Promise<Feedback> {

@@ -41,6 +41,11 @@ const contacts: ContactsView = {
 
 const circles: Circle[] = [
   { id: "c1", name: "Fútbol del sábado", owner: me, members: [{ address: me, joined: true }, { address: "bruno@sideband.app", joined: true }, { address: "diego@sideband.app", joined: false }] },
+  { id: "c3", name: "Pega", owner: me, members: [{ address: me, joined: true }, { address: "diego@sideband.app", joined: true }, { address: "elena@sideband.app", joined: true }, { address: "hugo@sideband.app", joined: true }, { address: "irene@sideband.app", joined: true }, { address: "javier@sideband.app", joined: true }] },
+  { id: "c4", name: "Asado del domingo", owner: "bruno@sideband.app", members: [{ address: "bruno@sideband.app", joined: true }, { address: me, joined: true }, { address: "carla@sideband.app", joined: true }] },
+  { id: "i0", name: "Running del martes", owner: "diego@sideband.app", members: [{ address: "diego@sideband.app", joined: true }, { address: "bruno@sideband.app", joined: true }, { address: me, joined: false }] },
+  { id: "i1", name: "Club de lectura", owner: "elena@sideband.app", members: [{ address: "elena@sideband.app", joined: true }, { address: "bruno@sideband.app", joined: true }, { address: me, joined: false }] },
+  { id: "i2", name: "Pádel", owner: "hugo@sideband.app", members: [{ address: "hugo@sideband.app", joined: true }, { address: "bruno@sideband.app", joined: true }, { address: me, joined: false }] },
   { id: "c2", name: "Familia", owner: "carla@sideband.app", members: [{ address: "carla@sideband.app", joined: true }, { address: me, joined: false }] },
 ];
 
@@ -50,7 +55,7 @@ const pending: OwnerPendingItem[] = [
   { requestId: "r3", from: "diego@sideband.app", tool: "vault_access", args: { categoryName: "Lista de regalos" }, senderMessage: { text: "Para el amigo secreto", trusted: false }, expiresAt: hours(12) },
 ];
 
-const activity: ActivityItem[] = [
+export const frozenActivity: ActivityItem[] = [
   { direction: "received", requestId: "a1", from: "bruno@sideband.app", to: me, tool: "interest_check", status: "answered", createdAt: hours(-2), expiresAt: hours(20), closedAt: hours(-1.9), events: [{ kind: "received", at: hours(-2) }, { kind: "response", at: hours(-1.9), status: "answered" }] },
   { direction: "sent", requestId: "a2", from: me, to: "carla@sideband.app", tool: "availability", status: "awaiting_owner", createdAt: hours(-5), expiresAt: hours(19), events: [{ kind: "received", at: hours(-5) }] },
   { direction: "received", requestId: "a3", from: "hector@sideband.app", to: me, tool: "question", status: "denied", createdAt: hours(-26), expiresAt: hours(-2), closedAt: hours(-26), events: [{ kind: "permission", at: hours(-26), status: "denied" }] },
@@ -88,7 +93,7 @@ export const frozenOwnerClient: OwnerPort = {
   setGrant: () => later({}) as never,
   revokeGrant: done,
   pending: () => later(pending),
-  activity: () => later(activity),
+  activity: () => later(frozenActivity),
   ask: view,
   status: view,
   decide: done,

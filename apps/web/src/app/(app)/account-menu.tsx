@@ -12,8 +12,8 @@ const item = "flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-
 
 function Avatar({ account, size }: { account: Account; size: string }) {
   return account.image
-    ? <span aria-hidden="true" style={{ backgroundImage: `url("${account.image}")` }} className={`${size} shrink-0 rounded-lg bg-cover bg-center tag`} />
-    : <span aria-hidden="true" className={`${size} grid shrink-0 place-items-center rounded-lg bg-accent-soft text-[13px] font-medium text-accent-ink tag`}>{account.name.slice(0, 1).toUpperCase()}</span>;
+    ? <span aria-hidden="true" style={{ backgroundImage: `url("${account.image}")` }} className={`${size} shrink-0 rounded-full bg-cover bg-center tag`} />
+    : <span aria-hidden="true" className={`${size} grid shrink-0 place-items-center rounded-full bg-accent-soft text-[13px] font-medium text-accent-ink tag`}>{account.name.slice(0, 1).toUpperCase()}</span>;
 }
 
 export function AccountMenu({ account, compact = false }: { account: Account; compact?: boolean }) {
@@ -72,13 +72,14 @@ export function AccountMenu({ account, compact = false }: { account: Account; co
         </div>
       )}
       {open && (
-        <div role="menu" className={`menu absolute z-30 w-60 rounded-xl p-1.5 ${compact ? "top-full right-0 mt-2" : "bottom-full left-0 mb-2"}`}>
+        <div role="menu" className={`menu absolute z-30 w-60 rounded-xl p-1.5 ${compact ? "top-full right-0 mt-2 origin-top-right animate-[pop_160ms_var(--ease-smooth-out)]" : "bottom-full left-0 mb-2 origin-bottom-left animate-[pop-up_160ms_var(--ease-smooth-out)]"}`}>
           <div className="px-2.5 pt-1.5 pb-2">
             <p className="truncate text-[13px] font-medium text-ink">{account.name}</p>
             <p className="truncate text-xs text-muted">{account.email}</p>
           </div>
           <div className="my-1 h-px bg-line" />
           <button type="button" role="menuitem" onClick={copy} className={item}>{copied ? "Dirección copiada" : "Copiar dirección"}</button>
+          <Link role="menuitem" href="/profile" onClick={() => setOpen(false)} className={item}>Perfil</Link>
           <Link role="menuitem" href="/agents" onClick={() => setOpen(false)} className={item}>Agentes conectados</Link>
           <div className="my-1 h-px bg-line" />
           <button type="button" role="menuitem" onClick={signOut} disabled={leaving} className={`${item} text-danger`}>{leaving ? "Cerrando sesión…" : "Cerrar sesión"}</button>

@@ -2,6 +2,7 @@ import { routes } from "@team-31/protocol/http";
 
 import { getStreamSession } from "../../../../lib/auth";
 import { brokerFetch, brokerUrl, signServiceToken } from "../../../../lib/broker";
+import { frozen, frozenActivity } from "../../../../lib/frozen";
 import { getTelemetry, observeRoute } from "../../../../lib/telemetry";
 import { activityStream } from "./activity-stream";
 
@@ -16,7 +17,19 @@ function emptyResponse(status: number, headers: Record<string, string> = {}) {
   return new Response(null, { status, headers: { "Cache-Control": "no-store", ...headers } });
 }
 
+function frozenStream(signal: AbortSignal) {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const item of frozenActivity) controller.enqueue(encoder.encode(`event: activity\ndata: ${JSON.stringify(item)}\n\n`));
+      const timer = setInterval(() => controller.enqueue(encoder.encode(": heartbeat\n\n")), 15_000);
+      signal.addEventListener("abort", () => { clearInterval(timer); controller.close(); });
+    },
+  });
+}
+
 export function GET(request: Request) {
+  if (frozen) return new Response(frozenStream(request.signal), { headers: streamHeaders });
   return observeRoute(request, route, async () => {
     const session = await getStreamSession(request.headers);
     if (!session) return emptyResponse(401);

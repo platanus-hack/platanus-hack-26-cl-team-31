@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { cache, Suspense } from "react";
 
 import { readContacts } from "./actions";
-import { card, Empty, Heading, Stamp } from "../ui";
+import { Segmented } from "../sliding";
+import { card, Empty, Heading, PageSkeleton, Stamp } from "../ui";
 import { ContactRow, IncomingInvitation, InviteButton } from "./contact-forms";
 import { describeSharing } from "./describe";
 
@@ -22,15 +22,10 @@ async function ContactsList({ searchParams }: { searchParams: PageProps<"/contac
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-      <nav aria-label="Vistas de contactos" className="flex gap-1">
-        {tabs.map(({ id, label, count }) => (
-          <Link key={id} href={id === "contactos" ? "/contacts" : `/contacts?vista=${id}`} aria-current={view === id ? "page" : undefined}
-            className={`inline-flex h-[30px] items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors ${view === id ? "bg-white/12 text-[#fbfbfb] indicator" : "text-[#979797] hover:text-ink"}`}>
-            {label}
-            {count ? <span className={`rounded-full px-1.5 text-[11px] tabular-nums ${id === "solicitudes" ? "bg-accent-soft text-accent-ink" : "bg-white/8 text-body"}`}>{count}</span> : null}
-          </Link>
-        ))}
-      </nav>
+      <Segmented label="Vistas de contactos" items={tabs.map(({ id, label, count }) => ({
+        key: id, href: id === "contactos" ? "/contacts" : `/contacts?vista=${id}`, active: view === id,
+        label: <>{label}{count ? <span className={`rounded-full px-1.5 text-[11px] tabular-nums ${id === "solicitudes" ? "bg-accent-soft text-accent-ink" : "bg-white/8 text-body"}`}>{count}</span> : null}</>,
+      }))} />
       <InviteButton tags={tags} />
       </div>
 
@@ -71,7 +66,7 @@ export default function ContactsPage({ searchParams }: PageProps<"/contacts">) {
   return (
     <div>
       <Heading title="Contactos" />
-      <Suspense fallback={<p role="status">Cargando contactos…</p>}>
+      <Suspense fallback={<PageSkeleton tabs label="Cargando contactos" />}>
         <ContactsList searchParams={searchParams} />
       </Suspense>
     </div>

@@ -38,8 +38,8 @@ export async function OwnerProfile() {
     : "Sin foto";
 
   return (
-    <section aria-labelledby="profile-title" className="mt-8">
-      <h2 id="profile-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Mi perfil</h2>
+    <section aria-labelledby="profile-title">
+      <h2 id="profile-title" className="sr-only">Mi perfil</h2>
       <div className={card}>
         <table aria-labelledby="profile-title" className="w-full table-fixed text-left text-sm">
           <tbody className="divide-y divide-line">
