@@ -1,0 +1,47 @@
+[
+  {
+    "id": "carla",
+    "name": "Carla",
+    "headline": "Diseñadora. Juega a la pelota cuando puede.",
+    "availability": { "saturday": ["10:00-13:00"], "sunday": [] },
+    "interests": ["fútbol", "cerámica", "café"],
+    "health": [{ "label": "Tipo de sangre", "value": "O negativo" }, { "label": "Alergias", "value": "Penicilina" }],
+    "shares": ["availability", "interests"]
+  },
+  {
+    "id": "benja",
+    "name": "Benja",
+    "headline": "Ingeniero y ciclista de fin de semana.",
+    "availability": { "saturday": ["08:00-20:00"], "sunday": ["16:00-20:00"] },
+    "interests": ["fútbol", "ciclismo", "asados"],
+    "health": [{ "label": "Tipo de sangre", "value": "A positivo" }],
+    "shares": ["availability", "interests", "health"]
+  },
+  {
+    "id": "sofia",
+    "name": "Sofía",
+    "headline": "Médica de urgencias.",
+    "availability": { "saturday": [], "sunday": ["09:00-12:00"] },
+    "interests": ["fútbol", "escalada", "novela negra"],
+    "health": [{ "label": "Tipo de sangre", "value": "O negativo" }, { "label": "Donante", "value": "Dona sangre cada seis meses" }],
+    "shares": ["availability", "interests", "health"]
+  },
+  {
+    "id": "tomas",
+    "name": "Tomás",
+    "headline": "Profesor de historia.",
+    "availability": { "saturday": ["15:00-20:00"], "sunday": ["10:00-18:00"] },
+    "interests": ["ajedrez", "lectura", "cocina"],
+    "health": [{ "label": "Condiciones", "value": "Asma leve" }],
+    "shares": ["availability", "interests", "health"]
+  },
+  {
+    "id": "valentina",
+    "name": "Valentina",
+    "headline": "Arquera de un equipo amateur.",
+    "availability": { "saturday": ["15:00-19:00"], "sunday": [] },
+    "interests": ["fútbol", "yoga", "fotografía"],
+    "health": [{ "label": "Tipo de sangre", "value": "O negativo" }],
+    "shares": ["interests", "health"]
+  }
+]
