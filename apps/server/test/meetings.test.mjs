@@ -51,6 +51,7 @@ test("independent responses choose a common slot including the organizer, and co
   const partial = await call("ana", "respond", { id });
   assert.equal(partial.status, "collecting");
   assert.equal(partial.slot, undefined);
+  assert.ok(!(await call("ana", "inbox", {})).meetings.some(meeting => meeting.id === id));
 
   const proposal = await call("carla", "respond", { id });
   assert.deepEqual(proposal, {
@@ -58,11 +59,13 @@ test("independent responses choose a common slot including the organizer, and co
     minutes: 60, status: "proposed", slot: second,
   });
   assert.deepEqual(await call("outsider", "decide", { id, accept: true }), denied);
+  assert.deepEqual((await call("ana", "inbox", {})).meetings.find(meeting => meeting.id === id), proposal);
   for (const participant of ["bob", "ana"]) {
     assert.equal((await call(participant, "decide", { id, accept: true })).status, "proposed");
   }
   const repeated = await Promise.all([1, 2].map(() => call("carla", "decide", { id, accept: true })));
   assert.deepEqual(repeated.map(r => r.status), ["confirmed", "confirmed"]);
+  assert.ok(!(await call("carla", "inbox", {})).meetings.some(meeting => meeting.id === id));
   assert.equal((await pool.query("SELECT id FROM meetings WHERE id=$1 AND status='confirmed'", [id])).rowCount, 1);
 });
 
