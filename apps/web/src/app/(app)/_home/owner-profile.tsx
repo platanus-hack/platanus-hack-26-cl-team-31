@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 
 import { getOwnerAccount, getOwnerUser } from "@/lib/auth-owner";
 import { getTelemetry } from "@/lib/telemetry";
+import { frozen } from "@/lib/frozen";
 import { whatsappStore } from "@/lib/whatsapp/runtime";
 
 import { card, Stamp, textLink } from "../ui";
 
 async function linkedPhone(userId: string) {
+  if (frozen) return "Sin vincular";
   try {
     const state = await whatsappStore().state(userId);
     return state?.linked ?? "Sin vincular";

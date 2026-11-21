@@ -298,6 +298,8 @@ Levanta un stack aislado (como `docker:demo`), siembra un mundo determinista y l
 
 `pnpm dev` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm typecheck`. Antes de dar algo por listo: `pnpm lint && pnpm typecheck` (y `pnpm test` si aplica).
 
+Para revisar la UI sin broker, Postgres ni login: `pnpm with-env env UI_FROZEN=1 TELEMETRY_SINK=off pnpm --filter @team-31/web dev`. Las páginas leen datos de ejemplo de `apps/web/src/lib/frozen.ts` y las acciones no guardan nada. Solo funciona fuera de producción.
+
 ### Hook pre-push (verificar solo lo afectado)
 
 `pnpm install`/`pnpm bootstrap` activa los hooks de `.githooks/` (`git config core.hooksPath .githooks`, compartido por todos los worktrees; cada uno corre su propia versión). Antes de cada `git push`, `pre-push` ejecuta `scripts/check-affected.sh`:
