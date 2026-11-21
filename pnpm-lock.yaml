@@ -18,6 +18,46 @@ importers:
         specifier: 4.1.12
         version: 4.1.12(@types/node@24.19.2)(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
 
+  apps/broker:
+    dependencies:
+      '@hono/node-server':
+        specifier: 2.1.11
+        version: 2.1.11(hono@4.13.19)
+      '@team-31/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
+      '@team-31/broker':
+        specifier: workspace:*
+        version: link:../../packages/broker
+      '@team-31/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@team-31/wake':
+        specifier: workspace:*
+        version: link:../../packages/wake
+      hono:
+        specifier: 4.13.19
+        version: 4.13.19
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@team-31/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      jose:
+        specifier: 6.2.15
+        version: 6.2.15
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   apps/mcp:
     dependencies:
       '@modelcontextprotocol/sdk':
