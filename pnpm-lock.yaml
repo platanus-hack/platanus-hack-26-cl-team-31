@@ -276,6 +276,9 @@ importers:
       '@team-31/broker':
         specifier: workspace:*
         version: link:../../packages/broker
+      '@team-31/demo':
+        specifier: workspace:*
+        version: link:../demo
       '@team-31/protocol':
         specifier: workspace:^
         version: link:../../packages/protocol

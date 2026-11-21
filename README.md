@@ -10,6 +10,10 @@ Track: 🔗 Multiplayer
 
 ### Dashboard con chat
 
+En `/demo`, **Contactos de Ana** usa el mismo runtime de Claude Code que `agents:runtime-demo`. Con PostgreSQL activo, ejecuta `pnpm agents:seed`, inicia `pnpm dev --filter @team-31/web` y pregunta «¿A alguien le interesa la cerámica?». **Ver datos** muestra el ID y la decisión del broker para cada contacto. Necesitas Claude Code autenticado y la configuración del proxy en el entorno local.
+
+Selecciona **Fútbol del sábado** para usar el chat de coordinación con Ollama.
+
 Con Node 24, pnpm 10 y Docker, ejecuta `pnpm agents:up 3` y deja la API abierta. Luego levanta Ollama con **una** de estas opciones:
 
 - **Docker:** `docker compose --profile demo-model up -d ollama` y luego `docker compose --profile demo-model exec ollama ollama pull qwen3:4b-instruct`.

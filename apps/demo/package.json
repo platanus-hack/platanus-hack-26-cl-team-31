@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./contact-session": {
+      "types": "./src/contact-session.d.mts",
+      "default": "./src/contact-session.mjs"
+    }
+  },
   "scripts": {
     "runtime-demo": "node src/runtime-demo.mjs",
     "test": "vitest run",

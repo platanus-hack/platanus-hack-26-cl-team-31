@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
+import { checkContactRuntime, runContactSession } from "@team-31/demo/contact-session";
 import { resolve } from "node:path";
-import { IncompleteModelReply, readHistory, runDemoAgent, selectTools } from "@/lib/demo-chat";
-import { asRecord, identities, isPerson, maxMessage, type ModelState, type Person } from "@/lib/demo";
+import { IncompleteModelReply, readHistory, runDemoAgent, selectTools } from "../../../lib/demo-chat";
+import { asRecord, identities, isPerson, maxMessage, type ModelState, type Person } from "../../../lib/demo";
 
 function json(body: object, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -59,6 +60,14 @@ async function checkModel(): Promise<ModelState> {
 
 export async function GET(request: Request) {
   if (!isLocal(request)) return json({ api: false, model: "offline" }, 404);
+  if (new URL(request.url).searchParams.get("mode") === "contacts") {
+    try {
+      await checkContactRuntime(resolve(process.cwd(), "../.."));
+      return json({ contacts: true });
+    } catch {
+      return json({ contacts: false }, 503);
+    }
+  }
   const [api, model] = await Promise.all([checkApi(), checkModel()]);
   return json({ api, model }, api && model === "ready" ? 200 : 503);
 }
@@ -77,6 +86,25 @@ export async function POST(request: Request) {
   }
 
   const { person, message } = input;
+  if (input.mode === "contacts") {
+    if (person !== "ana") return json({ text: "Esta agenda pertenece a Ana.", error: "api" }, 403);
+    const history = readHistory(input.history).filter(turn => turn.role === "user");
+    const prompt = history.length
+      ? `Preguntas anteriores (contexto): ${JSON.stringify(history.map(turn => turn.content))}\nPregunta actual: ${message}`
+      : message;
+    try {
+      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(180_000)]);
+      return json(await runContactSession(prompt, { signal, root: resolve(process.cwd(), "../..") }));
+    } catch (error) {
+      const failure = asRecord(error);
+      console.error("Contact runtime failed", {
+        code: failure?.code, name: error instanceof Error ? error.name : "unknown",
+        syscall: failure?.syscall,
+        receiptMissing: typeof failure?.path === "string" && failure.path.endsWith("broker-responses.jsonl"),
+      });
+      return json({ text: "La consulta no terminó. Revisa la sesión de Claude Code, el proxy y el seed local.", error: "api" }, 503);
+    }
+  }
   let backend: string;
   let headers: HeadersInit;
   let tools: ReturnType<typeof selectTools>;

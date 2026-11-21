@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { asRecord, formatSlot, identities, maxHistory, maxMessage, people, statuses, type ChatReply, type ChatTurn, type ModelState, type Person, type ToolTrace } from "@/lib/demo";
 
 type Message = { id: number; prompt: string; reply: ChatReply | null };
-type Services = { api: boolean; model: ModelState };
+type Services = { api?: boolean; model?: ModelState; contacts?: boolean };
 
 const suggestions: Record<Person, [string, string][]> = {
   ana: [["Consultar disponibilidad", "Hola, estoy organizando un partido. ¿Le acomoda a Bob el sábado a las seis de la tarde?"], ["Proponer un horario", "Invita a Bob y Carla a jugar el sábado. Propón las 4 o las 6 de la tarde como opciones."]],
@@ -63,8 +63,11 @@ function ToolDetails({ traces, meetingId, onMeeting }: {
 
 export function Dashboard() {
   const [person, setPerson] = useState<Person>("ana");
+  const [anaMode, setAnaMode] = useState<"contacts" | "coordination">("contacts");
+  const contactChat = person === "ana" && anaMode === "contacts";
+  const conversation = contactChat ? "ana-contacts" : person;
   const [draft, setDraft] = useState("");
-  const [history, setHistory] = useState<Partial<Record<Person, Message[]>>>({});
+  const [history, setHistory] = useState<Partial<Record<Person | "ana-contacts", Message[]>>>({});
   const [requests, setRequests] = useState<Partial<Record<Person, string>>>({});
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -74,25 +77,26 @@ export function Dashboard() {
   const input = useRef<HTMLTextAreaElement>(null);
   const refocus = useRef(false);
   const sequence = useRef(0);
-  const messages = history[person];
-  const ready = services?.api && services.model === "ready";
+  const messages = history[conversation];
+  const ready = contactChat ? services?.contacts : services?.api && services.model === "ready";
 
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function check() {
       try {
-        const response = await fetch("/api/demo", { signal: controller.signal });
-        setServices(await response.json());
+        const response = await fetch(contactChat ? "/api/demo?mode=contacts" : "/api/demo", { signal: controller.signal });
+        const state = await response.json();
+        if (!controller.signal.aborted) setServices(state);
         if (response.ok) return;
       } catch {
-        if (!controller.signal.aborted) setServices({ api: false, model: "offline" });
+        if (!controller.signal.aborted) setServices(contactChat ? { contacts: false } : { api: false, model: "offline" });
       }
       if (!controller.signal.aborted) timer = setTimeout(check, 8000);
     }
     void check();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [refresh]);
+  }, [refresh, contactChat]);
 
   useEffect(() => {
     if (container.current) container.current.scrollTop = container.current.scrollHeight;
@@ -102,7 +106,7 @@ export function Dashboard() {
     }
   }, [messages]);
 
-async function send(message: string) {
+  async function send(message: string) {
     const prompt = message.trim();
     if (!prompt || pending || !ready) return;
     const sender = person;
@@ -116,12 +120,12 @@ async function send(message: string) {
       ]);
     setPending(true);
     setDraft("");
-    setHistory(current => ({ ...current, [sender]: [...(current[sender] ?? []), { id, prompt, reply: null }] }));
+    setHistory(current => ({ ...current, [conversation]: [...(current[conversation] ?? []), { id, prompt, reply: null }] }));
     let reply: ChatReply;
     try {
       const response = await fetch("/api/demo", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ person: sender, message: prompt, meetingId, requestId: requests[sender], history: context }),
+        body: JSON.stringify({ person: sender, mode: contactChat ? "contacts" : "coordination", message: prompt, meetingId, requestId: requests[sender], history: context }),
       });
       reply = await response.json();
       if (reply.error) {
@@ -136,13 +140,13 @@ async function send(message: string) {
         if (tool === "meeting_propose" && typeof data.id === "string") setMeetingId(data.id);
       }
     } catch {
-      setServices({ api: false, model: "offline" });
+      setServices(contactChat ? { contacts: false } : { api: false, model: "offline" });
       setRefresh(value => value + 1);
       reply = { error: "api", text: "No pude contactar el servidor local. Revisa la conexión e inténtalo de nuevo." };
     } finally {
       setPending(false);
     }
-    setHistory(current => ({ ...current, [sender]: current[sender]?.map(item => item.id === id ? { ...item, reply } : item) }));
+    setHistory(current => ({ ...current, [conversation]: current[conversation]?.map(item => item.id === id ? { ...item, reply } : item) }));
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -152,7 +156,7 @@ async function send(message: string) {
 
   function composer() {
     return <>
-      {meetingId && person !== "eva" && <p className="active-meeting">Encuentro activo <code>{meetingId.slice(0, 8)}</code></p>}
+      {!contactChat && meetingId && person !== "eva" && <p className="active-meeting">Encuentro activo <code>{meetingId.slice(0, 8)}</code></p>}
       <form className="composer" onSubmit={submit}>
         <label className="sr-only" htmlFor="demo-message">Mensaje para Nexo</label>
         <textarea ref={input} id="demo-message" rows={2} value={draft} onChange={event => setDraft(event.target.value)}
@@ -184,14 +188,18 @@ async function send(message: string) {
 
     <main className="main">
       <header className="header">
-        <p>Fútbol del sábado <span>· 28 nov · Santiago</span></p>
+        {person === "ana" ? <select aria-label="Conversación de Ana" value={anaMode} disabled={pending}
+          onChange={event => { setAnaMode(event.target.value === "contacts" ? "contacts" : "coordination"); setDraft(""); }}>
+          <option value="contacts">Contactos de Ana</option>
+          <option value="coordination">Fútbol del sábado</option>
+        </select> : <p>Fútbol del sábado <span>· 28 nov · Santiago</span></p>}
         <button type="button" className="connection" onClick={() => setRefresh(value => value + 1)} title="Comprobar conexión">
           <i className={ready ? "online" : ""} />
-          {!services ? "Conectando…" : ready ? "Agente listo" : !services.api ? "API desconectada" : services.model === "missing" ? "Modelo no instalado" : "Ollama sin conexión"}
+          {!services || (contactChat ? services.contacts === undefined : services.model === undefined) ? "Conectando…" : ready ? "Agente listo" : contactChat ? "Agente sin conexión" : !services.api ? "API desconectada" : services.model === "missing" ? "Modelo no instalado" : "Ollama sin conexión"}
         </button>
       </header>
-      {services && !ready && <p className="notice" role="status">
-        {!services.api ? <>Levanta la API con <code>pnpm agents:up 3</code>.</>
+      {services && !ready && (contactChat ? services.contacts !== undefined : services.model !== undefined) && <p className="notice" role="status">
+        {contactChat ? <>Revisa Claude Code y prepara la agenda con <code>pnpm agents:seed</code>.</> : !services.api ? <>Levanta la API con <code>pnpm agents:up 3</code>.</>
           : services.model === "missing" ? "Ollama está conectado. Si el modelo se está descargando, el chat se habilitará al terminar. Si no, sigue los pasos del README."
             : "No hay conexión con Ollama. Inícialo siguiendo los pasos del README."}
       </p>}
@@ -215,10 +223,10 @@ async function send(message: string) {
       </> : <div className="welcome">
         <div className="chat-width welcome-inner">
           <div className="welcome-title"><span className="welcome-mark"><Mark size={34} /></span><h1>Hola, {people[person].name}.</h1></div>
-          <p>{person === "eva" ? "Puedes conversar con Nexo aunque no estés en el grupo de fútbol." : "Pregunta por un horario o coordina un encuentro. Escríbelo como se lo dirías a alguien."}</p>
+          <p>{contactChat ? "Pregunta por un interés. Ana consultará a los agentes de su agenda." : person === "eva" ? "Puedes conversar con Nexo aunque no estés en el grupo de fútbol." : "Pregunta por un horario o coordina un encuentro. Escríbelo como se lo dirías a alguien."}</p>
           {composer()}
           <div className="suggestions" aria-label="Ideas para empezar">
-            {suggestions[person].map(([label, prompt]) => <button key={label} type="button" disabled={pending} onClick={() => {
+            {(contactChat ? [["Preguntar por cerámica", "¿A alguien le interesa la cerámica?"], ["Ver mis contactos", "¿Quién está en mi agenda?"]] : suggestions[person]).map(([label, prompt]) => <button key={label} type="button" disabled={pending} onClick={() => {
               setDraft(prompt);
               input.current?.focus();
             }}>{label}<Arrow /></button>)}
