@@ -1,0 +1,128 @@
+envVarGroups:
+  - name: team-31-shared
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: TURBO_TELEMETRY_DISABLED
+        value: "1"
+
+databases:
+  - name: team-31-db
+    databaseName: app
+    plan: basic-256mb
+    postgresMajorVersion: "17"
+
+services:
+  - type: web
+    name: team-31-web
+    runtime: node
+    plan: starter
+    autoDeployTrigger: "off"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@team-31/web...
+    preDeployCommand: pnpm --filter @team-31/web auth:migrate
+    startCommand: pnpm --filter @team-31/web start
+    healthCheckPath: /
+    envVars:
+      - fromGroup: team-31-shared
+      - key: WEB_PORT
+        value: "10000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: team-31-db
+          property: connectionString
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: BETTER_AUTH_URL
+        sync: false
+      - key: MCP_RESOURCE_URL
+        sync: false
+      - key: BROKER_URL
+        sync: false
+      - key: WEB_SERVICE_PRIVATE_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  - type: web
+    name: team-31-broker
+    runtime: node
+    plan: starter
+    autoDeployTrigger: "off"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@team-31/broker-service...
+    preDeployCommand: pnpm --filter @team-31/broker-service exec node scripts/migrate.mjs
+    startCommand: pnpm --filter @team-31/broker-service start
+    envVars:
+      - fromGroup: team-31-shared
+      - key: BROKER_HOST
+        value: 0.0.0.0
+      - key: BROKER_PORT
+        value: "10000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: team-31-db
+          property: connectionString
+      - key: BROKER_SIGNING_KEY
+        sync: false
+      - key: NONCE_KEY
+        sync: false
+      - key: WAKE_SECRETS_KEY
+        sync: false
+      - key: SERVICE_JWT_PUBLIC_KEYS
+        sync: false
+      - key: REQUEST_TTL_SECONDS
+        value: "900"
+      - key: WAKE_RETRY_DELAYS_MS
+        value: 10000,30000
+      - key: WAKE_ALLOW_INSECURE
+        value: "0"
+
+  - type: web
+    name: team-31-mcp
+    runtime: node
+    plan: starter
+    autoDeployTrigger: "off"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@team-31/mcp...
+    startCommand: pnpm --filter @team-31/mcp start
+    envVars:
+      - fromGroup: team-31-shared
+      - key: MCP_HOST
+        value: 0.0.0.0
+      - key: MCP_PORT
+        value: "10000"
+      - key: MCP_RESOURCE_URL
+        sync: false
+      - key: AUTH_ISSUER
+        sync: false
+      - key: AUTH_JWKS_URL
+        sync: false
+      - key: BROKER_URL
+        sync: false
+      - key: MCP_SERVICE_PRIVATE_KEY
+        sync: false
+      - key: MCP_DEV_AUTH
+        value: "0"
+
+  - type: web
+    name: team-31-coordination
+    runtime: node
+    plan: starter
+    autoDeployTrigger: "off"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@team-31/server...
+    preDeployCommand: node apps/server/scripts/schema.mjs
+    startCommand: pnpm --filter @team-31/server start
+    envVars:
+      - fromGroup: team-31-shared
+      - key: COORDINATION_HOST
+        value: 0.0.0.0
+      - key: COORDINATION_PORT
+        value: "10000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: team-31-db
+          property: connectionString
