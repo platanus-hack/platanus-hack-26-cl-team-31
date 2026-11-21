@@ -67,4 +67,26 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
     expect((await Promise.all([store.claim("123", "wamid.1"), store.claim("123", "wamid.1")])).sort())
       .toEqual([false, true]);
   });
+
+  it("al repetir la migración habilita las operaciones necesarias para el rol web de Render", async () => {
+    const dbOwner = await db.connect();
+    try {
+      await dbOwner.query("BEGIN");
+      await dbOwner.query(`DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nexo_web_runtime') THEN
+          CREATE ROLE nexo_web_runtime NOLOGIN;
+        END IF;
+      END $$`);
+      await dbOwner.query(await readFile(new URL("../../../scripts/whatsapp.sql", import.meta.url), "utf8"));
+      await dbOwner.query("SET LOCAL ROLE nexo_web_runtime");
+      await dbOwner.query("SELECT phone FROM whatsapp.pairing");
+      await dbOwner.query("INSERT INTO whatsapp.receipt VALUES ('render-test', now())");
+      await dbOwner.query("DELETE FROM whatsapp.receipt WHERE id = 'render-test'");
+      const { rows } = await dbOwner.query("SELECT has_table_privilege('whatsapp.receipt', 'UPDATE') AS can_update");
+      expect(rows[0]?.can_update).toBe(false);
+    } finally {
+      await dbOwner.query("ROLLBACK");
+      dbOwner.release();
+    }
+  });
 });

@@ -9,6 +9,8 @@ El número de WhatsApp personal se vincula a la misma cuenta que autoriza el MCP
 3. Aplica `pnpm nexo:auth:migrate` y después las [migraciones de ops](admin.md). En Render, el predeploy de web aplica la migración de auth y WhatsApp; si habilitas el canal, despliega también el broker actualizado.
 4. Crea un webhook **del número**, no de proyecto, para `whatsapp.message.received` (formato v2, sin buffering) en `https://<origen-web>/api/kapso/webhook`. Usa el mismo secreto que en web. Para desarrollo, Kapso necesita un túnel HTTPS al puerto web del worktree. Configura únicamente este receptor para responder a esos mensajes; no necesitas crear un agente o workflow adicional en Kapso.
 
+En despliegues con un rol web separado (`nexo_web_runtime`), provisiona el rol antes de `auth:migrate` o vuelve a ejecutar la migración después de crearlo. En el servicio que recibe el webhook, un `POST /api/kapso/webhook` sin firma debe responder `401` si Kapso quedó habilitado. Si responde `404`, verifica que el despliegue incluya la ruta y que el proceso web esté recibiendo las cuatro variables `KAPSO_*` con el formato indicado.
+
 ## Probar con dos cuentas
 
 1. Con sesión iniciada, abre **Agentes → Conectar con Nexo → WhatsApp**. Genera y envía el código de **Nexo**. Vuelve a la web y confirma que el número detectado sea el tuyo.
