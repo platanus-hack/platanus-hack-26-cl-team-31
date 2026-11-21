@@ -4,17 +4,15 @@ import type {
   Address,
   Category,
   ChannelName,
-  ContactTag,
+  Tag,
   FinalOutcome,
   RequiredRelation,
   RequestStatus,
   PublicAgent, PublicProfile,
-  Sharing,
   ToolName,
   ToolResult,
   WakeResult,
   WakeTarget,
-  ContactGroupChange, ContactGroups,
 } from "@team-31/protocol";
 
 export type UserRow = {
@@ -33,7 +31,6 @@ export type RequestRow = {
   targetAgentId?: string;
   // Channel where the owner wrote the request. It receives a notice on each later change.
   originChannel?: ChannelName;
-  senderGroupId?: string;
   tool: ToolName;
   args: unknown;
   purpose?: string;
@@ -140,8 +137,6 @@ export interface StoreTx {
   vaultMembers(owner: string, categoryId: string): Promise<Address[] | null>;
   ownerVault(owner: string): Promise<OwnerVault>;
   changeVault(owner: string, id: string, change: VaultChange): Promise<boolean>;
-  contactGroups(owner: string): Promise<ContactGroups>;
-  changeContactGroup(owner: string, id: string, change: ContactGroupChange): Promise<boolean>;
   sharedVault(reader: Address, to: Address, categoryId?: string): Promise<VaultResult>;
   searchPublicProfiles(query: string): Promise<PublicProfile[]>;
   getUser(userId: string): Promise<UserRow | null>;
@@ -164,12 +159,11 @@ export interface StoreTx {
   // True when this transaction creates a new membership.
   addContact(userId: string, address: Address): Promise<boolean>;
   removeContact(userId: string, address: Address): Promise<boolean>;
-  // The tag a holder put on each contact. A null tag removes it.
-  listContactTags(userId: string): Promise<Map<Address, ContactTag>>;
-  setContactTag(userId: string, address: Address, tag: ContactTag | null): Promise<void>;
-  // Only the presets the holder changed; the rest use contactTags defaults.
-  listTagPresets(userId: string): Promise<Partial<Record<ContactTag, Sharing>>>;
-  putTagPreset(userId: string, tag: ContactTag, sharing: Sharing): Promise<void>;
+  listTags(userId: string): Promise<Tag[]>;
+  putTag(userId: string, tag: Tag): Promise<void>;
+  deleteTag(userId: string, tagId: string): Promise<boolean>;
+  listContactTags(userId: string): Promise<Map<Address, string[]>>;
+  setContactTags(userId: string, address: Address, tagIds: readonly string[]): Promise<boolean>;
   // Pending connect requests sent or received by the user, oldest first.
   listOpenInvitations(userId: string): Promise<RequestRow[]>;
 

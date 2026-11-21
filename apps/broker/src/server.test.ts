@@ -131,8 +131,8 @@ describe("HTTP interno del broker", () => {
     for (const localPart of ["alice", "bruno", "carla"]) {
       await call(app, routes.ownerClaimAddress, { token: await owner(localPart), body: { localPart } });
     }
-    const preset = await call(app, routes.ownerConnect, { token, body: { to: "bruno@sideband.app", tag: "work" } });
-    const empty = await call(app, routes.ownerConnect, { token, body: { to: "carla@sideband.app", tag: "work", share: [] } });
+    const preset = await call(app, routes.ownerConnect, { token, body: { to: "bruno@sideband.app", tags: ["work"] } });
+    const empty = await call(app, routes.ownerConnect, { token, body: { to: "carla@sideband.app", tags: ["work"], share: [] } });
     const { outgoing } = await call(app, routes.ownerContacts, { token });
     expect(outgoing).toEqual(expect.arrayContaining([
       expect.objectContaining({ requestId: preset.requestId, offer: ["availability"] }),

@@ -1,45 +1,26 @@
 import { cache, Suspense } from "react";
-import { ownerClient } from "@/lib/broker";
-import { readAsOwner } from "../owner";
 
 import { readContacts } from "./actions";
 import { card, Empty, Heading, Stamp } from "../ui";
-import { ContactRow, IncomingInvitation, InviteButton, TagPresetsEditor } from "./contact-forms";
+import { ContactRow, IncomingInvitation, InviteButton, TagsEditor } from "./contact-forms";
 import { describeSharing } from "./describe";
-
-async function PrivateGroups() {
-  const { data: { groups, categories } } = await readAsOwner(o => ownerClient().contactGroups(o));
-  return <section aria-labelledby="groups-title" className="mb-10 space-y-3">
-    <h2 id="groups-title" className="font-medium">Grupos privados</h2>
-    {groups.length === 0 ? <Empty>Todavía no tienes grupos privados.</Empty> : <ul className="space-y-2">
-      {groups.map(group => {
-        const shared = categories.filter(c => c.contactGroups.some(g => g.id === group.id));
-        return <li key={group.id} className={`${card} space-y-1 px-5 py-3`}>
-          <h3 className="font-medium">{group.name}</h3>
-          <p className="break-words text-sm">Miembros: {group.members.join(", ") || "Sin miembros"}</p>
-          <p className="text-sm">Categorías compartidas: {shared.map(c => c.name).join(", ") || "Ninguna"}</p>
-        </li>;
-      })}
-    </ul>}
-  </section>;
-}
 
 const contactsData = cache(readContacts);
 
 async function Invite() {
-  const { presets } = await contactsData();
-  return <InviteButton presets={presets} />;
+  const { tags } = await contactsData();
+  return <InviteButton tags={tags} />;
 }
 
 async function ContactsList() {
-  const { contacts, presets, incoming, outgoing } = await contactsData();
+  const { contacts, tags, incoming, outgoing } = await contactsData();
   return (
     <div className="space-y-10">
       {incoming.length > 0 && (
         <section aria-labelledby="incoming-title">
           <h2 id="incoming-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Invitaciones</h2>
           <ul className="space-y-3">
-            {incoming.map((invitation) => <IncomingInvitation key={invitation.requestId} invitation={invitation} presets={presets} />)}
+            {incoming.map((invitation) => <IncomingInvitation key={invitation.requestId} invitation={invitation} tags={tags} />)}
           </ul>
         </section>
       )}
@@ -65,12 +46,12 @@ async function ContactsList() {
         <h2 id="contacts-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Tus contactos</h2>
         {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Toca Invitar para conectar con alguien.</Empty> : (
           <ul className="space-y-2">
-            {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} presets={presets} />)}
+            {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} tags={tags} />)}
           </ul>
         )}
       </section>
 
-      <TagPresetsEditor presets={presets} />
+      <TagsEditor tags={tags} />
     </div>
   );
 }
@@ -79,11 +60,8 @@ export default function ContactsPage() {
   return (
     <div className="max-w-2xl">
       <Heading title="Contactos" action={<Suspense><Invite /></Suspense>}>
-        Cada contacto tiene una etiqueta que define qué le compartes. Si quieres, ajustas a alguien en particular.
+        Las etiquetas de cada contacto definen qué le compartes. Si quieres, ajustas a alguien en particular.
       </Heading>
-      <Suspense fallback={<p role="status">Cargando grupos…</p>}>
-        <PrivateGroups />
-      </Suspense>
       <Suspense fallback={<p role="status">Cargando contactos…</p>}>
         <ContactsList />
       </Suspense>

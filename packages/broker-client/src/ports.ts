@@ -1,7 +1,7 @@
 import type { OwnerActivityQuery } from "@team-31/protocol/http";
 import type {
   ActivityItem,
-  ContactGroupChange, ContactGroups, OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
+  TagChange, TagsView, Tag, TagInput, TagUpdate, OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
   AdminActor,
   Capability,
   Circle,
@@ -15,7 +15,6 @@ import type {
   ChannelName,
   ContactsView,
   ConnectInput,
-  ContactTag,
   InboxItem,
   InvitationAnswer,
   Owner,
@@ -35,8 +34,8 @@ export interface AgentPort {
   searchPublicProfiles(p: Principal, query: string): Promise<PublicProfile[]>;
   networkUsers(p: Principal, after?: Address, q?: string): Promise<{ addresses: Address[]; nextCursor?: Address }>;
   connect(p: Principal): Promise<void>;
-  contactGroups(p: Principal): Promise<ContactGroups>;
-  changeContactGroup(p: Principal, input: ContactGroupChange): Promise<{ groupId: string }>;
+  tags(p: Principal): Promise<TagsView>;
+  changeTag(p: Principal, input: TagChange): Promise<{ tagId: string }>;
   vaultCatalog(p: Principal): Promise<VaultCatalog>;
   vaultMembers(p: Principal, categoryId: string): Promise<{ members: Address[] }>;
   changeVault(p: Principal, change: VaultChange): Promise<VaultReceipt>;
@@ -56,7 +55,10 @@ export interface OwnerPort {
   searchPublicProfiles(o: Owner, query: string): Promise<PublicProfile[]>;
   directory(o: Owner): Promise<AgentContacts>;
   queryVault(o: Owner, query: VaultQuery): Promise<VaultResult>;
-  contactGroups(o: Owner): Promise<ContactGroups & VaultCatalog>;
+  tags(o: Owner): Promise<TagsView>;
+  createTag(o: Owner, input: TagInput): Promise<Tag>;
+  updateTag(o: Owner, tagId: string, input: TagUpdate): Promise<Tag>;
+  deleteTag(o: Owner, tagId: string): Promise<void>;
   vault(o: Owner): Promise<OwnerVault>;
   changeVault(o: Owner, change: VaultChange): Promise<VaultReceipt>;
   me(o: Owner): Promise<{ userId: string; address?: Address; displayName?: string }>;
@@ -78,16 +80,10 @@ export interface OwnerPort {
   setChannel(o: Owner, name: ChannelName, target: WakeTarget): Promise<void>;
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;
   revokeAgent(o: Owner, agentId: string): Promise<void>;
-  // With a tag and no share, the invitation offers the tag's preset and the contact gets the tag.
   connect(o: Owner, input: ConnectInput): Promise<RequesterView>;
-  /** @deprecated Pass an invitation object with to, share and tag. */
-  connect(o: Owner, to: Address, share?: Sharing, tag?: ContactTag): Promise<RequesterView>;
   contacts(o: Owner): Promise<ContactsView>;
   setSharing(o: Owner, contact: Address, sharing: Sharing): Promise<void>;
-  // Tags the contact and replaces its sharing with the tag's preset.
-  setContactTag(o: Owner, contact: Address, tag: ContactTag): Promise<void>;
-  // Contacts with the tag that still match its old preset follow the new one.
-  setTagPreset(o: Owner, tag: ContactTag, sharing: Sharing): Promise<void>;
+  setContactTags(o: Owner, contact: Address, tags: string[]): Promise<void>;
   answerInvitation(o: Owner, requestId: string, answer: InvitationAnswer): Promise<void>;
   // Circles the owner joined or is invited to.
   circles(o: Owner): Promise<Circle[]>;

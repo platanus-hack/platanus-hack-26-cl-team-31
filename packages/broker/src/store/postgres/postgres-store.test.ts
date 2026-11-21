@@ -115,7 +115,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await createParticipants();
     const from = "alice@sideband.app";
     const to = "bruno@sideband.app";
-    await store.tx(async tx => { await tx.addContact("alice", to); await tx.setContactTag("alice", to, "friend"); });
+    await store.tx(async tx => { await tx.addContact("alice", to); await tx.listTags("alice"); await tx.setContactTags("alice", to, ["friend"]); });
     await store.tx(async tx => {
       expect(await tx.lockRequiredRelation("alice", from, to, { kind: "contact", tag: "friend" })).toBe(true);
       for (const table of ["friends", "contact_tags"]) {
@@ -199,11 +199,11 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     const alice: Principal = { userId: "alice", agentId: "a", scopes: ["sideband:inbox", "sideband:reply"] };
     const bruno: Principal = { userId: "bruno", agentId: "b", scopes: ["sideband:ask", "sideband:status"] };
     const to = "bruno@sideband.app";
-    const invitation = await broker.owner.connect(alice, { to, tag: "work" });
-    await expect(broker.owner.connect(alice, { to, tag: "family" })).rejects.toMatchObject({ code: "conflict" });
+    const invitation = await broker.owner.connect(alice, { to, tags: ["work"] });
+    await expect(broker.owner.connect(alice, { to, tags: ["family"] })).rejects.toMatchObject({ code: "conflict" });
     expect((await broker.owner.connect(alice, { to })).requestId).toBe(invitation.requestId);
     await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
-    expect((await broker.owner.contacts(alice)).contacts[0]).toMatchObject({ tag: "work", gives: ["availability"] });
+    expect((await broker.owner.contacts(alice)).contacts[0]).toMatchObject({ tags: ["work"], gives: ["availability"] });
     await broker.owner.removeContact(alice, to);
     const grant = await broker.owner.setGrant(alice, { grantee: to, category: "general" });
     const { requestId } = await broker.agent.ask(bruno, { to: "alice@sideband.app", tool: "question", args: { text: "¿Vienes?" } });
@@ -346,8 +346,26 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     expect(rows).toHaveLength(journal.entries.length);
   });
 
+  async function undoCustomTags() {
+    await isolated.query(`
+      DROP TABLE sideband.tags CASCADE;
+      ALTER TABLE sideband.users DROP COLUMN tags_seeded;
+      ALTER TABLE sideband.contact_tags DROP CONSTRAINT contact_tags_user_id_address_tag_id_pk;
+      ALTER TABLE sideband.contact_tags RENAME COLUMN tag_id TO tag;
+      ALTER TABLE sideband.contact_tags ADD CONSTRAINT contact_tags_user_id_address_pk PRIMARY KEY (user_id, address);
+      CREATE TABLE sideband.tag_presets (user_id text NOT NULL REFERENCES sideband.users(user_id), tag text NOT NULL,
+        categories jsonb NOT NULL, PRIMARY KEY (user_id, tag));
+      ALTER TABLE sideband.vault_permissions DROP CONSTRAINT vault_permissions_owner_id_category_id_tag_id_pk;
+      ALTER TABLE sideband.vault_permissions RENAME COLUMN tag_id TO contact_group;
+      ALTER TABLE sideband.vault_permissions ADD CONSTRAINT vault_permissions_owner_id_category_id_contact_group_pk
+        PRIMARY KEY (owner_id, category_id, contact_group);
+      ALTER TABLE sideband.vault_permissions ADD CONSTRAINT vault_group_valid CHECK (contact_group in ('friend','family','work'));
+      ALTER TABLE sideband.requests ADD COLUMN sender_group_id text;
+    `);
+    await isolated.query(await readFile(new URL("../../../drizzle/0009_vault_contact_groups.sql", import.meta.url), "utf8"));
+  }
+
   it("keeps the first active agent and preserves previously revoked history when migrating", async () => {
-    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
     await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
     await isolated.query("DROP TABLE IF EXISTS sideband.message_turns, sideband.ask_receipts, sideband.quota_windows");
@@ -358,6 +376,8 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       await tx.upsertAgentConnection({ ...base, agentId: "later", createdAt: new Date(now.getTime() + 1) });
       await tx.upsertAgentConnection({ ...base, agentId: "old", revokedAt: now });
     });
+    await undoCustomTags();
+    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
     await applyPostgresMigrations({ databaseUrl });
     const agents = await store.tx(tx => tx.listAgentConnections("alice"));
     expect(agents.filter(a => !a.revokedAt).map(a => a.agentId)).toEqual(["first"]);
@@ -367,6 +387,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   // Rewind the vault and channel tables before replaying older fixtures.
   async function undoVaultAndNotifyOrigin() {
+    await undoCustomTags();
     await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
     await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
@@ -506,16 +527,14 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect(await tx.lockRequiredRelation("bruno", "bruno@sideband.app", friend, { kind: "contact" })).toBe(true);
           expect(await tx.lockAskReceipt("dedup-test")).toBeNull();
           await tx.insertAskReceipt({ keyHash: "dedup-test", inputHash: "input", requestId: row.id, waitingFor: "agent" });
-          const groupId = randomUUID();
+          const tagId = randomUUID();
           const categoryId = randomUUID();
-          const group = { id: groupId, name: "Instituciones", members: [friend] };
-          const membership = { groupId, address: friend };
-          const sharing = { action: "set_contact_group", categoryId, groupId, allowed: true } as const;
-          expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
-          expect(await tx.changeContactGroup("bruno", groupId, { action: "create", name: group.name })).toBe(true);
-          expect(await tx.changeContactGroup("bruno", groupId, { ...membership, action: "add_contact" })).toBe(true);
-          expect(await tx.contactGroups("bruno")).toEqual({ groups: [group] });
-          expect(await tx.contactGroups("alice")).toEqual({ groups: [] });
+          const sharing = { action: "set_tag", categoryId, tagId, allowed: true } as const;
+          expect((await tx.listTags("bruno")).map(tag => tag.id)).toEqual(["friend", "family", "work"]);
+          await tx.putTag("bruno", { id: tagId, name: "Instituciones", color: "slate", categories: [] });
+          await tx.putTag("bruno", { id: tagId, name: "Instituciones", color: "rose", categories: ["general"] });
+          expect(await tx.setContactTags("bruno", friend, [tagId, "work"])).toBe(true);
+          expect(await tx.listContactTags("bruno")).toEqual(new Map([[friend, ["work", tagId].sort()]]));
           await tx.changeVault("bruno", categoryId, { action: "create", name: "Prueba" });
           expect(await tx.changeVault("bruno", categoryId, sharing)).toBe(true);
           expect(await tx.vaultMembers("bruno", categoryId)).toEqual([friend]);
@@ -524,12 +543,12 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: true });
           expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([{ id: categoryId, name: "Prueba" }]);
-          expect(await tx.changeContactGroup("bruno", groupId, { ...membership, action: "remove_contact" })).toBe(true);
+          expect(await tx.deleteTag("bruno", tagId)).toBe(true);
           expect(await tx.vaultMembers("bruno", categoryId)).toEqual([friend]);
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
           expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([]);
-          expect(await tx.changeContactGroup("bruno", groupId, { groupId, action: "delete" })).toBe(true);
-          expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
+          expect(await tx.deleteTag("bruno", "friend")).toBe(true);
+          expect(await tx.setContactTags("bruno", friend, [])).toBe(true);
           expect(await tx.removeContact("bruno", friend)).toBe(true);
         });
       } finally {
@@ -542,8 +561,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       expect(privileges?.can_mutate).toBe(false);
       const { rows: groupPrivileges } = await isolated.query(
         `SELECT name, has_table_privilege($1, name, 'UPDATE, TRUNCATE') AS excess
-         FROM unnest(ARRAY['sideband.friends', 'sideband.vault_contact_groups',
-           'sideband.vault_contact_group_members', 'sideband.vault_contact_group_permissions']) AS t(name)`,
+         FROM unnest(ARRAY['sideband.friends']) AS t(name)`,
         [runtimeRole],
       );
       expect(groupPrivileges.every(({ excess }) => !excess)).toBe(true);

@@ -12,7 +12,7 @@ describe("catálogo", () => {
       "web.invite.progress", "web.agent.ping",
       "mcp.tool.call", "broker.policy.evaluated", "broker.request.created", "broker.request.status_changed",
       "broker.request.closed", "broker.reply.rejected", "broker.reply.sanitized", "broker.owner.decided", "broker.grant.set", "broker.grant.revoked",
-      "broker.contact.connected", "broker.contact.removed", "broker.contact.tagged", "broker.channel.set", "broker.tag.preset_set",
+      "broker.contact.connected", "broker.contact.removed", "broker.contact.tagged", "broker.channel.set", "broker.tag.changed",
       "broker.vault.changed", "broker.vault.queried",
       "broker.circle.changed", "broker.agent.connected", "broker.agent.revoked",
       "worker.tick.completed", "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",

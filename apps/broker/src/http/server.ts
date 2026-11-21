@@ -35,11 +35,15 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       const { after, q } = parseInput(route.query, c.req.query());
       return agent.networkUsers(c.get("mcp"), after, q);
     }
-    case "owner.contactGroups": return owner.contactGroups(c.get("web"));
+    case "owner.tags": return owner.tags(c.get("web"));
+    case "owner.createTag": return owner.createTag(c.get("web"), await parseBody(c, route.body));
+    case "owner.updateTag":
+      return owner.updateTag(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
+    case "owner.deleteTag": return owner.deleteTag(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "agent.connect": return agent.connect(c.get("mcp"));
     case "agent.vaultCatalog": return agent.vaultCatalog(c.get("mcp"));
-    case "agent.contactGroups": return agent.contactGroups(c.get("mcp"));
-    case "agent.changeContactGroup": return agent.changeContactGroup(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.tags": return agent.tags(c.get("mcp"));
+    case "agent.changeTag": return agent.changeTag(c.get("mcp"), await parseBody(c, route.body));
     case "agent.vaultMembers": return agent.vaultMembers(c.get("mcp"), parseInput(route.query, c.req.query()).categoryId);
     case "agent.changeVault": return agent.changeVault(c.get("mcp"), await parseBody(c, route.body));
     case "agent.queryVault": return agent.queryVault(c.get("mcp"), await parseBody(c, route.body));
@@ -108,10 +112,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.contacts(c.get("web"));
     case "owner.setSharing":
       return owner.setSharing(c.get("web"), parseInput(route.params, c.req.param()).address, await parseBody(c, route.body));
-    case "owner.setContactTag":
-      return owner.setContactTag(c.get("web"), parseInput(route.params, c.req.param()).address, (await parseBody(c, route.body)).tag);
-    case "owner.setTagPreset":
-      return owner.setTagPreset(c.get("web"), parseInput(route.params, c.req.param()).tag, await parseBody(c, route.body));
+    case "owner.setContactTags":
+      return owner.setContactTags(c.get("web"), parseInput(route.params, c.req.param()).address, (await parseBody(c, route.body)).tags);
     case "owner.answerInvitation":
       return owner.answerInvitation(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
     case "owner.circles":

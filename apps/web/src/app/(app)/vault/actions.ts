@@ -9,7 +9,7 @@ export async function changeVault(form: FormData) {
   const owner = await getOwner();
   const data = Object.fromEntries([...form.entries()].filter(([key]) => !key.startsWith("$ACTION_")));
   const { kind, ...fields } = data;
-  const input = fields.action === "set_group" ? { ...fields, allowed: fields.allowed === "true" } :
+  const input = fields.action === "set_tag" ? { ...fields, allowed: fields.allowed === "true" } :
     fields.action === "put_entry" ? { ...fields, value: kind === "number" ? (String(fields.value).trim() ? Number(fields.value) : NaN) :
       fields.value } : fields;
   const change = VaultChange.safeParse(input);

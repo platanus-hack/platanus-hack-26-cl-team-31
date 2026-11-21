@@ -7,7 +7,7 @@ import { ContactRow } from "./contact-forms";
 import { saveSharing } from "./actions";
 
 vi.mock("./actions", () => ({
-  saveSharing: vi.fn(async () => ({})), removeContact: vi.fn(),
+  saveSharing: vi.fn(async () => ({})), removeContact: vi.fn(), saveContactTags: vi.fn(), createTag: vi.fn(), saveTag: vi.fn(), deleteTag: vi.fn(),
 }));
 
 it("submits exactly the categories selected in the contact form", async () => {
@@ -16,8 +16,8 @@ it("submits exactly the categories selected in the contact form", async () => {
   const root = createRoot(list);
   const address = "ana@sideband.app";
   try {
-    await act(() => root.render(<ContactRow contact={{ address, gives: ["availability"], receives: [] }}
-      presets={{ friend: [], work: [], family: [] }} />));
+    await act(() => root.render(<ContactRow contact={{ address, tags: ["friend"], gives: ["availability"], receives: [] }}
+      tags={[{ id: "friend", name: "Amigo", color: "emerald", categories: [] }]} />));
     await act(() => list.querySelector<HTMLButtonElement>('[aria-label="Ver opciones"]')!.click());
     const form = list.querySelector("form")!;
     const toggle = async (label: string) => {

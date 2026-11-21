@@ -49,24 +49,35 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
-    it("isolates two owners' tags and presets for the same contact", async () => {
+    it("seeds default tags once and isolates two owners' tags for the same contact", async () => {
+      const custom = randomUUID();
       await store.tx(async (tx) => {
         for (const user of ["alice", "bruno"]) {
+          expect((await tx.listTags(user)).map((tag) => tag.id)).toEqual(["friend", "family", "work"]);
           await tx.addContact(user, "carla@sideband.app");
-          await tx.setContactTag(user, "carla@sideband.app", "family");
+          expect(await tx.setContactTags(user, "carla@sideband.app", ["family", "friend"])).toBe(true);
         }
-        await tx.putTagPreset("alice", "family", ["general"]);
-        await tx.putTagPreset("bruno", "family", ["interests"]);
+        await tx.putTag("alice", { id: "family", name: "Familia", color: "amber", categories: ["general"] });
+        await tx.putTag("bruno", { id: custom, name: "Vecinos", color: "sky", categories: ["interests"] });
+        await expect(tx.putTag("bruno", { id: randomUUID(), name: "vecinos", color: "rose", categories: [] }))
+          .rejects.toMatchObject({ code: "conflict" });
       });
+      expect(await store.tx((tx) => tx.setContactTags("alice", "carla@sideband.app", [custom]))).toBe(false);
       await store.tx(async (tx) => {
-        await tx.setContactTag("alice", "carla@sideband.app", null);
-        await tx.putTagPreset("alice", "family", ["availability"]);
+        await tx.setContactTags("alice", "carla@sideband.app", []);
+        expect(await tx.deleteTag("alice", "work")).toBe(true);
+        expect(await tx.deleteTag("alice", "work")).toBe(false);
+        expect(await tx.deleteTag("bruno", "friend")).toBe(true);
       });
       await store.tx(async (tx) => {
         expect((await tx.listContactTags("alice")).has("carla@sideband.app")).toBe(false);
-        expect((await tx.listContactTags("bruno")).get("carla@sideband.app")).toBe("family");
-        expect((await tx.listTagPresets("alice")).family).toEqual(["availability"]);
-        expect((await tx.listTagPresets("bruno")).family).toEqual(["interests"]);
+        expect((await tx.listContactTags("bruno")).get("carla@sideband.app")).toEqual(["family"]);
+        expect(await tx.listTags("alice")).toEqual([
+          { id: "friend", name: "Amigo", color: "emerald", categories: ["availability", "interests"] },
+          { id: "family", name: "Familia", color: "amber", categories: ["general"] },
+        ]);
+        expect((await tx.listTags("bruno")).map((tag) => tag.id)).toEqual(["family", "work", custom]);
+        expect((await tx.listContacts("bruno"))[0]?.tags).toEqual(["family"]);
       });
     });
 
@@ -95,7 +106,8 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       await store.tx(async tx => {
         await tx.createAddress("carla", carla);
         await tx.addContact("alice", toAddress);
-        await tx.setContactTag("alice", toAddress, "family");
+        await tx.listTags("alice");
+        await tx.setContactTags("alice", toAddress, ["family"]);
         await tx.putGrant(grantTo(toAddress));
         await tx.putGrant({ ...grantTo(toAddress), category: "availability" });
         await tx.putGrant({ ...grantTo(fromAddress), grantorUserId: "bruno", category: "interests" });
@@ -104,7 +116,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.putGrant({ ...grantTo(carla), grantorUserId: "bruno", category: "health" });
         await tx.putGrant({ ...grantTo(fromAddress), grantorUserId: "carla", category: "health" });
         expect(await tx.listContacts("alice")).toEqual([{
-          address: toAddress, tag: "family", gives: ["availability", "general"], receives: ["interests"],
+          address: toAddress, tags: ["family"], gives: ["availability", "general"], receives: ["interests"],
         }]);
         await tx.insertCircle({ id: circleId, ownerUserId: "alice", name: "Fútbol", createdAt: now });
         for (const address of [fromAddress, toAddress, carla, others]) await tx.inviteCircleMember(circleId, address);
@@ -139,15 +151,17 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.changeVault("bruno", first, { action: "create", name: "Trabajo" });
         await tx.changeVault("alice", first, { action: "put_entry", categoryId: first, label: "Días", value: 2 });
         await tx.changeVault("bruno", first, { action: "put_entry", categoryId: first, label: "Días", value: 3 });
-        await tx.changeVault("alice", second, { action: "set_group", categoryId: second, group: "family", allowed: true });
+        await tx.listTags("alice");
+        await tx.changeVault("alice", second, { action: "set_tag", categoryId: second, tagId: "family", allowed: true });
+        await tx.changeVault("alice", second, { action: "set_tag", categoryId: second, tagId: "friend", allowed: true });
 
         expect(await tx.vaultCatalog("alice")).toEqual({ categories: [
-          { id: first, name: "Agenda", groups: [], contactGroups: [] },
-          { id: second, name: "Salud", groups: ["family"], contactGroups: [] },
+          { id: first, name: "Agenda", tags: [] },
+          { id: second, name: "Salud", tags: ["family", "friend"] },
         ] });
         expect(await tx.ownerVault("alice")).toEqual({ categories: [
-          { id: first, name: "Agenda", entries: [{ label: "Días", value: 2 }], groups: [], members: [] },
-          { id: second, name: "Salud", entries: [], groups: ["family"], members: [] },
+          { id: first, name: "Agenda", entries: [{ label: "Días", value: 2 }], tags: [], members: [] },
+          { id: second, name: "Salud", entries: [], tags: ["family", "friend"], members: [] },
         ] });
       });
     });
@@ -165,8 +179,9 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.vaultMembers("bruno", categoryId)).toEqual([fromAddress]);
         expect((await tx.ownerVault("bruno")).categories[0]?.members).toEqual([fromAddress]);
         expect((await tx.sharedVault(fromAddress, toAddress, categoryId)).categories).toHaveLength(1);
-        await tx.setContactTag("bruno", fromAddress, "family");
-        await tx.changeVault("bruno", categoryId, { action: "set_group", categoryId, group: "family", allowed: true });
+        await tx.listTags("bruno");
+        await tx.setContactTags("bruno", fromAddress, ["family"]);
+        await tx.changeVault("bruno", categoryId, { action: "set_tag", categoryId, tagId: "family", allowed: true });
         await tx.changeVault("bruno", categoryId, { ...member, allowed: false });
         expect((await tx.ownerVault("bruno")).categories[0]?.members).toEqual([]);
         expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
@@ -174,7 +189,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
         await tx.changeVault("bruno", categoryId, member);
         await tx.removeContact("bruno", fromAddress);
-        await tx.setContactTag("bruno", fromAddress, null);
+        await tx.setContactTags("bruno", fromAddress, []);
         await tx.addContact("bruno", fromAddress);
         expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
       });
@@ -185,59 +200,47 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       await store.tx(async tx => {
         await tx.changeVault("bruno", id, { action: "create", name: "Necesidades" });
         await tx.changeVault("bruno", id, { action: "put_entry", categoryId: id, label: "Sábado", value: "Taladro" });
-        await tx.changeVault("bruno", id, { action: "set_group", categoryId: id, group: "family", allowed: true });
-        await tx.setContactTag("bruno", fromAddress, "family");
+        await tx.listTags("bruno");
+        await tx.changeVault("bruno", id, { action: "set_tag", categoryId: id, tagId: "family", allowed: true });
+        await tx.setContactTags("bruno", fromAddress, ["family"]);
         expect(await tx.sharedVault(fromAddress, toAddress, id)).toEqual({ categories: [] });
         await tx.addContact("bruno", fromAddress);
         expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [{ id, name: "Necesidades" }] });
         expect((await tx.sharedVault(fromAddress, toAddress, id)).categories[0]?.entries).toEqual([{ label: "Sábado", value: "Taladro" }]);
         expect(await tx.changeVault("alice", id, { action: "delete", categoryId: id })).toBe(false);
-        await tx.setContactTag("bruno", fromAddress, "work");
+        await tx.setContactTags("bruno", fromAddress, ["work"]);
         expect(await tx.sharedVault(fromAddress, toAddress, id)).toEqual({ categories: [] });
         await tx.changeVault("bruno", id, { action: "delete", categoryId: id });
         expect(await tx.ownerVault("bruno")).toEqual({ categories: [] });
       });
     });
 
-    it("limits custom vault groups to accepted contacts and revokes access on removal", async () => {
+    it("grants vault access through any of a contact's custom tags and drops it with the tag", async () => {
       const categoryId = randomUUID();
-      const groupId = randomUUID();
+      const tagId = randomUUID();
       await store.tx(async tx => {
-        const share = { action: "set_contact_group", categoryId, groupId, allowed: true } as const;
-        const add = { action: "add_contact", groupId, address: fromAddress } as const;
-        await tx.changeContactGroup("bruno", groupId, { action: "create", name: "Instituciones" });
+        const share = { action: "set_tag", categoryId, tagId, allowed: true } as const;
+        await tx.listTags("bruno");
+        await tx.putTag("bruno", { id: tagId, name: "Instituciones", color: "slate", categories: [] });
         await tx.changeVault("bruno", categoryId, { action: "create", name: "Privada" });
         await tx.changeVault("bruno", categoryId, { action: "put_entry", categoryId, label: "Dato", value: "Prueba" });
-        expect(await tx.changeContactGroup("bruno", groupId, add)).toBe(false);
-        await tx.addContact("bruno", fromAddress);
-        expect(await tx.changeContactGroup("alice", groupId, add)).toBe(false);
-        await tx.changeContactGroup("bruno", groupId, add);
-        await tx.changeContactGroup("bruno", groupId, add);
-        expect(await tx.contactGroups("bruno")).toEqual({ groups: [{ id: groupId, name: "Instituciones", members: [fromAddress] }] });
-        expect(await tx.contactGroups("alice")).toEqual({ groups: [] });
+        expect(await tx.setContactTags("bruno", fromAddress, ["work", tagId])).toBe(true);
+        expect(await tx.changeVault("bruno", categoryId, share)).toBe(true);
         expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
-        await tx.changeVault("bruno", categoryId, share);
+        await tx.addContact("bruno", fromAddress);
         expect((await tx.ownerVault("bruno")).categories[0]?.members).toEqual([fromAddress]);
-        expect(await tx.vaultCatalog("bruno")).toEqual({ categories: [
-          { id: categoryId, name: "Privada", groups: [], contactGroups: [{ id: groupId, name: "Instituciones" }] },
-        ] });
+        expect(await tx.vaultCatalog("bruno")).toEqual({ categories: [{ id: categoryId, name: "Privada", tags: [tagId] }] });
         expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [{ id: categoryId, name: "Privada" }] });
         expect((await tx.sharedVault(fromAddress, toAddress, categoryId)).categories[0]?.entries).toEqual([{ label: "Dato", value: "Prueba" }]);
         expect(await tx.sharedVault("eva@sideband.app", toAddress, categoryId)).toEqual({ categories: [] });
-        expect((await tx.ownerVault("bruno")).categories[0]?.contactGroups).toEqual([{ id: groupId, name: "Instituciones" }]);
-        await tx.changeContactGroup("bruno", groupId, { ...add, action: "remove_contact" });
+        await tx.setContactTags("bruno", fromAddress, ["work"]);
         expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [] });
-        await tx.changeContactGroup("bruno", groupId, add);
-        await tx.removeContact("bruno", fromAddress);
-        await tx.addContact("bruno", fromAddress);
+        await tx.setContactTags("bruno", fromAddress, [tagId]);
+        expect(await tx.deleteTag("bruno", tagId)).toBe(true);
+        expect((await tx.vaultCatalog("bruno")).categories[0]?.tags).toEqual([]);
+        expect(await tx.listContactTags("bruno")).toEqual(new Map());
         expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
-        await tx.changeContactGroup("bruno", groupId, add);
-        await tx.changeContactGroup("bruno", groupId, { action: "delete", groupId });
-        expect((await tx.vaultCatalog("bruno")).categories[0]?.contactGroups).toEqual([]);
-        expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
-        expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
-        expect((await tx.ownerVault("bruno")).categories[0]).toMatchObject({ entries: [{ label: "Dato", value: "Prueba" }] });
-        expect((await tx.ownerVault("bruno")).categories[0]?.contactGroups).toBeUndefined();
+        expect((await tx.ownerVault("bruno")).categories[0]).toMatchObject({ entries: [{ label: "Dato", value: "Prueba" }], tags: [] });
       });
     });
 
