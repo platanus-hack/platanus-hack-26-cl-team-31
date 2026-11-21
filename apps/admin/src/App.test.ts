@@ -11,6 +11,7 @@ import { errorQuery } from "@/lib/queries"
 import { queryClient } from "@/lib/query"
 import { errorEvents } from "@/mocks/fixtures"
 import { writeMockState } from "@/mocks/handlers"
+import * as live from "@/mocks/live"
 
 vi.hoisted(() => vi.stubEnv("VITE_ADMIN_MOCK", "1"))
 
@@ -29,6 +30,7 @@ afterEach(async () => {
   queryClient.clear()
   host.remove()
   localStorage.clear()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -130,6 +132,46 @@ it("abre desde un error la solicitud con su identificador completo", async () =>
   ).toBe(path)
   await act(() => reference()!.click())
 
+  await waitForView(() =>
+    expect(
+      host.querySelector('nav[aria-label="breadcrumb"] [aria-current="page"]')
+        ?.textContent
+    ).toBe(event.requestId)
+  )
+})
+
+it("copia los atributos del evento seleccionado en En vivo y abre su solicitud", async () => {
+  const event = { ...errorEvents[0]!, requestId: "req/a?b#c" }
+  vi.spyOn(live, "startMockLive").mockImplementation((_filters, handlers) => {
+    handlers.onStatus("open")
+    handlers.onEvent(event)
+    handlers.onEvent(errorEvents[1]!)
+    return () => {}
+  })
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
+  await openApp("/en-vivo")
+
+  const row = () =>
+    Array.from(host.querySelectorAll<HTMLTableRowElement>("tbody tr")).find((tr) =>
+      tr.textContent.includes(event.requestId)
+    )
+  await waitForView(() => expect(row()).toBeDefined())
+  await act(() => row()!.click())
+
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!
+  const attrs = dialog.querySelector("pre")!.textContent
+  expect(JSON.parse(attrs)).toEqual(event.attrs)
+  const copy = dialog.querySelector<HTMLButtonElement>(
+    '[aria-label="Copiar attrs"]'
+  )!
+  await act(() => copy.click())
+  expect(write).toHaveBeenCalledExactlyOnceWith(attrs)
+
+  const request = Array.from(dialog.querySelectorAll("a")).find(
+    (link) => link.textContent === "Solicitud"
+  )!
+  expect(request.getAttribute("href")).toBe("/solicitudes/req%2Fa%3Fb%23c")
+  await act(() => request.click())
   await waitForView(() =>
     expect(
       host.querySelector('nav[aria-label="breadcrumb"] [aria-current="page"]')
