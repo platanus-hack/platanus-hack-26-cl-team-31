@@ -39,7 +39,7 @@ async function fixture(keys: Partial<typeof publicKeys> = publicKeys) {
   await broker.owner.claimAddress(bruno, "bruno");
   await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "general" });
   await broker.agent.connectWake(bruno, { kind: "standard_webhook", url: "https://example.com/hook", secret: "whsec_test" });
-  const { requestId } = await broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes?" } });
+  const { requestId } = await broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes?", category: "general" } });
   return { broker, requestId, app: createHttpServer({ broker, publicKeys: keys }) };
 }
 

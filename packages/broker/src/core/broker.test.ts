@@ -183,7 +183,7 @@ describe("contrato del broker", () => {
   it("permite una respuesta manual del dueño cuando su agente escala la solicitud", async () => {
     await broker.owner.setGrant(bruno, { grantee: "carla@sideband.app", category: "general" });
     const pending = await broker.agent.ask(carla, {
-      to: availability.to, tool: "question", args: { text: "¿Disponible?" }, purpose: "Coordinar",
+      to: availability.to, tool: "question", args: { text: "¿Disponible?", category: "general" }, purpose: "Coordinar",
     });
     await broker.agent.reply(bruno, { ...await inboxItem(bruno, pending.requestId), outcome: "needs_owner" });
     expect(await broker.owner.pending(bruno)).toMatchObject([{
@@ -225,7 +225,7 @@ describe("aislamiento y concurrencia", () => {
       const from = users[number % users.length]!;
       const to = users[(number + 1) % users.length]!;
       const text = `Solicitud ${number}`;
-      const view = await broker.agent.ask(from, { to: `${to.userId}@sideband.app`, tool: "question", args: { text } });
+      const view = await broker.agent.ask(from, { to: `${to.userId}@sideband.app`, tool: "question", args: { text, category: "general" } });
       return { from, to, text, requestId: view.requestId };
     }));
     const byUser = await Promise.all(users.map(async (user) => {
@@ -425,27 +425,48 @@ describe("ejecución en el runtime del titular", () => {
   const notice = (requestId: string) => ({ event: WAKE_EVENT, requestId });
   const revoke = () => broker.owner.revokeGrant(bruno, aliceGrant.id);
 
-  it("un permiso de intereses no autoriza una pregunta sobre el domicilio ni despierta al titular", async () => {
+  it("un permiso de intereses no autoriza una pregunta de otra categoría ni despierta al titular", async () => {
     await revoke();
     await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "interests" });
     await broker.agent.connectWake(bruno, webhook);
     const { tools } = await broker.agent.capabilities(alice, availability.to);
-    expect(tools.map(({ tool }) => tool)).toEqual(["interest_check", "connect"]);
-    const view = await broker.agent.ask(alice, {
-      to: availability.to, tool: "question", args: { text: "¿Cuál es el domicilio de Bruno?" },
-    });
-    expect(view).toEqual(await expectFinal(alice, view.requestId, "deny", "deny"));
-    expect(view).not.toHaveProperty("result");
+    expect(tools.map(({ tool, categories }) => [tool, categories])).toEqual([
+      ["question", ["interests"]], ["interest_check", ["interests"]], ["connect", []],
+    ]);
+    for (const category of ["health", "general"] as const) {
+      const view = await broker.agent.ask(alice, {
+        to: availability.to, tool: "question", args: { text: "¿Qué medicamentos toma Bruno?", category },
+      });
+      expect(view).toEqual(await expectFinal(alice, view.requestId, "deny", "deny"));
+      expect(view).not.toHaveProperty("result");
+    }
     await broker.tick(now);
     expect(wake).not.toHaveBeenCalled();
     expect(await broker.agent.inbox(bruno)).toEqual([]);
   });
 
+  it("una pregunta lleva su categoría al agente del titular y se revoca con ella", async () => {
+    const health = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "health" });
+    const args = { text: "¿Bruno es alérgico a algo?", category: "health" } as const;
+    const pending = await broker.agent.ask(alice, { to: availability.to, tool: "question", args });
+    expect(await inboxItem(bruno, pending.requestId)).toMatchObject({
+      tool: "question", args, allowedFields: ["answer"],
+      ownerAuthorization: { rule: "Permiso para la categoría Salud", guidance: expect.stringContaining("declined") },
+    });
+    await broker.owner.revokeGrant(bruno, health.id);
+    expect(await broker.agent.status(alice, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
+    expect(await broker.agent.ask(alice, availability)).toMatchObject({ final: false, waitingFor: "agent" });
+  });
+
   it("ofrece los permisos del titular junto con la invitación a conectar", async () => {
     const { tools } = await broker.agent.capabilities(alice, availability.to);
     expect(tools).toMatchObject([
-      { tool: "availability", execution: "owner_runtime", inputSchema: { type: "object" }, allowedFields: ["available", "freeSlots"] },
-      { tool: "connect", execution: "owner_runtime", allowedFields: ["accepted"] },
+      {
+        tool: "availability", execution: "owner_runtime", inputSchema: { type: "object" },
+        allowedFields: ["available", "freeSlots"], categories: ["availability"],
+      },
+      { tool: "question", allowedFields: ["answer"], categories: ["availability"] },
+      { tool: "connect", execution: "owner_runtime", allowedFields: ["accepted"], categories: [] },
     ]);
     await revoke();
     expect(await broker.agent.capabilities(alice, availability.to))
@@ -632,6 +653,7 @@ describe("grants", () => {
     expect(await broker.agent.capabilities(carla, availability.to))
       .toMatchObject({ tools: [
         { tool: "availability", allowedFields: ["available", "freeSlots"] },
+        { tool: "question", categories: ["availability"] },
         { tool: "connect", allowedFields: ["accepted"] },
       ] });
     const answered = await ask();
@@ -693,12 +715,13 @@ describe("círculos", () => {
     await broker.owner.joinCircle(carla, circle.id);
     expect((await broker.agent.capabilities(carla, brunoAddress)).tools).toMatchObject([
       { tool: "availability", allowedFields: ["available", "freeSlots"] },
+      { tool: "question", categories: ["availability", "interests"] },
       { tool: "interest_check", allowedFields: ["matches"] },
       { tool: "connect" },
     ]);
     const pending = await ask();
     expect(await inboxItem(bruno, pending.requestId)).toMatchObject({ allowedFields: ["available", "freeSlots"] });
-    expect(await broker.agent.ask(carla, { to: brunoAddress, tool: "question", args: { text: "¿Dónde vives?" } }))
+    expect(await broker.agent.ask(carla, { to: brunoAddress, tool: "question", args: { text: "¿Dónde vives?", category: "general" } }))
       .toMatchObject({ final: true, decision: "deny" });
   });
 
@@ -727,7 +750,7 @@ describe("círculos", () => {
 
     const circleRequest = await ask();
     const directRequest = await broker.agent.ask(carla, {
-      to: brunoAddress, tool: "question", args: { text: "¿Puedes ayudar?" },
+      to: brunoAddress, tool: "question", args: { text: "¿Puedes ayudar?", category: "general" },
     });
     expect(directRequest).toMatchObject({ final: false, waitingFor: "agent" });
 

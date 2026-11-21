@@ -25,7 +25,7 @@ const owner: Owner = { userId: "alice" };
 const expiresAt = "2026-11-21T18:00:00Z";
 const requestId = "request/one?detail#here %✓";
 const encodedId = "request%2Fone%3Fdetail%23here%20%25%E2%9C%93";
-const askInput = { to: "bob@sideband.app", tool: "question", args: { text: "¿Puedes ayudar?" } } as const;
+const askInput = { to: "bob@sideband.app", tool: "question", args: { text: "¿Puedes ayudar?", category: "general" } } as const;
 const requesterView = {
   requestId,
   to: askInput.to,

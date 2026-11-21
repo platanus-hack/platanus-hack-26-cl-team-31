@@ -58,7 +58,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     expect(await unknown.agent.ask(availability)).toMatchObject({ final: true, decision: "deny" });
 
     const text = "¿Podemos revisar el proyecto de prueba mañana?";
-    const question = { to: recipient.address, tool: "question", args: { text } } as const;
+    const question = { to: recipient.address, tool: "question", args: { text, category: "general" } } as const;
     const escalation = await sender.agent.ask(question);
     const questionItem = await inboxItem(recipient.agent, escalation.requestId);
     expect(questionItem.senderMessage).toEqual({ text, trusted: false });
@@ -126,7 +126,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     const verifyNotice = async (kind: "openclaw_hooks" | "grokbot_routine" | "mcp_events") => {
       const text = `Contenido reservado de la prueba ${randomUUID()}`;
       const purpose = "Propósito reservado para la bandeja";
-      const ask = await sender.agent.ask({ to: recipient.address, tool: "question", args: { text }, purpose });
+      const ask = await sender.agent.ask({ to: recipient.address, tool: "question", args: { text, category: "general" }, purpose });
       expect(ask).toMatchObject({ final: false, waitingFor: "agent" });
       await expect.poll(() => receiver.attempts.filter(({ requestId }) => requestId === ask.requestId), {
         timeout: 8_000,

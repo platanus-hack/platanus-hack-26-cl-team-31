@@ -15,7 +15,7 @@ const mcp = generateKeyPairSync("ed25519");
 const web = generateKeyPairSync("ed25519");
 const signing = generateKeyPairSync("ed25519");
 const publicKeys = { mcp: mcp.publicKey.export({ format: "jwk" }), web: web.publicKey.export({ format: "jwk" }) };
-const question = { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes mañana?" } };
+const question = { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes mañana?", category: "general" } };
 const grantToAlice: GrantInput = { grantee: "alice@sideband.app", category: "general" };
 const mcpEvents = {
   kind: "mcp_events",

@@ -78,7 +78,7 @@ async function askThroughMcp(sink: TelemetrySink) {
   }));
   cleanup.push(() => client.close());
   const result = await client.callTool({
-    name: "sideband_ask", arguments: { to: "bob@sideband.app", tool: "question", args: { text: secretText } },
+    name: "sideband_ask", arguments: { to: "bob@sideband.app", tool: "question", args: { text: secretText, category: "general" } },
   });
   const requestId = (result.structuredContent as { requestId: string }).requestId;
   await Promise.all([brokerTelemetry.flush(), mcpTelemetry.flush()]);

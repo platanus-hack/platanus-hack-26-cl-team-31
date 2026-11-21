@@ -10,7 +10,7 @@ describe.skipIf(!enabled)("Cierre de solicitudes por el worker", () => {
 
     const question = {
       to: recipient.address, tool: "question",
-      args: { text: "¿Está lista la revisión de prueba?" }, purpose: "Verificar el cierre del worker",
+      args: { text: "¿Está lista la revisión de prueba?", category: "general" }, purpose: "Verificar el cierre del worker",
     } as const;
     const expired = await sender.agent.ask(question);
     expect(expired).toMatchObject({ final: false, waitingFor: "agent" });

@@ -9,7 +9,8 @@ export function registerContacts(server: McpServer, principal: Principal, agent:
   server.registerTool("sideband_contacts", {
     description: "Lista los contactos de tu dueño y los círculos a los que pertenece, con sus direcciones. " +
       "theyShare lista las categorías que te comparte cada contacto: availability permite la tool availability, " +
-      "interests permite interest_check y general permite question. Úsalo antes de preguntarle a «mis amigos» o a un círculo.",
+      "interests permite interest_check y cada categoría permite una question con esa categoría en args.category. " +
+      "Úsalo antes de preguntarle a «mis amigos» o a un círculo.",
     annotations: { readOnlyHint: true },
     inputSchema: z.object({}),
     outputSchema: routes.agentContacts.response,

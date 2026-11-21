@@ -61,7 +61,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     const row: RequestRow = {
       id: randomUUID(), fromUserId: "alice", toUserId: "bruno",
       fromAddress: "alice@sideband.app", toAddress: "bruno@sideband.app",
-      tool: "question", args: { text: "Hola" }, status: "awaiting_agent", allowedFields: ["answer"],
+      tool: "question", args: { text: "Hola", category: "general" }, status: "awaiting_agent", allowedFields: ["answer"],
       guidance: "", rule: "test", escalated: false, envelopeSignature: "envelope",
       createdAt: now, expiresAt: now, version: 0, ...overrides,
     };
@@ -95,7 +95,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     const broker = createBroker({ ...deps, store });
     const grant = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "general" });
     const { requestId } = await broker.agent.ask(alice, {
-      to: "bruno@sideband.app", tool: "question", args: { text: "¿Disponible?" },
+      to: "bruno@sideband.app", tool: "question", args: { text: "¿Disponible?", category: "general" },
     });
     const [escalated] = await broker.agent.inbox(bruno);
     await broker.agent.reply(bruno, { requestId, nonce: escalated!.nonce, outcome: "needs_owner" });
@@ -246,6 +246,12 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
     expect(rows).toHaveLength(6);
+  });
+
+  it("reads a question stored before categories as an open question", async () => {
+    await createParticipants();
+    const row = await makeRequest({ args: { text: "Hola" } });
+    expect((await store.tx((tx) => tx.getRequest(row.id)))?.args).toEqual({ text: "Hola", category: "general" });
   });
 
   it("moves tool grants and invitation offers to categories and deletes grants of a tool without one", async () => {

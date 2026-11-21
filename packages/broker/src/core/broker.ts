@@ -13,6 +13,7 @@ import {
   InvitationAnswer,
   Sharing,
   ToolArgs,
+  ToolName,
   LocalPart,
   OwnerDecision,
   ReplyInput,
@@ -42,6 +43,8 @@ import { createWorker } from "./worker.js";
 const connectionFields = fieldsOf("connect");
 const connectionGuidance =
   "Cuéntale a tu titular quién quiere conectar. Solo tu titular acepta o rechaza desde la App Sideband: responde needs_owner.";
+// The broker never reads the text of a question, so the recipient's agent keeps it on its category.
+const questionGuidance = "Responde solo lo que corresponde a esta categoría. Si la pregunta trata de otra cosa, responde declined.";
 
 // Why the recipient shares a category with the sender: their grant, or the basic sharing of a
 // circle both have joined. The result is a stable rule code for telemetry.
@@ -55,7 +58,7 @@ async function sharingRule(tx: StoreTx, toUserId: string, toAddress: Address, fr
 async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
   // Invitations, connection tests and one-time owner approvals have their own consent flow.
   if (row.tool === "connect" || row.fromUserId === null || row.approvedOnce) return true;
-  const category = categoryOf(row.tool);
+  const category = categoryOf(row.tool, row.args);
   return category !== undefined && await sharingRule(tx, toUserId, row.toAddress, row.fromAddress, category) !== "no_grant";
 }
 
@@ -278,7 +281,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
     }, now);
     const invitation = recipient && tool === "connect";
-    const category = categoryOf(tool);
+    const category = categoryOf(tool, args);
     // The request keeps separate display text.
     const ruleCode = invitation ? "connection_request"
       : !recipient ? "no_recipient"
@@ -301,6 +304,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       row = {
         ...row, status: "awaiting_agent", allowedFields: fieldsOf(tool),
         rule: `Permiso para la categoría ${categories[category].label}`,
+        guidance: tool === "question" ? questionGuidance : "",
       };
     } else {
       const decisionReason = recipient ? "Sin permiso para esta categoría." : "Dirección sin destinatario.";
@@ -441,12 +445,15 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const from = (await tx.getUser(p.userId))?.address;
           const owner = await tx.getUserByAddress(to);
           if (!from || !owner || from === to) return { tools: [] };
-          const tools = [];
+          const shared: Category[] = [];
           for (const category of Category.options) {
-            if (await sharingRule(tx, owner.userId, to, from, category) === "no_grant") continue;
-            tools.push(...categories[category].tools.map((tool) => describeTool(tool, fieldsOf(tool))));
+            if (await sharingRule(tx, owner.userId, to, from, category) !== "no_grant") shared.push(category);
           }
-          tools.push(describeTool("connect", connectionFields));
+          const tools = ToolName.options.flatMap((tool) => {
+            const allowed = shared.filter((category) => categories[category].tools.includes(tool));
+            return allowed.length > 0 ? [describeTool(tool, allowed)] : [];
+          });
+          tools.push(describeTool("connect", []));
           return { tools };
         });
       },
@@ -715,7 +722,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const row: RequestRow = {
             ...await initialRequest({
               fromAddress: systemAddress, toAddress: address, fromUserId: null, toUserId: o.userId,
-              targetAgentId: agentId, tool: "question", args: { text: "Prueba de conexión de Sideband: responde con outcome no_data" },
+              targetAgentId: agentId, tool: "question",
+              args: { text: "Prueba de conexión de Sideband: responde con outcome no_data", category: "general" },
             }, now),
             status: "awaiting_agent",
             rule: "Prueba de conexión solicitada por el dueño",

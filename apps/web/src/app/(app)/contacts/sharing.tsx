@@ -6,6 +6,7 @@ import { categories, Category, type Sharing } from "@team-31/protocol";
 const hints: Record<Category, string> = {
   availability: "Puede preguntar si estás libre y por tus horarios.",
   interests: "Puede preguntar si algo te interesa.",
+  health: "Puede preguntar por tu salud.",
   general: "Tu agente decide qué contesta a cualquier otra pregunta.",
 };
 

@@ -19,7 +19,7 @@ describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
       const offset = Math.floor(index / agents.length) % 2 + 1;
       const to = agents[(index + offset) % agents.length]!;
       const text = `Pregunta de aislamiento ${index} de ${from.address} a ${to.address}`;
-      const pending = await from.agent.ask({ to: to.address, tool: "question", args: { text } });
+      const pending = await from.agent.ask({ to: to.address, tool: "question", args: { text, category: "general" } });
       expect(pending).toMatchObject({ final: false, waitingFor: "agent" });
       return { from, to, text, requestId: pending.requestId, answer: `Respuesta ${index} de ${to.address} a ${from.address}` };
     }));

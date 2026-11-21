@@ -19,7 +19,7 @@ const audience = "https://mcp.example.test/mcp";
 const issuer = "https://auth.example.test/api/auth";
 const options = { audience, issuer, jwksUrl: `${issuer}/jwks`, devAuth: true };
 const secretText = "pregunta privada";
-const question = { to: "bob@sideband.app", tool: "question", args: { text: secretText } };
+const question = { to: "bob@sideband.app", tool: "question", args: { text: secretText, category: "general" } };
 
 let sink: MemorySink;
 let telemetry: Telemetry;

@@ -22,7 +22,7 @@ const pending = OwnerPendingItem.parse({
   requestId: "request-1",
   from: "bob@sideband.app",
   tool: "question",
-  args: { text: "¿Puedes ayudar?" },
+  args: { text: "¿Puedes ayudar?", category: "general" },
   senderMessage: { text: "¿Puedes ayudar?", trusted: false },
   expiresAt: "2026-11-21T18:00:00Z",
   escalated: true,

@@ -94,7 +94,7 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
     }
 
     async function askAgent() {
-      const view = await broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes?" } });
+      const view = await broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes?", category: "general" } });
       expect(view).toMatchObject({ final: false, waitingFor: "agent" });
       return view.requestId;
     }

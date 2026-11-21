@@ -19,10 +19,10 @@ server.registerTool("list_contacts", {
 }, () => observed({ contacts: demo.listContacts() }));
 server.registerTool("ask_contact", {
   description: "Consulta a un contacto de la agenda. Usa interest para comprobar un interés concreto o text para preguntas abiertas.",
-  inputSchema: { contact: Address, query: z.union([ToolArgs.interest_check, ToolArgs.question]) },
+  inputSchema: { contact: Address, query: z.union([ToolArgs.interest_check, ToolArgs.question.omit({ category: true })]) },
 }, async ({ contact, query }) => {
-  const tool = "interest" in query ? "interest_check" : "question";
-  return observed(await demo.ask(contact, tool, query));
+  if ("interest" in query) return observed(await demo.ask(contact, "interest_check", query));
+  return observed(await demo.ask(contact, "question", { ...query, category: "general" }));
 });
 server.registerTool("await_contact", {
   description: "Espera la respuesta del contacto para esta solicitud de Ana.",

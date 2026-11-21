@@ -86,7 +86,7 @@ it("crea y consulta como el titular vinculado; desvinculado no puede consultar",
   }
   expect(await message("Pregunta a carla@sideband.app si puede jugar")).toContain(requestId);
   expect(broker.ask).toHaveBeenCalledWith({ userId: "user-a" }, {
-    to: "carla@sideband.app", tool: "question", args: { text: "si puede jugar" },
+    to: "carla@sideband.app", tool: "question", args: { text: "si puede jugar", category: "general" },
   });
   expect(await message("¿ya respondió?")).toContain("Sí, puedo.");
   expect(broker.status).toHaveBeenCalledWith({ userId: "user-a" }, requestId);
@@ -120,7 +120,7 @@ it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pre
   expect((await POST(inbound(question))).status).toBe(200);
   await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
   expect(broker.contacts).toHaveBeenCalledWith({ userId: "user-a" });
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question } });
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question, category: "general" } });
   expect(JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body).toContain("pendiente de respuesta");
 });
 

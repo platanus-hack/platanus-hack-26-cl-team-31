@@ -164,11 +164,17 @@ describe("categories", () => {
     for (const category of Category.options) expect(categories[category].tools.length).toBeGreaterThan(0);
   });
 
-  it("puts each tool in at most one category", () => {
-    expect(categoryOf("availability")).toBe("availability");
-    expect(categoryOf("interest_check")).toBe("interests");
-    expect(categoryOf("question")).toBe("general");
-    expect(categoryOf("connect")).toBeUndefined();
-    expect(categoryOf("profile")).toBeUndefined();
+  it("reads the category from a question and derives it for the other tools", () => {
+    expect(categoryOf("question", { text: "¿Tomas algún medicamento?", category: "health" })).toBe("health");
+    expect(categoryOf("question", { text: "Sin categoría" })).toBe("general");
+    expect(categoryOf("availability", availability)).toBe("availability");
+    expect(categoryOf("interest_check", { interest: "cerámica" })).toBe("interests");
+    expect(categoryOf("connect", {})).toBeUndefined();
+    expect(categoryOf("profile", {})).toBeUndefined();
+  });
+
+  it("treats a question without a category as an open one and rejects an unknown category", () => {
+    expect(AskInput.parse({ to, tool: "question", args: { text: "Hola" } }).args).toEqual({ text: "Hola", category: "general" });
+    expect(AskInput.safeParse({ to, tool: "question", args: { text: "Hola", category: "finanzas" } }).success).toBe(false);
   });
 });

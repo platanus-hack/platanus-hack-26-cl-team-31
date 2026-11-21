@@ -16,7 +16,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
   async function makeRequest(overrides: Partial<RequestRow> = {}): Promise<RequestRow> {
     const row: RequestRow = {
       id: randomUUID(), fromUserId: "alice", toUserId: "bruno", fromAddress, toAddress,
-      tool: "question", args: { text: "Hola" }, status: "awaiting_agent", allowedFields: ["answer"],
+      tool: "question", args: { text: "Hola", category: "general" }, status: "awaiting_agent", allowedFields: ["answer"],
       guidance: "", rule: "test", envelopeSignature: "envelope", escalated: false, createdAt: now,
       expiresAt: now, version: 0, ...overrides,
     };

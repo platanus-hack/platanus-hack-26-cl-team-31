@@ -38,7 +38,7 @@ beforeEach(async () => {
   sink.clear();
 });
 
-const ask = () => broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: secretText } });
+const ask = () => broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: secretText, category: "general" } });
 const names = () => sink.records.map((record) => record.name);
 
 describe("telemetría del core del broker", () => {
@@ -55,7 +55,7 @@ describe("telemetría del core del broker", () => {
   });
 
   it("una denegación inmediata se registra como creada y cerrada", async () => {
-    const view = await broker.agent.ask(alice, { to: "nadie@sideband.app", tool: "question", args: { text: secretText } });
+    const view = await broker.agent.ask(alice, { to: "nadie@sideband.app", tool: "question", args: { text: secretText, category: "general" } });
     expect(sink.find("broker.policy.evaluated")[0]?.attrs).toEqual({ tool: "question", category: "general", decision: "deny", rule: "no_recipient" });
     expect(sink.find("broker.request.closed")).toEqual([
       expect.objectContaining({ requestId: view.requestId, attrs: { outcome: "denied", escalated: false } }),
@@ -148,7 +148,7 @@ describe("telemetría del core del broker", () => {
 
   it("una solicitud sin permiso queda denegada con su código", async () => {
     await broker.owner.claimAddress({ userId: "carla" }, "carla");
-    await broker.agent.ask(alice, { to: "carla@sideband.app", tool: "question", args: { text: secretText } });
+    await broker.agent.ask(alice, { to: "carla@sideband.app", tool: "question", args: { text: secretText, category: "general" } });
     expect(sink.find("broker.policy.evaluated").at(-1)?.attrs).toEqual({ tool: "question", category: "general", decision: "deny", rule: "no_grant" });
   });
 });

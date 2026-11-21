@@ -65,7 +65,7 @@ export async function runCommand(
   }
 
   async function ask(to: string, question: string) {
-    const input = AskInput.safeParse({ to, tool: "question", args: { text: question } });
+    const input = AskInput.safeParse({ to, tool: "question", args: { text: question, category: "general" } });
     if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
     const view = await broker.ask(owner, input.data);
     onResult("ask", view);
