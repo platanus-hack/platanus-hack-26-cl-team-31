@@ -447,6 +447,8 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     ).toEqual([ids.answered])
     expect((await queries.requests(parse({ q: "req%" }))).items).toHaveLength(0)
     await expectInvalid(queries.requests(parse({ cursor: "no-es-un-cursor" })))
+    const invalidDate = Buffer.from(JSON.stringify(["2026-02-30 12:00:00+00", "r1"])).toString("base64url")
+    await expectInvalid(queries.requests(parse({ cursor: invalidDate })))
 
     const open = first.items[0]!
     expect(open).toMatchObject({

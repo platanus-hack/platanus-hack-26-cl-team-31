@@ -380,6 +380,29 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     expect(sink.find("auth.token.rejected")[0]).toMatchObject({ attrs: { issuer: "admin", reason: "invalid_token" } })
   })
 
+  it("a downgraded operator's SQL token retains only viewer reads", async () => {
+    const sql = vi.fn(queries.sql)
+    const app = buildApp({ queries: { ...queries, sql } })
+    const { token } = await createPgTokenStore(pool).create({ name: "downgrade", ttlDays: 1, scopes: ["admin:sql"] }, "op@test.cl")
+    const call = (name: string, args: object) => app.request("/mcp", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+    })
+    const previous = { ...allow }
+    try {
+      allow.operators = []
+      allow.viewers = [...allow.viewers, "op@test.cl"]
+      expect(await (await call("admin_sql", { sql: "SELECT 1" })).text()).toContain("admin:sql")
+      expect(sql).not.toHaveBeenCalled()
+      const read = await call("admin_services", {})
+      expect(read.status).toBe(200)
+      expect(await read.text()).toContain("structuredContent")
+    } finally {
+      Object.assign(allow, previous)
+    }
+  })
+
   it("dev login solo con ADMIN_DEV_AUTH=1 y Origin válido", async () => {
     expect((await buildApp().request("/api/admin/dev-login", { method: "POST", headers: { origin: ADMIN_URL } })).status).toBe(404)
 
