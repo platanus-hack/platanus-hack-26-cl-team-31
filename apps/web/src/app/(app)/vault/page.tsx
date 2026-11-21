@@ -11,7 +11,7 @@ const row = "flex flex-wrap items-center gap-2";
 const field = `${input} max-w-xs`;
 export default async function VaultPage() {
   const { data: [{ categories }, { tags }] } = await readAsOwner(o => Promise.all([ownerClient().vault(o), ownerClient().tags(o)]));
-  return <div className="max-w-3xl space-y-5">
+  return <div className="space-y-5">
     <Heading title="Mi bóveda">Guarda lo que necesitas, tus deseos u otros datos. Cada categoría empieza privada.</Heading>
     <form action={changeVault} className={row}>
       <Action action="create" /><input className={field} name="name" aria-label="Nombre de la categoría" placeholder="Nueva categoría" required maxLength={80} />

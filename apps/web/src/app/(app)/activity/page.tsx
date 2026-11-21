@@ -8,7 +8,7 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
   const { page, items, hasNext } = await readActivity((await searchParams).page);
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <Heading title="Actividad">Solicitudes enviadas y recibidas.</Heading>
       <ActivityList items={items} detailed />
       {(page > 1 || hasNext) && (

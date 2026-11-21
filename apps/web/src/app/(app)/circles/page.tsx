@@ -57,7 +57,7 @@ function CircleCard({ circle, address }: { circle: Circle; address: string }) {
 export default async function CirclesPage() {
   const { address, circles } = await readCircles();
   return (
-    <div className="max-w-2xl space-y-8">
+    <div className="space-y-8">
       <Heading title="Círculos" action={<CreateCircle />}>
         Los miembros de un círculo comparten su disponibilidad, sus horarios libres y sus coincidencias de interés.
       </Heading>

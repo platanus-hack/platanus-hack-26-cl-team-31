@@ -1,69 +1,78 @@
+import Link from "next/link";
 import { cache, Suspense } from "react";
 
 import { readContacts } from "./actions";
 import { card, Empty, Heading, Stamp } from "../ui";
-import { ContactRow, IncomingInvitation, InviteButton, TagsEditor } from "./contact-forms";
+import { ContactRow, IncomingInvitation, InviteButton } from "./contact-forms";
 import { describeSharing } from "./describe";
 
 const contactsData = cache(readContacts);
 
-async function Invite() {
-  const { tags } = await contactsData();
-  return <InviteButton tags={tags} />;
-}
+type View = "contactos" | "solicitudes" | "enviadas";
 
-async function ContactsList() {
+async function ContactsList({ searchParams }: { searchParams: PageProps<"/contacts">["searchParams"] }) {
+  const { vista } = await searchParams;
+  const view: View = vista === "solicitudes" || vista === "enviadas" ? vista : "contactos";
   const { contacts, tags, incoming, outgoing } = await contactsData();
+  const tabs: { id: View; label: string; count?: number }[] = [
+    { id: "contactos", label: "Contactos" },
+    { id: "solicitudes", label: "Solicitudes", count: incoming.length },
+    { id: "enviadas", label: "Enviadas", count: outgoing.length },
+  ];
   return (
-    <div className="space-y-10">
-      {incoming.length > 0 && (
-        <section aria-labelledby="incoming-title">
-          <h2 id="incoming-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Invitaciones</h2>
-          <ul className="space-y-3">
-            {incoming.map((invitation) => <IncomingInvitation key={invitation.requestId} invitation={invitation} tags={tags} />)}
-          </ul>
-        </section>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+      <nav aria-label="Vistas de contactos" className="flex gap-1">
+        {tabs.map(({ id, label, count }) => (
+          <Link key={id} href={id === "contactos" ? "/contacts" : `/contacts?vista=${id}`} aria-current={view === id ? "page" : undefined}
+            className={`inline-flex h-[30px] items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors ${view === id ? "bg-white/12 text-[#fbfbfb] indicator" : "text-[#979797] hover:text-ink"}`}>
+            {label}
+            {count ? <span className={`rounded-full px-1.5 text-[11px] tabular-nums ${id === "solicitudes" ? "bg-accent-soft text-accent-ink" : "bg-white/8 text-body"}`}>{count}</span> : null}
+          </Link>
+        ))}
+      </nav>
+      <InviteButton tags={tags} />
+      </div>
+
+      {view === "solicitudes" && (incoming.length === 0 ? <Empty>No tienes solicitudes pendientes.</Empty> : (
+        <ul className={`${card} divide-y divide-line`}>
+          {incoming.map((invitation) => <IncomingInvitation key={invitation.requestId} invitation={invitation} tags={tags} />)}
+        </ul>
+      ))}
+
+      {view === "enviadas" && (outgoing.length === 0 ? <Empty>No tienes invitaciones esperando respuesta.</Empty> : (
+        <ul className={`${card} divide-y divide-line`}>
+          {outgoing.map((invitation) => (
+            <li key={invitation.requestId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{invitation.address}</p>
+                <p className="text-xs text-muted">Le compartirás: {describeSharing(invitation.offer)}</p>
+              </div>
+              <p className="text-xs text-muted">Vence el <Stamp value={invitation.expiresAt} /></p>
+            </li>
+          ))}
+        </ul>
+      ))}
+
+      {view === "contactos" && (
+        <>
+          {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Toca Invitar para conectar con alguien.</Empty> : (
+            <ul className="space-y-2">
+              {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} tags={tags} />)}
+            </ul>
+          )}
+        </>
       )}
-
-      {outgoing.length > 0 && (
-        <section aria-labelledby="outgoing-title">
-          <h2 id="outgoing-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Esperando respuesta</h2>
-          <ul className={`${card} divide-y divide-line`}>
-            {outgoing.map((invitation) => (
-              <li key={invitation.requestId} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
-                <div className="min-w-0">
-                  <p className="break-all font-medium">{invitation.address}</p>
-                  <p className="text-xs text-muted">Le compartirás: {describeSharing(invitation.offer)}</p>
-                </div>
-                <p className="text-xs text-muted">Vence el <Stamp value={invitation.expiresAt} /></p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section aria-labelledby="contacts-title">
-        <h2 id="contacts-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Tus contactos</h2>
-        {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Toca Invitar para conectar con alguien.</Empty> : (
-          <ul className="space-y-2">
-            {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} tags={tags} />)}
-          </ul>
-        )}
-      </section>
-
-      <TagsEditor tags={tags} />
     </div>
   );
 }
 
-export default function ContactsPage() {
+export default function ContactsPage({ searchParams }: PageProps<"/contacts">) {
   return (
-    <div className="max-w-2xl">
-      <Heading title="Contactos" action={<Suspense><Invite /></Suspense>}>
-        Las etiquetas de cada contacto definen qué le compartes. Si quieres, ajustas a alguien en particular.
-      </Heading>
+    <div>
+      <Heading title="Contactos" />
       <Suspense fallback={<p role="status">Cargando contactos…</p>}>
-        <ContactsList />
+        <ContactsList searchParams={searchParams} />
       </Suspense>
     </div>
   );

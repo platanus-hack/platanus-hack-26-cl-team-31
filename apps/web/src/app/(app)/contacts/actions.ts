@@ -21,6 +21,7 @@ function tagsFrom(form: FormData) {
 
 function contactsChanged() {
   revalidatePath("/contacts");
+  revalidatePath("/tags");
   revalidatePath("/activity");
   revalidatePath("/");
 }

@@ -86,7 +86,7 @@ it("checks sharing categories and revalidates only after saving", async () => {
 
   await expect(saveSharing(contact, {}, sharingForm("availability", "general"))).resolves.toEqual({ message: "Guardado." });
   expect(broker.setSharing).toHaveBeenCalledWith(owner, contact, ["availability", "general"]);
-  expect(vi.mocked(revalidatePath).mock.calls).toEqual([["/contacts"], ["/activity"], ["/"]]);
+  expect(vi.mocked(revalidatePath).mock.calls).toEqual([["/contacts"], ["/tags"], ["/activity"], ["/"]]);
 });
 
 it("maps a broker conflict to owner feedback and preserves the cached page", async () => {
