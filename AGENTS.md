@@ -37,6 +37,12 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 - `pnpm infra:up` / `pnpm infra:down` / `pnpm infra:reset` (borra datos y re-crea).
 - Scripts SQL de init en `infra/postgres/init/` (solo corren al crear el volumen).
 
+## Identidad Nexo
+
+- OAuth en web usa `DATABASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y `MCP_RESOURCE_URL`. Aplica el esquema de Better Auth con `migrateAuth` de `@team-31/auth/server` antes de iniciar el servidor. Sus pruebas usan `TEST_DATABASE_URL` y credenciales ficticias de Google.
+- El MCP remoto verifica los access tokens con `AUTH_ISSUER`, `AUTH_JWKS_URL` y `MCP_RESOURCE_URL`. `MCP_DEV_AUTH=1` habilita tokens de desarrollo fuera de producción.
+- MCP y web firman JWT para el broker con `MCP_SERVICE_PRIVATE_KEY` y `WEB_SERVICE_PRIVATE_KEY` respectivamente. El broker verifica con `SERVICE_JWT_PUBLIC_KEYS` (JSON con las claves JWK públicas `mcp` y `web`).
+
 ## Coordinación local entre N asistentes
 
 1. Desde la raíz con Node 24, pnpm 10 y Docker, ejecuta `pnpm agents:up 3`. Déjalo abierto. Prepara el esquema, crea las identidades faltantes e inicia la API del worktree. Usa 2 para Ana y Bob o aumenta N para sumar participantes.
