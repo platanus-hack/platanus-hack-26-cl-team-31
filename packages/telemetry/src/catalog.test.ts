@@ -13,7 +13,7 @@ describe("catálogo", () => {
       "broker.contact.connected", "broker.contact.removed", "broker.contact.tagged", "broker.channel.set", "broker.tag.preset_set",
       "broker.vault.changed", "broker.vault.queried",
       "broker.circle.changed", "broker.agent.connected", "broker.agent.revoked",
-      "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
+      "worker.tick.completed", "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
       "admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created",
       "admin.token.revoked", "admin.mcp.call", "admin.live.opened", "admin.live.closed", "telemetry.invalid_event",
       "whatsapp.link", "whatsapp.request", "whatsapp.send", "whatsapp.delivery", "whatsapp.interpret",

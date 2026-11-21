@@ -420,7 +420,7 @@ describe("HTTP interno del broker", () => {
 
   it("cierra con una respuesta firmada al alcanzar un TTL de 2 segundos", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
-    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    const emit = vi.fn();
     const { broker } = fixture(2);
     await broker.owner.claimAddress({ userId: "alice" }, "alice");
     await broker.owner.claimAddress({ userId: "bruno" }, "bruno");
@@ -428,12 +428,12 @@ describe("HTTP interno del broker", () => {
     const token = await agent("alice");
     await broker.owner.setGrant({ userId: "bruno" }, grantToAlice);
     const asked = await call(app, routes.agentAsk, { token, body: question });
-    const stop = startWorker(broker, { error: vi.fn() });
+    const stop = startWorker(broker, { emit, error: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(2_000);
       expect(await call(app, routes.agentStatus, { token, path: `/v1/agent/requests/${asked.requestId}` }))
         .toMatchObject({ final: true, outcome: "expired", signature: expect.any(String) });
-      expect(log).toHaveBeenCalledWith("[broker] Worker", expect.objectContaining({ expired: 1 }));
+      expect(emit).toHaveBeenCalledWith("worker.tick.completed", { attrs: expect.objectContaining({ expired: 1 }) });
     } finally {
       await stop();
     }
@@ -445,7 +445,7 @@ describe("HTTP interno del broker", () => {
     let complete!: (value: typeof report) => void;
     const inflight = new Promise<typeof report>((resolve) => { complete = resolve; });
     const tick = vi.fn().mockReturnValueOnce(inflight).mockResolvedValue(report);
-    const stop = startWorker({ tick }, { error: vi.fn() });
+    const stop = startWorker({ tick }, { emit: vi.fn(), error: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(3_000);
       expect(tick).toHaveBeenCalledTimes(1);
