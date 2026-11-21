@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { groupAllowed, isFree, readAvailability } from "./availability.js";
+import { groupAllowed, isFree, personId, readAvailability } from "./availability.js";
 import { defineTool } from "./tool.js";
 
 type Status = "collecting" | "no_shared_slot" | "proposed" | "declined" | "confirmed";
@@ -58,7 +58,7 @@ async function answerFromCalendar(db: PoolClient, meeting: Meeting, me: string) 
 }
 
 const propose = defineTool("meeting_propose", "Propose time options to members of a group.", z.object({
-  recipients: z.array(z.string().min(1)).min(1),
+  recipients: z.array(personId).min(1),
   slots: z.array(z.iso.datetime({ offset: true })).min(1),
   minutes: z.number().int().min(1).max(1440),
   group: z.string().min(1),

@@ -39,6 +39,6 @@ La bandeja se consulta cuando activas la sesión. Los agentes comparten una API 
 | Propuesta y bandeja | `meeting_propose`, `meeting_inbox`, `meeting_respond` |
 | Estado y consentimiento | `meeting_get`, `meeting_decide` |
 
-Los nombres de personas van en minúsculas. Sólo se entrega la proyección de disponibilidad. La agenda ficticia y los hashes de las credenciales se guardan en la base del worktree. Volver a correr el seed conserva permisos revocados y salidas del grupo.
+Puedes escribir los nombres de participantes como `Bob` o `bob`. Sólo se entrega la proyección de disponibilidad. La agenda ficticia y los hashes de las credenciales se guardan en la base del worktree. Volver a correr el seed conserva permisos revocados y salidas del grupo.
 
 El MCP original de diagnóstico sigue disponible con `pnpm --filter @team-31/mcp inspect` cuando se inicia sin las dos variables de coordinación.

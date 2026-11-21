@@ -32,6 +32,13 @@ const run = (client, name, me, args) => availabilityTools.find(tool => tool.name
 const query = { recipient: "bob", group: "futbol", slot: "2026-11-28T19:00:00Z", minutes: 60 };
 const denied = { status: "not_shareable" };
 
+test("a participant name from conversation resolves under the caller's existing permissions", async (t) => {
+  const { db } = await database(t);
+  const input = { ...query, recipient: " Bob " };
+  assert.equal((await run(db, "availability_check", "ana", input)).status, "available");
+  assert.deepEqual(await run(db, "availability_check", "eva", input), denied);
+});
+
 test("revoking after calculation blocks delivery, saved answers and future reads", async (t) => {
   const { db, owner } = await database(t);
   const saved = await run(db, "availability_check", "ana", query);

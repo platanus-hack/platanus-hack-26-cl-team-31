@@ -7,8 +7,9 @@ const grants = readFileSync(new URL("../../broker/src/group-permission.sql", imp
 const permission = `SELECT 1 FROM (${grants}) g WHERE requester=$1 AND recipient=$2 AND group_id=$3`;
 const notShareable = { status: "not_shareable" } as const;
 const groupName = z.string().trim().min(1).max(128);
+export const personId = z.string().trim().min(1).toLowerCase();
 const checkArgs = z.object({
-  recipient: z.string().min(1),
+  recipient: personId,
   group: groupName,
   slot: z.iso.datetime({ offset: true }),
   minutes: z.number().int().min(1).max(1440),
