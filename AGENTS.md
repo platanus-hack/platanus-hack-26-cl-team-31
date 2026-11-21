@@ -299,6 +299,13 @@ Las validaciones se ejecutan en el worktree local. El CI del repo del hackathon 
 - Los tests no esperan el build: Vitest resuelve los paquetes del workspace a `src/` con la condición de export `"@team-31/source"` (config base en `vitest.shared.ts`). Solo `apps/server` (node --test sobre `dist/`) compila antes: córrelo con `pnpm test --filter @team-31/server`, no con `pnpm --filter … test`.
 - Paquete nuevo con tests Vitest: agrega `vitest.config.ts` que extienda `vitest.shared.ts`; si exporta código, agrega `"@team-31/source": "./src/…"` junto a `types` en cada export. Si un test lee archivos de otro paquete que no es dependencia, decláralo en `inputs` de su `turbo.json` (ej. `apps/demo/turbo.json`).
 
+### CI de tests (GitHub Actions)
+
+- `.github/workflows/test.yml` corre `turbo run lint typecheck test` en cada PR y en cada push a `main`, con PostgreSQL 17 como servicio (`TEST_DATABASE_URL` fija en `127.0.0.1:5432/app_test`). Para reproducirlo: `pnpm lint && pnpm typecheck && pnpm test`.
+- La caché local de turbo (`.turbo/cache`) persiste entre corridas con `actions/cache` (clave `turbo-test-<SO>-<hash del lockfile>-<run>`, restaura la más reciente por prefijo). Las corridas de `main` siembran la caché que leen los PR. `scripts/ci-turbo-prune.sh` deja solo las tareas de la última corrida, así no crece. `cd.yml` hace lo mismo con el prefijo `turbo-verify-`.
+- Los paquetes corren en paralelo contra la misma `app_test`: un test con Postgres crea su base con `createTestDatabase` de `@team-31/test-db` (o un esquema con nombre único) y nunca depende de esquemas compartidos ni del orden de sus `it`.
+- Si un test lee una variable de entorno nueva, agrégala al `env` de `test` en `turbo.json` o la caché repetirá resultados viejos. No uses puertos aleatorios en la URL de la base de CI: entran en el hash.
+
 ## ⚠️ Al agregar infra o configuración nueva
 
 Si agregas un servicio (Redis, cola, etc.), una app que expone un puerto, o una variable de entorno, **en el mismo PR**:

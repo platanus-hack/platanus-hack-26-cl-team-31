@@ -1,0 +1,74 @@
+name: Tests
+
+# Lint, typecheck y tests de todo el monorepo contra PostgreSQL. La caché local de turbo
+# (.turbo/cache) persiste entre corridas con actions/cache: lo que no cambió repite su log
+# sin correr. Las corridas en main la siembran para todos los PR (los PR leen la caché de la
+# rama base, no la de otros PR).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        # Puerto fijo: TEST_DATABASE_URL entra en el hash de turbo; un puerto aleatorio
+        # invalidaría la caché de todos los tests en cada corrida.
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 2s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/app_test
+      TURBO_TELEMETRY_DISABLED: "1"
+      TURBO_UI: "false"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Clave única por corrida; restore-keys toma la más reciente con el mismo lockfile y,
+      # si no hay, cualquiera del mismo SO. Turbo valida cada entrada por su hash (código,
+      # dependencias y TEST_DATABASE_URL/DATABASE_URL/E2E_*/REDTEAM_*), así que una caché
+      # vieja solo puede acertar o fallar, nunca repetir un resultado que no corresponde.
+      - name: Restaurar la caché de turbo
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .turbo/cache
+          key: turbo-test-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            turbo-test-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-test-${{ runner.os }}-
+
+      - name: Lint, typecheck y tests
+        run: pnpm turbo run lint typecheck test --summarize --continue
+
+      # Deja en la caché solo las tareas de esta corrida: no crece con cada commit.
+      - name: Podar la caché de turbo
+        if: always()
+        run: scripts/ci-turbo-prune.sh
+
+      - name: Guardar la caché de turbo
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .turbo/cache
+          key: turbo-test-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.run_id }}-${{ github.run_attempt }}
