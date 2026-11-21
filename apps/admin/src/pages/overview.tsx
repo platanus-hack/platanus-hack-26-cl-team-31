@@ -1,15 +1,7 @@
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
 import { ArrowRightIcon } from "lucide-react"
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { Link, useNavigate } from "react-router"
-import type {
-  Overview,
-  RequestSummary,
-  ServiceHealth,
-  Window,
-} from "@shared/contract"
-import type { RequestStatus } from "@team-31/protocol"
+import type { Overview, ServiceHealth } from "@shared/contract"
 import { cn } from "cn"
 
 import { Button } from "@/components/ui/button"
@@ -18,18 +10,9 @@ import {
   CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -48,19 +31,15 @@ import { CopyId } from "@/components/copy-id"
 import { QueryError, Page, PageHeader, Panel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { RequestStatusBadge, StatusDot } from "@/components/status"
-import { api } from "@/lib/api"
+import { useOverviewSummary, useStuckRequests, type OverviewSummary } from "@/features/overview/queries"
+import { StatusBreakdown, StatusChart } from "@/features/overview/request-status-panels"
 import {
-  formatDayTime,
   formatDuration,
   formatNumber,
   formatPercent,
-  formatShortTime,
 } from "@/lib/format"
-import { overviewQuery } from "@/lib/queries"
 import {
   healthMeta,
-  requestStatusMeta,
-  requestStatusOrder,
   serviceLabel,
   toneText,
   toneVar,
@@ -68,12 +47,7 @@ import {
   wakeKindLabel,
   type Tone,
 } from "@/lib/status"
-import {
-  useTimeWindow,
-  windowMs,
-  windowPhrase,
-  windowTitle,
-} from "@/lib/window"
+import { useTimeWindow, windowTitle } from "@/lib/window"
 
 // ---------- salud de servicios ----------
 
@@ -180,17 +154,8 @@ function Kpi({
   )
 }
 
-function KpiGrid({ data }: { data: Overview }) {
-  const wakeTotals = data.wakes.reduce(
-    (acc, w) => ({
-      ok: acc.ok + w.ok,
-      failed: acc.failed + w.failed,
-      retried: acc.retried + w.retried,
-    }),
-    { ok: 0, failed: 0, retried: 0 }
-  )
-  const attempts = wakeTotals.ok + wakeTotals.failed
-  const okRatio = attempts ? wakeTotals.ok / attempts : null
+function KpiGrid({ data }: { data: OverviewSummary }) {
+  const { wakeTotals, okRatio } = data
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Kpi
@@ -234,220 +199,12 @@ function KpiGrid({ data }: { data: Overview }) {
   )
 }
 
-// ---------- estados por tiempo ----------
-
-type Series = "open" | "ok" | "neutral" | "warn" | "error"
-const seriesOf: Record<RequestStatus, Series> = {
-  awaiting_agent: "open",
-  awaiting_owner: "open",
-  answered: "ok",
-  no_data: "neutral",
-  declined: "warn",
-  denied: "warn",
-  expired: "error",
-  delivery_failed: "error",
-}
-const chartConfig = {
-  ok: { label: "Respondidas", color: toneVar.ok },
-  neutral: { label: "Sin datos", color: toneVar.neutral },
-  warn: { label: "Rechazadas o denegadas", color: toneVar.warn },
-  error: { label: "Vencidas o fallidas", color: toneVar.error },
-  open: { label: "Abiertas", color: toneVar.info },
-} satisfies ChartConfig
-const seriesOrder: Series[] = ["ok", "neutral", "warn", "error", "open"]
-
-const bucketMs: Record<Window, number> = {
-  "15m": 60_000,
-  "1h": 5 * 60_000,
-  "24h": 3_600_000,
-  "7d": 12 * 3_600_000,
-}
-
-function bucketize(items: RequestSummary[], window: Window, now: number) {
-  const size = bucketMs[window]
-  const count = Math.round(windowMs[window] / size)
-  const end = Math.ceil(now / size) * size
-  const start = end - count * size
-  const buckets = Array.from({ length: count }, (_, i) => ({
-    t: start + i * size,
-    ok: 0,
-    neutral: 0,
-    warn: 0,
-    error: 0,
-    open: 0,
-  }))
-  for (const r of items) {
-    const index = Math.floor((Date.parse(r.createdAt) - start) / size)
-    const bucket = buckets[index]
-    if (bucket) bucket[seriesOf[r.status]] += 1
-  }
-  return buckets
-}
-
-function StatusChart({ window }: { window: Window }) {
-  const [since] = React.useState(() => Date.now())
-  const query = useQuery({
-    queryKey: ["overview-requests", window],
-    queryFn: ({ signal }) =>
-      api(
-        "requests",
-        {
-          query: {
-            since: new Date(Date.now() - windowMs[window]).toISOString(),
-            limit: 200,
-          },
-        },
-        { signal }
-      ),
-    refetchInterval: 15_000,
-  })
-  const data = React.useMemo(
-    () =>
-      bucketize(query.data?.items ?? [], window, query.dataUpdatedAt || since),
-    [query.data, query.dataUpdatedAt, window, since]
-  )
-  const formatTick = (t: number) =>
-    window === "7d" ? formatDayTime(t) : formatShortTime(t)
-
-  return (
-    <Card size="sm" className="min-w-0 lg:col-span-2">
-      <CardHeader>
-        <CardTitle>Solicitudes por estado</CardTitle>
-        <CardDescription className="text-xs">
-          Creadas en {windowPhrase[window]}, agrupadas cada{" "}
-          {formatDuration(bucketMs[window])}
-          {query.data?.nextCursor ? " · muestra de las 200 más recientes" : ""}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex min-h-64 flex-1 flex-col">
-        {query.isPending ? (
-          <Skeleton className="min-h-56 w-full flex-1" />
-        ) : query.isError ? (
-          <QueryError query={query} />
-        ) : (
-          <ChartContainer
-            config={chartConfig}
-            className="aspect-auto min-h-56 w-full flex-1"
-          >
-            <BarChart
-              data={data}
-              margin={{ left: -20, right: 4, top: 4 }}
-              barCategoryGap={2}
-            >
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="t"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                minTickGap={28}
-                tickFormatter={formatTick}
-              />
-              <YAxis
-                allowDecimals={false}
-                tickLine={false}
-                axisLine={false}
-                width={44}
-              />
-              <ChartTooltip
-                cursor={false}
-                content={
-                  <ChartTooltipContent
-                    indicator="dot"
-                    labelFormatter={(_, payload) =>
-                      formatTick(Number(payload?.[0]?.payload?.t))
-                    }
-                  />
-                }
-              />
-              <ChartLegend
-                itemSorter={(item) =>
-                  seriesOrder.indexOf(item.dataKey as Series)
-                }
-                content={<ChartLegendContent className="flex-wrap" />}
-              />
-              {seriesOrder.map((key, i) => (
-                <Bar
-                  key={key}
-                  dataKey={key}
-                  stackId="status"
-                  fill={`var(--color-${key})`}
-                  stroke="var(--card)"
-                  strokeWidth={1}
-                  radius={i === seriesOrder.length - 1 ? [3, 3, 0, 0] : 0}
-                  isAnimationActive={false}
-                />
-              ))}
-            </BarChart>
-          </ChartContainer>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function StatusBreakdown({ data }: { data: Overview }) {
-  const total = Math.max(1, data.requests.total)
-  const tools = Object.entries(data.requests.byTool).sort((a, b) => b[1] - a[1])
-  return (
-    <Card size="sm" className="min-w-0">
-      <CardHeader>
-        <CardTitle>Desglose</CardTitle>
-        <CardDescription className="text-xs">
-          Por estado y por herramienta
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-1.5">
-        {requestStatusOrder.map((status) => {
-          const count = data.requests.byStatus[status] ?? 0
-          const meta = requestStatusMeta[status]
-          return (
-            <Link
-              key={status}
-              to={`/solicitudes?status=${status}`}
-              className="group/row grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 rounded-md px-1 py-0.5 text-sm hover:bg-muted/60"
-            >
-              <span className="flex items-center gap-2">
-                <StatusDot tone={meta.tone} small />
-                <span className="truncate">{meta.label}</span>
-              </span>
-              <span className="font-mono text-xs tabular-nums">{count}</span>
-              <span className="col-span-2 h-1 overflow-hidden rounded-full bg-muted">
-                <span
-                  className="block h-full rounded-full"
-                  style={{
-                    width: `${(count / total) * 100}%`,
-                    background: toneVar[meta.tone],
-                  }}
-                />
-              </span>
-            </Link>
-          )
-        })}
-      </CardContent>
-      <CardFooter className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {tools.map(([tool, count]) => (
-          <span key={tool}>
-            {toolLabel[tool as keyof typeof toolLabel] ?? tool}{" "}
-            <span className="font-mono text-foreground">{count}</span>
-          </span>
-        ))}
-      </CardFooter>
-    </Card>
-  )
-}
-
 // ---------- listas ----------
 
 function StuckRequests() {
   const navigate = useNavigate()
-  const query = useQuery({
-    queryKey: ["requests", { stuck: true, limit: 8 }],
-    queryFn: ({ signal }) =>
-      api("requests", { query: { stuck: true, limit: 8 } }, { signal }),
-    refetchInterval: 15_000,
-  })
-  const items = query.data?.items ?? []
+  const query = useStuckRequests()
+  const items = query.data ?? []
   return (
     <Panel
       title={
@@ -679,7 +436,7 @@ function OverviewSkeleton() {
 
 export function OverviewPage() {
   const { window } = useTimeWindow()
-  const query = useQuery(overviewQuery(window))
+  const query = useOverviewSummary(window)
   const data = query.data
 
   return (
@@ -708,7 +465,7 @@ export function OverviewPage() {
           <KpiGrid data={data} />
           <div className="grid gap-3 lg:grid-cols-3">
             <StatusChart window={window} />
-            <StatusBreakdown data={data} />
+            <StatusBreakdown requests={data.requests} />
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
             <StuckRequests />
