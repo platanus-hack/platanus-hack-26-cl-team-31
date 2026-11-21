@@ -3,6 +3,14 @@ import { Address, AskInput, type Category, type Owner, type RequesterView } from
 import { describeSharing } from "../../app/(app)/contacts/describe";
 import type { InterpretMessage } from "./claude";
 
+// What a denial means when the contact does not share the category asked about.
+const notShared: Record<Category, string> = {
+  availability: "su disponibilidad horaria",
+  interests: "sus intereses",
+  health: "su información de salud",
+  general: "respuestas a preguntas abiertas",
+};
+
 export const askExample = "Pregunta a carla@sideband.app si puede jugar el sábado";
 const askHelp = `Prueba: «${askExample}», escribe «estado» para revisar tu última solicitud enviada o «contactos» para ver tu agenda.`;
 type WhatsAppBroker = Pick<OwnerPort, "ask" | "status" | "activity" | "contacts">;
@@ -77,6 +85,12 @@ export async function runCommand(
     if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
     const view = await broker.ask(owner, input.data, "whatsapp");
     onResult("ask", view);
+    if (view.decision !== "deny") return summarize(view);
+    // The broker denies without a reason. What the contact shares is already in the owner's own
+    // contacts view, so naming the missing category reveals nothing new.
+    const contact = (await broker.contacts(owner)).contacts.find(({ address }) => address === to);
+    if (!contact) return `${to} no está entre tus contactos.`;
+    if (!contact.receives.includes(category)) return `${to} no te comparte ${notShared[category]}.`;
     return summarize(view);
   }
 
