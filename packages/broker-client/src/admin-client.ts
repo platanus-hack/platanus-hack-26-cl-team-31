@@ -1,6 +1,6 @@
 import { AdminActor } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
-import type { AdminPort } from "../ports.js";
+import type { AdminPort } from "./ports.js";
 import { createHttpClient, type ClientOptions } from "./http.js";
 
 export function createAdminClient(options: ClientOptions<AdminActor>): AdminPort {

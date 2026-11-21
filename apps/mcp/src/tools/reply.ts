@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { BrokerError, type AgentPort } from "@team-31/broker/client";
+import { BrokerError, type AgentPort } from "@team-31/broker-client";
 import { agentScopes, ReplyArguments, ReplyInput, ReplyReceipt, type Principal } from "@team-31/protocol";
 import { runTool, type ToolTelemetry } from "./result.js";
 

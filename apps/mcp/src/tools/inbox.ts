@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { AgentPort } from "@team-31/broker/client";
+import type { AgentPort } from "@team-31/broker-client";
 import { agentScopes, type Principal } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { z } from "zod";

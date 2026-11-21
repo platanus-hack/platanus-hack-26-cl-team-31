@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { verifyServiceToken } from "@team-31/auth/service";
-import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker/client";
+import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-client";
 import { Scope, WAKE_EVENT } from "@team-31/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";

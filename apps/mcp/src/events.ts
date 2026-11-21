@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { BrokerError, type AgentPort } from "@team-31/broker/client";
+import { BrokerError, type AgentPort } from "@team-31/broker-client";
 import { WAKE_EVENT, WAKE_SUBSCRIPTION_SCOPE, type Principal } from "@team-31/protocol";
 import { z } from "zod";
 import type { ToolTelemetry } from "./tools/result.js";

@@ -1,6 +1,6 @@
 import { ErrorBody, type ErrorCode } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
-import { BrokerError } from "../errors.js";
+import { BrokerError } from "./errors.js";
 
 type Schema<Value> = {
   safeParse(input: unknown): { success: true; data: Value } | { success: false };

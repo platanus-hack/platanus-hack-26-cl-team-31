@@ -1,5 +1,5 @@
 import { mintServiceToken } from "@team-31/auth/service"
-import { BrokerError, createAdminClient, type AdminPort } from "@team-31/broker/client"
+import { BrokerError, createAdminClient, type AdminPort } from "@team-31/broker-client"
 import type { JWK } from "jose"
 import { AdminHttpError } from "./errors.js"
 

@@ -1,6 +1,6 @@
 import { Owner } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
-import type { OwnerPort } from "../ports.js";
+import type { OwnerPort } from "./ports.js";
 import { createHttpClient, type ClientOptions } from "./http.js";
 
 export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {

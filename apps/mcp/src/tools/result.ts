@@ -1,5 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { BrokerError } from "@team-31/broker/client";
+import { BrokerError } from "@team-31/broker-client";
 import type { ErrorCode, Principal, Scope } from "@team-31/protocol";
 import type { Telemetry } from "@team-31/telemetry";
 

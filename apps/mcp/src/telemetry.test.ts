@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker/client";
+import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-client";
 import { WAKE_EVENT } from "@team-31/protocol";
 import { createTelemetry, memorySink, tracedFetch, type MemorySink, type Telemetry } from "@team-31/telemetry";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
