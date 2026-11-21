@@ -75,6 +75,7 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
       params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } },
     }),
   });
+  expect(initialize.headers.get("cache-control")).toBe("no-store");
   expect(await initialize.json()).toMatchObject({ result: { capabilities: { events: {} } } });
 
   const response = await fetch(`${origin}/mcp`, {
@@ -83,6 +84,7 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
   });
   expect(response.status).toBe(401);
+  expect(response.headers.get("cache-control")).toBe("no-store");
   expect(response.headers.get("www-authenticate")).toContain(
     `resource_metadata="https://mcp.example.test${metadataPath}/mcp"`,
   );

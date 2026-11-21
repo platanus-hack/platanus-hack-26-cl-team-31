@@ -297,7 +297,9 @@ describe("HTTP interno del broker", () => {
     const noScope = await mintServiceToken({ iss: "mcp", sub: "alice", azp: "alice-agent", privateKey: mcp.privateKey.export({ format: "jwk" }) });
 
     for (const token of [webToken, expired, undefined]) {
-      await expectError(await request(app, routes.agentAsk, { token, body: question }), 401, "unauthorized");
+      const rejected = await request(app, routes.agentAsk, { token, body: question });
+      expect(rejected.headers.get("cache-control")).toBe("no-store");
+      await expectError(rejected, 401, "unauthorized");
     }
     await expectError(await request(app, routes.ownerMe, { token: mcpToken }), 401, "unauthorized");
     await expectError(await request(app, routes.ownerStream, { token: mcpToken }), 401, "unauthorized");

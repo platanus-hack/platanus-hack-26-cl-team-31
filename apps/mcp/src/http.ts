@@ -40,6 +40,7 @@ export function createHttpServer(
 
   return createNodeServer((req, res) => {
     const path = req.url?.split("?", 1)[0];
+    if (path === mcpPath) res.setHeader("Cache-Control", "no-store");
     const route = routeOf(path);
     const run = route === "/healthz" ? () => handle(req, res, path) : () => observed(req, res, path, route);
     void run().catch((error: unknown) => failed(req, res, route, error));
