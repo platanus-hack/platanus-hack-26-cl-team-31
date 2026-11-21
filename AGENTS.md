@@ -2,6 +2,45 @@
 
 Monorepo pnpm + Turborepo (Node 24, pnpm 10). Apps en `apps/*`, paquetes compartidos en `packages/*`. Infra local con Docker Compose.
 
+## Mapa del repositorio
+
+El MVP conserva MCP, server y broker como servicios separados, con bóvedas alojadas en Nexo. La columna de destino describe la **propuesta de unificación** que mantiene el ciclo de las solicitudes en el broker. Esa asignación sigue pendiente de decisión del equipo.
+
+| Módulo | Qué hace hoy | Destino propuesto |
+| --- | --- | --- |
+| `apps/web` | Login OAuth, interfaz del titular y dashboard local `/demo`. | Conservar como interfaz. El dashboard y la CLI deben consumir las mismas operaciones. |
+| `apps/mcp` | Expone las tools de Nexo a los asistentes y llama al broker con la identidad delegada. | Conservar como adaptador MCP común, incluidas las consultas a contactos. |
+| `apps/broker`, `packages/broker` | La app expone HTTP y arranca el worker. El paquete implementa reglas de acceso, solicitudes, aprobación del titular, almacenamiento y clientes. | Conservar como autoridad sobre permisos, solicitudes y entrega de resultados. |
+| `apps/server` | API de coordinación con contactos, membresías, calendario, publicaciones y reuniones en PostgreSQL. Hoy también autentica tokens de la seed y expone su propio adaptador MCP. | Conservar bóvedas, grupos, directorio y reuniones. Migrar los consumidores y el historial antes de retirar `people.token_hash`, `availability_requests` y `apps/server/src/mcp.ts`. |
+| `packages/protocol`, `packages/auth`, `packages/wake` | `protocol` define herramientas, reglas y mensajes. `auth` implementa OAuth y JWT de servicio. `wake` envía avisos a agentes. | Conservar y reutilizar desde los servicios y sus clientes. |
+| `apps/admin`, `packages/telemetry`, `packages/ops` | Panel y MCP de administración, instrumentación y esquema operativo de PostgreSQL. | Conservar para seguir las solicitudes por `requestId`. |
+| `apps/demo` | Ejecuta el escenario local de Contactos de Ana desde la CLI y el dashboard. | Conservar el escenario y los datos de prueba. Al conectarlo al stack persistente, retirar el arranque del broker por sesión y la traducción de `demo_profiles.interest_readers` a reglas. |
+| `infra/`, `scripts/`, `packages/typescript-config`, `e2e/` | Preparación del entorno, comandos de desarrollo y ensayos, configuración TypeScript y pruebas del stack. | Conservar como soporte. Para probar OAuth, web, MCP y broker juntos, usar el [guion de scripts/demo](docs/demo.md). |
+
+Las guías viven en `docs/`. [docs/poc](docs/poc/README.md) conserva el prototipo anterior al monorepo como referencia histórica.
+
+## Antes de escribir código
+
+Cada capacidad tiene un dueño. Búscalo con `git grep` antes de crear un archivo, extiéndelo y nombra en el PR lo que reutilizaste.
+
+| Necesitas | Ya existe en |
+| --- | --- |
+| Rutas HTTP del broker con sus esquemas y emisor | `routes` de `@team-31/protocol/http` |
+| Llamar al broker | `createAgentClient` y `createOwnerClient` de `@team-31/broker/client` |
+| Firmar o verificar un JWT de servicio | `mintServiceToken` y `verifyServiceToken` de `@team-31/auth/service` |
+| Verificar un access token OAuth | `createMcpGuard` de `@team-31/auth/resource` |
+| Enviar un aviso o verificar su firma | `createWaker` y `verifyWebhookSignature` de `@team-31/wake` |
+| Eventos, errores y `fetch` con traza | `@team-31/telemetry` |
+| Generar llaves | `infra/gen-keys.ts` |
+| Usuarios y reglas de prueba | `fixtureUsers` y `fixtureSharingRules` de `@team-31/protocol` |
+| Receptor falso de avisos | `startFakeReceivers` de `e2e/src/fake-receivers.ts` |
+
+- **La segunda copia se mueve.** Cuando dos módulos necesitan lo mismo, mueve el original a `packages/*` en ese PR e importa desde ambos. Deuda actual: tres limitadores de ventana fija (`apps/broker/src/http/rate-limit.ts`, `apps/admin/server/rate-limit.ts`, `apps/admin/server/mcp/rate-limit.ts`) y el esquema zod de la JWK Ed25519 repetido en `apps/broker/src/env.ts` y `apps/admin/server/env.ts`. Unifícalos antes de sumar otro uso.
+- **El reparto de archivos de un issue define quién edita. Importar siempre está permitido.** Si lo que necesitas vive en la carpeta de otro issue, impórtalo. Si falta, pídelo en el PR.
+- **Programa contra código que existe en `main`.** Si tu issue depende de un módulo pendiente, entrega ambos juntos o deja el PR en draft hasta que llegue. Un stub que lanza, un `Proxy` que simula la interfaz o un `import()` con ruta variable pasan el build y dejan el servicio respondiendo 502.
+- **Un camino por capacidad.** Hay cinco servidores MCP, tres receptores de avisos de prueba y tres demos. Uno nuevo, o un cliente HTTP nuevo, lleva en el PR una línea que explica por qué el existente no sirve.
+- **Un PR, un issue.** Apunta a menos de 500 líneas propias. El lockfile, el código generado y las skills copiadas van en un commit separado.
+
 ## Setup (por worktree)
 
 Varios devs/agentes trabajan en paralelo, cada uno en su propio worktree. Cada worktree recibe un **SLOT** único que define sus puertos y su stack Docker aislado (contenedores y datos propios).
@@ -73,11 +112,15 @@ El servidor usa `DATABASE_URL`. Cada adaptador MCP (`apps/server/dist/mcp.js`) r
 
 Ctrl+C detiene la API del host y `pnpm infra:down` detiene PostgreSQL conservando el volumen. Después de preparar el esquema, las cuentas y el build, también puedes iniciar la API en segundo plano con `docker compose --profile agents up -d coordination` con el puerto del host libre. Para detener ese stack usa `docker compose --profile agents down`.
 
-El dashboard de desarrollo en `/demo` abre Contactos de Ana con el mismo runtime de Claude Code que la CLI. El modo Fútbol del sábado usa Ollama por loopback (`DEMO_MODEL_URL`) y `DEMO_MODEL` (por defecto `qwen3:4b-instruct`). Puedes usar el perfil Compose `demo-model` o un proceso nativo, no ambos a la vez. Los comandos están en el README. No usa credenciales de un proveedor externo.
+En el dashboard de desarrollo `/demo`, **Fútbol del sábado** llama por HTTP a `apps/server` con la identidad de la seed y a Ollama por loopback (`DEMO_MODEL_URL`, modelo `qwen3:4b-instruct` por defecto). Para arrancar Ollama, elige el perfil Compose `demo-model` o un proceso nativo. Los comandos están en el [README](README.md).
 
-## Consultas resueltas por el runtime del titular
+## Qué ejecuta apps/demo · Contactos de Ana
 
-Con PostgreSQL del worktree activo, `corepack pnpm agents:seed` prepara 15 perfiles de prueba con contactos y archivos privados de intereses en `.agents-local/`. Con Claude Code autenticado, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A alguien le interesa la cerámica?"`. Ana carga su agenda de PostgreSQL y pregunta a los agentes con `list_contacts`, `ask_contact` y `await_contact`. El broker aplica el permiso de cada persona. El código vive en `apps/demo`: cada ejecución inicia `apps/broker` con un store en memoria, un puerto libre y llaves generadas, así que la cola es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md#buscar-entre-los-agentes-de-la-agenda) para ver las relaciones, modificar los datos o iniciar una sesión interactiva.
+Con PostgreSQL del worktree activo, `corepack pnpm agents:seed` prepara 15 perfiles de prueba. Con Claude Code autenticado, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A alguien le interesa la cerámica?"`. La CLI y el modo **Contactos de Ana** de `/demo` llaman a [runContactSession](apps/demo/src/contact-session.mjs).
+
+1. La sesión lee `contacts` y `demo_profiles.interest_readers` directamente de PostgreSQL. Claude Code usa un MCP stdio propio de la demo con `list_contacts`, `ask_contact` y `await_contact`.
+2. Ese MCP arranca el ejecutable real de `apps/broker` en loopback y lo llama por HTTP con JWT de servicio. Genera llaves, registra identidades ficticias y carga sus reglas por sesión. Las solicitudes y la cola viven en memoria. Este recorrido funciona sin el broker persistente del worktree, el login OAuth, `apps/mcp` ni la API de `apps/server`. [Arranque del broker y receptor de avisos](apps/demo/src/demo-broker.mjs)
+3. Si el broker deniega, la solicitud se cierra antes del webhook. Si autoriza `interest_check`, envía un webhook firmado al receptor local. El agente del contacto ejecuta Claude Code con la tool `check_interest`, que lee su JSON privado en `.agents-local/`. El broker devuelve la respuesta filtrada a Ana. [Runtime del contacto](apps/demo/src/contact-runtime.mjs) · [Relaciones y datos de prueba](apps/mcp/README.md#buscar-entre-los-agentes-de-la-agenda)
 
 ## Pruebas de punta a punta de Nexo
 
@@ -97,7 +140,9 @@ Nexo se depura en producción con `apps/admin` (panel + MCP de administración).
 6. **Servicio nuevo**: emite `service.started` y `service.heartbeat` y expone `GET /healthz`.
 7. **Mutaciones operativas** (reintentar, expirar, revocar…) se exponen en el `AdminPort` del broker, nunca como `UPDATE` directo desde el admin.
 
-En la descripción del PR agrega una línea **«Cómo se ve en el admin:»** con el evento, la vista o la pantalla donde se observa el cambio. Si `@team-31/telemetry` todavía no está en tu rama (issue ADM-01), deja el estado persistido con timestamps y motivo, y agrega `// TODO(admin): <evento>` donde va la llamada.
+En la descripción del PR agrega una línea **«Cómo se ve en el admin:»** con el evento, la vista o la pantalla donde se observa el cambio.
+
+Hoy solo `apps/admin` importa `@team-31/telemetry`. Broker, MCP, web y `apps/server` registran con `console` hasta ADM-07, y `packages/ops/sql/` solo contiene `0001_events.sql`. Al tocar uno de esos servicios, instrumenta lo que cambias con `createTelemetry` y reemplaza los `// TODO(admin): <evento>` del archivo por la llamada real.
 
 ## Admin y observabilidad
 
@@ -112,7 +157,9 @@ En la descripción del PR agrega una línea **«Cómo se ve en el admin:»** con
 
 `pnpm dev` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm typecheck`. Antes de dar algo por listo: `pnpm lint && pnpm typecheck` (y `pnpm test` si aplica).
 
-Las validaciones del plan se ejecutan en el worktree local. El repo prescinde de workflows de GitHub Actions.
+`pnpm lint` solo cubre `apps/admin` y `apps/web`. El resto depende de `pnpm typecheck` y `pnpm test`, y `apps/demo` queda fuera de `typecheck`.
+
+Las validaciones se ejecutan en el worktree local. `.github/workflows/cd.yml` corre build y typecheck en cada push a `main` y dispara los deploy hooks de Render para los servicios de `render.yaml` (web, broker, MCP y coordinación).
 
 ## ⚠️ Al agregar infra o configuración nueva
 
