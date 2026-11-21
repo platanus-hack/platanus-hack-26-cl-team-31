@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import type { Contact, Invitation, Sharing, TagPresets } from "@team-31/protocol";
 import { contactTagNames, contactTags, sameSharing, type ContactTag } from "@team-31/protocol/constants";
 
-import { answerInvitation, removeContact, saveContactTag, saveSharing, saveTagPreset, sendInvitation } from "../actions";
+import { answerInvitation, removeContact, saveContactTag, saveSharing, saveTagPreset, sendInvitation } from "./actions";
 import { button, card, Feedback, input, primaryButton } from "../ui";
 import { describeSharing } from "./describe";
 import { SharingPicker } from "./sharing";

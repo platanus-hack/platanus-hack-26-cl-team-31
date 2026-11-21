@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { BrokerError } from "@team-31/broker/client";
 import { readWebhookBody } from "@team-31/wake";
 import { ownerClient } from "../../../../lib/broker";
-import { getTelemetry, observeRoute } from "../../../../lib/telemetry";
+import { emptyResponse, getTelemetry, observeRoute } from "../../../../lib/telemetry";
 import { setChannel } from "../../../../lib/whatsapp/channel";
 import { claudeInterpreter } from "../../../../lib/whatsapp/claude";
 import { runCommand } from "../../../../lib/whatsapp/commands";
@@ -13,33 +13,31 @@ import { whatsappStore } from "../../../../lib/whatsapp/runtime";
 const route = "/api/kapso/webhook";
 
 export async function POST(request: Request) {
-  const kapso = config();
-  if (!kapso) return new Response(null, { status: 404 });
   const telemetry = getTelemetry();
   return observeRoute(request, route, async () => {
-    const reply = (status: number, errorId?: string) =>
-      new Response(null, { status, headers: errorId ? { "X-Error-Id": errorId } : undefined });
+    const kapso = config();
+    if (!kapso) return emptyResponse(404);
     try {
       const signature = request.headers.get("x-webhook-signature");
       if (!signature || !/^[a-f\d]{64}$/i.test(signature)) {
         telemetry.emit("auth.token.rejected", { attrs: { issuer: "kapso", reason: "signature" } });
-        return reply(401);
+        return emptyResponse(401);
       }
       const body = await readWebhookBody(request, 32_768);
-      if (!body) return reply(413);
+      if (!body) return emptyResponse(413);
       if (!validSignature(body, signature, kapso.secret)) {
         telemetry.emit("auth.token.rejected", { attrs: { issuer: "kapso", reason: "signature" } });
-        return reply(401);
+        return emptyResponse(401);
       }
       telemetry.emit("auth.token.verified", { attrs: { issuer: "kapso" } });
-      if (request.headers.get("x-webhook-event") !== inboundEvent) return reply(204);
+      if (request.headers.get("x-webhook-event") !== inboundEvent) return emptyResponse(204);
       let json: unknown;
       try { json = JSON.parse(body.toString("utf8")); }
-      catch (error) { return reply(400, telemetry.error(route, error)); }
+      catch (error) { return emptyResponse(400, telemetry.error(route, error)); }
       const message = parseMessage(json, kapso.numberId);
-      if (!message) return reply(204);
+      if (!message) return emptyResponse(204);
       const store = whatsappStore();
-      if (!await store.claim(kapso.numberId, message.id)) return reply(200);
+      if (!await store.claim(kapso.numberId, message.id)) return emptyResponse(200);
 
       after(async () => {
         const send = (text: string, userId?: string) => telemetry.span("whatsapp.send", { userId }, () =>
@@ -94,9 +92,9 @@ export async function POST(request: Request) {
           telemetry.error("whatsapp.delivery", error);
         }
       });
-      return reply(200);
+      return emptyResponse(200);
     } catch (error) {
-      return reply(503, telemetry.error(route, error));
+      return emptyResponse(503, telemetry.error(route, error));
     }
   });
 }

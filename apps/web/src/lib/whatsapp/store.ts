@@ -20,6 +20,14 @@ export function createWhatsAppStore(db: Pool) {
     }
   }
 
+  async function claim(connection: Pick<PoolClient, "query">, numberId: string, messageId: string) {
+    await connection.query("DELETE FROM whatsapp.receipt WHERE expires_at <= now()");
+    const { rowCount } = await connection.query(`
+      INSERT INTO whatsapp.receipt (id, expires_at) VALUES ($1, now() + interval '2 days')
+      ON CONFLICT DO NOTHING`, [digest(`${numberId}:${messageId}`)]);
+    return rowCount === 1;
+  }
+
   return {
     async state(userId: string) {
       const { rows } = await db.query<{ linked: string | null; id: string | null; phone: string | null }>(`
@@ -73,13 +81,7 @@ export function createWhatsAppStore(db: Pool) {
         await tx.query(`DELETE FROM whatsapp.pending_delivery WHERE user_id = $1`, [userId]);
       });
     },
-    async claim(numberId: string, messageId: string) {
-      await db.query("DELETE FROM whatsapp.receipt WHERE expires_at <= now()");
-      const { rowCount } = await db.query(`
-        INSERT INTO whatsapp.receipt (id, expires_at) VALUES ($1, now() + interval '2 days')
-        ON CONFLICT DO NOTHING`, [digest(`${numberId}:${messageId}`)]);
-      return rowCount === 1;
-    },
+    claim: (numberId: string, messageId: string) => claim(db, numberId, messageId),
     // Order disconnect and sensitive delivery: disconnect waits for work already holding this lock.
     async whileLinked(phone: string, timestamp: number, run: (userId: string | undefined) => Promise<void>) {
       // Before the shared lock below: updating the row while holding it would deadlock with another
@@ -104,18 +106,28 @@ export function createWhatsAppStore(db: Pool) {
       return rows[0];
     },
     // Same ordering as whileLinked, for a broker notice addressed to the link in its URL.
-    async whileNotified(linkId: string, run: (link: { userId: string; phone: string; windowOpen: boolean } | undefined) => Promise<void>) {
+    async whileNotified(linkId: string, run: (link: {
+      userId: string; phone: string; windowOpen: boolean;
+      acceptNotice(requestId: string, phase: "final" | "owner", send: () => Promise<void>): Promise<boolean>;
+    } | undefined) => Promise<void>) {
       await transaction(async (tx) => {
         const { rows } = await tx.query<{ userId: string; phone: string; windowOpen: boolean }>(`
           SELECT id AS "userId", "phoneNumber" AS phone,
             coalesce(whatsapp_last_inbound_at > now() - interval '23 hours 55 minutes', false) AS "windowOpen"
           FROM public."user" WHERE whatsapp_link_id = $1 AND whatsapp_linked_at IS NOT NULL FOR SHARE`, [linkId]);
-        await run(rows[0]);
+        const link = rows[0];
+        if (!link) return run(undefined);
+        await run({
+          ...link,
+          async acceptNotice(requestId, phase, send) {
+            if (!await claim(tx, "notice", `${requestId}:${phase}`)) return false;
+            if (link.windowOpen) await send();
+            else await tx.query(`INSERT INTO whatsapp.pending_delivery (user_id, request_id) VALUES ($1, $2)
+              ON CONFLICT DO NOTHING`, [link.userId, requestId]);
+            return true;
+          },
+        });
       });
-    },
-    async addPending(userId: string, requestId: string) {
-      await db.query(`INSERT INTO whatsapp.pending_delivery (user_id, request_id) VALUES ($1, $2)
-        ON CONFLICT DO NOTHING`, [userId, requestId]);
     },
     async pending(userId: string) {
       const { rows } = await db.query<{ request_id: string }>(`
