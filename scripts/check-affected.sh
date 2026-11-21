@@ -67,14 +67,15 @@ fi
 
 # Los tests de Postgres usan TEST_DATABASE_URL del .env de este worktree.
 if [ -f "$ROOT/.env" ]; then
-  url="$("$ROOT/scripts/with-env.sh" sh -c 'printf %s "${TEST_DATABASE_URL:-}"')"
-  if [ -n "$url" ] && ! node -e '
-    const u = new URL(process.argv[1]);
+  if ! "$ROOT/scripts/with-env.sh" node -e '
+    if (!process.env.TEST_DATABASE_URL) process.exit(0);
+    const u = URL.parse(process.env.TEST_DATABASE_URL);
+    if (!u?.hostname) process.exit(1);
     const s = require("node:net").connect({ host: u.hostname, port: Number(u.port || 5432) });
     s.setTimeout(1500);
     s.on("connect", () => process.exit(0)).on("error", () => process.exit(1)).on("timeout", () => process.exit(1));
-  ' "$url"; then
-    fail "Postgres de este worktree no responde en $url."
+  '; then
+    fail "No se pudo conectar a Postgres. Revisa TEST_DATABASE_URL en este worktree."
     fail "Levántalo con 'pnpm infra:up' (o 'pnpm bootstrap') y vuelve a intentar. $BYPASS"
     exit 1
   fi
@@ -82,7 +83,7 @@ else
   say "Sin .env (no corriste 'pnpm bootstrap'): los tests de Postgres se omitirán."
 fi
 
-cmd=("$TURBO" run lint typecheck test "${filter[@]}" --continue --output-logs=errors-only --ui=stream)
+cmd=("$TURBO" run lint typecheck test ${filter[@]+"${filter[@]}"} --continue --output-logs=errors-only --ui=stream)
 say "Corre: turbo run lint typecheck test ${filter[*]:+${filter[*]} }--continue (lo que no cambió sale de la caché de turbo)"
 start=$(date +%s)
 if "$ROOT/scripts/with-env.sh" --optional-env "${cmd[@]}"; then
