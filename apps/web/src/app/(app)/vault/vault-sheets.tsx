@@ -120,7 +120,7 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
           className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl bg-stage px-3.5 py-2.5 text-left">
           <span>
             <span className="block text-sm font-medium text-ink">Pública</span>
-            <span className="block text-xs text-muted">Todos tus contactos pueden leerla.</span>
+            <span className="block text-xs text-muted">Cualquier usuario de Sideband puede leerla.</span>
           </span>
           <span aria-hidden="true" className={`relative h-7 w-12 shrink-0 rounded-full transition ${isPublic ? "bg-accent" : "bg-line-strong"}`}>
             <span className={`absolute top-0.5 left-0.5 size-6 rounded-full bg-white shadow transition-transform ${isPublic ? "translate-x-5" : ""}`} />
@@ -139,12 +139,12 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
             );
           })}
         </div>
-        {category.members?.length ? (
+        {isPublic ? null : category.members?.length ? (
           <div className="flex items-center gap-2 pt-1">
             <div className="flex -space-x-2">{category.members.slice(0, 5).map((address) => <span key={address} className="rounded-full ring-2 ring-menu"><Initial name={address} /></span>)}</div>
             <p className="text-xs text-muted">{category.members.length === 1 ? `${category.members[0]} puede leerla` : `${category.members.length} personas pueden leerla`}</p>
           </div>
-        ) : <p className="text-xs text-muted">{isPublic ? "Aún no tienes contactos." : allowed.length ? "Ningún contacto tiene esas etiquetas todavía." : "Solo tú. Hazla pública o elige etiquetas para compartirla."}</p>}
+        ) : <p className="text-xs text-muted">{allowed.length ? "Ningún contacto tiene esas etiquetas todavía." : "Solo tú. Hazla pública o elige etiquetas para compartirla."}</p>}
       </Section>
 
       <Feedback error={state.error} errorId={state.errorId} />

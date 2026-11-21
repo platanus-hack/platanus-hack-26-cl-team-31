@@ -20,7 +20,7 @@ export const MAX_VAULT_DOCUMENT_BYTES = 5 * 1024 * 1024;
 const maxBase64Length = Math.ceil(MAX_VAULT_DOCUMENT_BYTES / 3) * 4;
 const contentBase64 = z.base64().max(maxBase64Length);
 export const VaultEntry = z.object({ label: name, value });
-// A public category is read by every contact of the holder. A private one needs a tag or an individual permission.
+// A public category is read by any Sideband user. A private one needs a contact with an allowed tag or an individual permission.
 export const VaultVisibility = z.enum(["public", "private"]);
 export type VaultVisibility = z.infer<typeof VaultVisibility>;
 export const VaultCategory = z.object({ id: categoryId, name, description: description.optional(), visibility: VaultVisibility });
