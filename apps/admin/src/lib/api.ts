@@ -4,6 +4,8 @@
 import {
   adminRoutes,
   ErrorBody,
+  FlowRequestRef,
+  FlowReset,
   TelemetryEvent,
   type AdminRouteName,
 } from "@shared/contract"
@@ -292,6 +294,79 @@ export function subscribeLive(
     } catch {
       // Mensaje mal formado: se ignora, el stream sigue.
     }
+  })
+  return () => source.close()
+}
+
+// ---------- Flujo en vivo (SSE) ----------
+
+export type FlowStreamHandlers = {
+  // Conectado (también tras una reconexión automática del navegador).
+  onOpen: () => void
+  // La conexión se cayó y el navegador reintenta solo (con Last-Event-ID).
+  onRetrying: () => void
+  // El navegador dejó de reintentar (401, 403, 429, 5xx): el llamador decide.
+  onClosed: () => void
+  onRow: (row: TelemetryEvent) => void
+  onRequest: (ref: FlowRequestRef) => void
+  onReset: (cursor: string | null) => void
+}
+
+// Se suscribe a /api/admin/flow/live desde `after` (FlowSnapshot.cursor o el último id visto).
+export function subscribeFlow(
+  after: string | null,
+  handlers: FlowStreamHandlers
+): () => void {
+  if (isMock) {
+    let stop: (() => void) | undefined
+    let closed = false
+    void Promise.all([
+      import("@/mocks/live"),
+      import("@team-31/agent-flow"),
+    ]).then(([{ startMockLive }, { isFlowRow }]) => {
+      if (closed) return
+      stop = startMockLive(
+        {},
+        {
+          onStatus: (status) => status === "open" && handlers.onOpen(),
+          onEvent: (row) => isFlowRow(row) && handlers.onRow(row),
+        }
+      )
+    })
+    return () => {
+      closed = true
+      stop?.()
+    }
+  }
+
+  const url =
+    adminRoutes.flowLive.path + buildQuery({ after: after ?? undefined })
+  const source = new EventSource(url, { withCredentials: true })
+  const parse = <T>(schema: z.ZodType<T>, message: Event): T | undefined => {
+    try {
+      const parsed = schema.safeParse(
+        JSON.parse((message as MessageEvent<string>).data)
+      )
+      return parsed.success ? parsed.data : undefined
+    } catch {
+      return undefined
+    }
+  }
+  source.onopen = () => handlers.onOpen()
+  source.onerror = () =>
+    source.readyState === EventSource.CLOSED
+      ? handlers.onClosed()
+      : handlers.onRetrying()
+  source.addEventListener("telemetry", (message) => {
+    const row = parse(TelemetryEvent, message)
+    if (row) handlers.onRow(row)
+  })
+  source.addEventListener("request", (message) => {
+    const ref = parse(FlowRequestRef, message)
+    if (ref) handlers.onRequest(ref)
+  })
+  source.addEventListener("reset", (message) => {
+    handlers.onReset(parse(FlowReset, message)?.cursor ?? null)
   })
   return () => source.close()
 }

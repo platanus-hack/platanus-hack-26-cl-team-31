@@ -8,7 +8,8 @@ import { DEV_EMAIL, type AdminAuth, type RoleResolver } from "./auth/index.js"
 import type { AuditActor, AuditLog } from "./audit.js"
 import type { BrokerAdminClient } from "./broker.js"
 import { AdminHttpError, statusOf } from "./errors.js"
-import { liveStream, type LiveOptions } from "./live.js"
+import { flowEventNames, isFlowRow, projectFlowRow } from "@team-31/agent-flow/telemetry"
+import { createLiveSlots, liveStream, type LiveOptions } from "./live.js"
 import type { AdminLimiters } from "./rate-limit.js"
 import type { TokenStore } from "./tokens.js"
 import type { Revealer } from "./types.js"
@@ -97,7 +98,7 @@ function errorResponse(c: Context, error: unknown, telemetry: Pick<Telemetry, "e
     if (error.code === "unauthorized") c.header("WWW-Authenticate", 'Cookie realm="sideband-admin"')
     if (error.retryAfter) c.header("Retry-After", String(error.retryAfter))
     if (error.code === "rate_limited") {
-      telemetry.emit("http.rate_limited", { attrs: { route: c.req.routePath, bucket: c.req.path.endsWith("/reveal") ? "reveal" : "login" } })
+      telemetry.emit("http.rate_limited", { attrs: { route: c.req.routePath, bucket: c.req.path.endsWith("/reveal") ? "reveal" : c.req.path.endsWith("/live") ? "live" : "login" } })
     }
     return c.json(ErrorBody.parse({ error: { code: error.code, message: error.message } }), statusOf[error.code])
   }
@@ -125,6 +126,32 @@ export function createAdminApi(deps: AdminApiDeps) {
   }
   const now = deps.now ?? Date.now
   const api = new Hono()
+  // Streams en vivo abiertos por admin (límite en live.ts).
+  const liveSlots = createLiveSlots()
+
+  // Flujo en vivo: solo los eventos que dibuja el grafo, con attrs recortados a su lista blanca
+  // (packages/agent-flow/src/telemetry.ts) y el resumen de cada solicitud antes de su primer evento.
+  function flowLive(c: Context, principal: AdminPrincipal) {
+    const { after } = parseInput(adminRoutes.flowLive.query, queryInput(c))
+    const known = new Set<string>()
+    return liveStream(c, queries, telemetry, liveSlots, {
+      stream: "flow",
+      principalId: principal.id,
+      filters: { names: [...flowEventNames] },
+      after,
+      backlog: false,
+      accept: isFlowRow,
+      project: projectFlowRow,
+      prelude: async (events) => {
+        const ids = [...new Set(events.flatMap((event) => (event.requestId && !known.has(event.requestId) ? [event.requestId] : [])))]
+        const refs = []
+        for (let i = 0; i < ids.length; i += 200) refs.push(...(await queries.requestRefs(ids.slice(i, i + 200))))
+        for (const id of ids) known.add(id)
+        while (known.size > 5_000) known.delete(known.values().next().value as string)
+        return refs.map((ref) => ({ event: "request", data: ref }))
+      },
+    }, deps.live)
+  }
 
   // Sesión de Better Auth. Si getSession renueva la sesión (updateAge), reenvía la cookie.
   async function authenticate(c: Context): Promise<AdminPrincipal> {
@@ -236,7 +263,10 @@ export function createAdminApi(deps: AdminApiDeps) {
       case "events":
         return { items: await queries.events(parseInput(adminRoutes.events.query, queryInput(c))) }
       case "live":
-        throw new Error("live se atiende como stream")
+      case "flowLive":
+        throw new Error(`${name} se atiende como stream`)
+      case "flowSnapshot":
+        return queries.flowSnapshot()
       case "errors":
         return { items: await queries.errors(parseInput(adminRoutes.errors.query, queryInput(c))) }
       case "error":
@@ -291,8 +321,10 @@ export function createAdminApi(deps: AdminApiDeps) {
         throw new AdminHttpError("not_fresh", "Vuelve a iniciar sesión para confirmar esta acción.")
       }
       if (name === "live") {
-        return liveStream(c, queries, telemetry, parseInput(adminRoutes.live.query, queryInput(c)), deps.live)
+        const filters = parseInput(adminRoutes.live.query, queryInput(c))
+        return liveStream(c, queries, telemetry, liveSlots, { stream: "events", principalId: principal.id, filters, backlog: true }, deps.live)
       }
+      if (name === "flowLive") return flowLive(c, principal)
       return c.json(route.response.parse(await handle(name, c, principal)))
     }))
   }

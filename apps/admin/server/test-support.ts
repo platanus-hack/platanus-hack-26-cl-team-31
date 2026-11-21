@@ -42,6 +42,7 @@ export function fakeQueries(overrides: Partial<AdminQueries> = {}): AdminQueries
     request: async () => null,
     trace: async () => null,
     events: async () => [],
+    latestEventId: async () => null,
     errors: async () => [],
     error: async () => null,
     users: async () => ({ items: [], nextCursor: null }),
@@ -49,6 +50,8 @@ export function fakeQueries(overrides: Partial<AdminQueries> = {}): AdminQueries
     agents: async () => [],
     wakeQueue: async () => [],
     audit: async () => ({ items: [], nextCursor: null }),
+    flowSnapshot: async () => ({ generatedAt: at, cursor: null, users: [], agents: [], requests: [], truncated: false }),
+    requestRefs: async () => [],
     sql: async () => ({ columns: ["one"], rows: [[1]], truncated: false, durationMs: 1 }),
     ...overrides,
   }

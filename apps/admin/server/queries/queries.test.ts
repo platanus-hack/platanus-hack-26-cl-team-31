@@ -22,6 +22,8 @@ import {
   ErrorFilters,
   ErrorGroup,
   EventFilters,
+  FlowRequestRef,
+  FlowSnapshot,
   Overview,
   RequestDetail,
   RequestFilters,
@@ -644,6 +646,38 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       "wake_answered_1",
     ])
     expect(JSON.stringify(agents)).not.toContain(WAKE_SECRET)
+  })
+
+  it("flowSnapshot, requestRefs, latestEventId y events por nombre alimentan el flujo sin contenido", async () => {
+    const snapshot = FlowSnapshot.parse(await queries.flowSnapshot())
+    expect(snapshot.cursor).toBe(await queries.latestEventId())
+    expect(snapshot.users.map((user) => user.address)).toEqual(
+      expect.arrayContaining(["alice@sideband.app", "bruno@sideband.app"])
+    )
+    expect(snapshot.agents).toEqual([
+      expect.objectContaining({ userId: "bruno", agentId: "main", label: "Agente de Bruno", wakeKind: "standard_webhook", revokedAt: null }),
+    ])
+    // Abiertas (incluida la atascada) y nada cerrado hace más de 15 min.
+    expect(snapshot.requests.map((request) => request.id)).toEqual([ids.open, ids.stuck])
+    expect(snapshot.truncated).toBe(false)
+
+    const refs = z
+      .array(FlowRequestRef)
+      .parse(await queries.requestRefs([ids.answered, ids.answered, "no-existe"]))
+    expect(refs).toEqual([
+      expect.objectContaining({ id: ids.answered, fromAddress: "alice@sideband.app", toAddress: "bruno@sideband.app", answeredByAgentId: "main" }),
+    ])
+    expect(await queries.requestRefs([])).toEqual([])
+
+    const named = await queries.events({ ...EventFilters.parse({}), names: ["broker.request.created", "http.rate_limited"] })
+    expect(named.map((event) => event.name)).toEqual(["http.rate_limited", "broker.request.created"])
+    const tail = await queries.events({ ...EventFilters.parse({ afterId: named[1]!.id }), names: ["broker.request.created"] })
+    expect(tail).toEqual([])
+
+    const text = JSON.stringify([snapshot, refs])
+    for (const secret of [SECRET_QUESTION, SECRET_PURPOSE, SECRET_ANSWER, WAKE_SECRET, "no-filtrar", "hooks.example.com"]) {
+      expect(text).not.toContain(secret)
+    }
   })
 
   it("audit pagina la bitácora del admin sin meta", async () => {
