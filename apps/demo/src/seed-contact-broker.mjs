@@ -42,7 +42,7 @@ async function importProfiles() {
       const connections = await owner.agents(principal);
       if (connections.some(connection => connection.agentId === principal.agentId)) continue;
       for (const reader of readers.filter(reader => roster.has(reader))) {
-        await owner.setGrant(principal, { grantee: contactAddress(reader), tool: "interest_check", fields: ["matches"] });
+        await owner.setGrant(principal, { grantee: contactAddress(reader), category: "interests" });
       }
       seeded(principal, "grants");
       await agent.connectWake(principal, { kind: "standard_webhook", url: contactWakeUrl(id), secret: contactWakeSecret(id) });

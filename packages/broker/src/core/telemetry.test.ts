@@ -34,11 +34,11 @@ beforeEach(async () => {
   });
   await broker.owner.claimAddress(alice, "alice");
   await broker.owner.claimAddress(bruno, "bruno");
-  await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
+  await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "general" });
   sink.clear();
 });
 
-const ask = () => broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: secretText } });
+const ask = () => broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: secretText, category: "general" } });
 const names = () => sink.records.map((record) => record.name);
 
 describe("telemetría del core del broker", () => {
@@ -46,7 +46,7 @@ describe("telemetría del core del broker", () => {
     const view = await ask();
     expect(sink.find("broker.policy.evaluated")).toEqual([expect.objectContaining({
       requestId: view.requestId, userId: "alice", agentId: "alice-bot",
-      attrs: { tool: "question", decision: "allow", rule: "grant" },
+      attrs: { tool: "question", category: "general", decision: "allow", rule: "grant" },
     })]);
     expect(sink.find("broker.request.created")).toEqual([expect.objectContaining({
       requestId: view.requestId, userId: "alice", agentId: "alice-bot", attrs: { tool: "question", rule: "grant" },
@@ -55,8 +55,8 @@ describe("telemetría del core del broker", () => {
   });
 
   it("una denegación inmediata se registra como creada y cerrada", async () => {
-    const view = await broker.agent.ask(alice, { to: "nadie@sideband.app", tool: "question", args: { text: secretText } });
-    expect(sink.find("broker.policy.evaluated")[0]?.attrs).toEqual({ tool: "question", decision: "deny", rule: "no_recipient" });
+    const view = await broker.agent.ask(alice, { to: "nadie@sideband.app", tool: "question", args: { text: secretText, category: "general" } });
+    expect(sink.find("broker.policy.evaluated")[0]?.attrs).toEqual({ tool: "question", category: "general", decision: "deny", rule: "no_recipient" });
     expect(sink.find("broker.request.closed")).toEqual([
       expect.objectContaining({ requestId: view.requestId, attrs: { outcome: "denied", escalated: false } }),
     ]);
@@ -131,13 +131,13 @@ describe("telemetría del core del broker", () => {
     const view = await ask();
     const [grant] = await broker.owner.grants(bruno);
     await broker.owner.revokeGrant(bruno, grant!.id);
-    const created = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "availability", fields: ["available"] });
+    const created = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "availability" });
 
     expect(sink.find("broker.grant.revoked")).toEqual([
       expect.objectContaining({ userId: "bruno", attrs: { grantId: grant!.id } }),
     ]);
     expect(sink.find("broker.grant.set")).toEqual([
-      expect.objectContaining({ userId: "bruno", attrs: { grantId: created.id, tool: "availability", fields: 1 } }),
+      expect.objectContaining({ userId: "bruno", attrs: { grantId: created.id, category: "availability" } }),
     ]);
     expect(sink.find("broker.request.status_changed")).toEqual([expect.objectContaining({
       requestId: view.requestId, attrs: { from: "awaiting_agent", to: "denied", by: "owner" },
@@ -148,7 +148,7 @@ describe("telemetría del core del broker", () => {
 
   it("una solicitud sin permiso queda denegada con su código", async () => {
     await broker.owner.claimAddress({ userId: "carla" }, "carla");
-    await broker.agent.ask(alice, { to: "carla@sideband.app", tool: "question", args: { text: secretText } });
-    expect(sink.find("broker.policy.evaluated").at(-1)?.attrs).toEqual({ tool: "question", decision: "deny", rule: "no_grant" });
+    await broker.agent.ask(alice, { to: "carla@sideband.app", tool: "question", args: { text: secretText, category: "general" } });
+    expect(sink.find("broker.policy.evaluated").at(-1)?.attrs).toEqual({ tool: "question", category: "general", decision: "deny", rule: "no_grant" });
   });
 });

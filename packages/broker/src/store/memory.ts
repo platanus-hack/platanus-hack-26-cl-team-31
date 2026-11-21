@@ -6,7 +6,7 @@ import type {
 
 type State = {
   users: Map<string, UserRow>;
-  grants: (GrantRow & { revokedAt?: Date; friendDefault?: boolean })[];
+  grants: (GrantRow & { revokedAt?: Date })[];
   friends: Map<string, Set<Address>>;
   circles: Map<string, CircleRow>;
   circleMembers: CircleMemberRow[];
@@ -54,12 +54,8 @@ function transaction(state: State): StoreTx {
     return state.grants.filter((grant) => grant.grantorUserId === grantorUserId && !grant.revokedAt);
   }
 
-  function findGrant({ grantorUserId, granteeAddress, tool }: Pick<GrantRow, "grantorUserId" | "granteeAddress" | "tool">) {
-    return liveGrants(grantorUserId).find((grant) => grant.granteeAddress === granteeAddress && grant.tool === tool);
-  }
-
-  function readGrant({ friendDefault: _friendDefault, ...row }: State["grants"][number]): GrantRow {
-    return structuredClone(row);
+  function findGrant({ grantorUserId, granteeAddress, category }: Pick<GrantRow, "grantorUserId" | "granteeAddress" | "category">) {
+    return liveGrants(grantorUserId).find((grant) => grant.granteeAddress === granteeAddress && grant.category === category);
   }
 
   return {
@@ -79,20 +75,14 @@ function transaction(state: State): StoreTx {
     async putGrant(row) {
       if (!state.users.has(row.grantorUserId)) state.users.set(row.grantorUserId, { userId: row.grantorUserId, createdAt: new Date() });
       const live = findGrant(row);
-      if (!live) {
-        state.grants.push(structuredClone(row));
-        return structuredClone(row);
-      }
-      live.fields = structuredClone(row.fields);
-      delete live.friendDefault;
-      return readGrant(live);
+      if (!live) state.grants.push(structuredClone(row));
+      return structuredClone(live ?? row);
     },
     async listGrants(grantorUserId) {
-      return liveGrants(grantorUserId).map(readGrant);
+      return structuredClone(liveGrants(grantorUserId));
     },
-    async getGrant(grantorUserId, granteeAddress, tool) {
-      const live = findGrant({ grantorUserId, granteeAddress, tool });
-      return live ? readGrant(live) : null;
+    async getGrant(grantorUserId, granteeAddress, category) {
+      return structuredClone(findGrant({ grantorUserId, granteeAddress, category }) ?? null);
     },
     async revokeGrant(id, grantorUserId, at) {
       const live = liveGrants(grantorUserId).find((grant) => grant.id === id);
@@ -112,16 +102,6 @@ function transaction(state: State): StoreTx {
     },
     async removeFriend(userId, address) {
       return state.friends.get(userId)?.delete(address) ?? false;
-    },
-    async insertFriendGrant(row) {
-      if (findGrant(row)) return false;
-      state.grants.push(structuredClone({ ...row, friendDefault: true }));
-      return true;
-    },
-    async revokeFriendGrants(userId, address, at) {
-      const defaults = liveGrants(userId).filter((grant) => grant.granteeAddress === address && grant.friendDefault);
-      for (const grant of defaults) grant.revokedAt = structuredClone(at);
-      return defaults.map((grant) => grant.id);
     },
     async listOpenInvitations(userId) {
       return structuredClone([...state.requests.values()]

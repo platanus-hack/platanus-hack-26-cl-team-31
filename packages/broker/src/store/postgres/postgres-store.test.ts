@@ -61,7 +61,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     const row: RequestRow = {
       id: randomUUID(), fromUserId: "alice", toUserId: "bruno",
       fromAddress: "alice@sideband.app", toAddress: "bruno@sideband.app",
-      tool: "question", args: { text: "Hola" }, status: "awaiting_agent", allowedFields: ["answer"],
+      tool: "question", args: { text: "Hola", category: "general" }, status: "awaiting_agent", allowedFields: ["answer"],
       guidance: "", rule: "test", escalated: false, envelopeSignature: "envelope",
       createdAt: now, expiresAt: now, version: 0, ...overrides,
     };
@@ -93,9 +93,9 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     };
     await createParticipants();
     const broker = createBroker({ ...deps, store });
-    const grant = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
+    const grant = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "general" });
     const { requestId } = await broker.agent.ask(alice, {
-      to: "bruno@sideband.app", tool: "question", args: { text: "¿Disponible?" },
+      to: "bruno@sideband.app", tool: "question", args: { text: "¿Disponible?", category: "general" },
     });
     const [escalated] = await broker.agent.inbox(bruno);
     await broker.agent.reply(bruno, { requestId, nonce: escalated!.nonce, outcome: "needs_owner" });
@@ -245,7 +245,42 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(6);
+  });
+
+  it("reads a question stored before categories as an open question", async () => {
+    await createParticipants();
+    const row = await makeRequest({ args: { text: "Hola" } });
+    expect((await store.tx((tx) => tx.getRequest(row.id)))?.args).toEqual({ text: "Hola", category: "general" });
+  });
+
+  it("moves tool grants and invitation offers to categories and deletes grants of a tool without one", async () => {
+    await createParticipants();
+    const invitation = await makeRequest({
+      tool: "connect", args: { share: { availability: "slots", interests: false, questions: true } },
+    });
+    // Restore the grants table and the migration journal from before categories.
+    await isolated.query("DROP INDEX sideband.grants_live_idx");
+    await isolated.query(`ALTER TABLE sideband.grants DROP COLUMN category, ADD COLUMN tool text NOT NULL,
+      ADD COLUMN fields text[] NOT NULL, ADD COLUMN friend_default boolean DEFAULT false NOT NULL`);
+    await isolated.query(`CREATE UNIQUE INDEX grants_live_idx ON sideband.grants (grantor_user_id, grantee_address, tool)
+      WHERE revoked_at IS NULL`);
+    await isolated.query("DELETE FROM sideband.__drizzle_migrations WHERE id > 5");
+    for (const [tool, field] of [["availability", "available"], ["interest_check", "matches"], ["question", "answer"], ["profile", "displayName"]]) {
+      await isolated.query(
+        `INSERT INTO sideband.grants (id, grantor_user_id, grantee_address, tool, fields, created_at)
+         VALUES ($1, 'bruno', 'alice@sideband.app', $1, $2, $3)`,
+        [tool, [field], now],
+      );
+    }
+
+    await applyPostgresMigrations({ databaseUrl });
+
+    const grants = await store.tx((tx) => tx.listGrants("bruno"));
+    expect(Object.fromEntries(grants.map(({ id, category }) => [id, category]))).toEqual({
+      availability: "availability", interest_check: "interests", question: "general",
+    });
+    expect((await store.tx((tx) => tx.getRequest(invitation.id)))?.args).toEqual({ share: ["availability", "general"] });
   });
 
   it("recovers only legacy one-time approvals with an audit event", async () => {
@@ -331,18 +366,10 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect(await tx.listEvents([row.id])).toMatchObject([{ kind: "received" }]);
           expect(await tx.updateRequest(row.id, { guidance: "updated by runtime" }, row.version)).toBe(true);
           const friend = "alice@sideband.app";
-          const grant = {
-            id: randomUUID(), grantorUserId: "bruno", granteeAddress: friend,
-            tool: "availability" as const, fields: ["available"], createdAt: now,
-          };
           expect(await tx.addFriend("bruno", friend)).toBe(true);
           expect(await tx.addFriend("bruno", friend)).toBe(false);
           expect(await tx.listFriends("bruno")).toEqual([friend]);
-          expect(await tx.insertFriendGrant(grant)).toBe(true);
-          expect(await tx.insertFriendGrant({ ...grant, id: randomUUID() })).toBe(false);
           expect(await tx.removeFriend("bruno", friend)).toBe(true);
-          expect(await tx.revokeFriendGrants("bruno", friend, now)).toEqual([grant.id]);
-          expect(await tx.listGrants("bruno")).toEqual([]);
         });
       } finally {
         await runtime.close();

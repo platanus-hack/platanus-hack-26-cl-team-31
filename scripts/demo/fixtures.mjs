@@ -169,7 +169,7 @@ export async function seed({ test, owner, database, mcp, web }, fixture) {
     actors[role] = { userId, address: address ?? await owner.claimAddress({ userId }, localPart(role, run)) };
   }
   for (const { address } of [actors.dot, actors.grok]) {
-    await owner.setGrant(actors.simon, { grantee: address, tool: "availability", fields: ["available", "freeSlots"] });
+    await owner.setGrant(actors.simon, { grantee: address, category: "availability" });
   }
   await saveState({ ...fixture, actors });
   console.log(`Demo preparada para ${actors.simon.address}. Dot y Grok tienen permiso. Claude Code todavía no.`);

@@ -11,7 +11,7 @@ describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
     const { ownerPort, agents } = await seedAgents("isolation", Math.max(3, Math.ceil(count / 28)));
     for (const recipient of agents) {
       const senders = agents.filter((agent) => agent !== recipient).map(({ address }) => address);
-      await grantTo(ownerPort, recipient.owner, senders, "question", ["answer"]);
+      await grantTo(ownerPort, recipient.owner, senders, "general");
     }
 
     const messages = await Promise.all(Array.from({ length: count }, async (_, index) => {
@@ -19,7 +19,7 @@ describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
       const offset = Math.floor(index / agents.length) % 2 + 1;
       const to = agents[(index + offset) % agents.length]!;
       const text = `Pregunta de aislamiento ${index} de ${from.address} a ${to.address}`;
-      const pending = await from.agent.ask({ to: to.address, tool: "question", args: { text } });
+      const pending = await from.agent.ask({ to: to.address, tool: "question", args: { text, category: "general" } });
       expect(pending).toMatchObject({ final: false, waitingFor: "agent" });
       return { from, to, text, requestId: pending.requestId, answer: `Respuesta ${index} de ${to.address} a ${from.address}` };
     }));

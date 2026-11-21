@@ -33,13 +33,11 @@ export const grants = sideband.table("grants", {
   id: text("id").primaryKey(),
   grantorUserId: text("grantor_user_id").notNull().references(() => users.userId),
   granteeAddress: text("grantee_address").notNull(),
-  tool: text("tool").notNull(),
-  fields: text("fields").array().notNull(),
+  category: text("category").notNull(),
   createdAt: time("created_at").notNull(),
   revokedAt: time("revoked_at"),
-  friendDefault: boolean("friend_default").notNull().default(false),
 }, (table) => [
-  uniqueIndex("grants_live_idx").on(table.grantorUserId, table.granteeAddress, table.tool)
+  uniqueIndex("grants_live_idx").on(table.grantorUserId, table.granteeAddress, table.category)
     .where(sql`${table.revokedAt} is null`),
 ]);
 

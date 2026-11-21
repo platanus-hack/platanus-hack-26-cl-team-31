@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { categories, Category } from "./categories.js";
 import { Sharing } from "./sharing.js";
 
 export const ToolName = z.enum(["profile", "availability", "question", "interest_check", "connect"]);
@@ -45,7 +46,8 @@ export const ToolArgs = {
     durationMinutes: z.number().int().min(15).max(480),
     timezone,
   }),
-  question: z.strictObject({ text: z.string().min(1).max(1000) }),
+  // Questions stored before categories carry none: they read as open questions.
+  question: z.strictObject({ text: z.string().min(1).max(1000), category: Category.default("general") }),
   connect: z.strictObject({ share: Sharing.optional() }),
 } as const;
 
@@ -81,9 +83,20 @@ export const Capability = z.object({
   execution: z.enum(["stored", "owner_runtime"]),
   inputSchema: z.record(z.string(), z.unknown()),
   allowedFields: z.array(z.string()),
+  // The categories the sender may ask about with this tool. Empty for tools outside the catalog.
+  categories: z.array(Category),
 });
 export type Capability = z.infer<typeof Capability>;
 
-export function describeTool(tool: ToolName, allowedFields: string[]): Capability {
-  return { tool, execution: toolExecution[tool], inputSchema: z.toJSONSchema(ToolArgs[tool]), allowedFields };
+export function describeTool(tool: ToolName, allowed: Category[]): Capability {
+  return {
+    tool, execution: toolExecution[tool], inputSchema: z.toJSONSchema(ToolArgs[tool]),
+    allowedFields: fieldsOf(tool), categories: allowed,
+  };
+}
+
+// A question names its category. Every other tool belongs to at most one.
+export function categoryOf(tool: ToolName, args: unknown): Category | undefined {
+  if (tool === "question") return ToolArgs.question.safeParse(args).data?.category;
+  return Category.options.find((category) => categories[category].tools.includes(tool));
 }

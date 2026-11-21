@@ -25,7 +25,7 @@ const owner: Owner = { userId: "alice" };
 const expiresAt = "2026-11-21T18:00:00Z";
 const requestId = "request/one?detail#here %✓";
 const encodedId = "request%2Fone%3Fdetail%23here%20%25%E2%9C%93";
-const askInput = { to: "bob@sideband.app", tool: "question", args: { text: "¿Puedes ayudar?" } } as const;
+const askInput = { to: "bob@sideband.app", tool: "question", args: { text: "¿Puedes ayudar?", category: "general" } } as const;
 const requesterView = {
   requestId,
   to: askInput.to,
@@ -167,7 +167,7 @@ it("implements the owner port, including optional queries, wrapper responses and
     expiresAt,
     events: [],
   };
-  const grantInput = { grantee: askInput.to, tool: "question", fields: ["answer"] } as const;
+  const grantInput = { grantee: askInput.to, category: "general" } as const;
   const grant = { ...grantInput, id: requestId, createdAt: expiresAt };
   const replies = [
     ownerInfo, { address: ownerInfo.address }, { items: [grant] }, grant, undefined,
@@ -183,7 +183,7 @@ it("implements the owner port, including optional queries, wrapper responses and
   expect(await ownerClient.me(owner)).toEqual(ownerInfo);
   expect(await ownerClient.claimAddress(owner, "alice")).toBe(ownerInfo.address);
   expect(await ownerClient.grants(owner)).toEqual([grant]);
-  expect(await ownerClient.setGrant(owner, { ...grantInput, fields: ["answer"] })).toEqual(grant);
+  expect(await ownerClient.setGrant(owner, grantInput)).toEqual(grant);
   expect(await ownerClient.revokeGrant(owner, requestId)).toBeUndefined();
   expect(await ownerClient.pending(owner)).toEqual([pending]);
   expect(await ownerClient.activity(owner, 3)).toEqual([activity]);
@@ -315,7 +315,7 @@ it("stops after the first GET retry and never retries mutations", async () => {
 
   await expect(ownerClient.me(owner)).rejects.toMatchObject({ code: "internal" });
   await expect(agent.ask(principal, askInput)).rejects.toMatchObject({ code: "internal" });
-  await expect(ownerClient.setGrant(owner, { grantee: askInput.to, tool: "question", fields: ["answer"] }))
+  await expect(ownerClient.setGrant(owner, { grantee: askInput.to, category: "general" }))
     .rejects.toMatchObject({ code: "internal" });
   await expect(ownerClient.revokeAgent(owner, "agent")).rejects.toMatchObject({ code: "internal" });
   expect(requests.map((request) => request.method)).toEqual(["GET", "GET", "POST", "PUT", "DELETE"]);

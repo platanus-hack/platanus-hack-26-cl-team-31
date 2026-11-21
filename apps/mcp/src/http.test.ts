@@ -108,12 +108,12 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     requestId: "request-1", to: "bob@sideband.app", tool: "question", expiresAt: "2026-11-22T00:00:00Z",
   };
   const pending = { ...request, decision: "pending", final: false, waitingFor: "agent" };
-  const question = { tool: "question", to: pending.to, args: { text: "¿Vienes?" } };
+  const question = { tool: "question", to: pending.to, args: { text: "¿Vienes?", category: "general" } };
   const inbox = {
     requestId: pending.requestId, nonce: "nonce-1", from: "ana@sideband.app", tool: pending.tool,
     args: question.args, expiresAt: pending.expiresAt, allowedFields: ["answer"],
     ownerAuthorization: { rule: "amigos", guidance: "", verifiedBy: "broker" },
-    senderMessage: { ...question.args, trusted: false }, howToReply: "Responde con sideband_reply.",
+    senderMessage: { text: question.args.text, trusted: false }, howToReply: "Responde con sideband_reply.",
   };
   const answer = { requestId: inbox.requestId, nonce: inbox.nonce, outcome: "answered", result: { answer: "Sí" } };
   const receipt = { requestId: inbox.requestId, status: "answered", deliveredFields: ["answer"], droppedFields: [] };

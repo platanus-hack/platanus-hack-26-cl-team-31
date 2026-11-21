@@ -83,7 +83,7 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
       broker = createBroker(deps);
       await broker.owner.claimAddress(alice, "alice");
       await broker.owner.claimAddress(bruno, "bruno");
-      await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
+      await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "general" });
       await broker.agent.connectWake(bruno, webhook);
     });
 
@@ -94,7 +94,7 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
     }
 
     async function askAgent() {
-      const view = await broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes?" } });
+      const view = await broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes?", category: "general" } });
       expect(view).toMatchObject({ final: false, waitingFor: "agent" });
       return view.requestId;
     }

@@ -3,18 +3,17 @@ import {
   Address,
   AskInput,
   CircleName,
-  fieldsOf,
-  describeTool,
   basicSharing,
+  categories,
+  Category,
+  categoryOf,
+  describeTool,
+  fieldsOf,
   GrantInput,
-  GrantTool,
   InvitationAnswer,
-  noSharing,
   Sharing,
-  sharingFields,
-  sharingOf,
-  sharingTools,
   ToolArgs,
+  ToolName,
   LocalPart,
   OwnerDecision,
   ReplyInput,
@@ -26,13 +25,12 @@ import {
   type ReplyReceipt,
   type RequesterView,
   type Scope,
-  type ToolName,
   type ToolResult,
 } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import { filterResult } from "../policy/index.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
-import type { CircleRow, RequestRow, StoreTx } from "../store/store.js";
+import type { CircleRow, GrantRow, RequestRow, StoreTx } from "../store/store.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
 import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
@@ -45,32 +43,28 @@ import { createWorker } from "./worker.js";
 const connectionFields = fieldsOf("connect");
 const connectionGuidance =
   "Cuéntale a tu titular quién quiere conectar. Solo tu titular acepta o rechaza desde la App Sideband: responde needs_owner.";
+// The broker never reads the text of a question, so the recipient's agent keeps it on its category.
+const questionGuidance = "Responde solo lo que corresponde a esta categoría. Si la pregunta trata de otra cosa, responde declined.";
 
-// Fields shared by members of the same circle.
-const basePolicy = [
-  { tool: "availability", fields: ["available", "freeSlots"] },
-  { tool: "interest_check", fields: ["matches"] },
-] satisfies Pick<GrantInput, "tool" | "fields">[];
-
-// What the recipient lets the sender receive for a tool: the fields of their grant, plus the base
-// policy while both have joined the same circle.
-async function sharedFields(tx: StoreTx, toUserId: string, toAddress: Address, from: Address, tool: ToolName) {
-  const grant = await tx.getGrant(toUserId, from, tool);
-  const base = basePolicy.find((entry) => entry.tool === tool);
-  const circle = base && await tx.shareCircle(toAddress, from) ? base.fields : [];
-  return {
-    fields: [...new Set([...(grant?.fields ?? []), ...circle])],
-    // Stable rule code for telemetry.
-    rule: grant ? "grant" : circle.length > 0 ? "circle" : "no_grant",
-  };
+// Why the recipient shares a category with the sender: their grant, or the basic sharing of a
+// circle both have joined. The result is a stable rule code for telemetry.
+async function sharingRule(tx: StoreTx, toUserId: string, toAddress: Address, from: Address, category: Category) {
+  if (await tx.getGrant(toUserId, from, category)) return "grant";
+  if (basicSharing.includes(category) && await tx.shareCircle(toAddress, from)) return "circle";
+  return "no_grant";
 }
 
-// A request stays authorized while the recipient still shares its fields with the sender.
+// A request stays authorized while the recipient still shares its category with the sender.
 async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
   // Invitations, connection tests and one-time owner approvals have their own consent flow.
   if (row.tool === "connect" || row.fromUserId === null || row.approvedOnce) return true;
-  const { fields } = await sharedFields(tx, toUserId, row.toAddress, row.fromAddress, row.tool);
-  return fields.length > 0 && row.allowedFields.every(field => fields.includes(field));
+  const category = categoryOf(row.tool, row.args);
+  return category !== undefined && await sharingRule(tx, toUserId, row.toAddress, row.fromAddress, category) !== "no_grant";
+}
+
+// In catalog order, so the answer does not depend on how the store sorts grants.
+function categoriesOf(grants: GrantRow[]): Sharing {
+  return Category.options.filter((category) => grants.some((grant) => grant.category === category));
 }
 
 function notFound(): BrokerError {
@@ -205,21 +199,18 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   }
 
   async function applySharing(tx: StoreTx, userId: string, address: Address, sharing: Sharing): Promise<void> {
-    const wanted = sharingFields(sharing);
-    for (const tool of sharingTools) {
-      const fields = wanted[tool];
-      const live = await tx.getGrant(userId, address, tool);
-      if (!fields) {
-        if (live && await tx.revokeGrant(live.id, userId, clock.now())) {
-          record(tx, "broker.grant.revoked", { userId, attrs: { grantId: live.id } });
-        }
+    for (const category of Category.options) {
+      const live = await tx.getGrant(userId, address, category);
+      if (sharing.includes(category) === (live !== null)) continue;
+      if (live) {
+        await tx.revokeGrant(live.id, userId, clock.now());
+        record(tx, "broker.grant.revoked", { userId, attrs: { grantId: live.id } });
         continue;
       }
-      if (live && live.fields.length === fields.length && fields.every((field) => live.fields.includes(field))) continue;
       const grant = await tx.putGrant({
-        id: randomUUID(), grantorUserId: userId, granteeAddress: address, tool, fields, createdAt: clock.now(),
+        id: randomUUID(), grantorUserId: userId, granteeAddress: address, category, createdAt: clock.now(),
       });
-      record(tx, "broker.grant.set", { userId, attrs: { grantId: grant.id, tool, fields: fields.length } });
+      record(tx, "broker.grant.set", { userId, attrs: { grantId: grant.id, category } });
     }
   }
 
@@ -290,15 +281,15 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
     }, now);
     const invitation = recipient && tool === "connect";
-    const shared = recipient && !invitation
-      ? await sharedFields(tx, recipient.userId, to, from, tool)
-      : { fields: [], rule: "no_recipient" };
-    const allowed = shared.fields.length > 0;
+    const category = categoryOf(tool, args);
     // The request keeps separate display text.
-    const ruleCode = invitation ? "connection_request" : shared.rule;
+    const ruleCode = invitation ? "connection_request"
+      : !recipient ? "no_recipient"
+      : category ? await sharingRule(tx, recipient.userId, to, from, category) : "no_grant";
+    const allowed = ruleCode === "grant" || ruleCode === "circle";
     record(tx, "broker.policy.evaluated", {
       requestId: row.id, userId, ...(agentId ? { agentId } : {}),
-      attrs: { tool, decision: invitation || allowed ? "allow" : "deny", rule: ruleCode },
+      attrs: { tool, ...(category ? { category } : {}), decision: invitation || allowed ? "allow" : "deny", rule: ruleCode },
     });
     if (existing === "accepted") {
       row = await finalize({
@@ -309,13 +300,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         ...row, status: "awaiting_agent", allowedFields: connectionFields,
         rule: "Solicitud de conexión", guidance: connectionGuidance,
       };
-    } else if (allowed) {
+    } else if (allowed && category) {
       row = {
-        ...row, status: "awaiting_agent", allowedFields: shared.fields,
-        rule: `Permiso para ${tool}: ${shared.fields.join(", ")}`,
+        ...row, status: "awaiting_agent", allowedFields: fieldsOf(tool),
+        rule: `Permiso para la categoría ${categories[category].label}`,
+        guidance: tool === "question" ? questionGuidance : "",
       };
     } else {
-      const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
+      const decisionReason = recipient ? "Sin permiso para esta categoría." : "Dirección sin destinatario.";
       row = await finalize({ ...row, decisionReason }, "denied", now);
     }
     await recordNew(tx, row, now, ruleCode, agentId);
@@ -423,8 +415,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       const theirs = other && me ? (await tx.listGrants(other.userId)).filter((grant) => grant.granteeAddress === me) : [];
       return {
         address,
-        gives: sharingOf(mine.filter((grant) => grant.granteeAddress === address)),
-        receives: sharingOf(theirs),
+        gives: categoriesOf(mine.filter((grant) => grant.granteeAddress === address)),
+        receives: categoriesOf(theirs),
       };
     }));
   }
@@ -453,10 +445,15 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const from = (await tx.getUser(p.userId))?.address;
           const owner = await tx.getUserByAddress(to);
           if (!from || !owner || from === to) return { tools: [] };
-          const shared = await Promise.all(GrantTool.options.map(async tool =>
-            ({ tool, fields: (await sharedFields(tx, owner.userId, to, from, tool)).fields })));
-          const tools = shared.flatMap(({ tool, fields }) => fields.length > 0 ? [describeTool(tool, fields)] : []);
-          tools.push(describeTool("connect", connectionFields));
+          const shared: Category[] = [];
+          for (const category of Category.options) {
+            if (await sharingRule(tx, owner.userId, to, from, category) !== "no_grant") shared.push(category);
+          }
+          const tools = ToolName.options.flatMap((tool) => {
+            const allowed = shared.filter((category) => categories[category].tools.includes(tool));
+            return allowed.length > 0 ? [describeTool(tool, allowed)] : [];
+          });
+          tools.push(describeTool("connect", []));
           return { tools };
         });
       },
@@ -621,20 +618,16 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async setGrant(o, input) {
         const parsed = GrantInput.safeParse(input);
         if (!parsed.success) throw new BrokerError("invalid_input", "El permiso no es válido.");
-        const { grantee, tool, fields } = parsed.data;
+        const { grantee, category } = parsed.data;
         return store.tx(async (tx) => {
           if ((await tx.getUser(o.userId))?.address === grantee) {
             throw new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
           }
           const grant = await tx.putGrant({
-            id: randomUUID(), grantorUserId: o.userId, granteeAddress: grantee, tool, fields, createdAt: clock.now(),
+            id: randomUUID(), grantorUserId: o.userId, granteeAddress: grantee, category, createdAt: clock.now(),
           });
-          // The grantee address stays out of telemetry: only the grant id, tool and field count.
-          record(tx, "broker.grant.set", {
-            userId: o.userId, attrs: { grantId: grant.id, tool, fields: fields.length },
-          });
-          // Narrowing an existing grant leaves pending requests that expect the old fields.
-          await cancelUnauthorized(tx, o.userId);
+          // The grantee address stays out of telemetry: only the grant id and category.
+          record(tx, "broker.grant.set", { userId: o.userId, attrs: { grantId: grant.id, category } });
           return toGrant(grant);
         });
       },
@@ -733,7 +726,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const row: RequestRow = {
             ...await initialRequest({
               fromAddress: systemAddress, toAddress: address, fromUserId: null, toUserId: o.userId,
-              targetAgentId: agentId, tool: "question", args: { text: "Prueba de conexión de Sideband: responde con outcome no_data" },
+              targetAgentId: agentId, tool: "question",
+              args: { text: "Prueba de conexión de Sideband: responde con outcome no_data", category: "general" },
             }, now),
             status: "awaiting_agent",
             rule: "Prueba de conexión solicitada por el dueño",
@@ -884,7 +878,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           let removed = false;
           for (const { userId, address } of sides) {
             removed = await tx.removeFriend(userId, address) || removed;
-            await applySharing(tx, userId, address, noSharing);
+            await applySharing(tx, userId, address, []);
             await cancelUnauthorized(tx, userId);
           }
           if (removed) record(tx, "broker.contact.removed", { userId: o.userId });

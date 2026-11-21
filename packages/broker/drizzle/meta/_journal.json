@@ -36,6 +36,13 @@
       "when": 1795270858851,
       "tag": "0004_circles",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795273331414,
+      "tag": "0005_grant_categories",
+      "breakpoints": true
     }
   ]
 }

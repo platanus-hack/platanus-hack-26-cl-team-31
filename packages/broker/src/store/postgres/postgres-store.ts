@@ -1,5 +1,5 @@
 import {
-  ActivityEvent, Address, FinalOutcome, RequestStatus, ToolArgs, ToolName,
+  ActivityEvent, Address, Category, FinalOutcome, RequestStatus, ToolArgs, ToolName,
   ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
 } from "@team-31/protocol";
 import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
@@ -44,8 +44,8 @@ function readUser(row: typeof users.$inferSelect): UserRow {
   };
 }
 
-function readGrant({ revokedAt: _revokedAt, friendDefault: _friendDefault, ...row }: typeof grants.$inferSelect): GrantRow {
-  return { ...row, granteeAddress: parseStored(Address, row.granteeAddress), tool: parseStored(ToolName, row.tool) };
+function readGrant({ revokedAt: _revokedAt, ...row }: typeof grants.$inferSelect): GrantRow {
+  return { ...row, granteeAddress: parseStored(Address, row.granteeAddress), category: parseStored(Category, row.category) };
 }
 
 function readRequest(row: typeof requests.$inferSelect): RequestRow {
@@ -155,9 +155,10 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
     async putGrant(row) {
       await ensureUser(row.grantorUserId);
       const [stored] = await db.insert(grants).values(row).onConflictDoUpdate({
-        target: [grants.grantorUserId, grants.granteeAddress, grants.tool],
+        target: [grants.grantorUserId, grants.granteeAddress, grants.category],
         targetWhere: sql`revoked_at is null`,
-        set: { fields: row.fields, friendDefault: false },
+        // Rewrites the same value so the statement returns the live row.
+        set: { category: row.category },
       }).returning();
       return readGrant(stored!);
     },
@@ -169,10 +170,10 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       return rows.map(readGrant);
     },
 
-    async getGrant(grantorUserId, granteeAddress, tool) {
+    async getGrant(grantorUserId, granteeAddress, category) {
       const [row] = await db.select().from(grants).where(and(
         eq(grants.grantorUserId, grantorUserId), eq(grants.granteeAddress, granteeAddress),
-        eq(grants.tool, tool), isNull(grants.revokedAt),
+        eq(grants.category, category), isNull(grants.revokedAt),
       ));
       return row ? readGrant(row) : null;
     },
@@ -200,23 +201,6 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       const removed = await db.delete(friends).where(and(eq(friends.userId, userId), eq(friends.address, address)))
         .returning({ address: friends.address });
       return removed.length > 0;
-    },
-
-    async insertFriendGrant(row) {
-      const inserted = await db.insert(grants).values({ ...row, friendDefault: true })
-        .onConflictDoNothing({
-          target: [grants.grantorUserId, grants.granteeAddress, grants.tool],
-          where: sql`revoked_at is null`,
-        }).returning({ id: grants.id });
-      return inserted.length > 0;
-    },
-
-    async revokeFriendGrants(userId, address, at) {
-      const revoked = await db.update(grants).set({ revokedAt: at }).where(and(
-        eq(grants.grantorUserId, userId), eq(grants.granteeAddress, address),
-        eq(grants.friendDefault, true), isNull(grants.revokedAt),
-      )).returning({ id: grants.id });
-      return revoked.map(({ id }) => id);
     },
 
     async listOpenInvitations(userId) {

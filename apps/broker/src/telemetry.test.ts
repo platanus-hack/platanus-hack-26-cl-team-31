@@ -40,7 +40,7 @@ beforeEach(async () => {
   });
   await broker.owner.claimAddress({ userId: "alice" }, "alice");
   await broker.owner.claimAddress({ userId: "bruno" }, "bruno");
-  await broker.owner.setGrant({ userId: "bruno" }, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
+  await broker.owner.setGrant({ userId: "bruno" }, { grantee: "alice@sideband.app", category: "general" });
   sink.clear();
 });
 
@@ -48,7 +48,7 @@ function ask(app: ReturnType<typeof createHttpServer>, headers: Record<string, s
   return app.request("/v1/agent/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({ to: "bruno@sideband.app", tool: "question", args: { text: secretText } }),
+    body: JSON.stringify({ to: "bruno@sideband.app", tool: "question", args: { text: secretText, category: "general" } }),
   });
 }
 

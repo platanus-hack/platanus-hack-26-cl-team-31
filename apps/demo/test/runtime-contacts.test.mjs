@@ -74,7 +74,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)("comparte solicitudes entre sesiones, 
     first.ask(bob, "interest_check", interest),
     second.ask(bob, "interest_check", interest),
     second.ask(jane, "interest_check", interest),
-    first.ask(bob, "question", { text: "¿Cuál es tu domicilio?" }),
+    first.ask(bob, "question", { text: "¿Cuál es tu domicilio?", category: "general" }),
     first.ask(contactAddress("luz"), "interest_check", interest),
   ]);
   expect(regular.requestId).not.toBe(overridden.requestId);

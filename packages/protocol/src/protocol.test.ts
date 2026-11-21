@@ -3,6 +3,9 @@ import { fixtureUsers } from "./fixtures.js";
 import {
   ActivityItem,
   AskInput,
+  categories,
+  Category,
+  categoryOf,
   fieldsOf,
   GrantInput,
   ReplyInput,
@@ -142,17 +145,36 @@ describe("wake contracts", () => {
 });
 
 describe("GrantInput", () => {
-  const grant = { grantee: "ana@sideband.app", tool: "interest_check", fields: ["matches"] };
+  const grant = { grantee: "ana@sideband.app", category: "interests" };
 
-  it("accepts fields that the tool returns", () => {
+  it("accepts a category of the catalog", () => {
     expect(GrantInput.parse(grant)).toEqual(grant);
   });
 
   it.each([
-    ["a field the tool does not return", { ...grant, fields: ["matches", "answer"] }],
-    ["no fields", { ...grant, fields: [] }],
-    ["the stored profile tool", { ...grant, tool: "profile", fields: ["displayName"] }],
+    ["a tool in place of a category", { ...grant, category: "interest_check" }],
+    ["no category", { grantee: grant.grantee }],
   ])("rejects %s", (_label, input) => {
     expect(GrantInput.safeParse(input).success).toBe(false);
+  });
+});
+
+describe("categories", () => {
+  it("gives every category at least one tool", () => {
+    for (const category of Category.options) expect(categories[category].tools.length).toBeGreaterThan(0);
+  });
+
+  it("reads the category from a question and derives it for the other tools", () => {
+    expect(categoryOf("question", { text: "¿Tomas algún medicamento?", category: "health" })).toBe("health");
+    expect(categoryOf("question", { text: "Sin categoría" })).toBe("general");
+    expect(categoryOf("availability", availability)).toBe("availability");
+    expect(categoryOf("interest_check", { interest: "cerámica" })).toBe("interests");
+    expect(categoryOf("connect", {})).toBeUndefined();
+    expect(categoryOf("profile", {})).toBeUndefined();
+  });
+
+  it("treats a question without a category as an open one and rejects an unknown category", () => {
+    expect(AskInput.parse({ to, tool: "question", args: { text: "Hola" } }).args).toEqual({ text: "Hola", category: "general" });
+    expect(AskInput.safeParse({ to, tool: "question", args: { text: "Hola", category: "finanzas" } }).success).toBe(false);
   });
 });

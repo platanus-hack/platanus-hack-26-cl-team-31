@@ -20,7 +20,7 @@ it("envía la pregunta original con una dirección explícita, aunque no use un 
   const { broker, report } = fixture();
   const text = "simon@sideband.app puede ir a tomar café en una hora?";
   await runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: to }));
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text } });
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "general" } });
   expect(broker.contacts).not.toHaveBeenCalled();
 });
 
