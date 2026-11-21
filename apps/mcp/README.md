@@ -4,6 +4,8 @@ El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OA
 
 ## Arranque local
 
+Con `NODE_ENV=production`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL` requieren HTTPS. El MCP valida las tres antes de abrir el puerto. Usa URLs sin credenciales, query ni fragmento.
+
 1. Ejecuta `pnpm bootstrap` para generar `.env` con `MCP_PORT`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL`. Si tu emisor o recurso público usa otro origen, configura esas URL en `.env.local`.
 2. Configura `BROKER_URL` con la URL interna del broker y `MCP_SERVICE_PRIVATE_KEY` con su JWK privada Ed25519 en `.env.local`. La JWK pública correspondiente se registra como `mcp` en `SERVICE_JWT_PUBLIC_KEYS` del broker.
 3. Ejecuta `pnpm build --filter @team-31/mcp^...` para compilar los paquetes compartidos y `pnpm dev --filter @team-31/mcp` para iniciar el servidor.

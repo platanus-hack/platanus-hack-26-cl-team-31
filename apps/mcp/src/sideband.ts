@@ -5,6 +5,7 @@ import { Scope } from "@team-31/protocol";
 import { tracedFetch } from "@team-31/telemetry";
 import { z } from "zod";
 import { createHttpServer } from "./http.js";
+import { readOAuthConfig } from "./oauth-config.js";
 import { createServer } from "./server.js";
 import { createServiceTokenMinter } from "./service-token.js";
 import { createMcpTelemetry } from "./telemetry.js";
@@ -23,6 +24,7 @@ export async function startSideband(stdio: boolean, devAuth: boolean) {
 
   const baseUrl = readEnv("BROKER_URL", httpUrl);
   const getServiceToken = createServiceTokenMinter(process.env.MCP_SERVICE_PRIVATE_KEY);
+  const oauth = stdio ? null : readOAuthConfig(process.env);
   // Created after validating the configuration: emits service.started and the heartbeat.
   const telemetry = createMcpTelemetry(stdio);
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -32,7 +34,7 @@ export async function startSideband(stdio: boolean, devAuth: boolean) {
   }
   const agent = createAgentClient({ baseUrl, getServiceToken, fetch: tracedFetch(telemetry) });
 
-  if (stdio) {
+  if (!oauth) {
     const principal = {
       userId: readEnv("SIDEBAND_DEV_USER_ID", id),
       agentId: readEnv("SIDEBAND_DEV_AGENT_ID", id),
@@ -43,18 +45,7 @@ export async function startSideband(stdio: boolean, devAuth: boolean) {
     return;
   }
 
-  const resourceUrl = readEnv("MCP_RESOURCE_URL", httpUrl).trim();
-  const resource = new URL(resourceUrl);
-  if (resource.pathname !== "/mcp" || resource.search || resource.hash || resource.username || resource.password) {
-    throw new Error("MCP_RESOURCE_URL debe apuntar a /mcp.");
-  }
-
-  const server = createHttpServer({
-    issuer: readEnv("AUTH_ISSUER", httpUrl),
-    jwksUrl: readEnv("AUTH_JWKS_URL", httpUrl),
-    audience: resourceUrl,
-    devAuth,
-  }, agent, telemetry);
+  const server = createHttpServer({ ...oauth, devAuth }, agent, telemetry);
   const port = readEnv("MCP_PORT", z.string().regex(/^\d+$/).pipe(z.coerce.number<string>().int().min(1).max(65535)));
   server.listen(port, process.env.MCP_HOST || "127.0.0.1");
   try {
