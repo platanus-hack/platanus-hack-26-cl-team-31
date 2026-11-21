@@ -19,8 +19,8 @@ const system = [
   "Para una aclaración conserva la intención del borrador y extrae solo el campo pendiente. Para elegir un ámbito preserva la cardinalidad y referencia anterior.",
 ].join(" ");
 
-export function createClaudeInterpreter({ apiKey, model = "claude-haiku-4-5", fetch }: { apiKey: string; model?: string; fetch?: typeof globalThis.fetch }): InterpretMessage {
-  const llm = new ChatAnthropic({ apiKey, model, maxTokens: 800, maxRetries: 0, clientOptions: { timeout: 12_000, logLevel: "off", fetch }, temperature: 0 });
+export function createClaudeInterpreter({ apiKey, model = "claude-haiku-5-5", fetch }: { apiKey: string; model?: string; fetch?: typeof globalThis.fetch }): InterpretMessage {
+  const llm = new ChatAnthropic({ apiKey, model, maxTokens: 800, maxRetries: 0, clientOptions: { timeout: 12_000, logLevel: "off", fetch } });
   const structured = llm.withStructuredOutput(schema, { name: "interpret_sideband_message" });
   return async (text, context) => {
     // LangChain's process-wide verbose handler prints the complete prompt even with

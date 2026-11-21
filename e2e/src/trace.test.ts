@@ -200,7 +200,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL && !process.env.CI)("resuelve una amiga
   vi.stubEnv("ANTHROPIC_BASE_URL", provider);
   vi.stubEnv("ANTHROPIC_API_KEY", "fixture-key");
   vi.stubEnv("MESSAGE_FLOW_DATABASE_URL", db.url);
-  vi.stubEnv("MESSAGE_FLOW_MODEL", "claude-haiku-4-5");
+  vi.stubEnv("MESSAGE_FLOW_MODEL", undefined);
 
   const sink = memorySink();
   const stack = await startStack(sink, store, true);
@@ -233,7 +233,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL && !process.env.CI)("resuelve una amiga
   expect((await interests()).rows).toEqual([{ id: first.items[0]!.requestId, to_address: "ana.vera@sideband.app", args: { interest: "cerámica" } }]);
 
   expect(providerCalls).toHaveLength(1);
-  expect(providerCalls[0]).toMatchObject({ path: "/v1/messages", body: { tools: [{ name: "interpret_sideband_message" }] } });
+  expect(providerCalls[0]).toMatchObject({ path: "/v1/messages", body: { model: "claude-haiku-5-5", tools: [{ name: "interpret_sideband_message" }] } });
   expect(JSON.stringify(providerCalls[0]!.body.messages)).toContain(userText);
   expect(JSON.stringify(providerCalls[0]!.body.messages)).not.toContain("ana.vera");
   await stack.flush();
