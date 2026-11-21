@@ -57,7 +57,7 @@ Decisiones (Philosophy of Software Design):
 
 ### 2.1 `ops.events` (ya creada en `packages/ops/sql/0001_events.sql`)
 
-Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name`, `level`, `trace_id`, `span_id`, `parent_span_id`, `request_id`, `user_id`, `agent_id`, `duration_ms`, `status`, `error_id`, `attrs` (jsonb ≤ 8 KB, solo escalares declarados en el catálogo). Retención: `TELEMETRY_RETENTION_DAYS` (14 por defecto), la poda el servidor admin una vez por hora con `ops.prune_events(interval)`. Índices: `at`, `trace_id`, `(request_id, id)`, `(user_id, at)`, `(kind, name, at)`, `error_id`, `(service, at)` y `(name, id)` (0012, para las colas filtradas por nombre del flujo en vivo y de Eventos).
+Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name`, `level`, `trace_id`, `span_id`, `parent_span_id`, `request_id`, `user_id`, `agent_id`, `duration_ms`, `status`, `error_id`, `attrs` (jsonb ≤ 8 KB, solo escalares declarados en el catálogo). Retención: `TELEMETRY_RETENTION_DAYS` (14 por defecto), la poda el servidor admin una vez por hora con `ops.prune_events(interval)`. Índices: `at`, `trace_id`, `(request_id, id)`, `(user_id, at)`, `(kind, name, at)`, `error_id`, `(service, at)` y `(name, id)` (0013, para las colas filtradas por nombre del flujo en vivo y de Eventos).
 
 ### 2.2 Vistas (ADM-02)
 
