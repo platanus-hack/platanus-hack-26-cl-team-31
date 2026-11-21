@@ -18,7 +18,10 @@ export default async function WhatsAppPage() {
       <div className={`${card} max-w-2xl space-y-5 p-6`}>
         <LinkForm number={kapso?.number} linked={state?.linked}
           pending={state?.id ? { id: state.id, phone: state.phone } : undefined} />
-        {kapso && <p className={secondaryText}>Una vez conectado, escribe «{askExample}» o «estado».</p>}
+        {kapso && (process.env.ANTHROPIC_API_KEY?.trim() ? <>
+          <p className={secondaryText}>Una vez conectado, escribe como hablas: «¿Carla puede jugar el sábado?» o «¿Ya me respondió?».</p>
+          <p className={secondaryText}>Para interpretar el texto libre enviamos ese mensaje a Claude (Anthropic), no tu lista de contactos ni las respuestas de tus agentes.</p>
+        </> : <p className={secondaryText}>Una vez conectado, escribe «{askExample}» o «estado».</p>)}
       </div>
     </>
   );
