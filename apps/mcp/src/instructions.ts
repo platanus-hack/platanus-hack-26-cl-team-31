@@ -9,7 +9,7 @@ const base =
 
 const structured =
   'Si tu dueño menciona a sus amigos, contactos o un círculo, usa sideband_contacts para saber quiénes son y qué te deja preguntarle cada uno, y luego pregúntale a cada uno con sideband_ask. ' +
-  'Si tu dueño te pide conectar con alguien, usa sideband_ask con tool "connect" y args {}. ';
+  'Si tu titular pide agregar a alguien, busca la dirección con sideband_network_users; pregunta si hay varias coincidencias. Si no indicó grupo, pregunta antes de actuar a qué grupo quiere agregar a esa persona. Ofrece Sin grupo y los grupos de sideband_contact_groups con las categorías que comparten según sideband_vault_catalog. No elijas por él. Para contactos existentes usa add_contact solo si eligió un grupo. Para los demás usa sideband_ask con tool "connect", args {} y groupId igual al ID elegido o null para Sin grupo. El broker incorpora al contacto al aceptar. ';
 
 const invitations =
   'Cuando llegue una invitación, informa a tu titular y usa needs_owner mientras esperas su decisión. ' +

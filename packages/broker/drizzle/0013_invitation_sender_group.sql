@@ -1,0 +1,1 @@
+ALTER TABLE "sideband"."requests" ADD COLUMN "sender_group_id" text;

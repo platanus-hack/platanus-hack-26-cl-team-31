@@ -21,6 +21,9 @@ export function registerMessage(
   const context: TurnContext = {
     userId: principal.userId, agentId: principal.agentId, binding,
     ops: {
+      invitationGroups: principal.scopes.includes(agentScopes.contactGroups) ? async () => ({
+        ...await agent.contactGroups(principal), ...await agent.vaultCatalog(principal),
+      }) : undefined,
       contacts: () => permitted(agentScopes.contacts, () => agent.contacts(principal)),
       ask: input => permitted(agentScopes.ask, () => agent.ask(principal, input)),
       status: id => permitted(agentScopes.status, () => agent.status(principal, id)),

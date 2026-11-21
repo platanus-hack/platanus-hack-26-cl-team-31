@@ -33,6 +33,7 @@ export type RequestRow = {
   targetAgentId?: string;
   // Channel where the owner wrote the request. It receives a notice on each later change.
   originChannel?: ChannelName;
+  senderGroupId?: string;
   tool: ToolName;
   args: unknown;
   purpose?: string;
@@ -134,7 +135,7 @@ export interface Store {
 }
 
 export interface StoreTx {
-  networkAddresses(after: Address | undefined, limit: number): Promise<Address[]>;
+  networkAddresses(after: Address | undefined, limit: number, q?: string): Promise<Address[]>;
   vaultCatalog(owner: string): Promise<VaultCatalog>;
   vaultMembers(owner: string, categoryId: string): Promise<Address[] | null>;
   ownerVault(owner: string): Promise<OwnerVault>;

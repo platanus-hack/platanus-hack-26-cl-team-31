@@ -1,4 +1,4 @@
-import type { AgentContacts, AskInput, PublicProfile, RequiredRelation, RequesterView, VaultQuery, VaultResult } from "@team-31/protocol";
+import type { AgentContacts, AskInput, ContactGroups, VaultCatalog, PublicProfile, RequiredRelation, RequesterView, VaultQuery, VaultResult } from "@team-31/protocol";
 import { Category, Sharing } from "@team-31/protocol";
 import { z } from "zod";
 
@@ -36,6 +36,7 @@ export type InterpretMessage = (text: string, context: {
 
 export type ReceiptRef = Pick<RequesterView, "to" | "requestId">;
 export interface TurnOperations {
+  invitationGroups?(): Promise<ContactGroups & VaultCatalog>;
   contacts(): Promise<AgentContacts>;
   ask(input: AskInput): Promise<RequesterView>;
   status(requestId: string): Promise<RequesterView>;
@@ -56,13 +57,13 @@ export type MessageReply =
 
 export type Relation = RequiredRelation;
 export type RoutedAsk = AskInput & { idempotencyKey: string };
-export type Field = "intent" | "scope" | "person" | "circle" | "categoryId" | "requestId" | "query"
+export type Field = "invitationGroup" | "intent" | "scope" | "person" | "circle" | "categoryId" | "requestId" | "query"
   | keyof z.infer<typeof argumentsDraft>;
 export type ReadPlan = { action: "contacts" } | { action: "profiles"; query: string }
   | { action: "vault"; selector: Selector; circleId?: string; categoryId?: string; empty?: true };
 export type TurnState =
   | { phase: "read"; plan: ReadPlan }
-  | { phase: "clarify"; at: string; intent: Intent; field: Field; choices?: Choice[]; refs?: ReceiptRef[]; circleId?: string; timezone?: string; relativeDays?: number }
+  | { phase: "clarify"; at: string; intent: Intent; field: Field; choices?: Choice[]; refs?: ReceiptRef[]; circleId?: string; invitationGroup?: string | null; timezone?: string; relativeDays?: number }
   | { phase: "dispatch"; jobs: RoutedAsk[]; refs: ReceiptRef[]; receipts?: Exclude<RequesterView, { decision: "allow" }>[] }
   | { phase: "requests"; refs: ReceiptRef[]; receipts?: Exclude<RequesterView, { decision: "allow" }>[] };
 

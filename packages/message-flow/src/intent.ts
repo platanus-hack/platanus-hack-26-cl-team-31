@@ -85,7 +85,7 @@ export function parseSharingCategories(text: string): Category[] | undefined {
 }
 
 type Pending = Extract<TurnState, { phase: "clarify" }>;
-export type Selection = { intent: Intent; circleId?: string; categoryId?: string };
+export type Selection = { intent: Intent; invitationGroup?: string | null; circleId?: string; categoryId?: string };
 const slotFields = new Set<Field>(["text", "category", "date", "start", "durationMinutes", "timezone", "interest", "share"]);
 
 export async function continueIntent(text: string, previous: Pending, interpret: InterpretMessage): Promise<Selection> {
@@ -93,7 +93,10 @@ export async function continueIntent(text: string, previous: Pending, interpret:
   const intent = structuredClone(previous.intent);
   const option = selectChoice(text, previous.choices ?? []);
   const value = option ?? text.trim();
-  const keep = { intent, circleId: previous.circleId };
+  const keep = { intent, circleId: previous.circleId, invitationGroup: previous.invitationGroup };
+  if (field === "invitationGroup") {
+    return { ...keep, invitationGroup: option === "none" ? null : option };
+  }
   if (field === "person" && targetIntent(intent)) {
     intent.selector.person = value;
     return keep;

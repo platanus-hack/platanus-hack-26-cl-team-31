@@ -314,6 +314,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       "v_message_turns",
       "v_oauth_clients",
       "v_oauth_grants",
+      "v_pending_group_invitations",
       "v_quota_windows",
       "v_request_events",
       "v_request_payloads",

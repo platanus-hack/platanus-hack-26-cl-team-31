@@ -62,6 +62,7 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0016_quota_windows.sql",
       "0017_vault_member_rules.sql",
       "0018_whatsapp_registration.sql",
+      "0019_group_invitations.sql",
       "0200_ask_receipts.sql",
       "0201_message_turns.sql",
     ]);

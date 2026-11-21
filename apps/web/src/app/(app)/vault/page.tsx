@@ -20,9 +20,8 @@ export default async function VaultPage() {
     </form>
     {categories.map(c => <section key={c.id} className={`${card} space-y-4 p-5`}>
       <h2 className="text-xl font-medium">{c.name}</h2>
-      <p className={secondaryText}>{c.groups.length || c.contactGroups?.length
-        ? `Pueden consultar todos sus datos: ${[...c.groups.map(g => contactTags[g].label), ...(c.contactGroups ?? []).map(g => g.name)].join(", ")}.`
-        : "Solo tú puedes ver esta categoría."}</p>
+      <p className={secondaryText}>Grupos privados con acceso: {c.contactGroups?.map(g => g.name).join(", ") || "Ninguno"}.</p>
+      <p className={secondaryText}>Etiquetas con acceso: {c.groups.map(g => contactTags[g].label).join(", ") || "Ninguna"}.</p>
       <div className={row}>{contactTagNames.map(group => <form key={group} action={changeVault}>
         <Action action="set_group" id={c.id} /><input type="hidden" name="group" value={group} />
         <input type="hidden" name="allowed" value={String(!c.groups.includes(group))} />

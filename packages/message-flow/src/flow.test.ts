@@ -37,6 +37,18 @@ function harness(interpret: InterpretMessage = async () => structuredClone(askAn
 }
 
 describe("turnos del titular", () => {
+  it.each([["Sin grupo", null], ["Equipo", circle]])("respeta la elección explícita de grupo %s", async (answer, groupId) => {
+    const intent: Intent = { action: "ask", tool: "connect", args: {}, selector: { scope: "address", count: "one", person: ana } };
+    const { run, ask, context } = harness(async () => intent);
+    context.ops.invitationGroups = async () => ({ groups: [{ name: "Equipo", id: circle, members: [] }], categories: [] });
+    const first = await run("Invita a " + ana);
+    if (first.kind !== "clarification") throw new Error("expected group selection");
+    expect(ask).not.toHaveBeenCalled();
+    expect(first.choices?.map(c => c.label)).toEqual(["Sin grupo", "Equipo"]);
+    await run(answer!, first.continuationId);
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ to: ana, groupId, tool: "connect" }));
+  });
+
   it("elige dentro de amigos, conserva el interés y consulta el recibo después", async () => {
     const interpret = vi.fn<InterpretMessage>().mockResolvedValueOnce(askAna).mockResolvedValueOnce({ action: "status" });
     const { run, ask, context } = harness(interpret);

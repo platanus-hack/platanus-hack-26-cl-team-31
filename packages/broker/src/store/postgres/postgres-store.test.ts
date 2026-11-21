@@ -347,6 +347,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
   });
 
   it("keeps the first active agent and preserves previously revoked history when migrating", async () => {
+    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
     await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
     await isolated.query("DROP TABLE IF EXISTS sideband.message_turns, sideband.ask_receipts, sideband.quota_windows");
@@ -366,6 +367,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   // Rewind the vault and channel tables before replaying older fixtures.
   async function undoVaultAndNotifyOrigin() {
+    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
     await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
     await isolated.query("DROP TABLE IF EXISTS sideband.message_turns, sideband.ask_receipts, sideband.quota_windows");

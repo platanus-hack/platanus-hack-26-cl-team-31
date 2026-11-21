@@ -43,6 +43,8 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.upsertAgentConnection({ ...agent, userId: "no-address" });
         expect(await tx.networkAddresses(undefined, 1)).toEqual([fromAddress]);
         expect(await tx.networkAddresses(fromAddress, 2)).toEqual([toAddress]);
+        expect(await tx.networkAddresses(undefined, 1, "run")).toEqual([toAddress]);
+        expect(await tx.networkAddresses(undefined, 2, "%")).toEqual([]);
         expect(await tx.networkAddresses(toAddress, 2)).toEqual([]);
       });
     });

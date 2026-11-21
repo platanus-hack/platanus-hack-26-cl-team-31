@@ -33,7 +33,7 @@ import type {
 // capabilities, inbox, status and contacts when they succeed with no items.
 export interface AgentPort {
   searchPublicProfiles(p: Principal, query: string): Promise<PublicProfile[]>;
-  networkUsers(p: Principal, after?: Address): Promise<{ addresses: Address[]; nextCursor?: Address }>;
+  networkUsers(p: Principal, after?: Address, q?: string): Promise<{ addresses: Address[]; nextCursor?: Address }>;
   connect(p: Principal): Promise<void>;
   contactGroups(p: Principal): Promise<ContactGroups>;
   changeContactGroup(p: Principal, input: ContactGroupChange): Promise<{ groupId: string }>;
@@ -56,6 +56,7 @@ export interface OwnerPort {
   searchPublicProfiles(o: Owner, query: string): Promise<PublicProfile[]>;
   directory(o: Owner): Promise<AgentContacts>;
   queryVault(o: Owner, query: VaultQuery): Promise<VaultResult>;
+  contactGroups(o: Owner): Promise<ContactGroups & VaultCatalog>;
   vault(o: Owner): Promise<OwnerVault>;
   changeVault(o: Owner, change: VaultChange): Promise<VaultReceipt>;
   me(o: Owner): Promise<{ userId: string; address?: Address; displayName?: string }>;

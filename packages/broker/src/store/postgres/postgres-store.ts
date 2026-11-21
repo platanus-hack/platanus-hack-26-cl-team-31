@@ -60,6 +60,7 @@ function readRequest(row: typeof requests.$inferSelect): RequestRow {
     fromAddress: parseStored(Address, row.fromAddress),
     toAddress: parseStored(Address, row.toAddress),
     targetAgentId: row.targetAgentId ?? undefined,
+    senderGroupId: row.senderGroupId ?? undefined,
     originChannel: row.originChannel === null ? undefined : parseStored(ChannelName, row.originChannel),
     args: parseStored<unknown>(ToolArgs[tool], row.args),
     purpose: row.purpose ?? undefined,
@@ -167,10 +168,11 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         return { address, displayName: row.displayName || address.split("@")[0]! };
       });
     },
-    async networkAddresses(after, limit) {
+    async networkAddresses(after, limit, q) {
       const connected = db.select({ id: agentConnections.userId }).from(agentConnections);
       const rows = await db.select({ address: users.address }).from(users)
-        .where(and(isNotNull(users.address), inArray(users.userId, connected), after ? gt(users.address, after) : undefined))
+        .where(and(isNotNull(users.address), inArray(users.userId, connected), after ? gt(users.address, after) : undefined,
+          q ? sql`strpos(${users.address}, ${q}) > 0` : undefined))
         .orderBy(users.address).limit(limit);
       return rows.map(row => parseStored(Address, row.address));
     },

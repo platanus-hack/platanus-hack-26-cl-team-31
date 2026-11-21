@@ -20,11 +20,16 @@ export const RequiredRelation = z.discriminatedUnion("kind", [
 ]);
 export type RequiredRelation = z.infer<typeof RequiredRelation>;
 
-export const AskInput = withToolArgs({
+const askVariants = withToolArgs({
   to: Address, purpose: z.string().max(200).optional(),
   idempotencyKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9_.:-]+$/).optional(),
   requireRelation: RequiredRelation.optional(),
-});
+}).options;
+// Private sender metadata, deliberately outside the arguments delivered to the recipient.
+export const AskInput = z.discriminatedUnion("tool", [
+  askVariants[0], askVariants[1], askVariants[2], askVariants[3],
+  askVariants[4].extend({ groupId: z.uuid().nullable().optional() }),
+]);
 export type AskInput = z.infer<typeof AskInput>;
 export type AskArguments = z.input<typeof AskInput>;
 

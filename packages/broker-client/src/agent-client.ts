@@ -9,7 +9,7 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
   return {
     searchPublicProfiles: async (p, query) => (await request(routes.agentSearchPublicProfiles, p, { body: { query } })).items,
     connect: (p) => request(routes.agentConnect, p),
-    networkUsers: (p, after) => request(routes.agentNetworkUsers, p, { query: { after } }),
+    networkUsers: (p, after, q) => request(routes.agentNetworkUsers, p, { query: { after, q } }),
     vaultCatalog: (p) => request(routes.agentVaultCatalog, p),
     vaultMembers: (p, categoryId) => request(routes.agentVaultMembers, p, { query: { categoryId } }),
     contactGroups: (p) => request(routes.agentContactGroups, p),

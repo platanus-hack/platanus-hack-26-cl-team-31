@@ -13,6 +13,7 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     searchPublicProfiles: async (o, query) => (await request(routes.ownerSearchPublicProfiles, o, { body: { query } })).items,
     directory: o => request(routes.ownerDirectory, o),
     queryVault: (o, body) => request(routes.ownerQueryVault, o, { body }),
+    contactGroups: o => request(routes.ownerContactGroups, o),
     vault: (o) => request(routes.ownerVault, o),
     changeVault: (o, body) => request(routes.ownerChangeVault, o, { body }),
     me: (owner) => request(routes.ownerMe, owner),

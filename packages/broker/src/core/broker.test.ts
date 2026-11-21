@@ -68,6 +68,23 @@ function advance(ms: number): void {
   now = new Date(now.getTime() + ms);
 }
 
+it("mantiene privado el grupo de la invitación y activa su permiso solo al aceptar", async () => {
+  const p: Principal = { ...alice, scopes: [...alice.scopes, "sideband:vault"] };
+  const { groupId } = await broker.agent.changeContactGroup(p, { action: "create", name: "Isapres" });
+  const { categoryId } = await broker.owner.changeVault(alice, { action: "create", name: "Plan de salud" });
+  await broker.owner.changeVault(alice, { action: "set_contact_group", categoryId, groupId, allowed: true });
+  const input = { to: availability.to, tool: "connect", args: {}, groupId } as const;
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "forbidden" });
+  const invitation = await broker.agent.ask(p, input);
+  expect(await broker.owner.contactGroups(alice)).toMatchObject({
+    groups: [{ id: groupId, members: [] }], categories: [{ id: categoryId, contactGroups: [{ id: groupId }] }],
+  });
+  expect(await broker.agent.vaultMembers(p, categoryId)).toEqual({ members: [] });
+  expect(JSON.stringify(await broker.agent.inbox(bruno))).not.toContain(groupId);
+  await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
+  expect(await broker.agent.vaultMembers(p, categoryId)).toEqual({ members: [availability.to] });
+});
+
 it("reclama solo avisos que puede iniciar y entrega los restantes en el próximo tick", async () => {
   await broker.agent.connectWake(bruno, webhook);
   for (let i = 0; i < 10; i++) await askAvailability();

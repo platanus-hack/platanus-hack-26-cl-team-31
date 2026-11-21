@@ -31,6 +31,7 @@ class Turn {
   private relation?: Relation;
   private circleId?: string;
   private categoryId?: string;
+  private invitationGroup?: string | null;
   private jobs: RoutedAsk[] = [];
   private refs: ReceiptRef[] = [];
   private readonly at: string;
@@ -60,7 +61,7 @@ class Turn {
   private async clarify(prompt: Prompt): Promise<Step> {
     const choices = prompt.choices?.length ? prompt.choices : undefined;
     await this.session.save({ phase: "clarify", at: this.at, relativeDays: this.relativeDays, intent: this.intent, field: prompt.field,
-      choices, circleId: this.circleId, refs: this.refs, timezone: this.timezone });
+      choices, circleId: this.circleId, invitationGroup: this.invitationGroup, refs: this.refs, timezone: this.timezone });
     return this.finish({ kind: "clarification", question: prompt.question, choices, continuationId: this.session.continuationId });
   }
 
@@ -88,6 +89,7 @@ class Turn {
       this.intent = selection.intent;
       this.circleId = selection.circleId;
       this.categoryId = selection.categoryId;
+      this.invitationGroup = selection.invitationGroup;
     } else {
       this.intent = grounded(await parse(this.input.text, { at: this.at, timezone: this.timezone }), this.input.text);
     }
@@ -178,9 +180,20 @@ class Turn {
     if (intent.action !== "ask") throw new Error("Invalid ask transition");
     const args = this.validateArgs(intent);
     if ("field" in args) return this.clarify(args);
+    if (intent.tool === "connect" && this.invitationGroup === undefined) {
+      const catalog = await this.context.ops.invitationGroups?.();
+      const groups = catalog?.groups ?? [];
+      const sharing = groups.map(group => {
+        const names = catalog!.categories.filter(c => c.contactGroups.some(g => g.id === group.id)).map(c => c.name);
+        return group.name + " — " + (names.join(", ") || "sin categorías compartidas");
+      });
+      return this.clarify({ field: "invitationGroup", question: ["¿A qué grupo quieres agregar el contacto?", ...sharing].join("\n"),
+        choices: [{ label: "Sin grupo", value: "none" }, ...groups.map(g => ({ label: g.name, value: g.id }))] });
+    }
     this.jobs = this.targets.map(to => {
       const idempotencyKey = createHash("sha256").update(JSON.stringify([this.session.id, to])).digest("hex");
-      const input = AskInput.parse({ to, tool: intent.tool, args: args.value, idempotencyKey, requireRelation: this.relation });
+      const input = AskInput.parse({ to, tool: intent.tool, args: args.value, idempotencyKey, requireRelation: this.relation,
+        ...(intent.tool === "connect" && { groupId: this.invitationGroup }) });
       return { ...input, idempotencyKey };
     });
     this.refs = [];
