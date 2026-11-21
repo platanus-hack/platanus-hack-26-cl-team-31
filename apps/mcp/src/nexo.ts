@@ -57,6 +57,12 @@ export async function startNexo(stdio: boolean, devAuth: boolean) {
   }, agent, telemetry);
   const port = readEnv("MCP_PORT", z.string().regex(/^\d+$/).pipe(z.coerce.number<string>().int().min(1).max(65535)));
   server.listen(port, process.env.MCP_HOST || "127.0.0.1");
-  await once(server, "listening");
+  try {
+    await once(server, "listening");
+  } catch (error) {
+    telemetry.error("mcp.listen", error);
+    await telemetry.shutdown();
+    throw error;
+  }
   console.error(`[nexo-mcp] Listo en puerto ${port}.`);
 }
