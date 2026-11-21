@@ -1,49 +1,80 @@
+# Stack de Sideband en Render (docs/render.md). Costo: 4 servicios starter ($7 c/u),
+# Postgres basic-256mb ($6) y el cron de autodeploy (~$1) ≈ $35/mes.
+#
+# Los servicios usan el repo público de la org: Render no recibe su webhook, así que
+# autoDeploy queda apagado y `sideband-autodeploy` despliega cuando cambia `main`.
+# Los secretos (sync: false) se cargan en Render al aprobar el Blueprint, nunca aquí.
+
 envVarGroups:
-  - name: team-31-shared
+  - name: sideband-shared
     envVars:
       - key: NODE_VERSION
         value: "24"
       - key: NODE_ENV
         value: production
+      - key: COREPACK_ENABLE_DOWNLOAD_PROMPT
+        value: "0"
       - key: TURBO_TELEMETRY_DISABLED
         value: "1"
-      # Telemetría de Sideband (docs/admin.md): cada servicio escribe en ops.events.
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
       - key: TELEMETRY_SINK
         value: postgres
 
 databases:
-  - name: team-31-db
+  - name: sideband-db
     databaseName: app
     plan: basic-256mb
+    region: oregon
     postgresMajorVersion: "17"
+    diskSizeGB: 1
+    # Solo la red privada de Render.
+    ipAllowList: []
 
 services:
+  # Web (Next, OAuth) + MCP en loopback. Con RENDER=true, next.config reenvía /mcp,
+  # /healthz y la metadata OAuth al MCP en MCP_PORT: el MCP vive en el mismo origen.
   - type: web
-    name: team-31-web
+    name: sideband-web
     runtime: node
     plan: starter
+    region: oregon
+    repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
+    branch: main
     autoDeployTrigger: "off"
-    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@team-31/web...
-    preDeployCommand: pnpm --filter @team-31/web auth:migrate
-    startCommand: pnpm --filter @team-31/web start
-    healthCheckPath: /
+    buildCommand: NODE_ENV=development corepack pnpm install --frozen-lockfile && corepack pnpm exec turbo run build --filter=@team-31/web... --filter=@team-31/mcp...
+    preDeployCommand: >-
+      export BETTER_AUTH_URL="$RENDER_EXTERNAL_URL" MCP_RESOURCE_URL="$RENDER_EXTERNAL_URL/mcp" &&
+      cd apps/web && node scripts/migrate-auth.mjs
+    # Render agrega un sufijo a los nombres: las URLs salen de RENDER_EXTERNAL_URL y del host interno del broker.
+    startCommand: >-
+      export BETTER_AUTH_URL="$RENDER_EXTERNAL_URL" MCP_RESOURCE_URL="$RENDER_EXTERNAL_URL/mcp"
+      AUTH_ISSUER="$RENDER_EXTERNAL_URL/api/auth" AUTH_JWKS_URL="$RENDER_EXTERNAL_URL/api/auth/jwks"
+      BROKER_URL="http://$BROKER_HOSTPORT" &&
+      exec bash -c 'node apps/mcp/dist/index.js &
+      (cd apps/web && exec node node_modules/next/dist/bin/next start --hostname 0.0.0.0 --port "$PORT") &
+      wait -n; exit 1'
+    healthCheckPath: /healthz
     envVars:
-      - fromGroup: team-31-shared
-      - key: WEB_PORT
-        value: "10000"
+      - fromGroup: sideband-shared
+      - key: MCP_PORT
+        value: "4100"
+      - key: MCP_DEV_AUTH
+        value: "0"
       - key: DATABASE_URL
         fromDatabase:
-          name: team-31-db
+          name: sideband-db
           property: connectionString
       - key: BETTER_AUTH_SECRET
         generateValue: true
-      - key: BETTER_AUTH_URL
-        sync: false
-      - key: MCP_RESOURCE_URL
-        sync: false
-      - key: BROKER_URL
-        sync: false
+      - key: BROKER_HOSTPORT
+        fromService:
+          type: pserv
+          name: sideband-broker
+          property: hostport
       - key: WEB_SERVICE_PRIVATE_KEY
+        sync: false
+      - key: MCP_SERVICE_PRIVATE_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
@@ -60,23 +91,27 @@ services:
       - key: KAPSO_WEBHOOK_SECRET
         sync: false
 
-  - type: web
-    name: team-31-broker
+  # Broker: servicio privado, solo alcanzable desde la red interna de Render.
+  - type: pserv
+    name: sideband-broker
     runtime: node
     plan: starter
+    region: oregon
+    repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
+    branch: main
     autoDeployTrigger: "off"
-    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@team-31/broker-service...
-    preDeployCommand: pnpm --filter @team-31/broker-service exec node scripts/migrate.mjs
-    startCommand: pnpm --filter @team-31/broker-service start
+    buildCommand: NODE_ENV=development corepack pnpm install --frozen-lockfile && corepack pnpm exec turbo run build --filter=@team-31/broker-service...
+    preDeployCommand: node apps/broker/scripts/migrate.mjs
+    startCommand: cd apps/broker && bash scripts/run.sh node dist/index.js
     envVars:
-      - fromGroup: team-31-shared
+      - fromGroup: sideband-shared
       - key: BROKER_HOST
         value: 0.0.0.0
       - key: BROKER_PORT
         value: "10000"
       - key: DATABASE_URL
         fromDatabase:
-          name: team-31-db
+          name: sideband-db
           property: connectionString
       - key: BROKER_SIGNING_KEY
         sync: false
@@ -93,67 +128,25 @@ services:
       - key: WAKE_ALLOW_INSECURE
         value: "0"
 
-  - type: web
-    name: team-31-mcp
-    runtime: node
-    plan: starter
-    autoDeployTrigger: "off"
-    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@team-31/mcp...
-    startCommand: pnpm --filter @team-31/mcp start
-    envVars:
-      - fromGroup: team-31-shared
-      - key: MCP_HOST
-        value: 0.0.0.0
-      - key: MCP_PORT
-        value: "10000"
-      - key: MCP_RESOURCE_URL
-        sync: false
-      - key: AUTH_ISSUER
-        sync: false
-      - key: AUTH_JWKS_URL
-        sync: false
-      - key: BROKER_URL
-        sync: false
-      - key: MCP_SERVICE_PRIVATE_KEY
-        sync: false
-      - key: MCP_DEV_AUTH
-        value: "0"
-      - key: TELEMETRY_DATABASE_URL
-        fromDatabase:
-          name: team-31-db
-          property: connectionString
-
-  - type: web
-    name: team-31-coordination
-    runtime: node
-    plan: starter
-    autoDeployTrigger: "off"
-    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@team-31/server...
-    preDeployCommand: node apps/server/scripts/schema.mjs
-    startCommand: pnpm --filter @team-31/server start
-    envVars:
-      - fromGroup: team-31-shared
-      - key: COORDINATION_HOST
-        value: 0.0.0.0
-      - key: COORDINATION_PORT
-        value: "10000"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: team-31-db
-          property: connectionString
-
   # Panel y MCP de administración (docs/admin.md). Un solo proceso sirve SPA, API y /mcp.
   - type: web
-    name: team-31-admin
+    name: sideband-admin
     runtime: node
     plan: starter
+    region: oregon
+    repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
+    branch: main
     autoDeployTrigger: "off"
-    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm turbo run build --filter=@team-31/admin...
-    preDeployCommand: pnpm --filter @team-31/admin admin:auth:migrate && pnpm --filter @team-31/ops migrate
-    startCommand: pnpm --filter @team-31/admin start
+    buildCommand: NODE_ENV=development corepack pnpm install --frozen-lockfile && corepack pnpm exec turbo run build --filter=@team-31/admin... --filter=@team-31/ops...
+    preDeployCommand: >-
+      export ADMIN_URL="$RENDER_EXTERNAL_URL" &&
+      cd apps/admin && node_modules/.bin/tsx server/auth/migrate.ts && cd ../../packages/ops && node dist/cli.js
+    startCommand: >-
+      export ADMIN_URL="$RENDER_EXTERNAL_URL" BROKER_URL="http://$BROKER_HOSTPORT" &&
+      cd apps/admin && exec node dist/server/server/index.js
     healthCheckPath: /healthz
     envVars:
-      - fromGroup: team-31-shared
+      - fromGroup: sideband-shared
       - key: ADMIN_HOST
         value: 0.0.0.0
       - key: ADMIN_PORT
@@ -164,23 +157,71 @@ services:
         value: "1"
       - key: DATABASE_URL
         fromDatabase:
-          name: team-31-db
+          name: sideband-db
           property: connectionString
       - key: ADMIN_AUTH_SECRET
         generateValue: true
-      - key: ADMIN_URL
-        sync: false
-      - key: ADMIN_GOOGLE_CLIENT_ID
-        sync: false
-      - key: ADMIN_GOOGLE_CLIENT_SECRET
+      - key: ADMIN_SERVICE_PRIVATE_KEY
         sync: false
       - key: ADMIN_OPERATORS
         sync: false
       - key: ADMIN_VIEWERS
         sync: false
-      - key: ADMIN_SERVICE_PRIVATE_KEY
+      - key: ADMIN_GOOGLE_CLIENT_ID
         sync: false
-      - key: BROKER_URL
+      - key: ADMIN_GOOGLE_CLIENT_SECRET
         sync: false
+      - key: BROKER_HOSTPORT
+        fromService:
+          type: pserv
+          name: sideband-broker
+          property: hostport
       - key: TELEMETRY_RETENTION_DAYS
         value: "14"
+
+  # API de coordinación (apps/server).
+  - type: web
+    name: sideband-coordination
+    runtime: node
+    plan: starter
+    region: oregon
+    repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
+    branch: main
+    autoDeployTrigger: "off"
+    buildCommand: NODE_ENV=development corepack pnpm install --frozen-lockfile && corepack pnpm exec turbo run build --filter=@team-31/server...
+    preDeployCommand: node apps/server/scripts/schema.mjs
+    startCommand: node apps/server/dist/index.js
+    envVars:
+      - fromGroup: sideband-shared
+      - key: COORDINATION_HOST
+        value: 0.0.0.0
+      - key: COORDINATION_PORT
+        value: "10000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sideband-db
+          property: connectionString
+
+  # Despliega los servicios de arriba cuando cambia `main` (infra/render/autodeploy.mjs).
+  - type: cron
+    name: sideband-autodeploy
+    runtime: node
+    plan: starter
+    region: oregon
+    repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
+    branch: main
+    schedule: "*/5 * * * *"
+    buildCommand: "true"
+    startCommand: node infra/render/autodeploy.mjs
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: AUTODEPLOY_REPO
+        value: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
+      - key: AUTODEPLOY_BRANCH
+        value: main
+      # Prefijos: Render agrega un sufijo al nombre de cada servicio del Blueprint.
+      - key: AUTODEPLOY_SERVICES
+        value: sideband-broker,sideband-web,sideband-admin,sideband-coordination
+      - key: RENDER_API_KEY
+        sync: false
