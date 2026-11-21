@@ -6,6 +6,13 @@ export type Scope = z.infer<typeof Scope>;
 export const WAKE_SUBSCRIPTION_SCOPE = "sideband:inbox" satisfies Scope;
 
 export const agentScopes = {
+  contactGroups: "sideband:vault",
+  changeContactGroup: "sideband:vault",
+  vaultCatalog: "sideband:vault",
+  vaultMembers: "sideband:vault",
+  changeVault: "sideband:vault",
+  queryVault: "sideband:ask",
+  networkUsers: "sideband:ask",
   capabilities: "sideband:ask",
   ask: "sideband:ask",
   contacts: "sideband:ask",

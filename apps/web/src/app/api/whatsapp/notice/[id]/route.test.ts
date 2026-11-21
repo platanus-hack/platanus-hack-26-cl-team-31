@@ -71,7 +71,7 @@ it("cancela la lectura al superar el límite en bytes aunque el aviso siga abier
   const response = await POST(new Request("https://sideband.test", init), { params: Promise.resolve({ id: linkId }) });
   expect(response.status).toBe(413);
   expect(cancel).toHaveBeenCalledOnce();
-  expect(after).not.toHaveBeenCalled();
+  expect(store.whileNotified).not.toHaveBeenCalled();
 });
 
 it("envía la respuesta final una sola vez aunque el broker repita el aviso", async () => {

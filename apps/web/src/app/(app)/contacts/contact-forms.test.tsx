@@ -18,7 +18,7 @@ it("submits exactly the categories selected in the contact form", async () => {
   try {
     await act(() => root.render(<ContactRow contact={{ address, gives: ["availability"], receives: [] }}
       presets={{ friend: [], work: [], family: [] }} />));
-    await act(() => list.querySelector<HTMLButtonElement>("[aria-expanded]")!.click());
+    await act(() => list.querySelector<HTMLButtonElement>('[aria-label="Ver opciones"]')!.click());
     const form = list.querySelector("form")!;
     const toggle = async (label: string) => {
       const button = [...form.querySelectorAll<HTMLButtonElement>('[role="switch"]')].find((control) =>

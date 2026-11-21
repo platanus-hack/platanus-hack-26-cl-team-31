@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Address } from "./address.js";
 import { Category } from "./categories.js";
-import { ToolArgs, ToolName, ToolResult, ToolResultSchemas } from "./tools.js";
+import { ToolArgs, ToolName, ToolResultSchemas } from "./tools.js";
 import { Sharing } from "./sharing.js";
 
 export function withToolArgs<Shape extends z.ZodRawShape>(shape: Shape) {

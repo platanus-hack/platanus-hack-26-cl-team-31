@@ -109,4 +109,3 @@ export interface AdminPort {
   // Same as OwnerPort.revokeAgent, for any user.
   revokeAgent(a: AdminActor, userId: string, agentId: string, reason: string): Promise<void>;
 }
-

@@ -310,9 +310,10 @@ describe("aislamiento y concurrencia", () => {
 
 describe("cierre y avisos", () => {
   it("atiende avisos entre lotes de solicitudes vencidas", async () => {
-    for (let i = 0; i < 101; i++) await askAvailability();
-    await broker.tick(now);
-    await broker.tick(now);
+    for (let i = 0; i < 101; i++) {
+      await askAvailability();
+      await broker.tick(now);
+    }
     advance(900_000);
     await broker.agent.inbox(bruno);
     await broker.owner.setWake(bruno, bruno.agentId, webhook);

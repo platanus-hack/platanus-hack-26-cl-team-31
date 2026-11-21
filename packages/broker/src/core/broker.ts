@@ -478,14 +478,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         await store.tx(tx => ensureActiveAgentConnection(tx, p));
       },
       async contactGroups(p) {
-        requireScope(p, "sideband:vault", "agent.contactGroups");
+        requireScope(p, "contactGroups");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return tx.contactGroups(p.userId);
         });
       },
       async changeContactGroup(p, input) {
-        requireScope(p, "sideband:vault", "agent.changeContactGroup");
+        requireScope(p, "changeContactGroup");
         const parsed = ContactGroupChange.safeParse(input);
         if (!parsed.success) throw new BrokerError("invalid_input", "Revisa el grupo y el contacto.");
         const change = parsed.data;
@@ -499,14 +499,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
       async vaultCatalog(p) {
-        requireScope(p, "sideband:vault", "agent.vaultCatalog");
+        requireScope(p, "vaultCatalog");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return tx.vaultCatalog(p.userId);
         });
       },
       async vaultMembers(p, categoryId) {
-        requireScope(p, "sideband:vault", "agent.vaultMembers");
+        requireScope(p, "vaultMembers");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           const members = await tx.vaultMembers(p.userId, categoryId);
@@ -515,14 +515,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
       async changeVault(p, change) {
-        requireScope(p, "sideband:vault", "agent.changeVault");
+        requireScope(p, "changeVault");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return changeVault(tx, p.userId, change, p.agentId);
         });
       },
       async queryVault(p, input) {
-        requireScope(p, "sideband:ask", "agent.queryVault");
+        requireScope(p, "queryVault");
         const query = VaultQuery.safeParse(input);
         if (!query.success) throw new BrokerError("invalid_input", "Revisa la dirección y la categoría.");
         return store.tx(async tx => {
@@ -649,7 +649,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async networkUsers(p, after) {
-        requireScope(p, "sideband:ask", "agent.networkUsers");
+        requireScope(p, "networkUsers");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           const pageSize = 50;

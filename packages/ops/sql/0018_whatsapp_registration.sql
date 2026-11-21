@@ -1,6 +1,12 @@
 -- Older installations may not yet have run the web migration.
-ALTER FUNCTION ops.refresh_whatsapp_view() RENAME TO refresh_legacy_whatsapp_view;
-CREATE FUNCTION ops.refresh_whatsapp_view() RETURNS void
+DO $$
+BEGIN
+  IF to_regprocedure('ops.refresh_legacy_whatsapp_view()') IS NULL THEN
+    ALTER FUNCTION ops.refresh_whatsapp_view() RENAME TO refresh_legacy_whatsapp_view;
+  END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION ops.refresh_whatsapp_view() RETURNS void
 LANGUAGE plpgsql
 SET search_path = pg_catalog, ops
 AS $$

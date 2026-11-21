@@ -22,4 +22,6 @@ for health in "${BROKER_URL:?}/healthz" "${MCP_RESOURCE_URL%/mcp}/healthz"; do
   done
   curl -fsS --max-time 2 "$health" >/dev/null
 done
-pnpm --filter @team-31/e2e test src/contract.test.ts src/blocks.test.ts src/closure.test.ts src/isolation.test.ts
+pnpm --filter @team-31/e2e test src/contract.test.ts src/blocks.test.ts src/closure.test.ts
+# El escenario de carga encola 80 avisos en el mismo worker que mide el contrato.
+pnpm --filter @team-31/e2e test src/isolation.test.ts
