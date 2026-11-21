@@ -85,7 +85,8 @@ function transaction(state: State): StoreTx {
         address && connected.has(userId) && (!after || address > after) ? [address] : []).sort().slice(0, limit);
     },
     async vaultCatalog(owner) {
-      return { categories: (state.vaults.get(owner)?.categories ?? []).map(({ id, name }) => ({ id, name })) };
+      return { categories: (state.vaults.get(owner)?.categories ?? []).map(({ id, name, groups, contactGroups }) =>
+        structuredClone({ id, name, groups, contactGroups: contactGroups ?? [] })) };
     },
     async vaultMembers(owner, categoryId) {
       const category = state.vaults.get(owner)?.categories.find(c => c.id === categoryId);

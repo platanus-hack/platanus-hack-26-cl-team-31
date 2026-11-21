@@ -1,4 +1,4 @@
-import { Address, ContactTag, type OwnerVault } from "@team-31/protocol";
+import { Address, ContactTag, type OwnerVault, type VaultCatalog } from "@team-31/protocol";
 import { and, DrizzleQueryError, eq, exists, inArray, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import type { StoreTx } from "../store.js";
@@ -23,8 +23,17 @@ async function insertWithParents(db: Tx, insert: (tx: Tx) => Promise<unknown>) {
 }
 
 export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "contactGroups" | "changeContactGroup"> {
-  function listCategories(owner: string) {
-    return db.select({ id: c.id, name: c.name }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
+  async function vaultCatalog(owner: string): Promise<VaultCatalog> {
+    const rows = await db.select({ id: c.id, name: c.name }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
+    const categories: VaultCatalog["categories"] = rows.map(row => ({ ...row, groups: [], contactGroups: [] }));
+    if (!categories.length) return { categories };
+    const byId = new Map(categories.map(category => [category.id, category]));
+    const permissions = await db.select({ id: p.id, group: p.group }).from(p).where(eq(p.owner, owner)).orderBy(p.group);
+    for (const { id, group } of permissions) byId.get(id)?.groups.push(ContactTag.parse(group));
+    const custom = await db.select({ categoryId: gp.id, id: g.id, name: g.name }).from(gp)
+      .innerJoin(g, and(eq(g.owner, gp.owner), eq(g.id, gp.groupId))).where(eq(gp.owner, owner)).orderBy(g.name, g.id);
+    for (const { categoryId, id, name } of custom) byId.get(categoryId)?.contactGroups.push({ id, name });
+    return { categories };
   }
 
   // Both the roster and the data read apply this predicate to a (category, accepted contact) pair.
@@ -42,26 +51,17 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
         .where(and(eq(c.owner, owner), eq(c.id, categoryId))).orderBy(friends.address);
       return rows.length ? rows.flatMap(({ address }) => address ? [Address.parse(address)] : []) : null;
     },
-    async vaultCatalog(owner) {
-      return { categories: await listCategories(owner) };
-    },
+    vaultCatalog,
     async ownerVault(owner) {
-      const categories: OwnerVault["categories"] = (await listCategories(owner)).map(category => ({
-        ...category, groups: [], entries: [],
+      const catalog = await vaultCatalog(owner);
+      const categories: OwnerVault["categories"] = catalog.categories.map(({ contactGroups, ...category }) => ({
+        ...category, ...(contactGroups.length ? { contactGroups } : {}), entries: [],
       }));
       if (!categories.length) return { categories };
 
       const byId = new Map(categories.map(category => [category.id, category]));
       const entries = await db.select({ id: e.id, label: e.label, value: e.value }).from(e).where(eq(e.owner, owner)).orderBy(e.label);
       for (const { id, label, value } of entries) byId.get(id)?.entries.push({ label, value });
-      const permissions = await db.select({ id: p.id, group: p.group }).from(p).where(eq(p.owner, owner)).orderBy(p.group);
-      for (const { id, group } of permissions) byId.get(id)?.groups.push(ContactTag.parse(group));
-      const custom = await db.select({ categoryId: gp.id, id: g.id, name: g.name }).from(gp)
-        .innerJoin(g, and(eq(g.owner, gp.owner), eq(g.id, gp.groupId))).where(eq(gp.owner, owner)).orderBy(g.name, g.id);
-      for (const { categoryId, id, name } of custom) {
-        const category = byId.get(categoryId);
-        if (category) (category.contactGroups ??= []).push({ id, name });
-      }
       return { categories };
     },
     async contactGroups(owner) {
