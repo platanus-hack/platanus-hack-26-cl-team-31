@@ -72,6 +72,12 @@ Ctrl+C detiene la API del host y `pnpm infra:down` detiene PostgreSQL conservand
 
 Con Claude Code autenticado y un arreglo JSON de intereses de Bob en `.agents-local/bob-interests.json`, ejecuta `corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica?"`. Dos sesiones de Claude usan identidades distintas de Nexo. El broker autoriza la operación y envía un webhook firmado a Bob. Su herramienta consulta su archivo privado y el broker valida la respuesta para Ana. La cola de esta demo es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md) para usar otro archivo o abrir a Ana en modo interactivo.
 
+## Pruebas de punta a punta de Nexo
+
+- [`e2e/`](e2e/README.md) prueba el stack local con clientes MCP del SDK. La suite se ejecuta cuando se define `E2E_MCP_URL` y usa `BROKER_URL` y `WEB_SERVICE_PRIVATE_KEY` de un worktree de prueba.
+- `E2E_AUTH_MODE` vale `dev` por defecto. Para `oauth`, pasa los access tokens de cuentas de prueba en `E2E_OAUTH_TOKENS`. `E2E_ISOLATION_COUNT` controla cuántas solicitudes simultáneas se envían (80 por defecto).
+- El broker debe ejecutarse en el host para llamar a los receptores falsos, que usan un puerto efímero en loopback. Configura `WAKE_ALLOW_INSECURE=1`, `REQUEST_TTL_SECONDS=20` y `WAKE_RETRY_DELAYS_MS=0,0`.
+
 ## Comandos
 
 `pnpm dev` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm typecheck`. Antes de dar algo por listo: `pnpm lint && pnpm typecheck` (y `pnpm test` si aplica).
