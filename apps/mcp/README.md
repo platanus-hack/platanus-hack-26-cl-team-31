@@ -8,6 +8,8 @@ Desde la raíz del repo, con Docker corriendo, usa Node 24 y pnpm 10. Si usas nv
 2. En otra terminal, ejecuta `pnpm agents:demo 2`. El guion conecta clientes MCP por stdio y chequea las respuestas. Funciona sin cuenta de un proveedor de IA.
 3. Para sumar a Carla con la API abierta, ejecuta `pnpm agents:seed 3` y luego `pnpm agents:demo 3`. Para N mayor se crean `agente4`, `agente5`, etc.
 
+Puedes editar las personas, sus permisos iniciales y los bloques ocupados en [los datos de la demo](../../scripts/coordination-fixture.mjs).
+
 El sábado ficticio es el **28 de noviembre de 2026**. Ana ve a Bob ocupado a las 16:00 y disponible a las 18:00 de Santiago. Eva, externa al grupo `futbol`, recibe `not_shareable`. El guion publica y retira un interés, revoca y restablece el permiso de Bob, y prueba las bandejas por persona. La última aceptación confirma el encuentro y muestra su ID. Cada corrida crea una propuesta nueva en PostgreSQL.
 
 ## Hablar con Ana y Bob en Claude Code
