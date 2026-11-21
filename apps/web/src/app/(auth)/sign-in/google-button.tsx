@@ -32,7 +32,7 @@ export function GoogleButton({ callbackURL, errorCallbackURL }: { callbackURL: s
         type="button"
         onClick={signIn}
         disabled={pending}
-        className="min-h-11 w-full cursor-pointer rounded-full bg-ink px-4 py-2.5 font-medium text-canvas transition hover:bg-white disabled:opacity-70"
+        className="min-h-11 w-full cursor-pointer rounded-full bg-accent px-4 py-2.5 text-[13px] font-medium text-white raised transition hover:bg-accent-hover disabled:opacity-70"
       >
         {pending ? "Conectando…" : "Entrar con Google"}
       </button>

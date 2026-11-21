@@ -3,10 +3,10 @@ import type { RequestStatus } from "@team-31/protocol";
 
 import { formatTime, statusLabels } from "./labels";
 
-export const card = "rounded-3xl border border-line bg-card surface transition-colors duration-150";
-export const button = "inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full bg-chip px-4 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-chip-hover active:bg-white/8 disabled:cursor-wait disabled:opacity-50";
-export const primaryButton = "inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-canvas transition-colors duration-150 hover:bg-white disabled:cursor-wait disabled:opacity-50";
-export const textLink = "font-medium text-accent underline-offset-4 transition-colors hover:text-[#74d8ff] hover:underline";
+export const card = "rounded-3xl bg-card surface transition-colors duration-150";
+export const button = "inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full bg-button px-4 text-[13px] font-medium text-white raised transition-colors duration-150 hover:bg-button-hover disabled:cursor-wait disabled:opacity-50";
+export const primaryButton = "inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full bg-accent px-4 text-[13px] font-medium text-white raised transition-colors duration-150 hover:bg-accent-hover disabled:cursor-wait disabled:opacity-50";
+export const textLink = "font-medium text-accent-ink underline-offset-4 transition-colors hover:text-white hover:underline";
 export const input = "h-10 w-full rounded-xl border border-line bg-stage px-3 text-sm text-ink placeholder:text-subtle transition-colors focus-visible:border-line-strong focus-visible:outline-none";
 export const secondaryText = "text-[13px] leading-relaxed text-muted";
 export const eyebrow = "font-mono text-[11px] uppercase tracking-[0.08em] text-subtle";
@@ -15,7 +15,7 @@ export function Heading({ title, children, action }: { title: string; children?:
   return (
     <header className="mb-10 flex flex-wrap items-end justify-between gap-4">
       <div className="max-w-2xl">
-        <h1 className="text-[32px] leading-[1.1] font-medium tracking-[-0.025em] text-ink sm:text-[40px]">{title}</h1>
+        <h1 className="text-[32px] leading-[1.1] font-medium tracking-[-0.005em] text-ink sm:text-[42px]">{title}</h1>
         {children && <p className="mt-3 text-[15px] leading-[22px] text-muted">{children}</p>}
       </div>
       {action}
@@ -47,7 +47,7 @@ export function Feedback({ error, message, errorId }: { error?: string; message?
       {error}{errorId && <> Código de error <code className="font-mono">{errorId}</code>.</>}
     </p>
   ) :
-    message ? <p role="status" className="text-[13px] font-medium text-accent">{message}</p> : null;
+    message ? <p role="status" className="text-[13px] font-medium text-accent-ink">{message}</p> : null;
 }
 
 export function Empty({ children }: { children: ReactNode }) {

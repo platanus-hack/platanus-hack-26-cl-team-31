@@ -35,7 +35,7 @@ export function CopyBox({ label, value, copyLabel }: { label: string; value: str
       <pre role="region" aria-labelledby={id} tabIndex={0} className="px-3 py-3 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">
         <code>{value}</code>
       </pre>
-      <p role="status" className={feedback ? "px-3 pb-3 text-xs text-accent" : "sr-only"}>{feedback}</p>
+      <p role="status" className={feedback ? "px-3 pb-3 text-xs text-accent-ink" : "sr-only"}>{feedback}</p>
     </figure>
   );
 }

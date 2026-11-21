@@ -20,7 +20,7 @@ export function ActivityList({ items, detailed = false }: { items: ActivityItem[
           <p className="mt-2 text-xs text-muted"><Stamp value={item.createdAt} /></p>
           {detailed && (
             <details className="mt-3 text-sm">
-              <summary className="w-fit cursor-pointer font-medium text-accent">Ver bitácora</summary>
+              <summary className="w-fit cursor-pointer font-medium text-accent-ink">Ver bitácora</summary>
               <div className="mt-3 space-y-3">
                 <p className="break-all font-mono text-xs text-muted">{item.requestId}</p>
                 {item.outcome && <p><span className="font-medium">Resultado</span> · {statusLabels[item.outcome]}</p>}

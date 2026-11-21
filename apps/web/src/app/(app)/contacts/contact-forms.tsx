@@ -29,7 +29,7 @@ export function InviteForm() {
       <div className="space-y-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
           <p><span className="text-muted">Le compartirás:</span> <span className="font-medium">{describeSharing(share)}</span></p>
-          <button type="button" className="cursor-pointer font-semibold text-accent hover:underline" aria-expanded={editing}
+          <button type="button" className="cursor-pointer font-semibold text-accent-ink hover:underline" aria-expanded={editing}
             onClick={() => setEditing(!editing)}>{editing ? "Listo" : "Cambiar"}</button>
         </div>
         <div hidden={!editing}><SharingPicker value={share} onChange={setShare} /></div>

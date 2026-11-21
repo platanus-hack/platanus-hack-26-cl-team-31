@@ -30,7 +30,7 @@ export function ConsentButtons() {
           type="button"
           disabled={pending}
           onClick={() => submit(false)}
-          className="min-h-11 cursor-pointer rounded-full bg-chip px-4 py-2.5 font-medium transition hover:bg-chip-hover disabled:opacity-70"
+          className="min-h-11 cursor-pointer rounded-full bg-button px-4 py-2.5 text-[13px] font-medium text-white raised transition hover:bg-button-hover disabled:opacity-70"
         >
           Cancelar
         </button>
@@ -38,7 +38,7 @@ export function ConsentButtons() {
           type="button"
           disabled={pending}
           onClick={() => submit(true)}
-          className="min-h-11 cursor-pointer rounded-full bg-ink px-4 py-2.5 font-medium text-canvas transition hover:bg-white disabled:opacity-70"
+          className="min-h-11 cursor-pointer rounded-full bg-accent px-4 py-2.5 text-[13px] font-medium text-white raised transition hover:bg-accent-hover disabled:opacity-70"
         >
           Autorizar
         </button>

@@ -24,7 +24,7 @@ export default async function ConnectPage({ searchParams }: PageProps<"/agents/c
             className={`${card} group flex h-full flex-col gap-3 p-6 hover:bg-card-hover`}>
             <h2 className="text-[15px] font-medium tracking-[-0.01em]">WhatsApp</h2>
             <p className={secondaryText}>Vincula tu teléfono y usa tu cuenta de Sideband desde el chat.</p>
-            <span className="mt-auto pt-1 text-sm font-medium text-accent group-hover:underline">Conectar WhatsApp <span aria-hidden="true">→</span></span>
+            <span className="mt-auto pt-1 text-sm font-medium text-accent-ink group-hover:underline">Conectar WhatsApp <span aria-hidden="true">→</span></span>
           </Link>
         </li>
         {choices.map((kind) => {
@@ -36,7 +36,7 @@ export default async function ConnectPage({ searchParams }: PageProps<"/agents/c
                 className={`${card} group flex h-full flex-col gap-3 p-6 hover:bg-card-hover`}>
                 <h2 className="text-[15px] font-medium tracking-[-0.01em]">{client.name}</h2>
                 <p className={secondaryText}>{client.description}</p>
-                <span className="mt-auto pt-1 text-sm font-medium text-accent group-hover:underline">Configurar {client.name} <span aria-hidden="true">→</span></span>
+                <span className="mt-auto pt-1 text-sm font-medium text-accent-ink group-hover:underline">Configurar {client.name} <span aria-hidden="true">→</span></span>
               </Link>
             </li>
           );

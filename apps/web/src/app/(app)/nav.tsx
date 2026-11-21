@@ -20,7 +20,7 @@ export function Navigation() {
         const active = path === href || (href !== "/" && path.startsWith(`${href}/`));
         return (
           <Link key={href} href={href} aria-current={active ? "page" : undefined}
-            className={`inline-flex h-9 items-center rounded-full px-3.5 text-[13px] font-medium transition-colors duration-150 ${active ? "bg-white/6 text-ink" : "text-muted hover:bg-white/6 hover:text-ink"}`}>
+            className={`inline-flex h-9 items-center rounded-full px-3.5 text-[13px] font-medium transition-colors duration-150 ${active ? "bg-white/6 text-ink" : "text-nav hover:bg-white/6 hover:text-ink"}`}>
             {label}
           </Link>
         );
