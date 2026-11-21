@@ -1,10 +1,10 @@
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import { ownerClient } from "@/lib/broker";
 import { readAsOwner } from "../owner";
 
 import { readContacts } from "./actions";
 import { card, Empty, Heading, Stamp } from "../ui";
-import { ContactRow, IncomingInvitation, InviteForm, TagPresetsEditor } from "./contact-forms";
+import { ContactRow, IncomingInvitation, InviteButton, TagPresetsEditor } from "./contact-forms";
 import { describeSharing } from "./describe";
 
 async function PrivateGroups() {
@@ -24,8 +24,15 @@ async function PrivateGroups() {
   </section>;
 }
 
+const contactsData = cache(readContacts);
+
+async function Invite() {
+  const { presets } = await contactsData();
+  return <InviteButton presets={presets} />;
+}
+
 async function ContactsList() {
-  const { contacts, presets, incoming, outgoing } = await readContacts();
+  const { contacts, presets, incoming, outgoing } = await contactsData();
   return (
     <div className="space-y-10">
       {incoming.length > 0 && (
@@ -36,8 +43,6 @@ async function ContactsList() {
           </ul>
         </section>
       )}
-
-      <InviteForm presets={presets} />
 
       {outgoing.length > 0 && (
         <section aria-labelledby="outgoing-title">
@@ -58,7 +63,7 @@ async function ContactsList() {
 
       <section aria-labelledby="contacts-title">
         <h2 id="contacts-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Tus contactos</h2>
-        {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Invita a alguien con su dirección Sideband.</Empty> : (
+        {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Toca Invitar para conectar con alguien.</Empty> : (
           <ul className="space-y-2">
             {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} presets={presets} />)}
           </ul>
@@ -73,7 +78,7 @@ async function ContactsList() {
 export default function ContactsPage() {
   return (
     <div className="max-w-2xl">
-      <Heading title="Contactos">
+      <Heading title="Contactos" action={<Suspense><Invite /></Suspense>}>
         Cada contacto tiene una etiqueta que define qué le compartes. Si quieres, ajustas a alguien en particular.
       </Heading>
       <Suspense fallback={<p role="status">Cargando grupos…</p>}>
