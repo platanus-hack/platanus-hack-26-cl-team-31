@@ -16,6 +16,8 @@ describe("inspectText", () => {
     ["email", "Escríbeme a ana.perez@gmail.com", {}, ["leak_email"]],
     ["obfuscated email", "ana [at] gmail [dot] com", {}, ["leak_email"]],
     ["fullwidth email", "ana＠gmail．com", {}, ["leak_email"]],
+    ["standalone handle", "Pregunta a ＠ana_2.", {}, ["leak_handle"]],
+    ["normal use of arroba", "Vendemos por @ de peso", {}, []],
     ["url", "Mira https://evil.example/x", {}, ["leak_url"]],
     ["bare domain", "Entra a nexo-leak.io/abc", {}, ["leak_url"]],
     ["www", "www.ejemplo", {}, ["leak_url"]],
