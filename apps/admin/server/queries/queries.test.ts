@@ -405,6 +405,28 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     ])
   })
 
+  it("overview suma cada solicitud en su estado y su herramienta", async () => {
+    const id = "req_overview_interest"
+    await store.tx(async (tx) => {
+      const pending = await tx.getRequest(ids.open)
+      await tx.insertRequest({
+        ...pending!,
+        id,
+        tool: "interest_check",
+        args: { interest: "cerámica" },
+        allowedFields: ["matches"],
+      })
+    })
+    try {
+      const { requests } = await queries.overview("1h")
+      expect(requests.total).toBe(4)
+      expect(requests.byStatus.awaiting_agent).toBe(2)
+      expect(requests.byTool).toEqual({ question: 3, interest_check: 1 })
+    } finally {
+      await db.query("DELETE FROM sideband.requests WHERE id = $1", [id])
+    }
+  })
+
   it("services devuelve el último latido por instancia", async () => {
     const services = z.array(ServiceHealth).parse(await queries.services())
     expect(services[0]).toMatchObject({
