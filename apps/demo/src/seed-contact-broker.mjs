@@ -1,13 +1,13 @@
 import { pathToFileURL } from "node:url";
 import pg from "pg";
-import { contactAddress, contactAgent, contactOwner, contactPrincipal, contactWakeSecret, contactWakeUrl, demoTelemetry } from "./contact-broker.mjs";
+import { contactAddress, contactAgent, contactOwner, contactPrincipal, contactWakeSecret, contactWakeUrl, getDemoTelemetry } from "./contact-broker.mjs";
 
 function seeded(principal, action) {
-  demoTelemetry.emit("demo.contact.seeded", { userId: principal.userId, agentId: principal.agentId, attrs: { action } });
+  getDemoTelemetry().emit("demo.contact.seeded", { userId: principal.userId, agentId: principal.agentId, attrs: { action } });
 }
 
 export function seedContactBroker() {
-  return demoTelemetry.context({}, importProfiles);
+  return getDemoTelemetry().context({}, importProfiles);
 }
 
 async function importProfiles() {
@@ -59,10 +59,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const count = await seedContactBroker();
     process.stdout.write(`Broker local preparado para ${count} perfiles de Contactos de Ana.\n`);
   } catch (error) {
-    const errorId = demoTelemetry.error("demo.contact.seed", error);
+    const errorId = getDemoTelemetry().error("demo.contact.seed", error);
     process.stderr.write(`No se pudo preparar Contactos de Ana. Comprueba la seed local y el broker. Referencia ${errorId}.\n`);
     process.exitCode = 1;
   } finally {
-    await demoTelemetry.shutdown();
+    await getDemoTelemetry().shutdown();
   }
 }

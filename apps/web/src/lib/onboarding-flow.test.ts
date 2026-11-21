@@ -2,7 +2,7 @@ import { BrokerError } from "@team-31/broker/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { claimAddress } from "../app/(app)/actions";
+import { claimAddress } from "../app/(app)/onboarding/actions";
 import OnboardingPage from "../app/(app)/onboarding/page";
 import InvitePage from "../app/(auth)/invite/page";
 import CompleteSignIn from "../app/(auth)/sign-in/complete/page";

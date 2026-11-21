@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Address, ToolArgs } from "@team-31/protocol";
 import { z } from "zod";
-import { createContactQueries, demoTelemetry } from "./contact-broker.mjs";
+import { createContactQueries, getDemoTelemetry } from "./contact-broker.mjs";
 
 const [directoryJson, receipt, fixtureId] = process.argv.slice(2);
 const demo = createContactQueries(JSON.parse(directoryJson), { fixtureId });
@@ -30,4 +30,4 @@ server.registerTool("await_contact", {
 }, async ({ requestId }) => observed(await demo.result(requestId)));
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stdin.once("end", () => { void demoTelemetry.shutdown(); });
+process.stdin.once("end", () => { void getDemoTelemetry().shutdown(); });

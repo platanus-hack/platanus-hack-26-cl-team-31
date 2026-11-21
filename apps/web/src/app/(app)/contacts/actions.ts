@@ -43,6 +43,16 @@ export async function sendInvitation(_: Feedback, form: FormData): Promise<Feedb
   return { message: `Invitación enviada a ${to.data}.` };
 }
 
+async function changeContact(operation: string, fallback: string, run: () => Promise<void>, success: Feedback): Promise<Feedback> {
+  try {
+    await run();
+  } catch (error) {
+    return { error: actionError(operation, error, fallback) };
+  }
+  contactsChanged();
+  return success;
+}
+
 export async function answerInvitation(requestId: string, _: Feedback, form: FormData): Promise<Feedback> {
   await requireAddress();
   const owner = await getOwner();
@@ -51,13 +61,8 @@ export async function answerInvitation(requestId: string, _: Feedback, form: For
   const tag = ContactTag.safeParse(form.get("tag"));
   if (accept && !tag.success) return { error: "Elige una etiqueta." };
 
-  try {
-    await ownerClient().answerInvitation(owner, requestId, { accept, ...(accept && tag.success ? { tag: tag.data } : {}) });
-  } catch (error) {
-    return { error: actionError("answerInvitation", error, "No se pudo responder la invitación. Intenta de nuevo.") };
-  }
-  contactsChanged();
-  return { message: accept ? "Ahora están conectados." : "Invitación rechazada." };
+  return changeContact("answerInvitation", "No se pudo responder la invitación. Intenta de nuevo.",
+    () => ownerClient().answerInvitation(owner, requestId, { accept, ...(accept && tag.success ? { tag: tag.data } : {}) }), { message: accept ? "Ahora están conectados." : "Invitación rechazada." });
 }
 
 export async function saveContactTag(contact: string, tag: string): Promise<Feedback> {
@@ -67,13 +72,8 @@ export async function saveContactTag(contact: string, tag: string): Promise<Feed
   const label = ContactTag.safeParse(tag);
   if (!address.success || !label.success) return { error: "Elige una etiqueta." };
 
-  try {
-    await ownerClient().setContactTag(owner, address.data, label.data);
-  } catch (error) {
-    return { error: actionError("saveContactTag", error, "No se pudo guardar. Intenta de nuevo.") };
-  }
-  contactsChanged();
-  return {};
+  return changeContact("saveContactTag", "No se pudo guardar. Intenta de nuevo.",
+    () => ownerClient().setContactTag(owner, address.data, label.data), {});
 }
 
 export async function saveTagPreset(tag: string, _: Feedback, form: FormData): Promise<Feedback> {
@@ -83,13 +83,8 @@ export async function saveTagPreset(tag: string, _: Feedback, form: FormData): P
   const share = form instanceof FormData ? sharingFrom(form) : undefined;
   if (!label.success || !share?.success) return { error: "Elige qué comparte esta etiqueta." };
 
-  try {
-    await ownerClient().setTagPreset(owner, label.data, share.data);
-  } catch (error) {
-    return { error: actionError("saveTagPreset", error, "No se pudo guardar. Intenta de nuevo.") };
-  }
-  contactsChanged();
-  return { message: "Guardado." };
+  return changeContact("saveTagPreset", "No se pudo guardar. Intenta de nuevo.",
+    () => ownerClient().setTagPreset(owner, label.data, share.data), { message: "Guardado." });
 }
 
 export async function saveSharing(contact: string, _: Feedback, form: FormData): Promise<Feedback> {
@@ -99,13 +94,8 @@ export async function saveSharing(contact: string, _: Feedback, form: FormData):
   const share = form instanceof FormData ? sharingFrom(form) : undefined;
   if (!address.success || !share?.success) return { error: "Elige qué le compartes." };
 
-  try {
-    await ownerClient().setSharing(owner, address.data, share.data);
-  } catch (error) {
-    return { error: actionError("saveSharing", error, "No se pudo guardar. Intenta de nuevo.") };
-  }
-  contactsChanged();
-  return { message: "Guardado." };
+  return changeContact("saveSharing", "No se pudo guardar. Intenta de nuevo.",
+    () => ownerClient().setSharing(owner, address.data, share.data), { message: "Guardado." });
 }
 
 export async function removeContact(contact: string): Promise<Feedback> {
@@ -114,11 +104,6 @@ export async function removeContact(contact: string): Promise<Feedback> {
   const address = Address.safeParse(contact);
   if (!address.success) return { error: "La dirección no es válida." };
 
-  try {
-    await ownerClient().removeContact(owner, address.data);
-  } catch (error) {
-    return { error: actionError("removeContact", error, "No se pudo quitar. Intenta de nuevo.") };
-  }
-  contactsChanged();
-  return {};
+  return changeContact("removeContact", "No se pudo quitar. Intenta de nuevo.",
+    () => ownerClient().removeContact(owner, address.data), {});
 }

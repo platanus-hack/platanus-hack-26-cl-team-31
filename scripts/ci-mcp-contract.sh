@@ -3,6 +3,7 @@ set -euo pipefail
 
 export DATABASE_URL="" TELEMETRY_SINK=off MCP_DEV_AUTH=1 E2E_AUTH_MODE=dev WAKE_ALLOW_INSECURE=1
 export BROKER_HOST=127.0.0.1 MCP_HOST=127.0.0.1 E2E_MCP_URL="${MCP_RESOURCE_URL:?}"
+export REQUEST_TTL_SECONDS=20 WAKE_RETRY_DELAYS_MS=0,0
 node apps/broker/dist/index.js &
 broker_pid=$!
 node apps/mcp/dist/index.js &
@@ -21,4 +22,4 @@ for health in "${BROKER_URL:?}/healthz" "${MCP_RESOURCE_URL%/mcp}/healthz"; do
   done
   curl -fsS --max-time 2 "$health" >/dev/null
 done
-pnpm --filter @team-31/e2e test src/contract.test.ts
+pnpm --filter @team-31/e2e test src/contract.test.ts src/blocks.test.ts src/closure.test.ts src/isolation.test.ts

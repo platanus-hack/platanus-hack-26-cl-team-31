@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 import { promisify } from "node:util";
 import pg from "pg";
-import { claudeEnv, contactAddress, contactOwner, contactPrincipal, demoTelemetry } from "./contact-broker.mjs";
+import { claudeEnv, contactAddress, contactOwner, contactPrincipal, getDemoTelemetry } from "./contact-broker.mjs";
 
 const run = promisify(execFile);
 const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -37,7 +37,7 @@ export async function checkContactRuntime() {
 }
 
 export function reportContactError(error) {
-  return error?.errorId ?? demoTelemetry.error("contact.session", error, { userId: contactPrincipal("ana").userId });
+  return error?.errorId ?? getDemoTelemetry().error("contact.session", error, { userId: contactPrincipal("ana").userId });
 }
 
 export async function runContactSession(question, { root = cliRoot, bobFile, janeFile, signal } = {}) {

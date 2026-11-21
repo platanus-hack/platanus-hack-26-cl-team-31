@@ -235,7 +235,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
   const unknownUsers = new Set<string>();
   const unknownAgents = new Set<string>();
   // Agentes presentes según la foto, las entradas y las salidas (para `reconcile`).
-  const present = new Map<string, { agentId: string; userId?: string }>();
+  const present = new Set<string>();
   // Último nombre con el que se dibujó cada agente: si el directorio lo completa después, reconcile lo corrige.
   const drawnLabels = new Map<string, string>();
   const labelKey = (actor: FlowActor) => `${actor.owner.key}|${actor.owner.label}|${actor.label}|${actor.channel ?? ""}`;
@@ -320,7 +320,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
           seen.add(end.id);
           drawnLabels.set(end.id, labelKey(end));
           // Participar cuenta como presencia, salvo el propio paso de salida.
-          if (event.step !== "left" && end.id.startsWith("agent:")) present.set(end.id, { agentId: end.id.slice("agent:".length) });
+          if (event.step !== "left" && end.id.startsWith("agent:")) present.add(end.id);
         }
         out.push({
           id: out.length === 0 ? row.id : `${row.id}:${out.length}`,
@@ -358,9 +358,6 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
         case "coordination.tool.call":
         case "mcp.tool.call": {
           const tool = str(attrs.tool) ?? "tool";
-          // El MCP de la demo (ask_contact, await_contact) emite coordination.tool.call; las demás
-          // tools de coordinación no pasan por el broker.
-          if (row.name === "coordination.tool.call" && !askTools.has(tool) && !checkTools.has(tool)) break;
           const outcome = str(attrs.outcome);
           const failed: FlowStatus | undefined = outcome === "denied" ? "denied" : outcome === "error" ? "failed" : undefined;
           if (askTools.has(tool)) {
@@ -376,8 +373,6 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
             ? agentActor(row.agentId, row.userId ? ownerOfUser(row.userId) : unknownOwner)
             : placeholder(row.userId ? ownerOfUser(row.userId) : unknownOwner);
           if (row.agentId && !seen.has(self.id)) {
-            seen.add(self.id);
-            present.set(self.id, { agentId: row.agentId, ...(row.userId ? { userId: row.userId } : {}) });
             push({ step: "joined", status: "ok", from: self, to: self, meta: {} });
           }
           if (tool === "sideband_reply") {
@@ -395,8 +390,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
           if (!row.agentId || !row.userId) break;
           const actor = agentActor(row.agentId, ownerOfUser(row.userId));
           const joined = row.name === "broker.agent.connected";
-          if (joined) present.set(actor.id, { agentId: row.agentId, userId: row.userId });
-          else present.delete(actor.id);
+          if (!joined) present.delete(actor.id);
           push({ step: joined ? "joined" : "left", status: joined ? "ok" : "expired", from: actor, to: actor, meta: joined ? {} : { by: str(attrs.by) } });
           break;
         }
@@ -482,7 +476,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
       const add = (actor: FlowActor) => {
         seen.add(actor.id);
         drawnLabels.set(actor.id, labelKey(actor));
-        if (!actor.placeholder && actor.id.startsWith("agent:")) present.set(actor.id, { agentId: actor.id.slice("agent:".length) });
+        if (!actor.placeholder && actor.id.startsWith("agent:")) present.add(actor.id);
         out.push({ id: `snapshot:${actor.id}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: { snapshot: true } });
       };
       for (const user of users) {
@@ -509,7 +503,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
           out.push({ id: `reconcile:left:${id}:${at}`, at, step: "left", status: "expired", from: actor, to: actor, meta: {} });
         } else if (!agent.revokedAt && !present.has(id) && !seen.has(id)) {
           seen.add(id);
-          present.set(id, { agentId: agent.agentId, ...(agent.userId ? { userId: agent.userId } : {}) });
+          present.add(id);
           const actor = agentActor(agent.agentId, owner);
           drawnLabels.set(id, labelKey(actor));
           out.push({ id: `reconcile:joined:${id}:${at}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: {} });
