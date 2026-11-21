@@ -477,6 +477,25 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
       expect(table.seenFilters[0]!.names).not.toContain("http.request")
     })
 
+    it.each(["sesión", "rol"])("cierra el stream antes de entregar el siguiente lote al perder %s", async (cause) => {
+      const cookie = await login("viewer@test.cl")
+      const table = eventTable([])
+      const app = buildApp({ queries: table.queries })
+      const path = cause === "sesión" ? "/api/admin/live" : "/api/admin/flow/live"
+      const controller = new AbortController()
+      try {
+        const response = await app.request(path, { headers: { cookie }, signal: controller.signal })
+        expect(response.status).toBe(200)
+        if (cause === "sesión") await auth.api.signOut({ headers: new Headers({ cookie }) })
+        else allow.viewers = []
+        table.rows.push(event("1", "broker.request.created"))
+        expect(await response.text()).not.toContain("event: telemetry")
+        expect(sink.find("admin.live.closed")[0]?.attrs).toMatchObject({ reason: "access_ended", delivered: 0 })
+      } finally {
+        controller.abort()
+      }
+    })
+
     it("entrega una escritura que confirmó tarde (id menor) una sola vez", async () => {
       const table = eventTable([event("10", "broker.request.created"), event("12", "broker.request.closed")])
       const cookie = await login("viewer@test.cl")

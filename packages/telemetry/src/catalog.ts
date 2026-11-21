@@ -269,8 +269,8 @@ export const catalog = [
   defineEvent({
     name: "admin.live.closed",
     kind: "admin",
-    description: "Se cerró un stream en vivo. reason: client (el navegador cerró), shutdown, error (con su evento error) o stalled (el cliente no leía). delivered: eventos enviados.",
-    attrs: { stream: z.enum(["events", "flow"]), reason: z.enum(["client", "shutdown", "error", "stalled"]), delivered: int().nonnegative() },
+    description: "Se cerró un stream en vivo. reason: client, shutdown, error, stalled (el cliente no leía) o access_ended (sesión o permiso sin vigencia). delivered: eventos enviados.",
+    attrs: { stream: z.enum(["events", "flow"]), reason: z.enum(["client", "shutdown", "error", "stalled", "access_ended"]), delivered: int().nonnegative() },
   }),
   defineEvent({ name: "admin.mcp.call", kind: "admin", description: "Llamada al MCP de administración.", attrs: adminAttrs }),
 
