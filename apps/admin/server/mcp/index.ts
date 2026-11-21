@@ -5,7 +5,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js"
 import type { Telemetry } from "@team-31/telemetry"
 import type { Context, Hono } from "hono"
-import { createRateLimiter } from "./rate-limit.js"
+import { createRateLimiter } from "@team-31/auth/rate-limit"
 import { ADMIN_TOKEN_PREFIX } from "../../shared/contract.js"
 import { createAdminMcpServer } from "./server.js"
 import type { AdminMcpDeps, TokenPrincipal } from "./types.js"
@@ -29,7 +29,7 @@ export function mountAdminMcp(
   deps: AdminMcpDeps,
   telemetry: Telemetry,
 ): void {
-  const rateLimit = createRateLimiter(MCP_RATE_LIMIT, RATE_WINDOW_MS)
+  const rateLimit = createRateLimiter({ limit: MCP_RATE_LIMIT, windowMs: RATE_WINDOW_MS })
 
   app.post(MCP_PATH, async (c) => {
     const token = bearerToken(c.req.header("authorization"))
@@ -48,11 +48,11 @@ export function mountAdminMcp(
     }
     telemetry.emit("auth.token.verified", { attrs: { issuer: "admin" } })
 
-    const limited = rateLimit(principal.tokenId)
-    if (!limited.ok) {
+    const limited = rateLimit.consume(principal.tokenId)
+    if (limited) {
       telemetry.emit("http.rate_limited", { attrs: { route: MCP_PATH, bucket: "admin_mcp" } })
       return rpcError(c, 429, -32002, `Límite de ${MCP_RATE_LIMIT} solicitudes por minuto por token alcanzado.`, {
-        "Retry-After": String(limited.retryAfterSeconds),
+        "Retry-After": String(limited.retryAfter),
       })
     }
 
