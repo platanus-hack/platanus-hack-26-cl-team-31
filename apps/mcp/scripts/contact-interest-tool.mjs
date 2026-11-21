@@ -4,10 +4,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 const [source, interest, receipt] = process.argv.slice(2);
-const normalize = value => value.normalize("NFC").trim().toLowerCase();
-const server = new McpServer({ name: "bob", version: "1" });
+const compareInterest = new Intl.Collator("es", { sensitivity: "base" });
+const server = new McpServer({ name: "owner", version: "1" });
 server.registerTool("check_interest", {
-  description: "Consulta el interés de esta solicitud en la fuente privada de Bob. Devuelve matches o null si falta la fuente.",
+  description: "Consulta el interés de esta solicitud en la fuente privada del contacto. Devuelve matches o null si falta la fuente.",
   inputSchema: {},
 }, async () => {
   let result = null;
@@ -16,9 +16,9 @@ server.registerTool("check_interest", {
     if (!Array.isArray(entries) || !entries.every(item => typeof item === "string")) {
       throw new Error("La fuente debe ser un arreglo JSON de intereses.");
     }
-    result = { matches: entries.some(item => normalize(item) === normalize(interest)) };
+    result = { matches: entries.some(item => compareInterest.compare(item.trim(), interest.trim()) === 0) };
   } catch (error) {
-    if (error.code !== "ENOENT") throw new Error("No se pudo leer la fuente de intereses de Bob.");
+    if (error.code !== "ENOENT") throw new Error("No se pudo leer la fuente de intereses del contacto.");
   }
   const text = JSON.stringify(result);
   await writeFile(receipt, text, { mode: 0o600 });

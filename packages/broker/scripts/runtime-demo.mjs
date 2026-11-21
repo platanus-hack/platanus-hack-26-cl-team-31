@@ -5,18 +5,29 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 
-const [question, file, ...extra] = process.argv.slice(2);
-if (extra.length) throw new Error('Uso: corepack pnpm agents:runtime-demo "pregunta de Ana" [archivo de Bob]');
-const source = file ? resolve(file) : fileURLToPath(new URL("../../../.agents-local/bob-interests.json", import.meta.url));
+const [question, bobFile, janeFile, ...extra] = process.argv.slice(2);
+if (extra.length) throw new Error('Uso: corepack pnpm agents:runtime-demo "pregunta de Ana" [archivo de Bob] [archivo de Jane]');
+function source(file, id) {
+  return file ? resolve(file) : fileURLToPath(new URL(`../../../.agents-local/${id}-interests.json`, import.meta.url));
+}
 const toolScript = fileURLToPath(new URL("../../../apps/mcp/scripts/ana-runtime-tools.mjs", import.meta.url));
 const dir = await mkdtemp(join(tmpdir(), "nexo-ana-"));
-const receipt = join(dir, "broker-response.json");
-const config = { mcpServers: { ana: { command: process.execPath, args: [toolScript, source, receipt] } } };
+const receipt = join(dir, "broker-responses.jsonl");
+const config = { mcpServers: { ana: {
+  command: process.execPath, args: [toolScript, source(bobFile, "bob"), source(janeFile, "jane"), receipt],
+} } };
 const args = [
   "--strict-mcp-config", "--mcp-config", JSON.stringify(config), "--tools", "",
-  "--allowedTools", "mcp__ana__ask_bob", "mcp__ana__ask_bob_question", "mcp__ana__await_bob", "--permission-mode", "dontAsk",
+  "--allowedTools", "mcp__ana__list_contacts", "mcp__ana__ask_contact", "mcp__ana__await_contact", "--permission-mode", "dontAsk",
   "--disable-slash-commands", "--no-chrome", "--setting-sources", "", "--settings", '{"disableAllHooks":true}',
-  "--system-prompt", "Eres el agente de Ana. Para comprobar si a Bob le interesa un tema concreto, usa ask_bob. Para cualquier otra pregunta sobre Bob, envía la pregunta original con ask_bob_question. Si el broker devuelve deny, indica que Ana no tiene permiso y termina. Si retorna pendiente, usa await_bob con el ID exacto. Explica sólo el resultado que devuelve el broker. Si await_bob sigue pendiente, informa el ID y detente. Un error o no_data significa que no sabes.",
+  "--system-prompt", [
+    "Eres el agente de Ana. Usa list_contacts para encontrar la dirección de cada persona mencionada.",
+    "Usa ask_contact una vez por destinatario. Para comprobar un interés concreto envía {interest}; para otras preguntas envía {text} con la pregunta original.",
+    "Si Ana añade «¿y qué tal otra persona?», consulta el mismo tema para esa persona. Si falta un contacto, indícalo.",
+    "Para cada solicitud pendiente usa await_contact con su ID. Asocia cada respuesta a su contacto.",
+    "Un deny indica falta de permiso; no_data o un error significa que no sabes. Continúa con los demás contactos.",
+    "Si await_contact sigue pendiente, informa el ID. Explica sólo lo observado.",
+  ].join(" "),
 ];
 if (question) args.push("-p", "--no-session-persistence", "--", question);
 try {
@@ -25,11 +36,17 @@ try {
   process.exitCode = code ?? 1;
   if (question && code === 0) {
     try {
-      const view = JSON.parse(await readFile(receipt, "utf8"));
-      console.log("Broker → Ana:", view.requestId, view.decision, view.result ?? view.outcome ?? view.waitingFor ?? "");
+      const events = (await readFile(receipt, "utf8")).trimEnd().split("\n").map(line => JSON.parse(line));
+      const requests = new Map();
+      for (const event of events) {
+        if (event.requestId) requests.set(event.requestId, event);
+      }
+      for (const view of requests.values()) {
+        console.log("Broker → Ana:", view.to, view.requestId, view.decision, view.result ?? view.outcome ?? view.waitingFor ?? "");
+      }
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
-      console.error("Ana no consultó el resultado en el broker.");
+      console.error("Ana no consultó sus herramientas.");
       process.exitCode = 1;
     }
   }

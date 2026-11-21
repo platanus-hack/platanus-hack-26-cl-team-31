@@ -127,6 +127,7 @@ test("contact search intersects the caller's own address book and the publisher'
   const bob = { recipient: "Bob" };
   const interest = { interest: "piano" };
   const groupInterest = { ...interest, group: "futbol" };
+  const contacts = me => run(db, "list_contacts", me, {});
   const search = me => run(db, "contact_interest_search", me, interest);
   const foundBob = { entries: [{ person: "bob", ...interest }] };
   const empty = { entries: [] };
@@ -135,6 +136,8 @@ test("contact search intersects the caller's own address book and the publisher'
   await run(db, "interest_publish", "eva", interest);
   assert.deepEqual(await search("ana"), empty);
   assert.deepEqual(await run(db, "contact_connect", "ana", bob), await run(db, "agent_capabilities", "ana", bob));
+  assert.deepEqual(await contacts("ana"), { contacts: [{ address: "bob" }] });
+  assert.deepEqual(await contacts("eva"), { contacts: [] });
   assert.deepEqual(await search("ana"), foundBob);
   assert.deepEqual(await run(db, "contact_connect", "eva", bob), { tools: [] });
   assert.deepEqual(await search("eva"), empty);
@@ -151,6 +154,7 @@ test("contact search intersects the caller's own address book and the publisher'
   assert.deepEqual(await search("ana"), empty);
   await run(db, "interest_publish", "bob", interest);
   await run(db, "contact_remove", "ana", bob);
+  assert.deepEqual(await contacts("ana"), { contacts: [] });
   assert.deepEqual(await search("ana"), empty);
   assert.deepEqual(await search("eva"), foundBob);
 });

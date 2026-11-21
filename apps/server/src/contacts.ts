@@ -12,6 +12,12 @@ const connect = defineTool("contact_connect", "Save an address in your personal 
     return capabilities.run(db, me, args);
   });
 
+const list = defineTool("list_contacts", "List the addresses in your personal contacts.",
+  z.object({}), async (db, me) => {
+    const { rows } = await db.query("SELECT contact_id AS address FROM contacts WHERE owner_id=$1 ORDER BY contact_id", [me]);
+    return { contacts: rows };
+  });
+
 const remove = defineTool("contact_remove", "Remove an address from your personal contacts.",
   address, async (db, me, { recipient }) => {
     await db.query("DELETE FROM contacts WHERE owner_id=$1 AND contact_id=$2", [me, recipient]);
@@ -26,4 +32,4 @@ const search = defineTool("contact_interest_search", "Search your saved contacts
     return { entries: result.rows };
   });
 
-export const contactTools = [connect, remove, search];
+export const contactTools = [connect, list, remove, search];

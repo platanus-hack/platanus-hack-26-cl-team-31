@@ -1,33 +1,33 @@
-import { writeFile } from "node:fs/promises";
+import { appendFile } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { Address, ToolArgs } from "@team-31/protocol";
 import { z } from "zod";
 import { startDemoBroker } from "../../../packages/broker/scripts/demo-broker.mjs";
 
-const demo = await startDemoBroker(process.argv[2]);
+const [bobSource, janeSource, receipt] = process.argv.slice(2);
+const demo = await startDemoBroker(bobSource, janeSource);
 const server = new McpServer({ name: "ana", version: "1" });
-const result = value => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
-async function ask(tool, args) {
-  const view = await demo.ask(tool, args);
-  if (view.final) await writeFile(process.argv[3], JSON.stringify(view), { mode: 0o600 });
-  return result(view);
+async function observed(value) {
+  const text = JSON.stringify(value);
+  await appendFile(receipt, text + "\n", { mode: 0o600 });
+  return { content: [{ type: "text", text }] };
 }
-server.registerTool("ask_bob", {
-  description: "Pregunta si a Bob le interesa un tema. Devuelve el ID de la solicitud de Ana.",
-  inputSchema: { interest: z.string().trim().min(1).max(128) },
-}, ({ interest }) => ask("interest_check", { interest }));
-server.registerTool("ask_bob_question", {
-  description: "Envía una pregunta abierta a Bob. El broker decide si Ana tiene permiso.",
-  inputSchema: { text: z.string().min(1).max(1000) },
-}, ({ text }) => ask("question", { text }));
-server.registerTool("await_bob", {
-  description: "Espera la respuesta validada por el broker a la solicitud de Ana.",
-  inputSchema: { requestId: z.string().uuid() },
-}, async ({ requestId }) => {
-  const view = await demo.result(requestId);
-  await writeFile(process.argv[3], JSON.stringify(view), { mode: 0o600 });
-  return result(view);
+server.registerTool("list_contacts", {
+  description: "Lista los nombres y direcciones de la agenda de Ana.",
+  inputSchema: {},
+}, () => observed({ contacts: demo.listContacts() }));
+server.registerTool("ask_contact", {
+  description: "Consulta a un contacto de la agenda. Usa interest para comprobar un interés concreto o text para preguntas abiertas.",
+  inputSchema: { contact: Address, query: z.union([ToolArgs.interest_check, ToolArgs.question]) },
+}, async ({ contact, query }) => {
+  const tool = "interest" in query ? "interest_check" : "question";
+  return observed(await demo.ask(contact, tool, query));
 });
+server.registerTool("await_contact", {
+  description: "Espera la respuesta del contacto para esta solicitud de Ana.",
+  inputSchema: { requestId: z.string().uuid() },
+}, async ({ requestId }) => observed(await demo.result(requestId)));
 const transport = new StdioServerTransport();
 await server.connect(transport);
 process.stdin.once("end", () => demo.close());
