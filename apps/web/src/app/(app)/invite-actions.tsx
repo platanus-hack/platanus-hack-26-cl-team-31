@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { reportBrowserFailure } from "@/lib/browser-feedback";
+
 import { button, Feedback, input, primaryButton } from "./ui";
 
 type ShareFeedback = "idle" | "copied" | "share_failed" | "copy_failed";
@@ -21,6 +23,7 @@ export function InviteActions({ url }: { url: string }) {
       setFeedback("copied");
     } catch {
       setFeedback("copy_failed");
+      void reportBrowserFailure("copy_invite").catch(() => undefined);
     }
   }
 
@@ -38,6 +41,7 @@ export function InviteActions({ url }: { url: string }) {
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
         setFeedback("share_failed");
+        void reportBrowserFailure("share_invite").catch(() => undefined);
       }
     } finally {
       setPending(false);

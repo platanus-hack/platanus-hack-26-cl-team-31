@@ -83,7 +83,8 @@ export async function readPingStatus(requestId: string) {
     telemetry.identify({ userId: owner.userId, requestId });
     try {
       const items = await broker.activity(owner, 100);
-      const ping = items.find((item) => item.requestId === requestId);
+      const ping = items.find((item) =>
+        item.requestId === requestId && item.direction === "received" && item.from.startsWith("system@"));
       if (!ping) return;
 
       // El titular también puede responder una prueba escalada. La verificación exige la respuesta final del agente.

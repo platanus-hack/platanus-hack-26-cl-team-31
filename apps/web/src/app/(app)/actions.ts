@@ -8,11 +8,12 @@ import { redirect } from "next/navigation";
 
 import { ownerClient } from "@/lib/broker";
 import { onboardingFlow, type OnboardingSource } from "@/lib/onboarding-flow";
+import { observeWebRequest, webTelemetry } from "@/lib/telemetry";
 
 import { getOwner, requireAddress } from "./owner";
 import { activityPageSize, validPage } from "./labels";
 
-type Feedback = { error?: string; message?: string };
+type Feedback = { error?: string; message?: string; errorId?: string };
 
 function actionError(error: unknown, fallback: string) {
   if (!(error instanceof BrokerError)) return fallback;
@@ -32,16 +33,28 @@ export async function claimAddress(source: OnboardingSource, _: Feedback, form: 
     return { error: "Usa de 2 a 31 caracteres, con letras minúsculas, números, puntos, guiones o guiones bajos. Empieza con una letra o número." };
   }
 
-  try {
-    await ownerClient().claimAddress(owner, localPart.data);
-  } catch (error) {
-    if (error instanceof BrokerError && error.code === "conflict") {
-      return { error: "Esa dirección ya está tomada" };
+  const flow = onboardingFlow(source);
+  const feedback = await observeWebRequest("POST", "/onboarding", async (span) => {
+    const telemetry = webTelemetry();
+    telemetry.identify({ userId: owner.userId });
+    try {
+      await ownerClient().claimAddress(owner, localPart.data);
+      if (flow.source === "invite") {
+        telemetry.emit("web.invite.progress", { attrs: { step: "address_claimed" } });
+      }
+    } catch (error) {
+      const errorId = telemetry.error("web.address.claim", error);
+      span.setErrorId(errorId);
+      const message = error instanceof BrokerError && error.code === "conflict"
+        ? "Esa dirección ya está tomada"
+        : actionError(error, "No se pudo guardar la dirección. Intenta de nuevo.");
+      return { error: message, errorId };
     }
-    return { error: actionError(error, "No se pudo guardar la dirección. Intenta de nuevo.") };
-  }
+  });
+  if (feedback) return feedback;
+
   revalidatePath("/", "layout");
-  redirect(onboardingFlow(source).destination);
+  redirect(flow.destination);
 }
 
 export async function readHome() {

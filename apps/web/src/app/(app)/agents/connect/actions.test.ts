@@ -56,6 +56,15 @@ describe("readPingStatus", () => {
     expect(await readPingStatus("ping-1")).toEqual({ status: "expired", verified: false });
   });
 
+  it("does not treat a regular answered request as a connection test", async () => {
+    activity.mockResolvedValue([{
+      ...ping("answered", [{ kind: "response", status: "answered", at }]),
+      from: "contacto@nexo.app",
+    }]);
+
+    expect(await readPingStatus("ping-1")).toBeUndefined();
+  });
+
   it("returns no status when the request is absent from the owner's activity", async () => {
     activity.mockResolvedValue([]);
 

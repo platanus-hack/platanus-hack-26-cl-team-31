@@ -27,6 +27,11 @@ vi.mock("@/lib/auth-owner", () => ({ getOwnerAddress: mocks.getAddress }));
 vi.mock("@/lib/auth-request", () => ({ getOAuthRequest: mocks.getOAuthRequest }));
 vi.mock("@/lib/broker", () => ({ ownerClient: () => ({ claimAddress: mocks.claimAddress }) }));
 vi.mock("@/lib/onboarding-flow", () => import("./onboarding-flow"));
+vi.mock("@/lib/telemetry", () => ({
+  observeWebRequest: (_method: string, _route: string, run: (span: { setErrorId: () => void }) => unknown) =>
+    run({ setErrorId: vi.fn() }),
+  webTelemetry: () => ({ identify: vi.fn(), emit: vi.fn(), error: () => "error-id" }),
+}));
 vi.mock("../app/(app)/owner", () => ({
   getAddress: mocks.getAddress,
   getOwner: () => ({ userId: "recipient" }),
@@ -47,8 +52,8 @@ const invitation = () => pageProps({ from: "invite" });
 beforeEach(() => vi.resetAllMocks());
 
 describe("registrarse desde una invitación", () => {
-  it("muestra una bienvenida pública con el enlace a iniciar sesión", () => {
-    expect(renderToStaticMarkup(InvitePage())).toContain('href="/sign-in?from=invite"');
+  it("muestra una bienvenida pública con el enlace a iniciar sesión", async () => {
+    expect(renderToStaticMarkup(await InvitePage())).toContain('href="/sign-in?from=invite"');
     expect(mocks.getSession).not.toHaveBeenCalled();
   });
 
@@ -78,7 +83,7 @@ describe("registrarse desde una invitación", () => {
     form.set("localPart", "tomada");
     mocks.claimAddress.mockRejectedValueOnce(new BrokerError("conflict", "Dirección ocupada"));
     const feedback = await claimAddress("invite", {}, form);
-    expect(feedback).toEqual({ error: "Esa dirección ya está tomada" });
+    expect(feedback).toEqual({ error: "Esa dirección ya está tomada", errorId: "error-id" });
 
     form.set("localPart", "destinatario");
     await expect(claimAddress("invite", feedback, form)).rejects.toThrow("/agents/connect");

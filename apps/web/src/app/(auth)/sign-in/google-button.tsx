@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { reportBrowserFailure } from "@/lib/browser-feedback";
 
 export function GoogleButton({ callbackURL, errorCallbackURL }: { callbackURL: string; errorCallbackURL: string }) {
   const [pending, setPending] = useState(false);
@@ -22,6 +23,7 @@ export function GoogleButton({ callbackURL, errorCallbackURL }: { callbackURL: s
     }
     setPending(false);
     setFailed(true);
+    void reportBrowserFailure("start_google").catch(() => undefined);
   }
 
   return (

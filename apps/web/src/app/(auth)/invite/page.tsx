@@ -1,10 +1,14 @@
 import Link from "next/link";
 
 import { onboardingFlow } from "@/lib/onboarding-flow";
+import { observeWebRequest, webTelemetry } from "@/lib/telemetry";
 
 import { primaryButton } from "../../(app)/ui";
 
-export default function InvitePage() {
+export default async function InvitePage() {
+  await observeWebRequest("GET", "/invite", () => {
+    webTelemetry().emit("web.invite.progress", { attrs: { step: "opened" } });
+  });
   return (
     <>
       <h1 className="text-3xl font-semibold tracking-tight">Te invitaron a Nexo</h1>

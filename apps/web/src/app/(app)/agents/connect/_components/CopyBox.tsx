@@ -2,18 +2,27 @@
 
 import { useId, useState } from "react";
 
+import { reportBrowserFailure } from "@/lib/browser-feedback";
+
 import { button } from "../../../ui";
 
 export function CopyBox({ label, value, copyLabel }: { label: string; value: string; copyLabel?: string }) {
   const id = useId();
   const [feedback, setFeedback] = useState("");
 
+  const copyManually = "Selecciona el texto para copiarlo manualmente.";
+
   async function copy() {
+    if (!navigator.clipboard) {
+      setFeedback(copyManually);
+      return;
+    }
     try {
       await navigator.clipboard.writeText(value);
       setFeedback("Copiado.");
     } catch {
-      setFeedback("Selecciona el texto para copiarlo manualmente.");
+      setFeedback(copyManually);
+      void reportBrowserFailure("copy_connection").catch(() => undefined);
     }
   }
 

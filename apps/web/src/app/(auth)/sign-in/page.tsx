@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getGoogleOptions } from "@/lib/auth-env.mjs";
 import { getOAuthRequest } from "@/lib/auth-request";
 import { onboardingFlow } from "@/lib/onboarding-flow";
+import { observeWebRequest, webTelemetry } from "@/lib/telemetry";
 
 import { GoogleButton } from "./google-button";
 
@@ -27,7 +28,19 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
   }
 
   const flow = onboardingFlow(request ? undefined : params.from);
-  if (!request && await getSession()) redirect(flow.signInComplete);
+  const session = !request && (flow.source === "invite"
+    ? await observeWebRequest("GET", "/sign-in", async (span) => {
+        const session = await getSession();
+        const telemetry = webTelemetry();
+        if (session) telemetry.identify({ userId: session.user.id });
+        telemetry.emit("web.invite.progress", { attrs: { step: "sign_in" } });
+        if (params.error) {
+          span.setErrorId(telemetry.error("web.invite.google_callback", new Error()));
+        }
+        return session;
+      })
+    : await getSession());
+  if (session) redirect(flow.signInComplete);
 
   return (
     <>
