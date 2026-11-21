@@ -9,8 +9,9 @@ import { ChannelIcon, SidebandMark } from "./icons.js";
 import { categoryLabel, describeEvent, endpointLabel, outcomeLabel, rowStepLabels, ruleLabel, statusLabels, stepDetail, stepLabels, toolLabel } from "./labels.js";
 import { edgeCurve, layoutFlow, pointOnCurve, stageHeightFor, type LayoutInput } from "./layout.js";
 import { BROKER, type FlowActor, type FlowEvent, type FlowOwner, type FlowStatus } from "./model.js";
-import { EDGE_MS, LABEL_MS, PULSE_MS, scheduleLive, scheduleReplay } from "./schedule.js";
-import { activities, emptyFlowState, eventEndpoints, foldFlow, reduceFlow, resolveId, type ActorEntry, type Activity, type AppliedEvent, type FlowState } from "./state.js";
+import { EDGE_MS, LABEL_MS, PULSE_MS } from "./schedule.js";
+import { activities, eventEndpoints, resolveId, type ActorEntry, type Activity, type AppliedEvent, type FlowState } from "./state.js";
+import { useFlowPlayback } from "./use-flow-playback.js";
 import { css, statusColor, statusTone } from "./styles.js";
 
 type Playback = { mode: "replay"; loop?: boolean } | { mode: "live"; loop?: never };
@@ -61,7 +62,6 @@ const DRAW_MS = 650; // la arista se dibuja hacia el broker al conversar por pri
 const GLOW_MS = 1_400; // brillo al pasar de pasivo a activo
 const ease = (x: number) => 1 - Math.pow(1 - Math.max(0, Math.min(1, x)), 3);
 
-type Inspect = { start: number; end: number; focus: { actors: string[]; ids: string[] } };
 type Motion = { joinT?: number; leftT?: number; leaveP?: number };
 type Box = { x: number; y: number; w: number; h: number; round: boolean };
 type Chip = { label: string; opacity: number; style: CSSProperties };
@@ -115,8 +115,6 @@ export function AgentFlow({
   const rootRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 880, root: 1200 });
-  const [paused, setPaused] = useState(!autoPlay);
-  const [speed, setSpeed] = useState<number>(() => Math.min(4, Math.max(0.25, initialSpeed)));
   const [showPanels, setShowPanels] = useState(panels);
   const [nativeFull, setNativeFull] = useState(false);
   const [cssFull, setCssFull] = useState(false);
@@ -124,100 +122,16 @@ export function AgentFlow({
   const layoutRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const [ownerQuery, setOwnerQuery] = useState<string[] | null>(() => (defaultOwners?.length ? defaultOwners.map((o) => o.toLowerCase()) : null));
-  const [flow, setFlow] = useState<FlowState>(emptyFlowState);
-  const [clock, setClock] = useState(0);
   const [selection, setSelection] = useState<Selection>(null);
   const [shownOwners, setShownOwners] = useState<Set<string> | null>(null);
   const [hiddenActors, setHiddenActors] = useState<Set<string>>(() => new Set(defaultHiddenActors ?? []));
-  const [announcement, setAnnouncement] = useState("");
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
-  // Inspección del pasado: se reconstruye el estado justo antes del evento y se repite su animación.
-  const [inspect, setInspect] = useState<Inspect | null>(null);
-  const [pending, setPending] = useState(0);
-  const [history, setHistory] = useState<FlowState | null>(null);
-  const [seeking, setSeeking] = useState(false);
-  const inspectRef = useRef<(Inspect & { until: number }) | null>(null);
-  const savedRef = useRef<{ clock: number; cursor: number; paused: boolean } | null>(null);
-  const foldCache = useRef(new Map<number, FlowState>());
-  // En vivo el host puede descartar los pasos más viejos (ventana): este es el estado tras ellos.
-  const baseRef = useRef<FlowState | undefined>(undefined);
-
-  const clockRef = useRef(0);
-  const flowRef = useRef(flow);
-  const cursorRef = useRef(0);
-  const scheduleRef = useRef<number[]>([]);
-  const eventsRef = useRef<readonly FlowEvent[]>([]);
-  const pausedRef = useRef(paused);
-  const speedRef = useRef(speed);
   const visibleRef = useRef(true);
-  const lastAnnounce = useRef(0);
-  useEffect(() => {
-    pausedRef.current = paused;
-    speedRef.current = speed;
-  }, [paused, speed]);
-
-  const scheduleLiveTail = (events: readonly FlowEvent[]) => {
-    for (let i = scheduleRef.current.length; i < events.length; i++) {
-      scheduleRef.current.push(scheduleLive(scheduleRef.current[i - 1], clockRef.current, 320, Boolean(events[i]!.meta.snapshot)));
-    }
-  };
-
-  const reset = useCallback(() => {
-    clockRef.current = 0;
-    cursorRef.current = 0;
-    baseRef.current = undefined;
-    foldCache.current = new Map();
-    flowRef.current = emptyFlowState();
-    setFlow(flowRef.current);
-    setClock(0);
-    setSelection(null);
-  }, []);
-
-  // Calendario: completo en repetición, incremental en vivo.
-  useEffect(() => {
-    const events = flowEvents;
-    const previous = eventsRef.current;
-    eventsRef.current = events;
-    if (mode === "replay") {
-      // Un arreglo nuevo con los mismos pasos (p. ej. scenarioEvents() en cada render) no reinicia.
-      const same = previous.length === events.length && previous.every((event, i) => event.id === events[i]!.id);
-      if (same && scheduleRef.current.length === events.length) return;
-      scheduleRef.current = scheduleReplay(events);
-      foldCache.current = new Map();
-      inspectRef.current = null;
-      savedRef.current = null;
-      setInspect(null);
-      reset();
-      return;
-    }
-    // Ventana: el host quitó los `dropped` pasos más viejos y conservó el resto en orden. El estado
-    // ya los contiene, así que solo se recorta el calendario: nada se reinicia.
-    const head = events[0]?.id;
-    const dropped = previous.length > 0 && head !== undefined && head !== previous[0]!.id ? previous.findIndex((event) => event.id === head) : 0;
-    if (dropped > 0) {
-      if (inspectRef.current) exitInspectRef.current();
-      scheduleLiveTail(previous);
-      let next = flowRef.current;
-      for (let i = cursorRef.current; i < dropped; i++) next = reduceFlow(next, previous[i]!, scheduleRef.current[i]!);
-      if (next !== flowRef.current) {
-        flowRef.current = next;
-        setFlow(next);
-      }
-      baseRef.current = foldFlow(previous, scheduleRef.current, dropped, foldCache.current, 50, baseRef.current);
-      foldCache.current = new Map();
-      scheduleRef.current = scheduleRef.current.slice(dropped);
-      cursorRef.current = Math.max(0, cursorRef.current - dropped);
-    } else if (events.length < scheduleRef.current.length || (dropped < 0 && events.length > 0)) {
-      scheduleRef.current = [];
-      reset();
-    }
-    // Mientras se inspecciona el pasado, lo nuevo espera sin programarse.
-    if (inspectRef.current) {
-      setPending(events.length - scheduleRef.current.length);
-      return;
-    }
-    scheduleLiveTail(events);
-  }, [flowEvents, mode, reset]);
+  const selectEvent = useCallback((id: string | null) => setSelection(id === null ? null : { kind: "event", id }), []);
+  const {
+    flow, clock, paused, setPaused, speed, setSpeed, history, seeking, announcement, inspect, pending,
+    reset, inspectEvent, inspectMany, inspectRequest, exitInspect, stepInspect,
+  } = useFlowPlayback({ flowEvents, mode, loop, autoPlay, initialSpeed, controls, reducedMotion, visibleRef, selectEvent });
 
   // Tamaño del contenedor (responsive) y visibilidad (la repetición se detiene fuera de pantalla).
   useEffect(() => {
@@ -248,64 +162,6 @@ export function AgentFlow({
     };
   }, []);
 
-  // Bucle de animación.
-  useEffect(() => {
-    let frame = 0;
-    let last = typeof performance !== "undefined" ? performance.now() : 0;
-    let renderedClock = -1;
-    const tick = (now: number) => {
-      const dt = Math.min(now - last, 100);
-      last = now;
-      const schedule = scheduleRef.current;
-      const list = eventsRef.current;
-      const inspecting = inspectRef.current;
-      if (inspecting) {
-        // Repite el tramo inspeccionado y se queda en su estado final.
-        if (clockRef.current < inspecting.until) clockRef.current = Math.min(inspecting.until, clockRef.current + dt * speedRef.current);
-      } else if (!pausedRef.current && (visibleRef.current || mode === "live")) {
-        let rate = speedRef.current;
-        // En vivo, si se acumula una ráfaga, se acelera hasta alcanzarla.
-        const lag = mode === "live" && schedule.length > 0 ? schedule[schedule.length - 1]! - clockRef.current : 0;
-        if (lag > 3_000) rate *= 1 + lag / 1_500;
-        clockRef.current += dt * rate;
-      }
-      let next = flowRef.current;
-      let applied: FlowEvent | undefined;
-      const limit = inspecting ? Math.min(list.length, inspecting.end + 1) : list.length;
-      while (cursorRef.current < limit && cursorRef.current < schedule.length && schedule[cursorRef.current]! <= clockRef.current) {
-        const event = list[cursorRef.current]!;
-        next = reduceFlow(next, event, schedule[cursorRef.current]!);
-        applied = event;
-        cursorRef.current++;
-      }
-      if (applied) {
-        flowRef.current = next;
-        setFlow(next);
-        if (now - lastAnnounce.current > 1_500) {
-          lastAnnounce.current = now;
-          setAnnouncement(describeEvent(applied));
-        }
-      }
-      if (!inspecting && mode === "replay" && loop && list.length > 0 && cursorRef.current >= list.length && clockRef.current > schedule[schedule.length - 1]! + 5_000) {
-        clockRef.current = 0;
-        cursorRef.current = 0;
-        flowRef.current = emptyFlowState();
-        setFlow(flowRef.current);
-      }
-      // Solo se vuelve a dibujar si hay algo animándose.
-      const log = flowRef.current.log;
-      const lastT = log.length > 0 ? log[log.length - 1]!.t : -Infinity;
-      const animating = clockRef.current - lastT < LABEL_MS + 100;
-      if (applied || (animating && clockRef.current !== renderedClock)) {
-        renderedClock = clockRef.current;
-        setClock(clockRef.current);
-      }
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [mode, loop]);
-
   // ---------- Pantalla completa ----------
   const full = nativeFull || cssFull;
   const fillMode = fill || full;
@@ -329,85 +185,6 @@ export function AgentFlow({
     if (document.fullscreenEnabled && root.requestFullscreen) root.requestFullscreen().catch(() => setCssFull(true));
     else setCssFull(true);
   }, [cssFull]);
-  // ---------- Inspección del pasado ----------
-  const indexOf = (id: string) => eventsRef.current.findIndex((e) => e.id === id);
-  const seekTo = (cursor: number, time: number) => {
-    const frame = foldFlow(eventsRef.current, scheduleRef.current, cursor, foldCache.current, 50, baseRef.current);
-    flowRef.current = frame;
-    cursorRef.current = cursor;
-    clockRef.current = time;
-    setFlow(frame);
-    setClock(time);
-  };
-  const startInspect = (start: number, end: number, focus: Inspect["focus"]) => {
-    const events = eventsRef.current;
-    const times = scheduleRef.current;
-    if (!controls || start < 0 || end < start || end >= times.length) return;
-    if (!inspectRef.current) {
-      savedRef.current = { clock: clockRef.current, cursor: cursorRef.current, paused: pausedRef.current };
-      setHistory(flowRef.current);
-    }
-    // Inspeccionar pausa la reproducción: la línea de tiempo deja de moverse y los clics son estables.
-    setPaused(true);
-    // Un salto en el tiempo no anima el reacomodo de tarjetas: se ubican de inmediato.
-    setSeeking(true);
-    window.setTimeout(() => setSeeking(false), 90);
-    const until = times[end]! + LABEL_MS - 300;
-    const next = { start, end, focus, until };
-    inspectRef.current = next;
-    // Con movimiento reducido se salta al estado final con un resaltado estático.
-    seekTo(start, reducedMotion ? until : times[start]! - 350);
-    setInspect({ start, end, focus });
-    setPending(Math.max(0, events.length - times.length));
-  };
-  const exitInspect = () => {
-    const saved = savedRef.current;
-    if (!inspectRef.current || !saved) return;
-    inspectRef.current = null;
-    savedRef.current = null;
-    seekTo(saved.cursor, saved.clock);
-    if (mode === "live") scheduleLiveTail(eventsRef.current);
-    setInspect(null);
-    setPending(0);
-    setHistory(null);
-    setPaused(saved.paused);
-    setSeeking(true);
-    window.setTimeout(() => setSeeking(false), 90);
-  };
-  const exitInspectRef = useRef(exitInspect);
-  useEffect(() => {
-    exitInspectRef.current = exitInspect;
-  });
-  const focusOf = (indices: number[]): Inspect["focus"] => {
-    const actors = new Set<string>();
-    for (const i of indices) {
-      const event = eventsRef.current[i];
-      if (!event) continue;
-      for (const end of [event.from, event.to]) if (end !== BROKER) actors.add(end.id);
-    }
-    return { actors: [...actors], ids: indices.map((i) => eventsRef.current[i]?.id ?? "") };
-  };
-  const inspectEvent = (id: string) => {
-    const i = indexOf(id);
-    if (i >= 0) startInspect(i, i, focusOf([i]));
-  };
-  const inspectMany = (ids: string[]) => {
-    const indices = ids.map(indexOf).filter((i) => i >= 0).sort((a, b) => a - b);
-    if (indices.length > 0) startInspect(indices[0]!, indices[indices.length - 1]!, focusOf(indices));
-  };
-  const inspectRequest = (requestId: string) =>
-    inspectMany(eventsRef.current.filter((e) => e.requestId === requestId && scheduleRef.current[eventsRef.current.indexOf(e)] !== undefined).map((e) => e.id));
-  // ← y →: paso anterior y siguiente (sin la foto inicial de la red).
-  const stepInspect = (direction: -1 | 1) => {
-    const events = eventsRef.current;
-    let i = inspectRef.current ? (direction < 0 ? inspectRef.current.start : inspectRef.current.end) + direction : cursorRef.current - 1;
-    while (i >= 0 && i < scheduleRef.current.length && events[i]?.meta.snapshot) i += direction;
-    if (i < 0 || i >= scheduleRef.current.length || (!inspectRef.current && direction > 0)) return;
-    const event = events[i]!;
-    setSelection({ kind: "event", id: event.id });
-    startInspect(i, i, focusOf([i]));
-  };
-
   // Atajos: f pantalla completa, p pausa, ←/→ pasos, Esc vuelve al presente o sale del modo expandido.
   // En embed y pantalla completa escuchan en todo el documento; si no, solo con el foco dentro.
   const onShortcut = (event: KeyboardEvent | ReactKeyboardEvent) => {
@@ -419,13 +196,13 @@ export function AgentFlow({
       toggleFullscreen();
     } else if (event.key === "p" && controls) {
       event.preventDefault();
-      if (inspectRef.current) exitInspect();
+      if (inspect) exitInspect();
       else setPaused((value) => !value);
     } else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && controls) {
       event.preventDefault();
       stepInspect(event.key === "ArrowLeft" ? -1 : 1);
     } else if (event.key === "Escape") {
-      if (inspectRef.current) exitInspect();
+      if (inspect) exitInspect();
       else if (cssFull) setCssFull(false);
     }
   };
@@ -584,9 +361,7 @@ export function AgentFlow({
   const dimmed = (ids: string[]) => Boolean(focusActors) && !ids.some((id) => focusActors!.has(id));
   const inspectBar = (() => {
     if (!inspect) return null;
-    const first = eventsRef.current[inspect.start];
-    const entry = first ? flow.log.find((e) => e.event.id === first.id) ?? { event: first, t: scheduleRef.current[inspect.start] ?? 0 } : undefined;
-    if (!entry) return null;
+    const entry = inspect.first;
     const steps = inspect.focus.ids.length;
     const what = steps > 1 ? `${steps} pasos` : `${stepLabels[entry.event.step]}${stepDetail(entry.event) ? ` · ${stepDetail(entry.event)}` : ""}`;
     return (
