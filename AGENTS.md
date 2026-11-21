@@ -22,6 +22,7 @@ Al terminar con un worktree: `pnpm teardown` (borra sus contenedores/datos y lib
 | Servicio | Variable        | Puerto          |
 | -------- | --------------- | --------------- |
 | web      | `WEB_PORT`      | `3000 + SLOT`   |
+| MCP Nexo | `MCP_PORT` | `4100 + SLOT` |
 | agentes (HTTP local) | `COORDINATION_PORT` | `4310 + SLOT` |
 | postgres | `POSTGRES_PORT` | `54320 + SLOT`  |
 
@@ -42,6 +43,12 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 - OAuth en web usa `DATABASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y `MCP_RESOURCE_URL`. El origen local `BETTER_AUTH_URL` se genera a partir de `WEB_PORT`. Prepara el esquema OAuth con `pnpm with-env pnpm --filter @team-31/web auth:migrate` después de compilar los paquetes compartidos. Sus pruebas usan `TEST_DATABASE_URL` y credenciales ficticias de Google.
 - El MCP remoto verifica los access tokens con `AUTH_ISSUER`, `AUTH_JWKS_URL` y `MCP_RESOURCE_URL`. `MCP_DEV_AUTH=1` habilita tokens de desarrollo fuera de producción.
 - MCP y web firman JWT para el broker con `MCP_SERVICE_PRIVATE_KEY` y `WEB_SERVICE_PRIVATE_KEY` respectivamente. Web usa `BROKER_URL` para consultar la dirección Nexo. El broker verifica con `SERVICE_JWT_PUBLIC_KEYS` (JSON con las claves JWK públicas `mcp` y `web`).
+
+## MCP Nexo
+
+- `pnpm env:init` genera `MCP_RESOURCE_URL` con el puerto del worktree, y `AUTH_ISSUER` y `AUTH_JWKS_URL` con el puerto web. Ajusta los valores en `.env.local` si cambias el origen público.
+- Con `BROKER_URL` y `MCP_SERVICE_PRIVATE_KEY` configuradas, usa `pnpm build --filter @team-31/mcp^...` y `pnpm dev --filter @team-31/mcp`. El MCP escucha en loopback por defecto y expone `GET /healthz`.
+- La [guía del MCP](apps/mcp/README.md) cubre stdio de desarrollo y el perfil Compose `nexo`.
 
 ## Coordinación local entre N asistentes
 
