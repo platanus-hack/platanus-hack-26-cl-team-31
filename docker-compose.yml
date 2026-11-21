@@ -60,6 +60,14 @@ services:
       postgres:
         condition: service_healthy
 
+  ollama:
+    profiles: ["demo-model"]
+    image: ollama/ollama:0.40.17
+    ports:
+      - "127.0.0.1:${DEMO_MODEL_PORT:-}:11434"
+    volumes:
+      - models:/root/.ollama
+
   mcp:
     profiles: ["nexo"]
     image: node:24-alpine
@@ -82,3 +90,4 @@ services:
 
 volumes:
   pgdata:
+  models:

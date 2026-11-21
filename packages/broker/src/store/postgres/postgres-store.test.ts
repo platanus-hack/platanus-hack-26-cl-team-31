@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import type { WakeTarget } from "@team-31/protocol";
+import type { Principal, WakeTarget } from "@team-31/protocol";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createBroker, type BrokerDeps } from "../../index.js";
 import { runStoreContractTests } from "../contract.js";
 import type { RequestRow, WakeJob } from "../store.js";
 import { applyPostgresMigrations, createPostgresStore, type PostgresStore } from "./index.js";
@@ -75,6 +76,42 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       await tx.createAddress("carla", "carla@nexo.app");
     });
   }
+
+  it("delivers an agent reply after the owner approves once and the Store reopens", async () => {
+    const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes: ["nexo:ask", "nexo:status"] };
+    const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["nexo:inbox", "nexo:reply"] };
+    const { privateKey } = generateKeyPairSync("ed25519");
+    const deps: Omit<BrokerDeps, "store"> = {
+      clock: { now: () => now },
+      signingKey: privateKey,
+      nonceKey: new Uint8Array(32).fill(4),
+      waker: {
+        async verifyCallback() { return { ok: true }; },
+        async wake() { return { ok: true, retryable: false, ms: 1 }; },
+      },
+      config: { addressDomain: "nexo.app", requestTtlSeconds: 900, wakeRetryDelaysMs: [0] },
+    };
+    await createParticipants();
+    const broker = createBroker({ ...deps, store });
+    const { requestId } = await broker.agent.ask(alice, {
+      to: "bruno@nexo.app", tool: "question", args: { text: "¿Disponible?" },
+    });
+    expect(await broker.agent.status(alice, requestId)).toMatchObject({ final: false, waitingFor: "owner" });
+    await broker.owner.decide(bruno, requestId, { kind: "approve_once" });
+
+    await store.close();
+    store = createPostgresStore({ databaseUrl, secretsKey });
+    const reopened = createBroker({ ...deps, store });
+    const [item] = await reopened.agent.inbox(bruno);
+    expect(item).toMatchObject({ requestId, allowedFields: ["answer"] });
+    const result = { answer: "Sí" };
+    await expect(reopened.agent.reply(bruno, {
+      requestId, nonce: item!.nonce, outcome: "answered", result,
+    })).resolves.toMatchObject({ status: "answered", deliveredFields: ["answer"] });
+    await expect(reopened.agent.status(alice, requestId)).resolves.toMatchObject({
+      final: true, decision: "allow", result,
+    });
+  });
 
   it("filters lists on the participant ID as well as the claimed address", async () => {
     await createParticipants();
@@ -202,7 +239,37 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM nexo.__drizzle_migrations");
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
+  });
+
+  it("recovers only legacy one-time approvals with an audit event", async () => {
+    await createParticipants();
+    const rule = "Permiso del dueño por única vez";
+    const approved = await makeRequest({ rule });
+    const answered = await makeRequest({ rule, status: "answered", answeredByAgentId: "bruno-bot" });
+    const noEvent = await makeRequest({ rule });
+    const circleGrant = await makeRequest({ rule: "amigos pueden usar question: answer" });
+    const notApproved = await makeRequest({ rule, status: "awaiting_owner" });
+    await store.tx(async (tx) => {
+      for (const { id } of [approved, answered, circleGrant]) {
+        await tx.appendEvent({ requestId: id, at: now, kind: "permission", status: "awaiting_agent" });
+      }
+      await tx.appendEvent({ requestId: notApproved.id, at: now, kind: "permission", status: "awaiting_owner" });
+    });
+    // Restore the legacy schema and migration journal while keeping the fixture rows.
+    await isolated.query("ALTER TABLE nexo.requests DROP COLUMN approved_once");
+    await isolated.query("DELETE FROM nexo.__drizzle_migrations WHERE id > 1");
+
+    await applyPostgresMigrations({ databaseUrl });
+
+    await store.tx(async (tx) => {
+      for (const { id } of [approved, answered]) {
+        expect(await tx.getRequest(id)).toMatchObject({ approvedOnce: true });
+      }
+      for (const { id } of [noEvent, circleGrant, notApproved]) {
+        expect(await tx.getRequest(id)).toMatchObject({ approvedOnce: undefined });
+      }
+    });
   });
 
   it("rolls back a migration that fails partway through its DDL", async () => {

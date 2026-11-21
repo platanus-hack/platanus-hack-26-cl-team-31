@@ -28,6 +28,7 @@ Al terminar con un worktree: `pnpm teardown` (borra sus contenedores/datos y lib
 | admin (SPA, y todo en producción) | `ADMIN_PORT` | `4400 + SLOT` |
 | admin (API + MCP en dev) | `ADMIN_API_PORT` | `4450 + SLOT` |
 | postgres | `POSTGRES_PORT` | `54320 + SLOT`  |
+| Ollama (dashboard opcional) | `DEMO_MODEL_PORT` | `11440 + SLOT` |
 
 - Secretos/API keys: `.env.local` (gitignored). Declara cada variable nueva en `.env.local.example`.
 - `pnpm dev|build|test` cargan `.env` + `.env.local` automáticamente. Para cualquier otro comando: `pnpm with-env <cmd>` (ej. `pnpm with-env pnpm --filter @team-31/web <script>`).
@@ -70,9 +71,11 @@ El servidor usa `DATABASE_URL`. Cada adaptador MCP recibe `COORDINATION_API_URL`
 
 Ctrl+C detiene la API del host y `pnpm infra:down` detiene PostgreSQL conservando el volumen. Después de preparar el esquema, las cuentas y el build, también puedes iniciar la API en segundo plano con `docker compose --profile agents up -d coordination` con el puerto del host libre. Para detener ese stack usa `docker compose --profile agents down`.
 
+El dashboard de desarrollo en `/demo` usa Ollama por loopback (`DEMO_MODEL_URL`) y `DEMO_MODEL` (por defecto `qwen3:4b-instruct`). Puedes usar el perfil Compose `demo-model` o un proceso nativo, no ambos a la vez. Los comandos están en el README. No usa credenciales de un proveedor externo.
+
 ## Consultas resueltas por el runtime del titular
 
-Con Claude Code autenticado y las listas privadas en `.agents-local/bob-interests.json` y `.agents-local/jane-interests.json`, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica? ¿Qué tal Jane?"`. Ana descubre las direcciones con `list_contacts` y usa `ask_contact` para cada destinatario. El broker verifica los permisos y entrega cada resultado con su ID de solicitud. La cola de esta demo es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md) para preparar las listas o conversar con Ana.
+Con PostgreSQL del worktree activo, `corepack pnpm agents:seed` prepara 15 perfiles de prueba con contactos y archivos privados de intereses en `.agents-local/`. Con Claude Code autenticado, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A alguien le interesa la cerámica?"`. Ana carga su agenda de PostgreSQL y pregunta a los agentes con `list_contacts`, `ask_contact` y `await_contact`. El broker aplica el permiso de cada persona. La cola de esta demo es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md#buscar-entre-los-agentes-de-la-agenda) para ver las relaciones, modificar los datos o iniciar una sesión interactiva.
 
 ## Pruebas de punta a punta de Nexo
 

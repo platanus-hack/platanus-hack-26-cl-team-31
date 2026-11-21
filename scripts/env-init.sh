@@ -27,6 +27,7 @@ if [ -z "$SLOT" ]; then
     port_busy $((4310 + s)) && continue
     port_busy $((4400 + s)) && continue
     port_busy $((4450 + s)) && continue
+    port_busy $((11440 + s)) && continue
     SLOT=$s; break
   done
   [ -z "$SLOT" ] && { echo "No hay slots libres" >&2; exit 1; }
@@ -41,6 +42,7 @@ BROKER_PORT=$((4200 + SLOT))
 COORDINATION_PORT=$((4310 + SLOT))
 ADMIN_PORT=$((4400 + SLOT))
 ADMIN_API_PORT=$((4450 + SLOT))
+DEMO_MODEL_PORT=$((11440 + SLOT))
 BETTER_AUTH_URL=http://127.0.0.1:$WEB_PORT
 AUTH_ISSUER=$BETTER_AUTH_URL/api/auth
 
@@ -63,6 +65,8 @@ COORDINATION_API_URL=http://127.0.0.1:$COORDINATION_PORT
 ADMIN_PORT=$ADMIN_PORT
 ADMIN_API_PORT=$ADMIN_API_PORT
 ADMIN_URL=http://127.0.0.1:$ADMIN_PORT
+DEMO_MODEL_PORT=$DEMO_MODEL_PORT
+DEMO_MODEL_URL=http://127.0.0.1:$DEMO_MODEL_PORT
 
 DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app_test

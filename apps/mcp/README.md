@@ -24,7 +24,7 @@ Desde la raíz del repo, con Docker corriendo, usa Node 24 y pnpm 10. Si usas nv
 
 1. En una terminal, ejecuta `pnpm agents:up 2` y espera «Coordinación lista en puerto …». Déjala abierta.
 2. En otra terminal, ejecuta `pnpm agents:demo 2`. El guion conecta clientes MCP por stdio y chequea las respuestas. Funciona sin cuenta de un proveedor de IA.
-3. Para sumar a Carla con la API abierta, ejecuta `pnpm agents:seed 3` y luego `pnpm agents:demo 3`. Para N mayor se crean `agente4`, `agente5`, etc.
+3. Para sumar a Carla con la API abierta, ejecuta `pnpm agents:seed 3` y luego `pnpm agents:demo 3`. El seed predeterminado crea 14 participantes y a Eva. Diego mantiene el identificador histórico `agente4`.
 
 Puedes editar las personas, sus permisos iniciales y los bloques ocupados en [los datos de la demo](../../scripts/coordination-fixture.mjs).
 
@@ -57,15 +57,30 @@ Ana envía su pregunta al servidor a través de MCP. El servicio verifica la ide
 2. **Bob** — «Publica mi interés en guitarra para el grupo futbol». Bob elige la audiencia. Si omite el grupo, todos los usuarios autenticados pueden encontrar la publicación.
 3. **Ana** — «¿Quién de mis contactos tiene interés en guitarra?». `contact_interest_search` devuelve las coincidencias entre su lista personal y las publicaciones visibles para ella. `agent_interests` permite consultar los intereses visibles de una persona concreta.
 
-La lista de contactos empieza vacía. Guardar una dirección es unilateral. La disponibilidad sigue las reglas de la agenda y cada interés conserva su audiencia. Un catálogo vacío se devuelve tanto para una dirección desconocida como para una persona que no comparte información con el solicitante.
+El seed precarga las agendas de los perfiles de la demo. Guardar una dirección es unilateral. La disponibilidad sigue las reglas de la agenda y cada interés conserva su audiencia. Un catálogo vacío se devuelve tanto para una dirección desconocida como para una persona que no comparte información con el solicitante.
 
-### Preguntar a los agentes de Bob y Jane
+### Buscar entre los agentes de la agenda
 
-Ana tiene dos contactos de prueba en esta demo. Cada uno tiene su propia identidad, firma de webhook, permiso para Ana y archivo privado de intereses.
+Con PostgreSQL del worktree en ejecución y Claude Code autenticado:
 
-1. Guarda `["cerámica"]` en `.agents-local/bob-interests.json` y `["astronomía"]` en `.agents-local/jane-interests.json`. Cada archivo es una lista JSON de textos.
-2. Con Claude Code autenticado, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica? ¿Qué tal Jane?"`. Puedes pasar las rutas de Bob y Jane, en ese orden, después de la pregunta. Sin argumentos se abre la sesión interactiva de Ana.
-3. Con esos datos, el broker devuelve `matches: true` para Bob y `matches: false` para Jane. Si falta el archivo de un contacto, ese contacto devuelve `no_data`. Prueba también «¿Cuál es el domicilio de Bob?»: el broker devuelve `deny` antes de enviar el webhook.
+```sh
+corepack pnpm agents:seed
+corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A alguien le interesa la cerámica?"
+```
+
+El seed crea 15 perfiles ficticios (14 participantes y Eva). Cada par dentro de un círculo arranca con ambas direcciones guardadas. Los círculos describen estos contactos iniciales. El grupo de disponibilidad `futbol` sigue siendo independiente.
+
+| Círculo | Contactos entre sí |
+|---|---|
+| Taller | Ana, Bob, Inés y Luz |
+| Huerto | Ana, Jane y Carla |
+| Música | Carla, Diego, Mateo y Sofía |
+| Montaña | Mateo, Leo, Tomás y Vera |
+| Lectura | Vera, Alma, Nico y Eva |
+
+Cada sesión carga desde PostgreSQL los contactos directos de Ana con perfil de demo y sus permisos individuales. Si Ana pregunta por «alguien», Claude descubre las direcciones y pregunta por el tema a **cada agente**. El broker evalúa cada solicitud y entrega un resultado por ID. Luz reservó sus intereses y recibe cero avisos para esa operación. Cada uno de los demás contactos autorizados recibe un webhook y su propia sesión de Claude consulta el archivo privado. Los contactos de segundo grado quedan fuera de la búsqueda.
+
+Para cambiar un dato, edita la lista JSON `.agents-local/<id>-interests.json` de ese contacto y repite la pregunta. El seed conserva los archivos existentes y los contactos que alguien haya eliminado. Para una prueba temporal puedes pasar dos rutas tras la pregunta que sustituyen los archivos de Bob y Jane durante esa ejecución. Una lista vacía da `matches: false`; un archivo ausente da `no_data`. Sin pregunta se abre una sesión interactiva.
 
 El MCP de Ana ofrece `list_contacts` para descubrir nombres y direcciones, `ask_contact` para consultar una dirección y `await_contact` para recoger el resultado por ID. Por ejemplo:
 
@@ -75,7 +90,7 @@ El MCP de Ana ofrece `list_contacts` para descubrir nombres y direcciones, `ask_
 
 Las preguntas abiertas usan `query: {"text":"…"}`. El broker verifica el permiso del destinatario para la operación. Cuando autoriza un interés, envía un webhook firmado al agente de ese contacto. Su herramienta `check_interest` compara el tema con su archivo y entrega sólo `matches`. El broker valida la respuesta y la CLI muestra la dirección y el resultado de cada solicitud.
 
-La agenda y la cola de esta demo son efímeras. En el MCP de coordinación, `list_contacts` lee los contactos guardados por la identidad autenticada en PostgreSQL.
+La cola del runtime es efímera. PostgreSQL conserva las agendas. Ejecuta la CLI de nuevo después de modificar contactos o permisos para cargar la nueva configuración.
 
 ### Herramientas
 

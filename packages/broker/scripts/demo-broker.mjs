@@ -7,13 +7,9 @@ import { SharingRules, WakeNotice } from "@team-31/protocol";
 import { createWaker, verifyWebhookSignature } from "../../wake/dist/index.js";
 import { askContactOwner } from "./contact-runtime.mjs";
 
-export async function startDemoBroker(bobSource, janeSource) {
+export async function startDemoBroker(contacts) {
   const ana = { userId: "ana", agentId: "ana-bot", scopes: ["nexo:ask", "nexo:status"] };
   const addressDomain = "demo.local";
-  const contacts = [
-    { id: "bob", name: "Bob", source: bobSource },
-    { id: "jane", name: "Jane", source: janeSource },
-  ];
   const addressBook = contacts.map(({ id, name }) => ({ name, address: `${id}@${addressDomain}` }));
   const broker = createBroker({
     store: createMemoryStore(), clock: { now: () => new Date() },
@@ -55,7 +51,7 @@ export async function startDemoBroker(bobSource, janeSource) {
   await once(receiver, "listening");
   try {
     await broker.owner.claimAddress(ana, "ana");
-    for (const { id, name, source } of contacts) {
+    for (const { id, name, source, allowsInterest } of contacts) {
       const owner = { userId: id, agentId: id + "-bot", scopes: ["nexo:inbox", "nexo:reply"] };
       const path = `/agents/${owner.agentId}/wake`;
       const secret = "whsec_" + randomBytes(32).toString("base64");
@@ -65,7 +61,8 @@ export async function startDemoBroker(bobSource, janeSource) {
       routes.set(path, { name, secret, onWake });
       await broker.owner.claimAddress(owner, id);
       await broker.owner.setRules(owner, SharingRules.parse({
-        circles: {}, grants: {}, people: { ["ana@" + addressDomain]: [{ tool: "interest_check", fields: ["matches"] }] },
+        circles: {}, grants: {},
+        people: allowsInterest ? { ["ana@" + addressDomain]: [{ tool: "interest_check", fields: ["matches"] }] } : {},
         defaultForUnknown: "deny",
       }));
       await broker.agent.connectWake(owner, {
