@@ -36,6 +36,7 @@ describe("readPingStatus", () => {
     activity.mockResolvedValue([ping(status, [{ kind: "response", status, at }])]);
 
     expect(await readPingStatus("ping-1")).toEqual({ status, verified: true });
+    expect(activity).toHaveBeenCalledWith({ userId: "ana" }, { requestId: "ping-1" });
   });
 
   it("does not verify a test that the owner answered after escalation", async () => {

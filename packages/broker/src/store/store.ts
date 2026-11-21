@@ -187,7 +187,7 @@ export interface StoreTx {
   updateRequest(id: string, patch: Partial<Omit<RequestRow, "id" | "version">>, expectedVersion: number): Promise<boolean>;
   listInbox(toAddress: Address): Promise<RequestRow[]>;
   listOwnerPending(toAddress: Address): Promise<RequestRow[]>;
-  listActivity(address: Address, limit: number): Promise<RequestRow[]>;
+  listActivity(address: Address, limit: number, requestId?: string): Promise<RequestRow[]>;
   listDueForExpiry(now: Date, limit: number): Promise<RequestRow[]>;
   appendEvent(event: RequestEvent): Promise<void>;
   // Returns events in insertion order for the supplied, already authorized request IDs.

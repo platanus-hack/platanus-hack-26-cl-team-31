@@ -774,14 +774,15 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
 
-      async activity(o, limit = 30) {
+      async activity(o, query = {}) {
+        const { limit = 30, requestId } = typeof query === "number" ? { limit: query } : query;
         if (!Number.isSafeInteger(limit) || limit < 1) {
           throw new BrokerError("invalid_input", "El límite de actividad debe ser un entero positivo.");
         }
         return store.tx(async (tx) => {
           const address = (await tx.getUser(o.userId))?.address;
           if (!address) return [];
-          const rows = (await tx.listActivity(address, limit))
+          const rows = (await tx.listActivity(address, limit, requestId))
             .filter((row) => row.fromUserId === o.userId || row.toUserId === o.userId);
           const events = await tx.listEvents(rows.map((row) => row.id));
           return rows.map((row) => toActivityItem(row, events.filter((event) => event.requestId === row.id), o.userId));

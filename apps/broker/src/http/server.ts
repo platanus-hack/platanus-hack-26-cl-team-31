@@ -70,7 +70,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.pending":
       return { items: await owner.pending(c.get("web")) };
     case "owner.activity":
-      return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query()).limit) };
+      return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query())) };
     case "owner.ask":
       return owner.ask(c.get("web"), await parseBody(c, route.body));
     case "owner.channelAsk":

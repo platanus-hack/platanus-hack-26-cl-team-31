@@ -1,3 +1,4 @@
+import type { OwnerActivityQuery } from "@team-31/protocol/http";
 import type {
   ActivityItem,
   ContactGroupChange, ContactGroups, OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
@@ -60,7 +61,7 @@ export interface OwnerPort {
   setGrant(o: Owner, input: GrantInput): Promise<Grant>;
   revokeGrant(o: Owner, grantId: string): Promise<void>;
   pending(o: Owner): Promise<OwnerPendingItem[]>;
-  activity(o: Owner, limit?: number): Promise<ActivityItem[]>;
+  activity(o: Owner, query?: number | OwnerActivityQuery): Promise<ActivityItem[]>;
   // A channel marks where the owner wrote the request: the broker notifies it when the request
   // waits for the recipient's owner or closes.
   ask(o: Owner, input: AskArguments, channel?: ChannelName): Promise<RequesterView>;

@@ -230,6 +230,8 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.listActivity("someone@sideband.app", 10)).toEqual([]);
         expect((await tx.listActivity(fromAddress, 10)).map(({ id }) => id)).toEqual(expect.arrayContaining([inbox.id, pending.id, final.id]));
         expect((await tx.listActivity(fromAddress, 1))).toHaveLength(1);
+        expect((await tx.listActivity(fromAddress, 1, inbox.id)).map((row) => row.id)).toEqual([inbox.id]);
+        expect(await tx.listActivity("someone@sideband.app", 1, inbox.id)).toEqual([]);
         expect((await tx.listDueForExpiry(now, 10)).map(({ id }) => id)).toEqual(expect.arrayContaining([inbox.id, pending.id]));
         expect((await tx.listDueForExpiry(now, 10)).map(({ id }) => id)).not.toContain(final.id);
         expect(await tx.listEvents([])).toEqual([]);

@@ -351,13 +351,14 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
     listInbox: (address) => listRecipientRequests(address, "awaiting_agent"),
     listOwnerPending: (address) => listRecipientRequests(address, "awaiting_owner"),
 
-    async listActivity(address, limit) {
+    async listActivity(address, limit, requestId) {
       const owner = ownerId(address);
+      const participant = or(
+        and(eq(requests.fromAddress, address), inArray(requests.fromUserId, owner)),
+        and(eq(requests.toAddress, address), inArray(requests.toUserId, owner)),
+      );
       const rows = await db.select().from(requests)
-        .where(or(
-          and(eq(requests.fromAddress, address), inArray(requests.fromUserId, owner)),
-          and(eq(requests.toAddress, address), inArray(requests.toUserId, owner)),
-        ))
+        .where(and(participant, requestId === undefined ? undefined : eq(requests.id, requestId)))
         .orderBy(desc(requests.createdAt), desc(requests.id)).limit(limit);
       return rows.map(readRequest);
     },

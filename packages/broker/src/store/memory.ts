@@ -300,12 +300,15 @@ function transaction(state: State): StoreTx {
     async listOwnerPending(address) {
       return listRecipientRequests(address, "awaiting_owner");
     },
-    async listActivity(address, limit) {
+    async listActivity(address, limit, requestId) {
       const ownerId = findUserByAddress(address)?.userId;
       if (!ownerId) return [];
-      return structuredClone([...state.requests.values()]
-        .filter((row) => (row.toAddress === address && row.toUserId === ownerId)
-          || (row.fromAddress === address && row.fromUserId === ownerId))
+      const candidates = requestId === undefined ? state.requests.values() : [state.requests.get(requestId)];
+      return structuredClone([...candidates]
+        .filter((row): row is RequestRow => row !== undefined && (
+          (row.toAddress === address && row.toUserId === ownerId) ||
+          (row.fromAddress === address && row.fromUserId === ownerId)
+        ))
         .sort((a, b) => byCreatedAt(b, a)).slice(0, limit));
     },
     async listDueForExpiry(now, limit) {

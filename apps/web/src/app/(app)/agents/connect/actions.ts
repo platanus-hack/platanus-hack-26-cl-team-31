@@ -83,7 +83,7 @@ export async function readPingStatus(requestId: string) {
     const telemetry = getTelemetry();
     telemetry.identify({ userId: owner.userId, requestId });
     try {
-      const items = await broker.activity(owner, 100);
+      const items = await broker.activity(owner, { requestId });
       const ping = items.find((item) =>
         item.requestId === requestId && item.direction === "received" && isSystemSender(item.from));
       if (!ping) return;

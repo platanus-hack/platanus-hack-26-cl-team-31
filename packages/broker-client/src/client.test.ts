@@ -179,7 +179,7 @@ it("implements the owner port, including optional queries, wrapper responses and
   const grant = { ...grantInput, id: requestId, createdAt: expiresAt };
   const replies = [
     ownerInfo, { address: ownerInfo.address }, { items: [grant] }, grant, undefined,
-    { items: [pending] }, { items: [activity] }, { items: [] }, undefined,
+    { items: [pending] }, { items: [activity] }, { items: [] }, { items: [activity] }, undefined,
     { items: [connection] }, undefined, { requestId }, undefined,
   ];
   const { ownerClient, requests, getOwnerToken } = await broker((response, count) => {
@@ -196,6 +196,7 @@ it("implements the owner port, including optional queries, wrapper responses and
   expect(await ownerClient.pending(owner)).toEqual([pending]);
   expect(await ownerClient.activity(owner, 3)).toEqual([activity]);
   expect(await ownerClient.activity(owner)).toEqual([]);
+  expect(await ownerClient.activity(owner, { requestId })).toEqual([activity]);
   expect(await ownerClient.decide(owner, requestId, decision)).toBeUndefined();
   expect(await ownerClient.agents(owner)).toEqual([connection]);
   expect(await ownerClient.setWake(owner, requestId, target)).toBeUndefined();
@@ -211,6 +212,7 @@ it("implements the owner port, including optional queries, wrapper responses and
     ["GET", "/v1/owner/pending", undefined],
     ["GET", "/v1/owner/activity?limit=3", undefined],
     ["GET", "/v1/owner/activity", undefined],
+    ["GET", `/v1/owner/activity?${new URLSearchParams({ requestId })}`, undefined],
     ["POST", `/v1/owner/requests/${encodedId}/decision`, decision],
     ["GET", "/v1/owner/agents", undefined],
     ["PUT", `/v1/owner/agents/${encodedId}/wake`, target],
@@ -218,9 +220,9 @@ it("implements the owner port, including optional queries, wrapper responses and
     ["DELETE", `/v1/owner/agents/${encodedId}`, undefined],
   ]);
   expect(requests.map((request) => request.authorization)).toEqual(
-    Array.from({ length: 13 }, (_, index) => `Bearer owner-token-${index + 1}`),
+    Array.from({ length: replies.length }, (_, index) => `Bearer owner-token-${index + 1}`),
   );
-  expect(getOwnerToken.mock.calls).toEqual(Array.from({ length: 13 }, () => [owner]));
+  expect(getOwnerToken.mock.calls).toEqual(Array.from({ length: replies.length }, () => [owner]));
 });
 
 it.each(ErrorCode.options)("returns BrokerError(%s) without upstream text", async (code) => {

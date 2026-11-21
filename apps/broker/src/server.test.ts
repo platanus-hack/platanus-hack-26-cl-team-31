@@ -107,6 +107,23 @@ describe("HTTP interno del broker", () => {
     for (const response of [allowed, rejected]) expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
+  it("finds an older ping by ID only in its owner's activity", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { broker } = fixture();
+    const app = createHttpServer({ broker, publicKeys });
+    const bruno = { userId: "bruno" };
+    await broker.owner.claimAddress(bruno, bruno.userId);
+    await broker.agent.inbox({ ...bruno, agentId: "bot", scopes: ["sideband:inbox"] });
+    const first = await broker.owner.ping(bruno, "bot");
+    vi.setSystemTime(Date.now() + 1_000);
+    for (let i = 0; i < 101; i++) await broker.owner.ping(bruno, "bot");
+    expect((await broker.owner.activity(bruno, 100)).some((item) => item.requestId === first.requestId)).toBe(false);
+    const path = `/v1/owner/activity?requestId=${first.requestId}`;
+    const activity = (token: string) => call(app, routes.ownerActivity, { token, path });
+    expect((await activity(await owner("bruno"))).items).toMatchObject([{ ...first, status: "awaiting_agent" }]);
+    expect((await activity(await owner("alice"))).items).toEqual([]);
+  });
+
   it("distinguishes an omitted invitation offer from an explicitly empty one over HTTP", async () => {
     const { broker } = fixture();
     const app = createHttpServer({ broker, publicKeys });
