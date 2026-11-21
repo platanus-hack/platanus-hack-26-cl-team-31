@@ -64,6 +64,10 @@ export const catalog = [
     description: "Latido cada 30 s. dropped = eventos descartados por cola llena desde el arranque.",
     attrs: lifecycleAttrs,
   }),
+  defineEvent({
+    name: "service.listening", kind: "lifecycle", description: "El servidor HTTP ya acepta conexiones.",
+    attrs: { address: z.union([z.ipv4(), z.ipv6()]), port: int().min(1).max(65_535), serveSpa: bool(), devAuth: bool() },
+  }),
   defineEvent({ name: "service.stopping", kind: "lifecycle", description: "El servicio se está deteniendo.", attrs: lifecycleAttrs }),
 
   defineEvent({

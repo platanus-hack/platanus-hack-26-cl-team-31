@@ -116,6 +116,7 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | name | kind | attrs permitidos |
 | --- | --- | --- |
 | `service.started` / `service.heartbeat` / `service.stopping` | lifecycle | version |
+| `service.listening` | lifecycle | address, port del socket HTTP del admin o broker. El admin también indica serveSpa y devAuth. |
 | `http.request` | http | method, route (patrón, nunca la ruta cruda), status, bucket |
 | `http.rate_limited` | http | route, bucket |
 | `auth.token.verified` / `auth.token.rejected` | auth | issuer, reason (código) |

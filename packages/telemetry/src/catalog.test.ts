@@ -4,7 +4,7 @@ import { catalog, describeCatalog, getEventDefinition } from "./catalog.js";
 describe("catálogo", () => {
   it("declara todos los eventos de docs/admin.md#3", () => {
     const expected = [
-      "service.started", "service.heartbeat", "service.stopping",
+      "service.started", "service.heartbeat", "service.listening", "service.stopping",
       "http.request", "http.rate_limited",
       "auth.token.verified", "auth.token.rejected", "auth.service_jwt.rejected", "auth.oauth.consent", "auth.scope.denied",
       "message.interpret", "message.interpreted", "message.recipients.resolved", "message.turn.saved", "message.turn.completed",

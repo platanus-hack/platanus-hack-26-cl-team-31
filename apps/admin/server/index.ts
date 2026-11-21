@@ -65,8 +65,7 @@ async function start(env: AdminEnv, telemetry: Telemetry, resources: AsyncDispos
   const stopPrune = startPruneTask(pool, env.retentionDays, telemetry)
   resources.defer(stopPrune)
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, ({ address, port }) => {
-    console.info(`[admin] escuchando en ${address}:${port}${env.serveSpa ? " (SPA + API + MCP)" : " (API + MCP)"}`)
-    if (env.devAuth) console.info("[admin] ADMIN_DEV_AUTH=1: POST /api/admin/dev-login habilitado")
+    telemetry.emit("service.listening", { attrs: { address, port, serveSpa: env.serveSpa, devAuth: env.devAuth } })
   })
 
   async function stop() {
