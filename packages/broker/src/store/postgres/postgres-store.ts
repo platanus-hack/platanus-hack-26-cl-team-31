@@ -10,7 +10,7 @@ import type {
   AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
 import { createWakeCodec } from "./crypto.js";
-import { agentConnections, grants, requestEvents, requests, users, wakeJobs } from "./schema.js";
+import { agentConnections, friends, grants, requestEvents, requests, users, wakeJobs } from "./schema.js";
 
 export type PostgresStoreOptions = {
   databaseUrl: string;
@@ -41,7 +41,7 @@ function readUser(row: typeof users.$inferSelect): UserRow {
   };
 }
 
-function readGrant({ revokedAt: _revokedAt, ...row }: typeof grants.$inferSelect): GrantRow {
+function readGrant({ revokedAt: _revokedAt, friendDefault: _friendDefault, ...row }: typeof grants.$inferSelect): GrantRow {
   return { ...row, granteeAddress: parseStored(Address, row.granteeAddress), tool: parseStored(ToolName, row.tool) };
 }
 
@@ -154,7 +154,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       const [stored] = await db.insert(grants).values(row).onConflictDoUpdate({
         target: [grants.grantorUserId, grants.granteeAddress, grants.tool],
         targetWhere: sql`revoked_at is null`,
-        set: { fields: row.fields },
+        set: { fields: row.fields, friendDefault: false },
       }).returning();
       return readGrant(stored!);
     },
@@ -179,6 +179,41 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         .where(and(eq(grants.id, id), eq(grants.grantorUserId, grantorUserId), isNull(grants.revokedAt)))
         .returning({ id: grants.id });
       return revoked.length > 0;
+    },
+
+    async listFriends(userId) {
+      const rows = await db.select({ address: friends.address }).from(friends)
+        .where(eq(friends.userId, userId)).orderBy(asc(friends.address));
+      return rows.map(({ address }) => parseStored(Address, address));
+    },
+
+    async addFriend(userId, address) {
+      const inserted = await db.insert(friends).values({ userId, address }).onConflictDoNothing()
+        .returning({ address: friends.address });
+      return inserted.length > 0;
+    },
+
+    async removeFriend(userId, address) {
+      const removed = await db.delete(friends).where(and(eq(friends.userId, userId), eq(friends.address, address)))
+        .returning({ address: friends.address });
+      return removed.length > 0;
+    },
+
+    async insertFriendGrant(row) {
+      const inserted = await db.insert(grants).values({ ...row, friendDefault: true })
+        .onConflictDoNothing({
+          target: [grants.grantorUserId, grants.granteeAddress, grants.tool],
+          where: sql`revoked_at is null`,
+        }).returning({ id: grants.id });
+      return inserted.length > 0;
+    },
+
+    async revokeFriendGrants(userId, address, at) {
+      const revoked = await db.update(grants).set({ revokedAt: at }).where(and(
+        eq(grants.grantorUserId, userId), eq(grants.granteeAddress, address),
+        eq(grants.friendDefault, true), isNull(grants.revokedAt),
+      )).returning({ id: grants.id });
+      return revoked.map(({ id }) => id);
     },
 
     async insertRequest(row) {

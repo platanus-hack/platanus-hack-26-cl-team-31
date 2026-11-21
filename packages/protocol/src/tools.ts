@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ToolName = z.enum(["profile", "availability", "question", "interest_check"]);
+export const ToolName = z.enum(["profile", "availability", "question", "interest_check", "connect"]);
 export type ToolName = z.infer<typeof ToolName>;
 
 // Execution is fixed by the service contract. It is never an argument supplied by the sender.
@@ -9,6 +9,7 @@ export const toolExecution = {
   availability: "owner_runtime",
   question: "owner_runtime",
   interest_check: "owner_runtime",
+  connect: "owner_runtime",
 } as const satisfies Record<ToolName, "stored" | "owner_runtime">;
 
 export type RuntimeTool = {
@@ -44,6 +45,7 @@ export const ToolArgs = {
     timezone,
   }),
   question: z.strictObject({ text: z.string().min(1).max(1000) }),
+  connect: z.strictObject({}),
 } as const;
 
 export const ToolResultSchemas = {
@@ -57,6 +59,7 @@ export const ToolResultSchemas = {
     freeSlots: z.array(freeSlot).optional(),
   }),
   question: z.object({ answer: z.string().min(1).max(1000) }),
+  connect: z.object({ accepted: z.boolean() }),
 } as const;
 
 export const ToolResult = z.union([
@@ -64,6 +67,7 @@ export const ToolResult = z.union([
   ToolResultSchemas.availability,
   ToolResultSchemas.question,
   ToolResultSchemas.interest_check,
+  ToolResultSchemas.connect,
 ]);
 export type ToolResult = z.infer<typeof ToolResult>;
 

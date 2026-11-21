@@ -5,7 +5,7 @@ import {
   fieldsOf,
   describeTool,
   GrantInput,
-  ToolName,
+  GrantTool,
   LocalPart,
   OwnerDecision,
   ReplyInput,
@@ -14,6 +14,7 @@ import {
   type FinalOutcome,
   type Principal,
   type ReplyReceipt,
+  type RequesterView,
   type Scope,
   type ToolResult,
 } from "@team-31/protocol";
@@ -30,10 +31,18 @@ import {
 import { createLifecycleEvents } from "./events.js";
 import { createWorker } from "./worker.js";
 
+const connectionFields = fieldsOf("connect");
+const connectionGuidance =
+  "Pregúntale a tu titular si quiere conectar con esta dirección. Responde answered con accepted: true solo si lo confirma; si no, accepted: false.";
+const friendDefaults = [
+  { tool: "availability", fields: ["available", "freeSlots"] },
+  { tool: "interest_check", fields: ["matches"] },
+] satisfies Pick<GrantInput, "tool" | "fields">[];
+
 // A request stays authorized while the recipient's grant to the sender still covers its fields.
 async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
-  // A connection test requested by the owner, or a request the owner approved once.
-  if (row.fromUserId === null || row.approvedOnce) return true;
+  // Invitations, connection tests and one-time owner approvals have their own consent flow.
+  if (row.tool === "connect" || row.fromUserId === null || row.approvedOnce) return true;
   const grant = await tx.getGrant(toUserId, row.fromAddress, row.tool);
   return grant !== null && row.allowedFields.every(field => grant.fields.includes(field));
 }
@@ -151,6 +160,66 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return connection;
   }
 
+  async function applyConnection(tx: StoreTx, row: RequestRow): Promise<void> {
+    if (row.tool !== "connect" || row.status !== "answered" || !row.fromUserId || !row.toUserId) return;
+    if (!row.result || !("accepted" in row.result) || !row.result.accepted) return;
+    const participants = [
+      { userId: row.fromUserId, address: row.toAddress },
+      { userId: row.toUserId, address: row.fromAddress },
+    ];
+    // Opposite-direction acceptances acquire the same membership rows in the same order.
+    participants.sort((a, b) => a.userId.localeCompare(b.userId));
+    for (const { userId, address } of participants) {
+      if (!await tx.addFriend(userId, address)) continue;
+      for (const { tool, fields } of friendDefaults) {
+        const grantId = randomUUID();
+        if (await tx.insertFriendGrant({
+          id: grantId, grantorUserId: userId, granteeAddress: address, tool, fields, createdAt: clock.now(),
+        })) {
+          record(tx, "broker.grant.set", { userId, attrs: { grantId, tool, fields: fields.length } });
+        }
+      }
+    }
+  }
+
+  async function submit(
+    tx: StoreTx, userId: string, input: AskInput, agentId?: string,
+  ): Promise<RequesterView | BrokerError> {
+    const { to, tool, args, purpose } = input;
+    const from = (await tx.getUser(userId))?.address;
+    if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
+    if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
+    const recipient = await tx.getUserByAddress(to);
+    const now = clock.now();
+    let row = await initialRequest({
+      fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
+    }, now);
+    const invitation = recipient && tool === "connect";
+    const grant = recipient && !invitation && await tx.getGrant(recipient.userId, from, tool);
+    // Stable rule code for telemetry. The request keeps separate display text.
+    const ruleCode = invitation ? "connection_request" : grant ? "grant" : recipient ? "no_grant" : "no_recipient";
+    record(tx, "broker.policy.evaluated", {
+      requestId: row.id, userId, ...(agentId ? { agentId } : {}),
+      attrs: { tool, decision: invitation || grant ? "allow" : "deny", rule: ruleCode },
+    });
+    if (invitation) {
+      row = {
+        ...row, status: "awaiting_agent", allowedFields: connectionFields,
+        rule: "Solicitud de conexión", guidance: connectionGuidance,
+      };
+    } else if (grant) {
+      row = {
+        ...row, status: "awaiting_agent", allowedFields: grant.fields,
+        rule: `Permiso para ${tool}: ${grant.fields.join(", ")}`,
+      };
+    } else {
+      const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
+      row = await finalize({ ...row, decisionReason }, "denied", now);
+    }
+    await recordNew(tx, row, now, ruleCode, agentId);
+    return toRequesterView(row);
+  }
+
   type InitialRequest = Pick<RequestRow, "fromAddress" | "toAddress" | "fromUserId" | "toUserId" | "tool" | "args"> &
     Partial<Pick<RequestRow, "targetAgentId" | "purpose">>;
 
@@ -207,33 +276,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   async function ask(userId: string, input: unknown, principal?: Principal) {
     const parsed = AskInput.safeParse(input);
     if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
-    const { to, tool, args, purpose } = parsed.data;
     const view = await store.tx(async (tx) => {
       if (principal) await activeAgent(tx, principal);
-      const from = (await tx.getUser(userId))?.address;
-      if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
-      if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
-      const recipient = await tx.getUserByAddress(to);
-      const now = clock.now();
-      let row = await initialRequest({
-        fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
-      }, now);
-      const grant = recipient && await tx.getGrant(recipient.userId, from, tool);
-      // Stable rule code for telemetry: `rule` and `decisionReason` are display text.
-      const ruleCode = grant ? "grant" : recipient ? "no_grant" : "no_recipient";
-      record(tx, "broker.policy.evaluated", {
-        requestId: row.id, userId, agentId: principal?.agentId,
-        attrs: { tool, decision: grant ? "allow" : "deny", rule: ruleCode },
-      });
-      if (grant) {
-        const rule = `Permiso para ${tool}: ${grant.fields.join(", ")}`;
-        row = { ...row, status: "awaiting_agent", allowedFields: grant.fields, rule };
-      } else {
-        const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
-        row = await finalize({ ...row, decisionReason }, "denied", now);
-      }
-      await recordNew(tx, row, now, ruleCode, principal?.agentId);
-      return toRequesterView(row);
+      return submit(tx, userId, parsed.data, principal?.agentId);
     });
     if (view instanceof BrokerError) throw view;
     return view;
@@ -263,8 +308,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const from = (await tx.getUser(p.userId))?.address;
           const owner = await tx.getUserByAddress(to);
           if (!from || !owner || from === to) return { tools: [] };
-          const grants = await Promise.all(ToolName.options.map(tool => tx.getGrant(owner.userId, from, tool)));
-          return { tools: grants.flatMap(grant => grant ? [describeTool(grant.tool, grant.fields)] : []) };
+          const grants = await Promise.all(GrantTool.options.map(tool => tx.getGrant(owner.userId, from, tool)));
+          const tools = grants.flatMap(grant => grant ? [describeTool(grant.tool, grant.fields)] : []);
+          tools.push(describeTool("connect", connectionFields));
+          return { tools };
         });
       },
 
@@ -340,6 +387,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             droppedFields: droppedFields.filter((field) => declaredFields.includes(field)),
           };
           if (!await saveTransition(tx, row, changed)) return reject(closed());
+          await applyConnection(tx, changed);
           recordTransition(tx, row, changed, "agent");
           await tx.appendEvent({ requestId: row.id, at: now, kind: "response", status: changed.status });
           if (changed.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
@@ -484,6 +532,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             changed = await finalize(transition(row, "answered"), "answered", now, parseResult(row.tool, decision.result));
           }
           if (!await saveTransition(tx, row, changed)) throw closed();
+          await applyConnection(tx, changed);
           record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: decision.kind } });
           recordTransition(tx, row, changed, "owner");
           await tx.appendEvent({ requestId, at: now, kind: "permission", status: changed.status });
@@ -528,6 +577,29 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           };
           await recordNew(tx, row, now, "ping");
           return { requestId: row.id };
+        });
+      },
+
+      async connect(o, to) {
+        const target = Address.safeParse(to);
+        if (!target.success) throw new BrokerError("invalid_input", "La dirección no es válida.");
+        const view = await store.tx((tx) => submit(tx, o.userId, { to: target.data, tool: "connect", args: {} }));
+        if (view instanceof BrokerError) throw view;
+        return view;
+      },
+
+      async friends(o) {
+        return store.tx((tx) => tx.listFriends(o.userId));
+      },
+
+      async removeFriend(o, friend) {
+        if (!Address.safeParse(friend).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
+        await store.tx(async (tx) => {
+          if (!await tx.removeFriend(o.userId, friend)) return;
+          for (const grantId of await tx.revokeFriendGrants(o.userId, friend, clock.now())) {
+            record(tx, "broker.grant.revoked", { userId: o.userId, attrs: { grantId } });
+          }
+          await cancelUnauthorized(tx, o.userId);
         });
       },
 

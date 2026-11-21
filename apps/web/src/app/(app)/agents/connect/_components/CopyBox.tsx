@@ -2,18 +2,27 @@
 
 import { useId, useState } from "react";
 
+import { reportBrowserFailure } from "@/lib/browser-feedback";
+
 import { button } from "../../../ui";
 
-export function CopyBox({ label, value }: { label: string; value: string }) {
+export function CopyBox({ label, value, copyLabel }: { label: string; value: string; copyLabel?: string }) {
   const id = useId();
   const [feedback, setFeedback] = useState("");
 
+  const copyManually = "Selecciona el texto para copiarlo manualmente.";
+
   async function copy() {
+    if (!navigator.clipboard) {
+      setFeedback(copyManually);
+      return;
+    }
     try {
       await navigator.clipboard.writeText(value);
       setFeedback("Copiado.");
     } catch {
-      setFeedback("Selecciona el texto para copiarlo manualmente.");
+      setFeedback(copyManually);
+      void reportBrowserFailure("copy_connection").catch(() => undefined);
     }
   }
 
@@ -21,7 +30,7 @@ export function CopyBox({ label, value }: { label: string; value: string }) {
     <figure className="min-w-0 rounded-lg border border-[#dfe3d7] bg-[#f3f5ed]">
       <figcaption id={id} className="flex flex-wrap items-center justify-between gap-2 px-3 pt-3 text-sm font-semibold">
         {label}
-        <button type="button" className={button} aria-label={`Copiar ${label}`} onClick={copy}>Copiar</button>
+        <button type="button" className={button} aria-label={copyLabel ?? `Copiar ${label}`} onClick={copy}>{copyLabel ?? "Copiar"}</button>
       </figcaption>
       <pre role="region" aria-labelledby={id} tabIndex={0} className="px-3 py-3 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">
         <code>{value}</code>

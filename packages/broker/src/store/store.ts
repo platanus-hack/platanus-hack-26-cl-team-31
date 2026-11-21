@@ -106,6 +106,14 @@ export interface StoreTx {
   // False when the grantor has no live grant with that id.
   revokeGrant(id: string, grantorUserId: string, at: Date): Promise<boolean>;
 
+  listFriends(userId: string): Promise<Address[]>;
+  // True when this transaction creates a new membership.
+  addFriend(userId: string, address: Address): Promise<boolean>;
+  removeFriend(userId: string, address: Address): Promise<boolean>;
+  // An existing live grant takes precedence over the friendship default.
+  insertFriendGrant(row: GrantRow): Promise<boolean>;
+  revokeFriendGrants(userId: string, address: Address, at: Date): Promise<string[]>;
+
   insertRequest(row: RequestRow): Promise<void>;
   getRequest(id: string, participant?: { fromUserId: string } | { toUserId: string }): Promise<RequestRow | null>;
   // Increments version on success. The patch cannot replace id or version.

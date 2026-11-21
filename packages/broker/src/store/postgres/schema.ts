@@ -37,10 +37,16 @@ export const grants = nexo.table("grants", {
   fields: text("fields").array().notNull(),
   createdAt: time("created_at").notNull(),
   revokedAt: time("revoked_at"),
+  friendDefault: boolean("friend_default").notNull().default(false),
 }, (table) => [
   uniqueIndex("grants_live_idx").on(table.grantorUserId, table.granteeAddress, table.tool)
     .where(sql`${table.revokedAt} is null`),
 ]);
+
+export const friends = nexo.table("friends", {
+  userId: text("user_id").notNull().references(() => users.userId),
+  address: text("address").notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.address] })]);
 
 export const requests = nexo.table("requests", {
   id: text("id").primaryKey(),

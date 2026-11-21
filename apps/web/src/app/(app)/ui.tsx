@@ -40,8 +40,12 @@ export function Status({ status }: { status: RequestStatus }) {
   return <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${colors[status]}`}>{statusLabels[status]}</span>;
 }
 
-export function Feedback({ error, message }: { error?: string; message?: string }) {
-  return error ? <p role="alert" className="text-sm text-[#902f25]">{error}</p> :
+export function Feedback({ error, message, errorId }: { error?: string; message?: string; errorId?: string }) {
+  return error ? (
+    <p role="alert" className="text-sm text-[#902f25]">
+      {error}{errorId && <> Código de error <code>{errorId}</code>.</>}
+    </p>
+  ) :
     message ? <p role="status" className="text-sm font-medium text-[#28513b]">{message}</p> : null;
 }
 

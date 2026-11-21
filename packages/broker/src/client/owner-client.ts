@@ -24,5 +24,8 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
       request(routes.ownerSetWake, owner, { params: { agentId }, body }),
     ping: (owner, agentId) => request(routes.ownerPing, owner, { params: { agentId } }),
     revokeAgent: (owner, agentId) => request(routes.ownerRevokeAgent, owner, { params: { agentId } }),
+    connect: (owner, to) => request(routes.ownerConnect, owner, { body: { to } }),
+    friends: async (owner) => (await request(routes.ownerFriends, owner)).items,
+    removeFriend: (owner, address) => request(routes.ownerRemoveFriend, owner, { params: { address } }),
   };
 }

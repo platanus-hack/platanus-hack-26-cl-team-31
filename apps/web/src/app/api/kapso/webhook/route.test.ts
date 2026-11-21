@@ -89,7 +89,9 @@ it("crea y consulta como el titular vinculado; desvinculado no puede consultar",
   });
   expect(await message("¿ya respondió?")).toContain("Sí, puedo.");
   expect(broker.status).toHaveBeenCalledWith({ userId: "user-a" }, requestId);
+  broker.status.mockResolvedValue({ requestId, to: "carla@nexo.app", tool: "connect", decision: "allow", result: { accepted: true } });
+  expect(await message(`estado ${requestId}`)).toContain("Aceptó la solicitud de conexión.");
   linkedUser = undefined;
   expect(await message("estado")).toContain("Vincula tu WhatsApp");
-  expect(broker.status).toHaveBeenCalledTimes(1);
+  expect(broker.status).toHaveBeenCalledTimes(2);
 });

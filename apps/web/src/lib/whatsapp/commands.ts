@@ -18,6 +18,7 @@ function summarize(view: RequesterView): string {
   const answer = "answer" in result ? result.answer :
     "matches" in result ? result.matches ? "Sí, coincide." : "No coincide." :
     "available" in result ? `${result.available ? "Disponible." : "No disponible."}${result.freeSlots?.length ? ` Horarios: ${result.freeSlots.join(", ")}.` : ""}` :
+    "accepted" in result ? result.accepted ? "Aceptó la solicitud de conexión." : "No aceptó la solicitud de conexión." :
     [result.displayName, result.headline].filter(Boolean).join(" — ");
   return `Respuesta de ${view.to}:\n${answer}` + reference;
 }

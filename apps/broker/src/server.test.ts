@@ -145,6 +145,29 @@ describe("HTTP interno del broker", () => {
     expect(await call(app, routes.ownerGrants, { token: bruno })).toEqual({ items: [] });
   });
 
+  it("permite enviar, listar y quitar una conexión desde la app", async () => {
+    const app = createHttpServer({ broker: fixture().broker, publicKeys });
+    const [alice, bruno, brunoBot] = await Promise.all([owner("alice"), owner("bruno"), agent("bruno")]);
+    await call(app, routes.ownerClaimAddress, { token: alice, body: { localPart: "alice" } });
+    await call(app, routes.ownerClaimAddress, { token: bruno, body: { localPart: "bruno" } });
+
+    const sent = await call(app, routes.ownerConnect, { token: alice, body: { to: "bruno@nexo.app" } });
+    expect(sent).toMatchObject({ final: false, waitingFor: "agent" });
+    const { items: [invitation] } = await call(app, routes.agentInbox, { token: brunoBot });
+    expect(invitation).toMatchObject({ requestId: sent.requestId, tool: "connect" });
+    await call(app, routes.agentReply, {
+      token: brunoBot,
+      body: { requestId: sent.requestId, nonce: invitation!.nonce, outcome: "answered", result: { accepted: true } },
+    });
+    expect(await call(app, routes.ownerFriends, { token: alice })).toEqual({ items: ["bruno@nexo.app"] });
+    expect(await call(app, routes.ownerFriends, { token: bruno })).toEqual({ items: ["alice@nexo.app"] });
+
+    const path = routes.ownerRemoveFriend.path.replace(":address", encodeURIComponent("bruno@nexo.app"));
+    await call(app, routes.ownerRemoveFriend, { token: alice, path });
+    expect(await call(app, routes.ownerFriends, { token: alice })).toEqual({ items: [] });
+    expect(await call(app, routes.ownerGrants, { token: alice })).toEqual({ items: [] });
+  });
+
   it("recorre el contrato completo con JWT de servicio y completa ask, inbox, reply y status", async () => {
     const { broker, waker } = fixture();
     const app = createHttpServer({ broker, publicKeys });
