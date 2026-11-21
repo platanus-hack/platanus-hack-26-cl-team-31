@@ -32,7 +32,7 @@ El grant es el único modelo de permisos. Un grant dice que un titular deja a un
 - Un permiso nuevo es una tool o un campo en `packages/protocol/src/tools.ts`. El grant ya lo cubre.
 - Los grants no se componen. Que Bob le dé un grant a Ana y Ana a Carla no le da a Carla nada de Bob.
 - La política base es lo que comparten dos amigos y los miembros de un círculo: `availability` con `available` y `freeSlots`, e `interest_check` con `matches`. Vive en `basePolicy` (`packages/broker/src/core/broker.ts`).
-- Un círculo es un conjunto con nombre (`Circle`, `/v1/owner/circles`). Solo quien lo creó invita, saca a otros y lo elimina, y cada invitado acepta antes de entrar. Mientras dos titulares estén en el mismo círculo se dan la política base.
+- Un círculo es un conjunto con nombre (`Circle`, `/v1/owner/circles`). Solo quien lo creó invita, saca a otros y lo elimina, y cada invitado acepta antes de entrar. Mientras dos titulares estén en el mismo círculo se dan la política base. Web los administra en `/circles`.
 - Los permisos de círculo se calculan al preguntar, en `sharedFields`, y no se guardan como grants. Salir borra la membresía y cierra las solicitudes pendientes que quedan sin permiso. Si ambos siguen en otro círculo, o existe un grant, el acceso se mantiene.
 
 Pendiente, cada uno en su PR:
