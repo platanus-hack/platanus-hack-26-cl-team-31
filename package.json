@@ -10,6 +10,8 @@
     "bootstrap": "pnpm install && pnpm env:init && node infra/gen-keys.ts && pnpm infra:up && pnpm sideband:auth:migrate && pnpm sideband:broker:migrate",
     "sideband:auth:migrate": "pnpm build --filter @team-31/auth && ./scripts/with-env.sh pnpm --filter @team-31/web auth:migrate",
     "sideband:broker:migrate": "pnpm build --filter \"@team-31/broker-service^...\" && ./scripts/with-env.sh pnpm --filter @team-31/broker-service db:prepare",
+    "prepare": "[ -f scripts/install-hooks.sh ] && sh scripts/install-hooks.sh || true",
+    "check:affected": "bash scripts/check-affected.sh",
     "env:init": "./scripts/env-init.sh",
     "with-env": "./scripts/with-env.sh",
     "infra:up": "docker compose up -d --wait",
