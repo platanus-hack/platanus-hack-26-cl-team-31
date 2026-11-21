@@ -85,8 +85,9 @@ async function main() {
     }
     if (shutdown.signal.aborted) return;
     const callback = new URL(receiver.path, webhookOrigin);
-    stage = "El MCP no pudo suscribir el webhook";
-    const subscription = await remote.subscribe(callback, receiver.secret);
+    stage = "El MCP no pudo verificar el webhook. Comprueba que el túnel HTTPS esté disponible";
+    console.log("Verificando el webhook con Sideband…");
+    const subscription = await remote.subscribe(callback, receiver.secret, shutdown.signal);
     id = subscription.id;
     console.log("Escuchando solicitudes nuevas… (Ctrl+C para salir)");
 

@@ -12,6 +12,7 @@ it("se suscribe por MCP, recibe un aviso firmado del broker, omite duplicados y 
   const owner = { userId: "bruno" };
   const watcher = { ...owner, agentId: "watcher", scopes: ["sideband:inbox"] as const };
   const waker = createWaker({ allowInsecure: true });
+  const verifyCallback = vi.spyOn(waker, "verifyCallback").mockResolvedValueOnce({ ok: false, reason: "challenge_failed" });
   const sendWake = vi.spyOn(waker, "wake");
   const broker = createBroker({
     store: createMemoryStore(),
@@ -44,6 +45,9 @@ it("se suscribe por MCP, recibe un aviso firmado del broker, omite duplicados y 
     });
     expect(await remote.supportsWebhook()).toBe(true);
     const { id } = await remote.subscribe(callback, receiver.secret);
+    expect(verifyCallback).toHaveBeenCalledTimes(2);
+    expect(verifyCallback.mock.calls[0]?.[0]).toMatchObject({ subscriptionId: id, callbackUrl: callback.href });
+    expect(verifyCallback.mock.calls[1]?.[0]).toMatchObject({ subscriptionId: id, callbackUrl: callback.href });
     expect((await fetch(callback, {
       method: "POST",
       headers: {
@@ -65,6 +69,11 @@ it("se suscribe por MCP, recibe un aviso firmado del broker, omite duplicados y 
 
     await remote.unsubscribe(id);
     expect((await broker.owner.agents(owner))[0]).toMatchObject({ wakeKind: "none" });
+    verifyCallback.mockResolvedValueOnce({ ok: false, reason: "blocked_address" });
+    await expect(remote.subscribe(callback, receiver.secret)).rejects.toMatchObject({
+      code: -32015, data: { reason: "blocked_address" },
+    });
+    expect(verifyCallback).toHaveBeenCalledTimes(3);
     await broker.owner.ask(sender, request);
     await broker.tick(new Date());
     expect(events).toEqual([requestId]);
