@@ -46,6 +46,18 @@ export const friends = sideband.table("friends", {
   address: text("address").notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.address] })]);
 
+export const contactTags = sideband.table("contact_tags", {
+  userId: text("user_id").notNull().references(() => users.userId),
+  address: text("address").notNull(),
+  tag: text("tag").notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.address] })]);
+
+export const tagPresets = sideband.table("tag_presets", {
+  userId: text("user_id").notNull().references(() => users.userId),
+  tag: text("tag").notNull(),
+  categories: jsonb("categories").notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.tag] })]);
+
 export const circles = sideband.table("circles", {
   id: text("id").primaryKey(),
   ownerUserId: text("owner_user_id").notNull().references(() => users.userId),

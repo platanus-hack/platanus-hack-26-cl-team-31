@@ -78,13 +78,17 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.revokeAgent":
       return owner.revokeAgent(c.get("web"), parseInput(route.params, c.req.param()).agentId);
     case "owner.connect": {
-      const { to, share } = await parseBody(c, route.body);
-      return owner.connect(c.get("web"), to, share);
+      const { to, share, tag } = await parseBody(c, route.body);
+      return owner.connect(c.get("web"), to, share, tag);
     }
     case "owner.contacts":
       return owner.contacts(c.get("web"));
     case "owner.setSharing":
       return owner.setSharing(c.get("web"), parseInput(route.params, c.req.param()).address, await parseBody(c, route.body));
+    case "owner.setContactTag":
+      return owner.setContactTag(c.get("web"), parseInput(route.params, c.req.param()).address, (await parseBody(c, route.body)).tag);
+    case "owner.setTagPreset":
+      return owner.setTagPreset(c.get("web"), parseInput(route.params, c.req.param()).tag, await parseBody(c, route.body));
     case "owner.answerInvitation":
       return owner.answerInvitation(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
     case "owner.circles":

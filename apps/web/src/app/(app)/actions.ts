@@ -1,7 +1,7 @@
 "use server";
 
 import { BrokerError } from "@team-31/broker/client";
-import { Address, CircleName, LocalPart, OwnerDecision, Sharing, ToolResultSchemas, type Owner } from "@team-31/protocol";
+import { Address, CircleName, ContactTag, LocalPart, OwnerDecision, Sharing, ToolResultSchemas, type Owner } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -223,11 +223,11 @@ export async function sendInvitation(_: Feedback, form: FormData): Promise<Feedb
   const to = Address.safeParse(String(form.get("to") ?? "").trim().toLowerCase());
   if (!to.success) return { error: "Ingresa una dirección válida, por ejemplo nombre@sideband.app." };
   if (to.data === address) return { error: "Esa es tu propia dirección." };
-  const share = sharingFrom(form);
-  if (!share.success) return { error: "Elige qué le compartes." };
+  const tag = ContactTag.safeParse(form.get("tag"));
+  if (!tag.success) return { error: "Elige una etiqueta." };
 
   try {
-    const view = await ownerClient().connect(owner, to.data, share.data);
+    const view = await ownerClient().connect(owner, to.data, undefined, tag.data);
     contactsChanged();
     if (view.final && view.decision === "deny") return { error: "No encontramos a nadie con esa dirección." };
     if (view.final) return { message: `Ya estás conectado con ${to.data}.` };
@@ -243,16 +243,48 @@ export async function answerInvitation(requestId: string, _: Feedback, form: For
   const owner = await getOwner();
   if (!(form instanceof FormData)) return { error: "Elige aceptar o rechazar." };
   const accept = form.get("answer") === "accept";
-  const share = sharingFrom(form);
-  if (accept && !share.success) return { error: "Elige qué le compartes." };
+  const tag = ContactTag.safeParse(form.get("tag"));
+  if (accept && !tag.success) return { error: "Elige una etiqueta." };
 
   try {
-    await ownerClient().answerInvitation(owner, requestId, { accept, ...(accept && share.success ? { share: share.data } : {}) });
+    await ownerClient().answerInvitation(owner, requestId, { accept, ...(accept && tag.success ? { tag: tag.data } : {}) });
   } catch (error) {
     return { error: actionError("answerInvitation", error, "No se pudo responder la invitación. Intenta de nuevo.") };
   }
   contactsChanged();
   return { message: accept ? "Ahora están conectados." : "Invitación rechazada." };
+}
+
+export async function saveContactTag(contact: string, tag: string): Promise<Feedback> {
+  await requireAddress();
+  const owner = await getOwner();
+  const address = Address.safeParse(contact);
+  const label = ContactTag.safeParse(tag);
+  if (!address.success || !label.success) return { error: "Elige una etiqueta." };
+
+  try {
+    await ownerClient().setContactTag(owner, address.data, label.data);
+  } catch (error) {
+    return { error: actionError("saveContactTag", error, "No se pudo guardar. Intenta de nuevo.") };
+  }
+  contactsChanged();
+  return {};
+}
+
+export async function saveTagPreset(tag: string, _: Feedback, form: FormData): Promise<Feedback> {
+  await requireAddress();
+  const owner = await getOwner();
+  const label = ContactTag.safeParse(tag);
+  const share = form instanceof FormData ? sharingFrom(form) : undefined;
+  if (!label.success || !share?.success) return { error: "Elige qué comparte esta etiqueta." };
+
+  try {
+    await ownerClient().setTagPreset(owner, label.data, share.data);
+  } catch (error) {
+    return { error: actionError("saveTagPreset", error, "No se pudo guardar. Intenta de nuevo.") };
+  }
+  contactsChanged();
+  return { message: "Guardado." };
 }
 
 export async function saveSharing(contact: string, _: Feedback, form: FormData): Promise<Feedback> {

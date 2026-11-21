@@ -4,7 +4,7 @@ import { AdminActionInput } from "./admin.js";
 import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
 import { ActivityItem, AgentConnection, AgentContacts, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent } from "./owner.js";
-import { Sharing } from "./sharing.js";
+import { ContactTag, Sharing } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
@@ -184,7 +184,7 @@ export const routes = {
   ownerConnect: {
     method: "POST",
     path: "/v1/owner/connections",
-    body: z.object({ to: Address, share: Sharing.optional() }),
+    body: z.object({ to: Address, share: Sharing.optional(), tag: ContactTag.optional() }),
     response: RequesterViewSchema,
     iss: "web",
     port: "owner.connect",
@@ -204,6 +204,24 @@ export const routes = {
     ...noContent,
     iss: "web",
     port: "owner.setSharing",
+  },
+  ownerSetContactTag: {
+    method: "PUT",
+    path: "/v1/owner/connections/:address/tag",
+    params: z.object({ address: Address }),
+    body: z.object({ tag: ContactTag }),
+    ...noContent,
+    iss: "web",
+    port: "owner.setContactTag",
+  },
+  ownerSetTagPreset: {
+    method: "PUT",
+    path: "/v1/owner/tags/:tag",
+    params: z.object({ tag: ContactTag }),
+    body: Sharing,
+    ...noContent,
+    iss: "web",
+    port: "owner.setTagPreset",
   },
   ownerAnswerInvitation: {
     method: "POST",

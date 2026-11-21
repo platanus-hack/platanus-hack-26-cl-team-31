@@ -2,9 +2,11 @@ import type {
   ActivityEvent,
   Address,
   Category,
+  ContactTag,
   FinalOutcome,
   RequestStatus,
   PublicAgent,
+  Sharing,
   ToolName,
   ToolResult,
   WakeResult,
@@ -119,6 +121,12 @@ export interface StoreTx {
   // True when this transaction creates a new membership.
   addFriend(userId: string, address: Address): Promise<boolean>;
   removeFriend(userId: string, address: Address): Promise<boolean>;
+  // The tag a holder put on each contact. A null tag removes it.
+  listContactTags(userId: string): Promise<Map<Address, ContactTag>>;
+  setContactTag(userId: string, address: Address, tag: ContactTag | null): Promise<void>;
+  // Only the presets the holder changed; the rest use contactTags defaults.
+  listTagPresets(userId: string): Promise<Partial<Record<ContactTag, Sharing>>>;
+  putTagPreset(userId: string, tag: ContactTag, sharing: Sharing): Promise<void>;
   // Pending connect requests sent or received by the user, oldest first.
   listOpenInvitations(userId: string): Promise<RequestRow[]>;
 

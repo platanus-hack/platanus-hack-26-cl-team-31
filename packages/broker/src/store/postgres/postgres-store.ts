@@ -1,6 +1,6 @@
 import {
-  ActivityEvent, Address, Category, FinalOutcome, RequestStatus, ToolArgs, ToolName,
-  ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
+  ActivityEvent, Address, Category, FinalOutcome, RequestStatus, ToolArgs, ToolName, ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
+  ContactTag, Sharing,
 } from "@team-31/protocol";
 import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -12,7 +12,7 @@ import type {
 } from "../store.js";
 import { createWakeCodec } from "./crypto.js";
 import {
-  agentConnections, circleMembers, circles, friends, grants, requestEvents, requests, users, wakeJobs,
+  agentConnections, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tagPresets, users, wakeJobs,
 } from "./schema.js";
 
 export type PostgresStoreOptions = {
@@ -201,6 +201,32 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       const removed = await db.delete(friends).where(and(eq(friends.userId, userId), eq(friends.address, address)))
         .returning({ address: friends.address });
       return removed.length > 0;
+    },
+
+    async listContactTags(userId) {
+      const rows = await db.select().from(contactTags).where(eq(contactTags.userId, userId));
+      return new Map(rows.map((row) => [parseStored(Address, row.address), parseStored(ContactTag, row.tag)]));
+    },
+
+    async setContactTag(userId, address, tag) {
+      if (!tag) {
+        await db.delete(contactTags).where(and(eq(contactTags.userId, userId), eq(contactTags.address, address)));
+        return;
+      }
+      await ensureUser(userId);
+      await db.insert(contactTags).values({ userId, address, tag })
+        .onConflictDoUpdate({ target: [contactTags.userId, contactTags.address], set: { tag } });
+    },
+
+    async listTagPresets(userId) {
+      const rows = await db.select().from(tagPresets).where(eq(tagPresets.userId, userId));
+      return Object.fromEntries(rows.map((row) => [parseStored(ContactTag, row.tag), parseStored(Sharing, row.categories)]));
+    },
+
+    async putTagPreset(userId, tag, sharing) {
+      await ensureUser(userId);
+      await db.insert(tagPresets).values({ userId, tag, categories: sharing })
+        .onConflictDoUpdate({ target: [tagPresets.userId, tagPresets.tag], set: { categories: sharing } });
     },
 
     async listOpenInvitations(userId) {

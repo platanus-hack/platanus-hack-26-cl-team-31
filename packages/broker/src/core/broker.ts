@@ -12,6 +12,9 @@ import {
   GrantInput,
   InvitationAnswer,
   Sharing,
+  ContactTag,
+  contactTags,
+  type TagPresets,
   ToolArgs,
   ToolName,
   LocalPart,
@@ -426,14 +429,35 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return circle;
   }
 
+  async function presetsOf(tx: StoreTx, userId: string): Promise<TagPresets> {
+    const stored = await tx.listTagPresets(userId);
+    return {
+      friend: stored.friend ?? contactTags.friend.sharing,
+      family: stored.family ?? contactTags.family.sharing,
+      work: stored.work ?? contactTags.work.sharing,
+    };
+  }
+
+  async function tagContact(tx: StoreTx, userId: string, address: Address, tag: ContactTag): Promise<void> {
+    await tx.setContactTag(userId, address, tag);
+    record(tx, "broker.contact.tagged", { userId, attrs: { tag } });
+  }
+
+  function sameSharing(a: Sharing, b: Sharing): boolean {
+    return a.length === b.length && a.every((category) => b.includes(category));
+  }
+
   async function listContacts(tx: StoreTx, userId: string) {
     const me = (await tx.getUser(userId))?.address;
     const mine = await tx.listGrants(userId);
+    const tags = await tx.listContactTags(userId);
     return Promise.all((await tx.listFriends(userId)).map(async (address) => {
       const other = await tx.getUserByAddress(address);
       const theirs = other && me ? (await tx.listGrants(other.userId)).filter((grant) => grant.granteeAddress === me) : [];
+      const tag = tags.get(address);
       return {
         address,
+        ...(tag ? { tag } : {}),
         gives: categoriesOf(mine.filter((grant) => grant.granteeAddress === address)),
         receives: categoriesOf(theirs),
       };
@@ -569,7 +593,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const me = (await tx.getUser(p.userId))?.address;
           if (!me) return { contacts: [], circles: [] };
           const contacts = (await listContacts(tx, p.userId))
-            .map(({ address, gives, receives }) => ({ address, theyShare: receives, youShare: gives }));
+            .map(({ address, tag, gives, receives }) => ({ address, ...(tag ? { tag } : {}), theyShare: receives, youShare: gives }));
           const circles = (await Promise.all((await tx.listCircles(me)).map((row) => toCircle(tx, row))))
             .filter((circle) => circle.members.some((member) => member.address === me && member.joined))
             .map(({ name, members }) => ({
@@ -769,13 +793,19 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
 
-      async connect(o, to, share) {
+      async connect(o, to, share, tag) {
         const target = Address.safeParse(to);
         if (!target.success) throw new BrokerError("invalid_input", "La dirección no es válida.");
         const offer = share === undefined ? undefined : Sharing.safeParse(share);
         if (offer && !offer.success) throw new BrokerError("invalid_input", "Lo que compartes no es válido.");
-        const args = offer ? { share: offer.data } : {};
-        const view = await store.tx((tx) => submit(tx, o.userId, { to: target.data, tool: "connect", args }));
+        const label = tag === undefined ? undefined : ContactTag.safeParse(tag);
+        if (label && !label.success) throw new BrokerError("invalid_input", "La etiqueta no es válida.");
+        const view = await store.tx(async (tx) => {
+          const sharing = offer?.data ?? (label ? (await presetsOf(tx, o.userId))[label.data] : undefined);
+          const result = await submit(tx, o.userId, { to: target.data, tool: "connect", args: sharing ? { share: sharing } : {} });
+          if (!(result instanceof BrokerError) && label) await tagContact(tx, o.userId, target.data, label.data);
+          return result;
+        });
         if (view instanceof BrokerError) throw view;
         return view;
       },
@@ -790,6 +820,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           });
           return {
             contacts,
+            presets: await presetsOf(tx, o.userId),
             incoming: open.filter((row) => row.toUserId === o.userId).map((row) => invitation(row, row.fromAddress)),
             outgoing: open.filter((row) => row.fromUserId === o.userId).map((row) => invitation(row, row.toAddress)),
           };
@@ -807,6 +838,34 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
 
+      async setContactTag(o, contact, tag) {
+        const address = Address.safeParse(contact);
+        const label = ContactTag.safeParse(tag);
+        if (!address.success || !label.success) throw new BrokerError("invalid_input", "La etiqueta no es válida.");
+        await store.tx(async (tx) => {
+          if (!(await tx.listFriends(o.userId)).includes(address.data)) throw notFound();
+          await tagContact(tx, o.userId, address.data, label.data);
+          await applySharing(tx, o.userId, address.data, (await presetsOf(tx, o.userId))[label.data]);
+          await cancelUnauthorized(tx, o.userId);
+        });
+      },
+
+      async setTagPreset(o, tag, sharing) {
+        const label = ContactTag.safeParse(tag);
+        const parsed = Sharing.safeParse(sharing);
+        if (!label.success || !parsed.success) throw new BrokerError("invalid_input", "Lo que compartes no es válido.");
+        await store.tx(async (tx) => {
+          const previous = (await presetsOf(tx, o.userId))[label.data];
+          await tx.putTagPreset(o.userId, label.data, parsed.data);
+          record(tx, "broker.tag.preset_set", { userId: o.userId, attrs: { tag: label.data, categories: parsed.data.length } });
+          for (const contact of await listContacts(tx, o.userId)) {
+            if (contact.tag !== label.data || !sameSharing(contact.gives, previous)) continue;
+            await applySharing(tx, o.userId, contact.address, parsed.data);
+          }
+          await cancelUnauthorized(tx, o.userId);
+        });
+      },
+
       async answerInvitation(o, requestId, answer) {
         const parsed = InvitationAnswer.safeParse(answer);
         if (!parsed.success) throw new BrokerError("invalid_input", "La respuesta no es válida.");
@@ -816,7 +875,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (row.status !== "awaiting_agent" && row.status !== "awaiting_owner") throw closed();
           const now = clock.now();
           if (row.expiresAt <= now) return await closePending(tx, row, "expired", now) ? expired() : closed();
-          await closeInvitation(tx, row, parsed.data.accept, parsed.data.share, "owner");
+          const { accept, tag } = parsed.data;
+          const share = parsed.data.share ?? (tag ? (await presetsOf(tx, o.userId))[tag] : undefined);
+          await closeInvitation(tx, row, accept, share, "owner");
+          if (accept && tag) await tagContact(tx, o.userId, row.fromAddress, tag);
           record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: parsed.data.accept ? "accept" : "decline" } });
         });
         if (error) throw error;
@@ -909,6 +971,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           let removed = false;
           for (const { userId, address } of sides) {
             removed = await tx.removeFriend(userId, address) || removed;
+            await tx.setContactTag(userId, address, null);
             await applySharing(tx, userId, address, []);
             await cancelUnauthorized(tx, userId);
           }

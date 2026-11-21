@@ -245,7 +245,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(7);
   });
 
   it("reads a question stored before categories as an open question", async () => {
@@ -265,6 +265,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       ADD COLUMN fields text[] NOT NULL, ADD COLUMN friend_default boolean DEFAULT false NOT NULL`);
     await isolated.query(`CREATE UNIQUE INDEX grants_live_idx ON sideband.grants (grantor_user_id, grantee_address, tool)
       WHERE revoked_at IS NULL`);
+    await isolated.query("DROP TABLE sideband.contact_tags, sideband.tag_presets");
     await isolated.query("DELETE FROM sideband.__drizzle_migrations WHERE id > 5");
     for (const [tool, field] of [["availability", "available"], ["interest_check", "matches"], ["question", "answer"], ["profile", "displayName"]]) {
       await isolated.query(
@@ -299,6 +300,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     });
     // Restore the legacy schema and migration journal while keeping the fixture rows.
     await isolated.query("ALTER TABLE sideband.requests DROP COLUMN approved_once");
+    await isolated.query("DROP TABLE sideband.contact_tags, sideband.tag_presets");
     await isolated.query("DROP TABLE sideband.circle_members, sideband.circles");
     await isolated.query("DROP TABLE sideband.friends");
     await isolated.query("DROP TABLE sideband.grants");
