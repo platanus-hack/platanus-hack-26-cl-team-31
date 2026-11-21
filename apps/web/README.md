@@ -1,36 +1,21 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# App Nexo
 
-## Getting Started
+## Inicio local
 
-First, run the development server:
+Desde la raíz, con el entorno del worktree inicializado:
+
+1. Configura `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y `MCP_RESOURCE_URL` en `.env.local`. Genera un secreto con `openssl rand -base64 32`. En Google OAuth registra el origen `BETTER_AUTH_URL` del worktree y la URI de retorno `${BETTER_AUTH_URL}/api/auth/callback/google`.
+2. Si el broker está disponible, configura `BROKER_URL` y `WEB_SERVICE_PRIVATE_KEY`. Web consulta la dirección del usuario mediante `OwnerPort.me`. La conexión del agente se registra en el broker al recibir su primera llamada autenticada, con `wakeKind: "none"`.
+3. Ejecuta estos comandos.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm build --filter './packages/*'
+pnpm with-env pnpm --filter @team-31/web auth:migrate
+pnpm dev --filter @team-31/web
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre `${BETTER_AUTH_URL}/sign-in`. Después de iniciar sesión directamente con Google, los usuarios sin dirección pasan a `/onboarding` (NX-12).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## OAuth para agentes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+La metadata se publica en `/.well-known/oauth-authorization-server` y en `/.well-known/oauth-authorization-server/api/auth` para los clientes que la solicitan desde el issuer. Incluye los endpoints de autorización, token, registro dinámico de clientes y JWKS. Inicia la conexión desde tu cliente OAuth para solicitar consentimiento con los permisos de Nexo.

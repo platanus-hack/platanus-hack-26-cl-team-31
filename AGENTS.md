@@ -39,9 +39,9 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 
 ## Identidad Nexo
 
-- OAuth en web usa `DATABASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y `MCP_RESOURCE_URL`. Aplica el esquema de Better Auth con `migrateAuth` de `@team-31/auth/server` antes de iniciar el servidor. Sus pruebas usan `TEST_DATABASE_URL` y credenciales ficticias de Google.
+- OAuth en web usa `DATABASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y `MCP_RESOURCE_URL`. El origen local `BETTER_AUTH_URL` se genera a partir de `WEB_PORT`. Prepara el esquema OAuth con `pnpm with-env pnpm --filter @team-31/web auth:migrate` después de compilar los paquetes compartidos. Sus pruebas usan `TEST_DATABASE_URL` y credenciales ficticias de Google.
 - El MCP remoto verifica los access tokens con `AUTH_ISSUER`, `AUTH_JWKS_URL` y `MCP_RESOURCE_URL`. `MCP_DEV_AUTH=1` habilita tokens de desarrollo fuera de producción.
-- MCP y web firman JWT para el broker con `MCP_SERVICE_PRIVATE_KEY` y `WEB_SERVICE_PRIVATE_KEY` respectivamente. El broker verifica con `SERVICE_JWT_PUBLIC_KEYS` (JSON con las claves JWK públicas `mcp` y `web`).
+- MCP y web firman JWT para el broker con `MCP_SERVICE_PRIVATE_KEY` y `WEB_SERVICE_PRIVATE_KEY` respectivamente. Web usa `BROKER_URL` para consultar la dirección Nexo. El broker verifica con `SERVICE_JWT_PUBLIC_KEYS` (JSON con las claves JWK públicas `mcp` y `web`).
 
 ## Coordinación local entre N asistentes
 
