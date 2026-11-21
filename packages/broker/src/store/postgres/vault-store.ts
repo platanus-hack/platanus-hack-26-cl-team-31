@@ -1,20 +1,31 @@
-import { ContactTag } from "@team-31/protocol";
+import { ContactTag, type OwnerVault } from "@team-31/protocol";
 import { and, eq, inArray } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import type { StoreTx } from "../store.js";
 import { users, friends, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e } from "./schema.js";
 
 type Tx = Parameters<Parameters<ReturnType<typeof drizzle>["transaction"]>[0]>[0];
-export function vaultStore(db: Tx): Pick<StoreTx, "ownerVault" | "changeVault" | "sharedVault"> {
+export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "ownerVault" | "changeVault" | "sharedVault"> {
+  function listCategories(owner: string) {
+    return db.select({ id: c.id, name: c.name }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
+  }
+
   return {
+    async vaultCatalog(owner) {
+      return { categories: await listCategories(owner) };
+    },
     async ownerVault(owner) {
-      const categories = await db.select().from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
-      const entries = await db.select().from(e).where(eq(e.owner, owner)).orderBy(e.label);
-      const permissions = await db.select().from(p).where(eq(p.owner, owner)).orderBy(p.group);
-      return { categories: categories.map(({ id, name }) => ({ id, name,
-        groups: permissions.filter(row => row.id === id).map(row => ContactTag.parse(row.group)),
-        entries: entries.filter(row => row.id === id).map(({ label, value }) => ({ label, value })),
-      })) };
+      const categories: OwnerVault["categories"] = (await listCategories(owner)).map(category => ({
+        ...category, groups: [], entries: [],
+      }));
+      if (!categories.length) return { categories };
+
+      const byId = new Map(categories.map(category => [category.id, category]));
+      const entries = await db.select({ id: e.id, label: e.label, value: e.value }).from(e).where(eq(e.owner, owner)).orderBy(e.label);
+      for (const { id, label, value } of entries) byId.get(id)?.entries.push({ label, value });
+      const permissions = await db.select({ id: p.id, group: p.group }).from(p).where(eq(p.owner, owner)).orderBy(p.group);
+      for (const { id, group } of permissions) byId.get(id)?.groups.push(ContactTag.parse(group));
+      return { categories };
     },
     async changeVault(owner, id, change) {
       const category = and(eq(c.owner, owner), eq(c.id, id));

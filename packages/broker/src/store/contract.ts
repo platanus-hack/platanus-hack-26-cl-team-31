@@ -51,6 +51,27 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("keeps owner catalogs metadata-only and attaches contents to the right owner and category", async () => {
+      const first = randomUUID();
+      const second = randomUUID();
+      await store.tx(async tx => {
+        await tx.changeVault("alice", first, { action: "create", name: "Agenda" });
+        await tx.changeVault("alice", second, { action: "create", name: "Salud" });
+        await tx.changeVault("bruno", first, { action: "create", name: "Trabajo" });
+        await tx.changeVault("alice", first, { action: "put_entry", categoryId: first, label: "Días", value: 2 });
+        await tx.changeVault("bruno", first, { action: "put_entry", categoryId: first, label: "Días", value: 3 });
+        await tx.changeVault("alice", second, { action: "set_group", categoryId: second, group: "family", allowed: true });
+
+        expect(await tx.vaultCatalog("alice")).toEqual({ categories: [
+          { id: first, name: "Agenda" }, { id: second, name: "Salud" },
+        ] });
+        expect(await tx.ownerVault("alice")).toEqual({ categories: [
+          { id: first, name: "Agenda", entries: [{ label: "Días", value: 2 }], groups: [] },
+          { id: second, name: "Salud", entries: [], groups: ["family"] },
+        ] });
+      });
+    });
+
     it("filters vault entries by the owner's current tag and accepted contact before reading", async () => {
       const id = randomUUID();
       await store.tx(async tx => {
