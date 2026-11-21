@@ -15,7 +15,7 @@ import {
   Sharing,
   tagSharing,
   ToolArgs,
-  VaultChange, VaultQuery,
+  VaultChange, VaultQuery, VaultVisitsQuery,
   ToolResultSchemas,
   ToolName,
   LocalPart, ProfileSearch,
@@ -472,10 +472,23 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const query = VaultQuery.safeParse(input);
     if (!query.success) throw new BrokerError("invalid_input", "Revisa la dirección y la categoría.");
     const reader = (await tx.getUser(userId))?.address;
-    const result = reader ? await tx.sharedVault(reader, query.data.to, query.data.categoryId) : { categories: [] };
-    record(tx, "broker.vault.queried", { userId, agentId,
-      attrs: { lookup: query.data.categoryId ? "entries" : "categories", visible: result.categories.length > 0 } });
+    const at = clock.now();
+    const result = reader ? await tx.sharedVault(reader, query.data.to, query.data.categoryId, at) : { categories: [] };
+    const lookup = query.data.categoryId ? "entries" as const : "categories" as const;
+    const visible = result.categories.length > 0;
+    record(tx, "broker.vault.queried", { userId, agentId, attrs: { lookup, visible } });
+    // The store records a visit for every authorized read of somebody else's vault.
+    if (visible && reader !== query.data.to) {
+      record(tx, "broker.vault.visited", { userId, agentId, attrs: { lookup, ...(query.data.categoryId ? { categoryId: query.data.categoryId } : {}) } });
+    }
     return result;
+  }
+
+  // The holder's own visits. The caller's identity is the only scope: no one reads another's.
+  async function vaultVisits(tx: StoreTx, userId: string, input?: VaultVisitsQuery) {
+    const parsed = VaultVisitsQuery.safeParse(input ?? {});
+    if (!parsed.success) throw new BrokerError("invalid_input", "Revisa la categoría y el límite.");
+    return tx.vaultVisits(userId, { categoryId: parsed.data.categoryId, limit: parsed.data.limit ?? 30 });
   }
 
   async function changeVault(tx: StoreTx, userId: string, input: VaultChange, agentId?: string) {
@@ -531,12 +544,15 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (!parsed.success) throw new BrokerError("invalid_input", "Revisa el documento y la categoría.");
     const reader = (await tx.getUser(userId))?.address;
     if (!reader) throw notFound();
-    const row = await tx.sharedVaultDocument(reader, parsed.data.to, parsed.data);
+    const row = await tx.sharedVaultDocument(reader, parsed.data.to, parsed.data, clock.now());
     if (!row) throw notFound();
     const metadata = documentMetadata(row);
     record(tx, "broker.vault.document.downloaded", {
       userId, agentId, attrs: { sizeBytes: row.sizeBytes },
     });
+    if (reader !== parsed.data.to) {
+      record(tx, "broker.vault.visited", { userId, agentId, attrs: { lookup: "document", categoryId: parsed.data.categoryId } });
+    }
     return { ...metadata, contentBase64: Buffer.from(row.content).toString("base64") };
   }
 
@@ -619,6 +635,13 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return uploadVaultDocument(tx, p.userId, input, p.agentId);
+        });
+      },
+      async vaultVisits(p, query) {
+        requireScope(p, "vaultVisits");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          return vaultVisits(tx, p.userId, query);
         });
       },
       async downloadVaultDocument(p, input) {
@@ -938,6 +961,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       directory: o => store.tx(tx => directory(tx, o.userId)),
       queryVault: (o, input) => store.tx(tx => queryVault(tx, o.userId, input)),
+      vaultVisits: (o, query) => store.tx(tx => vaultVisits(tx, o.userId, query)),
       searchPublicProfiles: (o, query) => store.tx(tx => searchProfiles(tx, o.userId, query)),
 
       async agentDirectory() {

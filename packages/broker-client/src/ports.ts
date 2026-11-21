@@ -2,7 +2,7 @@ import type { OwnerActivityQuery } from "@team-31/protocol/http";
 import type {
   ActivityItem,
   TagChange, TagsView, Tag, TagInput, TagUpdate, OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
-  VaultDocumentDownload, VaultDocumentMetadata, VaultDocumentQuery, VaultDocumentUpload,
+  VaultDocumentDownload, VaultDocumentMetadata, VaultDocumentQuery, VaultDocumentUpload, VaultVisits, VaultVisitsQuery,
   AdminActor,
   Capability,
   Circle,
@@ -43,6 +43,8 @@ export interface AgentPort {
   queryVault(p: Principal, query: VaultQuery): Promise<VaultResult>;
   uploadVaultDocument(p: Principal, input: VaultDocumentUpload): Promise<VaultDocumentMetadata>;
   downloadVaultDocument(p: Principal, query: VaultDocumentQuery): Promise<VaultDocumentDownload>;
+  // Who read the caller's own vault, most recent first.
+  vaultVisits(p: Principal, query?: VaultVisitsQuery): Promise<VaultVisits>;
   capabilities(p: Principal, to: Address): Promise<{ tools: Capability[] }>;
   ask(p: Principal, input: AskArguments): Promise<RequesterView>;
   inbox(p: Principal, includeInvitations?: boolean): Promise<InboxItem[]>;
@@ -63,6 +65,7 @@ export interface OwnerPort {
   updateTag(o: Owner, tagId: string, input: TagUpdate): Promise<Tag>;
   deleteTag(o: Owner, tagId: string): Promise<void>;
   vault(o: Owner): Promise<OwnerVault>;
+  vaultVisits(o: Owner, query?: VaultVisitsQuery): Promise<VaultVisits>;
   changeVault(o: Owner, change: VaultChange): Promise<VaultReceipt>;
   me(o: Owner): Promise<{ userId: string; address?: Address; displayName?: string }>;
   claimAddress(o: Owner, localPart: string): Promise<Address>;

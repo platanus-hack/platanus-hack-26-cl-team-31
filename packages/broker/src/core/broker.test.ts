@@ -188,6 +188,28 @@ it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de
   expect((await broker.agent.queryVault(carla, query)).categories[0]?.entries).toEqual([]);
 });
 
+it("le entrega al titular quién leyó su bóveda y a nadie más", async () => {
+  const ownerAgent: Principal = { ...bruno, scopes: ["sideband:vault", "sideband:ask"] };
+  const invitation = await broker.owner.connect(bruno, { to: "alice@sideband.app", share: [] });
+  await broker.owner.answerInvitation(alice, invitation.requestId, { accept: true, share: [] });
+  const { categoryId } = await broker.agent.changeVault(ownerAgent, { action: "create", name: "Salud" });
+  await broker.owner.changeVault(bruno, { action: "set_member", categoryId, address: "alice@sideband.app", allowed: true });
+
+  await broker.agent.queryVault(alice, { to: "bruno@sideband.app", categoryId });
+  const mine = await broker.owner.vaultVisits(bruno);
+  expect(mine.readers).toBe(1);
+  expect(mine.visits).toMatchObject([{ reader: "alice@sideband.app", kind: "entries", categoryId, categoryName: "Salud" }]);
+
+  // La bóveda de otro titular no se ve desde aquí.
+  expect(await broker.owner.vaultVisits(alice)).toEqual({ visits: [], readers: 0 });
+  expect(await broker.agent.vaultVisits(ownerAgent)).toEqual(mine);
+  await expect(broker.owner.vaultVisits(bruno, { limit: 0 })).rejects.toMatchObject({ code: "invalid_input" });
+});
+
+it("exige el scope sideband:vault para leer las visitas", async () => {
+  await expect(broker.agent.vaultVisits(bruno)).rejects.toMatchObject({ code: "forbidden" });
+});
+
 it("sube cualquier archivo a la bóveda y lo entrega solo mientras la categoría está autorizada", async () => {
   const ownerAgent: Principal = { ...bruno, scopes: ["sideband:vault", "sideband:ask"] };
   const readerAgent: Principal = { ...alice, scopes: ["sideband:ask"] };
