@@ -20,7 +20,7 @@ type Resolution =
   | { kind: "empty" };
 
 export async function resolveRecipients(
-  selector: Selector, contacts: () => Promise<AgentContacts>, selectedCircle?: string,
+  selector: Selector, contacts: () => Promise<AgentContacts>, selectedCircle?: string, mustBeContact = false,
 ): Promise<Resolution> {
   const { scope, person, count } = selector;
   if (scope === "unspecified") {
@@ -46,7 +46,7 @@ export async function resolveRecipients(
         choices: options.filter(c => c.id).map(c => ({ value: c.id!, label: c.name + (circles.length > 1 ? " (" + c.members.length + " integrantes, " + c.id!.slice(-6) + ")" : "") })) } };
     }
     if (!circle.id) return { kind: "unsupported" };
-    members = circle.members;
+    members = mustBeContact ? circle.members.filter(address => names.has(address)) : circle.members;
     for (const [address, name] of Object.entries(circle.memberNames ?? {})) names.set(address, name);
     relation = { kind: "circle", circleId: circle.id };
   } else {

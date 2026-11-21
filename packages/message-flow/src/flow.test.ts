@@ -231,4 +231,13 @@ describe("turnos del titular", () => {
     await run("America/Santiago", first.continuationId);
     expect(ask).toHaveBeenCalledWith(expect.objectContaining({ args: { timezone: "America/Santiago", date: "2026-11-22", start: "15:00", durationMinutes: 30 } }));
   });
+
+  it("consulta la bóveda de alguien del círculo solo si también es contacto", async () => {
+    const { run, context } = harness(async () => ({
+      action: "vault", selector: { scope: "circle", count: "one", circle: "Fútbol", person: "Paz" },
+    }));
+    context.ops.contacts = async () => ({ contacts: [], circles: [{ id: circle, name: "Fútbol", members: [ana], memberNames: { [ana]: "Paz" } }] });
+    expect((await run("Lee la bóveda de Paz de mi círculo Fútbol")).kind).toBe("clarification");
+    expect(context.ops.queryVault).not.toHaveBeenCalled();
+  });
 });

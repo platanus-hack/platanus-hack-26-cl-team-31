@@ -111,7 +111,7 @@ class Turn {
     if (plan.action === "profiles") return this.finish({ kind: "profiles", items: await ops.searchProfiles!(plan.query) });
     if (plan.empty) return this.finish({ kind: "vault", data: { categories: [] } });
     if (this.session.replay) {
-      const current = await resolveRecipients(plan.selector, () => ops.contacts(), plan.circleId);
+      const current = await resolveRecipients(plan.selector, () => ops.contacts(), plan.circleId, true);
       if (current.kind !== "resolved") return this.finish({ kind: "vault", data: { categories: [] } });
     }
     return this.finish({ kind: "vault", data: await ops.queryVault!({ to: plan.selector.person!, categoryId: plan.categoryId }) });
@@ -143,7 +143,7 @@ class Turn {
     const intent = this.intent;
     if (intent.action !== "ask" && intent.action !== "vault") throw new Error("Invalid resolution transition");
     if (intent.action === "vault" && !this.context.ops.queryVault) return this.unavailable("unsupported");
-    const result = await resolveRecipients(intent.selector, () => this.context.ops.contacts(), this.circleId);
+    const result = await resolveRecipients(intent.selector, () => this.context.ops.contacts(), this.circleId, intent.action === "vault");
     this.telemetry.emit("message.recipients.resolved", { ...this.identity, attrs: {
       scope: intent.selector.scope, count: result.kind === "resolved" ? result.targets.length : 0,
     } });

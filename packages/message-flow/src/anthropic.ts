@@ -23,6 +23,9 @@ export function createClaudeInterpreter({ apiKey, model = "claude-haiku-4-5", fe
   const llm = new ChatAnthropic({ apiKey, model, maxTokens: 800, maxRetries: 0, clientOptions: { timeout: 12_000, logLevel: "off", fetch }, temperature: 0 });
   const structured = llm.withStructuredOutput(schema, { name: "interpret_sideband_message" });
   return async (text, context) => {
+    // LangChain's process-wide verbose handler prints the complete prompt even with
+    // callbacks disabled. Keep authenticated operations available through their typed tools.
+    if (process.env.LANGCHAIN_VERBOSE === "true") throw new Error("Desactiva LANGCHAIN_VERBOSE para interpretar mensajes privados.");
     const messages = [
       { role: "system", content: system },
       { role: "user", content: JSON.stringify({ ...context, message: text }) },
@@ -31,12 +34,17 @@ export function createClaudeInterpreter({ apiKey, model = "claude-haiku-4-5", fe
     // run tree keeps the holder's private text inside this Anthropic invocation.
     const invoke = () => withRunTree(new RunTree({ name: "sideband", tracingEnabled: false }),
       async () => Intent.parse((await structured.invoke(messages, { callbacks: [] })).intent));
-    try {
-      return await invoke();
-    } catch (error) {
-      if (!(error instanceof OutputParserException || error instanceof z.ZodError)) throw error;
-      messages[0] = { role: "system", content: system + " Revisa que todos los campos respeten el esquema antes de responder." };
-      return invoke();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await invoke();
+      } catch (error) {
+        // SDK and parser errors can include the private input or completion in their message.
+        if (!(error instanceof OutputParserException || error instanceof z.ZodError)) {
+          throw new Error("No se pudo consultar el modelo de Anthropic.");
+        }
+        messages[0] = { role: "system", content: system + " Revisa que todos los campos respeten el esquema antes de responder." };
+      }
     }
+    throw new Error("Claude devolvió una intención inválida.");
   };
 }
