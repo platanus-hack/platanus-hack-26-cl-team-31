@@ -1,0 +1,54 @@
+name: Migraciones
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: migrations
+        ports: [5432/tcp]
+        options: --health-cmd pg_isready --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verificar el historial de migraciones
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git diff --exit-code --no-renames --diff-filter=MDT "$BASE_SHA" HEAD -- 'packages/broker/drizzle/*.sql' 'packages/ops/sql/*.sql'
+          node scripts/check-migration-journal.mjs "$BASE_SHA"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build --filter='@team-31/broker-service^...'
+      - name: Aplicar dos veces las migraciones en PostgreSQL
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/migrations
+          BETTER_AUTH_URL: http://localhost:3000
+          MCP_RESOURCE_URL: http://localhost:4100/mcp
+          ADMIN_URL: http://localhost:4400
+        run: |
+          export BETTER_AUTH_SECRET="$(openssl rand -hex 32)"
+          for pass in 1 2; do
+            echo "Pasada $pass"
+            pnpm --filter @team-31/web auth:migrate
+            node apps/broker/scripts/migrate.mjs
+            node apps/server/scripts/schema.mjs
+            pnpm --filter @team-31/admin admin:auth:migrate
+            pnpm --filter @team-31/ops migrate
+          done
