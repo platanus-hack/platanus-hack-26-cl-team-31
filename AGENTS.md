@@ -173,6 +173,7 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 ## WhatsApp Sideband
 
 - Web recibe los avisos firmados de Kapso en `/api/kapso/webhook`, en el puerto web existente. Configura `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WHATSAPP_NUMBER` y `KAPSO_WEBHOOK_SECRET` solo en web; aplica `pnpm sideband:auth:migrate` en un worktree existente.
+- `WHATSAPP_NOTICE_SECRET` (`whsec_…`, lo genera `pnpm bootstrap`) firma los avisos del broker a `/api/whatsapp/notice/<vínculo>`. Al confirmar el vínculo, web registra el canal `whatsapp` en el broker y la respuesta llega al teléfono sin `estado`. Fuera de la ventana de 24 horas de WhatsApp queda como entrega pendiente y sale con el siguiente mensaje del titular.
 - Vincula el teléfono desde `/agents/connect/whatsapp`. La identidad sigue siendo el titular de Better Auth y el broker comparte las solicitudes con MCP. Setup y prueba: [docs/whatsapp.md](docs/whatsapp.md).
 - Con `ANTHROPIC_API_KEY` en el proceso web, Claude interpreta texto libre después de verificar el vínculo. Sin esa variable siguen funcionando los comandos de texto.
 

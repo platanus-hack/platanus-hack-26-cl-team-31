@@ -55,6 +55,7 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0009_contact_tags.sql",
       "0010_channels.sql",
       "0011_refresh_views.sql",
+      "0012_whatsapp_deliveries.sql",
     ]);
     expect(await applyOpsMigrations({ databaseUrl })).toEqual([]);
     expect(await views()).toEqual(["v_errors", "v_events", "v_service_health"]);
@@ -131,6 +132,14 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
     expect(await asRole("sideband_admin_ro", "SELECT * FROM ops.v_whatsapp"))
       .toEqual([{ linked_accounts: "1", active_pairings: "1", inbound_receipts: "0" }]);
     await expect(asRole("sideband_admin_ro", "SELECT * FROM whatsapp.pairing")).rejects.toMatchObject({ code: "42501" });
+    await db.query(`
+      CREATE TABLE whatsapp.pending_delivery (user_id text, request_id text);
+      INSERT INTO whatsapp.pending_delivery VALUES ('ana', 'request-1');
+    `);
+    await applyOpsMigrations({ databaseUrl });
+    expect(await asRole("sideband_admin_ro", "SELECT * FROM ops.v_whatsapp"))
+      .toEqual([{ linked_accounts: "1", active_pairings: "1", inbound_receipts: "0", pending_deliveries: "1" }]);
+    await expect(asRole("sideband_admin_ro", "SELECT * FROM whatsapp.pending_delivery")).rejects.toMatchObject({ code: "42501" });
   });
 
   it("prune_events borra solo lo más viejo que la retención", async () => {
