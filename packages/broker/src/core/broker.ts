@@ -4,6 +4,7 @@ import {
   AskInput,
   fieldsOf,
   describeTool,
+  GrantInput,
   ToolName,
   LocalPart,
   OwnerDecision,
@@ -18,24 +19,32 @@ import {
   type ToolResult,
 } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import { evaluate, filterResult } from "../policy/index.js";
+import { evaluate, filterResult, type Decision } from "../policy/index.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import type { RequestRow, StoreTx } from "../store/store.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
 import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
 import {
-  toActivityItem, toAgentConnection, toInboxItem, toOwnerPendingItem, toRequesterView,
+  toActivityItem, toAgentConnection, toGrant, toInboxItem, toOwnerPendingItem, toRequesterView,
 } from "./views.js";
 import { createWorker } from "./worker.js";
 
 const noRules = SharingRules.parse({ circles: {}, grants: {} });
 
-function stillAuthorized(row: RequestRow, rules: SharingRules): boolean {
+async function authorize(tx: StoreTx, toUserId: string, from: Address, to: Address, tool: ToolName): Promise<Decision> {
+  return evaluate({
+    rules: await tx.getRules(toUserId) ?? noRules, grant: await tx.getGrant(toUserId, from, tool), from, to, tool,
+  });
+}
+
+async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
   if (row.fromUserId === null) return true; // A connection test requested by the owner.
+  const rules = await tx.getRules(toUserId) ?? noRules;
   if (rules.blocked.includes(row.fromAddress)) return false;
   if (row.approvedOnce) return true;
-  const current = evaluate({ rules, from: row.fromAddress, to: row.toAddress, tool: row.tool });
+  const grant = await tx.getGrant(toUserId, row.fromAddress, row.tool);
+  const current = evaluate({ rules, grant, from: row.fromAddress, to: row.toAddress, tool: row.tool });
   return current.kind === "allow" && current.guidance === row.guidance &&
     row.allowedFields.every(field => current.allowedFields.includes(field));
 }
@@ -147,6 +156,20 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (row.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: row.status });
   }
 
+  // Cancel pending work atomically if the old authorization is no longer valid.
+  // Already queued notices carry only an ID and must re-read the inbox.
+  async function cancelUnauthorized(tx: StoreTx, userId: string): Promise<void> {
+    const owner = await tx.getUser(userId);
+    if (!owner?.address) return;
+    for (const row of await tx.listInbox(owner.address)) {
+      if (await stillAuthorized(tx, row, userId)) continue;
+      const now = clock.now();
+      const denied = await finalize(transition(row, "denied"), "denied", now);
+      if (!await saveTransition(tx, row, denied)) throw closed();
+      await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: "denied" });
+    }
+  }
+
   return {
     agent: {
       async capabilities(p, to) {
@@ -156,9 +179,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const from = (await tx.getUser(p.userId))?.address;
           const owner = await tx.getUserByAddress(to);
           if (!from || !owner || from === to) return { tools: [] };
-          const rules = await tx.getRules(owner.userId) ?? noRules;
-          return { tools: ToolName.options.flatMap(tool => {
-            const decision = evaluate({ rules, from, to, tool });
+          const decisions = await Promise.all(ToolName.options.map(async tool =>
+            ({ tool, decision: await authorize(tx, owner.userId, from, to, tool) })));
+          return { tools: decisions.flatMap(({ tool, decision }) => {
             if (decision.kind === "public") return [describeTool(tool, Object.keys(decision.result))];
             if (decision.kind === "allow") return [describeTool(tool, decision.allowedFields)];
             return [];
@@ -182,7 +205,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             fromUserId: p.userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
           }, now);
           const decision = recipient
-            ? evaluate({ rules: await tx.getRules(recipient.userId) ?? noRules, from, to, tool })
+            ? await authorize(tx, recipient.userId, from, to, tool)
             : { kind: "deny" as const, reason: "Dirección sin destinatario." };
           switch (decision.kind) {
             case "public":
@@ -284,11 +307,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           await activeAgent(tx, p);
           const row = await tx.getRequest(id, { fromUserId: p.userId });
           if (!row) return notFound();
-          if (row.status === "answered" && row.answeredByAgentId && row.toUserId) {
-            const rules = await tx.getRules(row.toUserId) ?? noRules;
-            if (!stillAuthorized(row, rules)) {
-              return toRequesterView(await finalize(row, "denied", clock.now()));
-            }
+          if (row.status === "answered" && row.answeredByAgentId && row.toUserId &&
+              !await stillAuthorized(tx, row, row.toUserId)) {
+            return toRequesterView(await finalize(row, "denied", clock.now()));
           }
           return toRequesterView(row);
         });
@@ -356,17 +377,37 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         const rules = parsed.data;
         await store.tx(async tx => {
           await tx.putRules(o.userId, rules);
-          const owner = await tx.getUser(o.userId);
-          if (!owner?.address) return;
-          // Cancel pending work atomically if the old authorization is no longer valid.
-          // Already queued notices carry only an ID and must re-read the inbox.
-          for (const row of await tx.listInbox(owner.address)) {
-            if (stillAuthorized(row, rules)) continue;
-            const now = clock.now();
-            const denied = await finalize(transition(row, "denied"), "denied", now);
-            if (!await saveTransition(tx, row, denied)) throw closed();
-            await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: "denied" });
+          await cancelUnauthorized(tx, o.userId);
+        });
+      },
+
+      async grants(o) {
+        return store.tx(async (tx) => (await tx.listGrants(o.userId)).map(toGrant));
+      },
+
+      async setGrant(o, input) {
+        // TODO(admin): emitir grant.set con userId cuando el broker tenga telemetría (ADM-07).
+        const parsed = GrantInput.safeParse(input);
+        if (!parsed.success) throw new BrokerError("invalid_input", "El permiso no es válido.");
+        const { grantee, tool, fields } = parsed.data;
+        return store.tx(async (tx) => {
+          if ((await tx.getUser(o.userId))?.address === grantee) {
+            throw new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
           }
+          const grant = await tx.putGrant({
+            id: randomUUID(), grantorUserId: o.userId, granteeAddress: grantee, tool, fields, createdAt: clock.now(),
+          });
+          // Narrowing an existing grant leaves pending requests that expect the old fields.
+          await cancelUnauthorized(tx, o.userId);
+          return toGrant(grant);
+        });
+      },
+
+      async revokeGrant(o, grantId) {
+        // TODO(admin): emitir grant.revoked con userId cuando el broker tenga telemetría (ADM-07).
+        await store.tx(async (tx) => {
+          if (!await tx.revokeGrant(grantId, o.userId, clock.now())) throw notFound();
+          await cancelUnauthorized(tx, o.userId);
         });
       },
 

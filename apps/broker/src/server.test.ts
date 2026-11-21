@@ -97,6 +97,22 @@ afterEach(() => {
 });
 
 describe("HTTP interno del broker", () => {
+  it("crea, lista y revoca un grant del titular", async () => {
+    const app = createHttpServer({ broker: fixture().broker, publicKeys });
+    const [bruno, alice] = await Promise.all([owner("bruno"), owner("alice")]);
+    const body = { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] };
+
+    const grant = await call(app, routes.ownerSetGrant, { token: bruno, body });
+    expect(grant).toMatchObject(body);
+    expect(await call(app, routes.ownerGrants, { token: bruno })).toEqual({ items: [grant] });
+    expect(await call(app, routes.ownerGrants, { token: alice })).toEqual({ items: [] });
+
+    const path = `/v1/owner/grants/${grant.id}`;
+    await expectError(await request(app, routes.ownerRevokeGrant, { token: alice, path }), 404, "not_found");
+    await call(app, routes.ownerRevokeGrant, { token: bruno, path });
+    expect(await call(app, routes.ownerGrants, { token: bruno })).toEqual({ items: [] });
+  });
+
   it("recorre el contrato completo con JWT de servicio y completa ask, inbox, reply y status", async () => {
     const { broker, waker } = fixture();
     const app = createHttpServer({ broker, publicKeys });

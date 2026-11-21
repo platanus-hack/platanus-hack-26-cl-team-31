@@ -12,6 +12,9 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
       (await request(routes.ownerClaimAddress, owner, { body: { localPart } })).address,
     getRules: (owner) => request(routes.ownerGetRules, owner),
     setRules: (owner, body) => request(routes.ownerSetRules, owner, { body }),
+    grants: async (owner) => (await request(routes.ownerGrants, owner)).items,
+    setGrant: (owner, body) => request(routes.ownerSetGrant, owner, { body }),
+    revokeGrant: (owner, id) => request(routes.ownerRevokeGrant, owner, { params: { id } }),
     pending: async (owner) => (await request(routes.ownerPending, owner)).items,
     activity: async (owner, limit) =>
       (await request(routes.ownerActivity, owner, { query: { limit } })).items,

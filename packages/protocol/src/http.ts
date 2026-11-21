@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
+import { Grant, GrantInput } from "./grants.js";
 import { ActivityItem, AgentConnection, OwnerDecision, OwnerPendingItem } from "./owner.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
@@ -94,6 +95,29 @@ export const routes = {
     ...noContent,
     iss: "web",
     port: "owner.setRules",
+  },
+  ownerGrants: {
+    method: "GET",
+    path: "/v1/owner/grants",
+    response: z.object({ items: z.array(Grant) }),
+    iss: "web",
+    port: "owner.grants",
+  },
+  ownerSetGrant: {
+    method: "PUT",
+    path: "/v1/owner/grants",
+    body: GrantInput,
+    response: Grant,
+    iss: "web",
+    port: "owner.setGrant",
+  },
+  ownerRevokeGrant: {
+    method: "DELETE",
+    path: "/v1/owner/grants/:id",
+    params: requestParams,
+    ...noContent,
+    iss: "web",
+    port: "owner.revokeGrant",
   },
   ownerPending: {
     method: "GET",

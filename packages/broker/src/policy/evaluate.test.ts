@@ -132,6 +132,15 @@ describe("evaluate", () => {
       expected: { kind: "ask_owner", reason: "sin regla de uso compartido" },
     },
   ])("$label", ({ from, tool = "availability", overrides, expected }) => {
-    expect(evaluate({ rules: { ...rules, ...overrides }, from, to: owner, tool })).toEqual(expected);
+    expect(evaluate({ rules: { ...rules, ...overrides }, grant: null, from, to: owner, tool })).toEqual(expected);
+  });
+
+  it("un grant permite sus campos aunque ninguna regla cubra al remitente", () => {
+    const grant = { fields: ["available"] };
+    expect(evaluate({ rules, grant, from: unknown, to: owner, tool: "availability" })).toEqual({
+      kind: "allow", allowedFields: ["available"], guidance: "", rule: "Permiso directo para availability: available",
+    });
+    expect(evaluate({ rules, grant, from: blocked, to: owner, tool: "availability" }))
+      .toEqual({ kind: "deny", reason: "remitente bloqueado" });
   });
 });

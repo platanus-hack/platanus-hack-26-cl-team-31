@@ -8,6 +8,8 @@ import {
 
 export type EvaluateInput = {
   rules: SharingRules;
+  // The recipient's live grant to `from` for `tool`.
+  grant: { fields: string[] } | null;
   from: Address;
   to: Address;
   tool: ToolName;
@@ -33,9 +35,14 @@ function allow(
   };
 }
 
-export function evaluate({ rules, from, tool }: EvaluateInput): Decision {
+export function evaluate({ rules, grant, from, tool }: EvaluateInput): Decision {
   if (rules.blocked.includes(from)) {
     return { kind: "deny", reason: "remitente bloqueado" };
+  }
+
+  if (grant) {
+    const rule = `Permiso directo para ${tool}: ${grant.fields.join(", ")}`;
+    return { kind: "allow", allowedFields: [...grant.fields], guidance: "", rule };
   }
 
   if (tool === "profile") {

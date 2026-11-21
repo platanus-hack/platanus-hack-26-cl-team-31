@@ -51,6 +51,12 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.getRules(c.get("web"));
     case "owner.setRules":
       return owner.setRules(c.get("web"), await parseBody(c, route.body));
+    case "owner.grants":
+      return { items: await owner.grants(c.get("web")) };
+    case "owner.setGrant":
+      return owner.setGrant(c.get("web"), await parseBody(c, route.body));
+    case "owner.revokeGrant":
+      return owner.revokeGrant(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "owner.pending":
       return { items: await owner.pending(c.get("web")) };
     case "owner.activity":

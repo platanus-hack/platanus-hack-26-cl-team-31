@@ -6,6 +6,7 @@ import {
   SharingRules,
   WAKE_EVENT,
   type AskInput,
+  type GrantInput,
   type Principal,
   type WakeTarget,
   type Waker,
@@ -469,5 +470,54 @@ describe("ejecución en el runtime del titular", () => {
     expect(await broker.agent.status(alice, request.requestId)).toMatchObject({ result: { available: true } });
     await revoke();
     expect(await expectFinal(alice, request.requestId, "deny", "deny")).not.toHaveProperty("result");
+  });
+});
+
+describe("grants", () => {
+  const toCarla: GrantInput = { grantee: "carla@nexo.app", tool: "availability", fields: ["available"] };
+
+  beforeEach(async () => {
+    await broker.owner.setRules(bruno, SharingRules.parse({ circles: {}, grants: {}, defaultForUnknown: "deny" }));
+  });
+
+  it("permite la tool con los campos del grant y deniega al revocarlo", async () => {
+    const ask = () => broker.agent.ask(carla, availability);
+    expect(await ask()).toMatchObject({ final: true, decision: "deny" });
+
+    const grant = await broker.owner.setGrant(bruno, toCarla);
+    expect(await broker.agent.capabilities(carla, availability.to))
+      .toMatchObject({ tools: [{ tool: "availability", allowedFields: ["available"] }] });
+    const answered = await ask();
+    const item = await inboxItem(bruno, answered.requestId);
+    await broker.agent.reply(bruno, { ...item, outcome: "answered", result: { available: true, freeSlots: ["10:00-10:30"] } });
+    expect(await broker.agent.status(carla, answered.requestId)).toMatchObject({ result: { available: true } });
+
+    const pending = await ask();
+    await broker.owner.revokeGrant(bruno, grant.id);
+    expect(await broker.owner.grants(bruno)).toEqual([]);
+    expect(await broker.agent.inbox(bruno)).toEqual([]);
+    for (const { requestId } of [answered, pending, await ask()]) {
+      expect(await broker.agent.status(carla, requestId)).toMatchObject({ final: true, decision: "deny" });
+    }
+  });
+
+  it("conserva un grant por destinatario y tool, y solo su titular lo revoca", async () => {
+    const grant = await broker.owner.setGrant(bruno, toCarla);
+    const widened = await broker.owner.setGrant(bruno, { ...toCarla, fields: ["available", "freeSlots"] });
+    expect(widened).toEqual({ ...grant, fields: ["available", "freeSlots"] });
+    expect(await broker.owner.grants(bruno)).toEqual([widened]);
+
+    await expect(broker.owner.revokeGrant(alice, grant.id)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.owner.setGrant(bruno, { ...toCarla, grantee: availability.to }))
+      .rejects.toMatchObject({ code: "invalid_input" });
+    await expect(broker.owner.setGrant(bruno, { ...toCarla, fields: ["answer"] }))
+      .rejects.toMatchObject({ code: "invalid_input" });
+  });
+
+  it("reducir los campos de un grant cierra la solicitud que esperaba más", async () => {
+    await broker.owner.setGrant(bruno, { ...toCarla, fields: ["available", "freeSlots"] });
+    const pending = await broker.agent.ask(carla, availability);
+    await broker.owner.setGrant(bruno, toCarla);
+    expect(await broker.agent.status(carla, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
   });
 });

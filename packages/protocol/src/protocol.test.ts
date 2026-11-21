@@ -5,6 +5,7 @@ import {
   fieldsOf,
   fixtureSharingRules,
   fixtureUsers,
+  GrantInput,
   ReplyInput,
   RequesterView,
   ToolArgs,
@@ -141,4 +142,20 @@ describe("wake contracts", () => {
 it("includes Diego in both fixture circles", () => {
   expect(fixtureSharingRules.circles.amigos).toContain(to);
   expect(fixtureSharingRules.circles.trabajo).toContain(to);
+});
+
+describe("GrantInput", () => {
+  const grant = { grantee: "ana@nexo.app", tool: "interest_check", fields: ["matches"] };
+
+  it("accepts fields that the tool returns", () => {
+    expect(GrantInput.parse(grant)).toEqual(grant);
+  });
+
+  it.each([
+    ["a field the tool does not return", { ...grant, fields: ["matches", "answer"] }],
+    ["no fields", { ...grant, fields: [] }],
+    ["the stored profile tool", { ...grant, tool: "profile", fields: ["displayName"] }],
+  ])("rejects %s", (_label, input) => {
+    expect(GrantInput.safeParse(input).success).toBe(false);
+  });
 });
