@@ -696,6 +696,9 @@ importers:
 
   packages/telemetry:
     dependencies:
+      hono:
+        specifier: 4.13.19
+        version: 4.13.19
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -718,9 +721,6 @@ importers:
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
-      hono:
-        specifier: 4.13.19
-        version: 4.13.19
       typescript:
         specifier: 5.9.3
         version: 5.9.3
