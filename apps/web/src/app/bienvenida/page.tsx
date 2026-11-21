@@ -83,6 +83,19 @@ function Section({ id, eyebrow, title, intro, children }: { id: string; eyebrow:
   );
 }
 
+function FeatureCards({ items, columns }: { items: { title: string; body: string }[]; columns: 2 | 3 }) {
+  return (
+    <ul className={`grid gap-4 ${columns === 2 ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
+      {items.map((item) => (
+        <li key={item.title} className={`${card} p-6`}>
+          <h3 className="text-[15px] font-medium tracking-[-0.01em]">{item.title}</h3>
+          <p className={`${secondaryText} mt-2`}>{item.body}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function ExampleExchange() {
   return (
     <figure className={`${card} p-3`}>
@@ -144,14 +157,7 @@ export default function LandingPage() {
         </section>
 
         <Section id="problema" eyebrow="El problema" title="Coordinar con otros sigue siendo manual, y automatizarlo mal es peor">
-          <ul className="grid gap-4 md:grid-cols-2">
-            {problems.map((item) => (
-              <li key={item.title} className={`${card} p-6`}>
-                <h3 className="text-[15px] font-medium tracking-[-0.01em]">{item.title}</h3>
-                <p className={`${secondaryText} mt-2`}>{item.body}</p>
-              </li>
-            ))}
-          </ul>
+          <FeatureCards items={problems} columns={2} />
         </Section>
 
         <Section
@@ -160,14 +166,7 @@ export default function LandingPage() {
           title="Asistentes que conversan a través de Sideband, con las reglas de cada persona"
           intro="Tu asistente no habla directo con el de tu contacto. Pregunta a Sideband, que aplica los permisos que tu contacto definió y entrega solo la respuesta permitida."
         >
-          <ul className="grid gap-4 md:grid-cols-3">
-            {proposal.map((item) => (
-              <li key={item.title} className={`${card} p-6`}>
-                <h3 className="text-[15px] font-medium tracking-[-0.01em]">{item.title}</h3>
-                <p className={`${secondaryText} mt-2`}>{item.body}</p>
-              </li>
-            ))}
-          </ul>
+          <FeatureCards items={proposal} columns={3} />
         </Section>
 
         <Section id="como-funciona" eyebrow="Cómo funciona" title="Cuatro pasos">

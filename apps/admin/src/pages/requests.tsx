@@ -1,10 +1,11 @@
 import * as React from "react"
-import { useInfiniteQuery } from "@tanstack/react-query"
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query"
 import { TriangleAlertIcon } from "lucide-react"
 import { useNavigate, useSearchParams } from "react-router"
 import { RequestStatus, ToolName } from "@team-31/protocol"
 
-import { Button } from "@/components/ui/button"
+import { LoadMore } from "@/components/load-more"
+import { cursorPagination, usePageItems } from "@/lib/queries"
 import { Spinner } from "@/components/ui/spinner"
 import { Toggle } from "@/components/ui/toggle"
 import { DataTable } from "@/components/data-table"
@@ -15,7 +16,7 @@ import {
   SearchInput,
   SelectFilter,
 } from "@/components/filters"
-import { ErrorState, Page, PageHeader, Panel } from "@/components/page"
+import { QueryError, Page, PageHeader, Panel } from "@/components/page"
 import { requestColumns } from "@/components/request-columns"
 import { StatusDot } from "@/components/status"
 import { api } from "@/lib/api"
@@ -84,14 +85,10 @@ export function RequestsPage() {
         },
         { signal }
       ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
-    placeholderData: (previous) => previous,
+    ...cursorPagination,
+    placeholderData: keepPreviousData,
   })
-  const rows = React.useMemo(
-    () => query.data?.pages.flatMap((p) => p.items),
-    [query.data]
-  )
+  const rows = usePageItems(query.data)
   const onAddress = React.useCallback(
     (address: string) => update({ address }),
     [update]
@@ -157,9 +154,7 @@ export function RequestsPage() {
             : null}
         </span>
       </FilterBar>
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
+      <QueryError query={query} />
       <Panel>
         <DataTable
           columns={requestColumns}
@@ -174,21 +169,7 @@ export function RequestsPage() {
               : "Todavía no hay solicitudes.",
           }}
         />
-        {query.hasNextPage ? (
-          <div className="flex justify-center border-t p-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={query.isFetchingNextPage}
-              onClick={() => void query.fetchNextPage()}
-            >
-              {query.isFetchingNextPage ? (
-                <Spinner data-icon="inline-start" />
-              ) : null}
-              Cargar más
-            </Button>
-          </div>
-        ) : null}
+        <LoadMore query={query} />
       </Panel>
     </Page>
   )

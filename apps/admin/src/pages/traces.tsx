@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/tooltip"
 import { CopyButton, CopyId } from "@/components/copy-id"
 import {
-  ErrorState,
+  QueryError,
   KeyValues,
   Muted,
   Page,
@@ -365,9 +365,7 @@ export function TraceDetailPage() {
           ) : null
         }
       />
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
+      <QueryError query={query} />
       {query.isPending ? <Skeleton className="h-96" /> : null}
       {trace ? (
         <>
@@ -483,11 +481,7 @@ export function TracesPage() {
             ))}
           </div>
         ) : recent.isError ? (
-          <ErrorState
-            error={recent.error}
-            className="m-3 w-auto"
-            onRetry={() => void recent.refetch()}
-          />
+          <QueryError query={recent} className="m-3 w-auto" />
         ) : (
           <Table className="text-[13px]">
             <TableHeader>

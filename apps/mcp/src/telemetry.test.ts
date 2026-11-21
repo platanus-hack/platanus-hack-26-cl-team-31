@@ -156,11 +156,11 @@ describe("telemetría del MCP", () => {
     expect(JSON.stringify(sink.records)).not.toContain(params.delivery.secret);
   });
 
-  it("en stdio nunca escribe telemetría en stdout", () => {
+  it.each(["console", "postgres", "desconocido"])("en stdio el modo %s sin BD nunca escribe en stdout", (mode) => {
     const stdout = vi.spyOn(process.stdout, "write");
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
-      const own = createTelemetry({ service: "mcp", sink: mcpSink(true, { TELEMETRY_SINK: "console" }), heartbeatMs: 0 });
+      const own = createTelemetry({ service: "mcp", sink: mcpSink(true, { TELEMETRY_SINK: mode }), heartbeatMs: 0 });
       own.emit("mcp.tool.call", { attrs: { tool: "sideband_ask", outcome: "ok" } });
       expect(stdout).not.toHaveBeenCalled();
       expect(stderr).toHaveBeenCalled();

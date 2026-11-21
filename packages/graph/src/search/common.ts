@@ -60,15 +60,19 @@ export function visibleArcs(
   return out;
 }
 
-export function buildPath(source: NodeId, target: NodeId, cost: number, parent: Map<NodeId, Arc>): Path {
+/** Sigue los predecesores desde el extremo hasta la raíz, en ese orden. */
+export function parentArcs(root: NodeId, end: NodeId, parent: (id: NodeId) => Arc | undefined): Arc[] {
   const arcs: Arc[] = [];
-  let cur = target;
-  while (cur !== source) {
-    const arc = parent.get(cur);
+  let cur = end;
+  while (cur !== root) {
+    const arc = parent(cur);
     if (!arc) throw new Error(`Camino roto en ${cur}`);
     arcs.push(arc);
     cur = arc.from;
   }
-  arcs.reverse();
+  return arcs;
+}
+
+export function buildPath(source: NodeId, target: NodeId, cost: number, arcs: Arc[]): Path {
   return { source, target, cost, nodes: [source, ...arcs.map((a) => a.to)], arcs };
 }

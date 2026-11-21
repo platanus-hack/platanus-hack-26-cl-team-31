@@ -1,8 +1,19 @@
 // Opciones de consulta compartidas (claves estables entre páginas, sidebar y ⌘K).
 import { queryOptions } from "@tanstack/react-query"
+import { useMemo } from "react"
 import type { Window } from "@shared/contract"
 
 import { api } from "@/lib/api"
+
+export const cursorPagination = {
+  initialPageParam: undefined as string | undefined,
+  getNextPageParam: (last: { nextCursor: string | null }) =>
+    last.nextCursor ?? undefined,
+}
+
+export function usePageItems<T>(data: { pages: { items: T[] }[] } | undefined) {
+  return useMemo(() => data?.pages.flatMap((page) => page.items), [data])
+}
 
 export const overviewQuery = (window: Window) =>
   queryOptions({

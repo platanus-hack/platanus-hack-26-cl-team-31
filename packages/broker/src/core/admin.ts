@@ -1,5 +1,5 @@
 import { AdminActor, AdminReason } from "@team-31/protocol";
-import { BrokerError } from "../errors.js";
+import { BrokerError, notFound } from "../errors.js";
 import type { AdminPort, BrokerDeps } from "../ports.js";
 import type { RequestRow, StoreTx } from "../store/store.js";
 import type { RecordEvent } from "./events.js";
@@ -13,10 +13,6 @@ export type AdminHelpers = {
   // Records a telemetry event that is emitted only if the transaction commits.
   record: RecordEvent;
 };
-
-function notFound(): BrokerError {
-  return new BrokerError("not_found", "No se encontró el recurso.");
-}
 
 function invalidState(): BrokerError {
   return new BrokerError("conflict", "La solicitud no está en un estado válido para esta acción.");

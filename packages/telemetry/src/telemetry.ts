@@ -12,6 +12,7 @@ import {
 } from "./context.js";
 import { summarizeError } from "./redact.js";
 import { sinkFromEnv } from "./sinks/env.js";
+import { offSink } from "./sinks/console.js";
 import { Level, type Scalar, Service, type SinkStats, type TelemetryRecord, type TelemetrySink } from "./types.js";
 
 const HEARTBEAT_MS = 30_000;
@@ -89,6 +90,10 @@ function definedFields(fields: ContextFields): ContextFields {
   if (fields.userId !== undefined) out.userId = fields.userId;
   if (fields.agentId !== undefined) out.agentId = fields.agentId;
   return out;
+}
+
+export function silentTelemetry(service: Service): Telemetry {
+  return createTelemetry({ service, sink: offSink(), heartbeatMs: 0, lifecycle: false });
 }
 
 export function createTelemetry(options: TelemetryOptions): Telemetry {

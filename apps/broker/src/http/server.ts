@@ -1,7 +1,7 @@
 import { BrokerError, type BrokerCore } from "@team-31/broker";
 import { ErrorBody, httpStatusOf } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
-import { createTelemetry, offSink, type Telemetry } from "@team-31/telemetry";
+import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
 import { honoTelemetry } from "@team-31/telemetry/hono";
 import { Hono, type Context } from "hono";
 import { routePath } from "hono/route";
@@ -139,7 +139,7 @@ function requestIdOf(c: HttpContext, result: unknown): string | undefined {
   return c.req.param("id");
 }
 
-export function createHttpServer({ broker, publicKeys, limiter = createMemoryRateLimiter(), shutdown, telemetry = silentTelemetry() }: {
+export function createHttpServer({ broker, publicKeys, limiter = createMemoryRateLimiter(), shutdown, telemetry = silentTelemetry("broker") }: {
   broker: BrokerCore;
   publicKeys: ServiceKeys;
   limiter?: RateLimiter;
@@ -195,6 +195,3 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
 }
 
 // Tests and embedded uses may omit telemetry: the server stays instrumented without writing anywhere.
-function silentTelemetry(): Telemetry {
-  return createTelemetry({ service: "broker", sink: offSink(), heartbeatMs: 0, lifecycle: false });
-}

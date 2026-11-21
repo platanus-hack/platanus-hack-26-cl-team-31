@@ -19,3 +19,7 @@ export class BrokerError extends Error {
     this.reason = details?.reason;
   }
 }
+
+export function notFound(): BrokerError {
+  return new BrokerError("not_found", "No se encontró el recurso.");
+}
