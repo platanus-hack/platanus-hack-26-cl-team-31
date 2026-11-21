@@ -129,15 +129,20 @@ if [[ "${cli}" == "codex" ]]; then
   : "${OLLAMA_BASE_URL:?codex necesita OLLAMA_BASE_URL en el --env-file}"
   : "${OLLAMA_API_KEY:?codex necesita OLLAMA_API_KEY en el --env-file}"
   mkdir -p "${user_home}/.codex"
+  # Dos trampas del config.toml, ambas pagadas ya (docs/agents/mcp-token-por-cli.md):
+  #   - Es TOML: las claves sueltas van ANTES de cualquier tabla. Por eso `codex mcp add`, que
+  #     agrega `[mcp_servers.*]` al final, corre después de escribir este archivo.
+  #   - `wire_api = "chat"` no existe en codex 0.87; es "responses". Y el id `ollama` está
+  #     reservado por el CLI, así que el proveedor se llama `ollama-cloud`.
   cat > "${user_home}/.codex/config.toml" <<EOF_CODEX
 model = "${OLLAMA_MODEL:-gpt-oss:120b}"
-model_provider = "ollama"
+model_provider = "ollama-cloud"
 
-[model_providers.ollama]
+[model_providers.ollama-cloud]
 name = "Ollama Cloud"
 base_url = "${OLLAMA_BASE_URL}"
 env_key = "OLLAMA_API_KEY"
-wire_api = "chat"
+wire_api = "responses"
 
 [shell_environment_policy]
 inherit = "all"
@@ -157,4 +162,7 @@ for d in "${user_home}/.claude" "${user_home}/.codex" "${user_home}/.config"; do
 done
 [[ -e "${user_home}/.claude.json" ]] && chown "${user}:${user}" "${user_home}/.claude.json" || true
 
-exec gosu "${user}:${user}" "$@"
+# HOME y CLAUDE_CONFIG_DIR explícitos: el entrypoint corre como root, y el CLI tiene que leer la
+# misma configuración que config-mcp.sh acaba de escribir. `claude` ignora HOME cuando
+# CLAUDE_CONFIG_DIR existe, así que la dejamos fijada en vez de heredada.
+exec gosu "${user}:${user}" env HOME="${user_home}" CLAUDE_CONFIG_DIR="${user_home}" "$@"

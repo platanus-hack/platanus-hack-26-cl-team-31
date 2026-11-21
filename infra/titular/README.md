@@ -83,11 +83,59 @@ curl -sS -X POST \
 `config-mcp.sh` corre **dentro** del contenedor: así el token va del `--env-file` al archivo de
 configuración del CLI sin tocar nunca el disco del host.
 
-## Pendiente
+## Levantar un titular
 
-El registro del servidor MCP remoto está verificado sólo para `pi` 1.4.0
-(`pi mcp add sideband --url ... --bearer-token-env-var SIDEBAND_ACCESS_TOKEN`, que guarda la
-referencia a la variable y no el valor). Para `claude` y `codex`, `config-mcp.sh` registra sólo el
-mock por stdio y deja un `TODO` marcado: la forma exacta del transporte HTTP con un token
-pre-emitido la fija `docs/agents/mcp-token-por-cli.md`, que todavía no existe. Preferimos que
-falte a que mienta.
+```bash
+./infra/titular/up.sh claude caja01
+./infra/titular/up.sh codex  caja02     # en otra terminal
+```
+
+`up.sh` hace el alta completa antes de arrancar el contenedor: `infra/titular/titular.mjs` emite
+el access token contra el stack del worktree (dev-login → dev-token → `/v1/owner/address`,
+la misma secuencia que el arnés de `infra/sim`), arma un `--env-file` con `umask 077` **fuera del
+repo** y lo borra al salir. El token nunca pasa por argv, nunca se imprime entero y nunca se
+hornea en la imagen. Las credenciales del modelo salen del `.env.local` del worktree.
+
+Para que dos titulares puedan preguntarse, antes tienen que ser contactos con el reparto que la
+pregunta necesita:
+
+```bash
+node infra/titular/titular.mjs conectar Caja01 Caja02 interests,availability
+```
+
+Ni `up.sh` ni `titular.mjs` revocan jamás una conexión de agente: la revocación es irreversible y
+deja al titular inservible. Ante una identidad quemada, los dos scripts fallan pidiendo un nombre
+nuevo.
+
+El `<titular>` del argumento es el slug en minúsculas; el nombre en Sideband sale de
+`TITULAR_OWNER_NAME` o del slug capitalizado. `TITULAR_FIXTURE` elige el fixture cuando el slug no
+tiene uno propio en `mock-mcp/fixtures/`.
+
+## Registro del MCP remoto, por CLI
+
+Verificado contra el MCP real (TLS, `NODE_ENV=production`) y documentado en
+[docs/agents/mcp-token-por-cli.md](../../docs/agents/mcp-token-por-cli.md). En los tres CLI el
+token queda **por referencia al entorno**, nunca como valor en disco.
+
+| CLI | Registro | Archivo |
+| --- | --- | --- |
+| `claude` | `claude mcp add sideband --scope user --transport http "$TITULAR_MCP_URL" --header 'Authorization: Bearer ${SIDEBAND_ACCESS_TOKEN}'` | `$CLAUDE_CONFIG_DIR/.claude.json` |
+| `codex` | `codex mcp add sideband --url "$TITULAR_MCP_URL" --bearer-token-env-var SIDEBAND_ACCESS_TOKEN` | `$CODEX_HOME/config.toml` |
+| `pi` | `pi mcp add sideband --url "$TITULAR_MCP_URL" --bearer-token-env-var SIDEBAND_ACCESS_TOKEN` | `$HOME/.pi/agent/mcp.json` |
+
+Tres trampas que ya están pagadas en `config-mcp.sh` y en `entrypoint.sh`:
+
+- `claude mcp add` **ignora `HOME` cuando `CLAUDE_CONFIG_DIR` existe**. Ambas quedan fijadas a
+  mano, en la configuración y en el `exec` final, para que el CLI lea lo que se escribió.
+- `codex mcp add` se queda esperando en stdin sin `< /dev/null`.
+- El `config.toml` de codex es TOML: las claves sueltas del modelo van **antes** de cualquier
+  tabla, así que el entrypoint lo escribe primero y `codex mcp add` agrega `[mcp_servers.*]`
+  después. `wire_api` es `"responses"` (no `"chat"`) y el id `ollama` está reservado, de modo que
+  el proveedor se llama `ollama-cloud`.
+
+## Bloque de confianza
+
+Una sola copia de la prosa (`instrucciones/confianza.md`) y tres envoltorios
+(`encabezado-claude.md`, `encabezado-codex.md`, `encabezado-pi.md`). El entrypoint concatena
+encabezado + prosa en el lugar nativo de cada CLI: `workspace/CLAUDE.md`, `workspace/AGENTS.md` o
+`~/.pi/system-prompt-titular.md` (que `up.sh` pasa con `--append-system-prompt`).

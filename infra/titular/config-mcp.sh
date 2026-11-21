@@ -8,6 +8,10 @@
 # `--env-file` directo al archivo de configuración del contenedor, sin pasar nunca por el disco
 # del host, por `-e KEY=value` ni por la lista de procesos.
 #
+# En los tres CLI el token queda **por referencia al entorno** (`${SIDEBAND_ACCESS_TOKEN}` o el
+# nombre de la variable), nunca como valor en disco. Las recetas están verificadas contra el MCP
+# real en docs/agents/mcp-token-por-cli.md.
+#
 # TITULAR_MCP_URL debe ser byte a byte igual a MCP_RESOURCE_URL del servidor: OAuth compara
 # emisor y audiencia por igualdad exacta. Nunca sustituyas el host por una IP; el acceso por IP
 # lo resuelve `--add-host` en up.sh.
@@ -19,67 +23,78 @@ MOCK_DIR="/opt/mock-mcp"
 configurar_mcp() {
   local cli="$1" home="$2" fixture="$3"
   local url="${TITULAR_MCP_URL:-}"
-  local token="${SIDEBAND_ACCESS_TOKEN:-}"
+
+  if [[ -z "${url}" ]]; then
+    echo "[config-mcp] falta TITULAR_MCP_URL; el CLI quedaría sin Sideband." >&2
+    return 1
+  fi
+  if [[ -z "${SIDEBAND_ACCESS_TOKEN:-}" ]]; then
+    echo "[config-mcp] falta SIDEBAND_ACCESS_TOKEN; el MCP remoto responderá 401." >&2
+    return 1
+  fi
 
   case "${cli}" in
-    claude) _mcp_claude "${home}" "${fixture}" "${url}" "${token}" ;;
-    codex)  _mcp_codex  "${home}" "${fixture}" "${url}" "${token}" ;;
-    pi)     _mcp_pi     "${home}" "${fixture}" "${url}" "${token}" ;;
+    claude) _mcp_claude "${home}" "${fixture}" "${url}" ;;
+    codex)  _mcp_codex  "${home}" "${fixture}" "${url}" ;;
+    pi)     _mcp_pi     "${home}" "${fixture}" "${url}" ;;
     *) echo "[config-mcp] CLI desconocido: ${cli}" >&2; return 1 ;;
   esac
 }
 
+# Corre un comando como el usuario del contenedor con el HOME del titular. CLAUDE_CONFIG_DIR va
+# fijado a mano: `claude mcp add` ignora HOME cuando esa variable existe, así que dejarla al azar
+# del entorno heredado significa escribir la configuración en un directorio que el CLI no leerá.
+como_titular() {
+  local home="$1"; shift
+  gosu "${CONTAINER_USER:-agent}" env HOME="${home}" CLAUDE_CONFIG_DIR="${home}" "$@"
+}
+
 # --- claude ----------------------------------------------------------------------------------
-# El servidor stdio se registra con `claude mcp add --scope user`, que escribe ~/.claude.json.
+# `claude mcp add --scope user` escribe $CLAUDE_CONFIG_DIR/.claude.json.
 #
-# TODO(sideband): la forma exacta del transporte HTTP con el access token la está fijando
-# docs/agents/mcp-token-por-cli.md. Hasta que ese documento exista y se verifique contra el CLI
-# instalado, esta función NO registra el servidor remoto: prefiero que falte a que mienta.
+# El valor de `--header` se expande desde el entorno al conectar, así que el archivo guarda la
+# cadena literal `Bearer ${SIDEBAND_ACCESS_TOKEN}` y no el token. Las comillas simples son
+# obligatorias: con dobles, bash lo expandiría aquí y hornearía el valor en el disco.
 _mcp_claude() {
-  local home="$1" fixture="$2" url="$3" token="$4"
-  gosu "${CONTAINER_USER:-agent}" env HOME="${home}" \
-    claude mcp add titular --scope user \
+  local home="$1" fixture="$2" url="$3"
+  como_titular "${home}" claude mcp add titular --scope user \
       --env "MOCK_FIXTURE=${fixture}" \
       -- node "${MOCK_DIR}/mock-mcp.mjs" >&2
 
-  if [[ -n "${url}" && -n "${token}" ]]; then
-    echo "[config-mcp] claude: servidor 'sideband' NO registrado (ver TODO en config-mcp.sh)." >&2
-  fi
+  como_titular "${home}" claude mcp add sideband --scope user --transport http \
+      "${url}" \
+      --header 'Authorization: Bearer ${SIDEBAND_ACCESS_TOKEN}' >&2
 }
 
 # --- codex -----------------------------------------------------------------------------------
-# `codex mcp add` escribe ~/.codex/config.toml.
+# `codex mcp add` escribe $CODEX_HOME/config.toml (aquí, $HOME/.codex/config.toml), agregando
+# tablas `[mcp_servers.*]` al final. El entrypoint ya dejó ahí las claves sueltas del modelo:
+# en TOML tienen que ir antes de cualquier tabla, y por eso este paso va después.
 #
-# TODO(sideband): mismo caso que claude. Pendiente de docs/agents/mcp-token-por-cli.md.
+# `--bearer-token-env-var` guarda el NOMBRE de la variable, nunca el valor.
+#
+# `< /dev/null` no es cosmético: sin él codex se queda esperando en stdin y el entrypoint cuelga.
 _mcp_codex() {
-  local home="$1" fixture="$2" url="$3" token="$4"
+  local home="$1" fixture="$2" url="$3"
   mkdir -p "${home}/.codex"
   chown "${CONTAINER_USER:-agent}:${CONTAINER_USER:-agent}" "${home}/.codex"
-  gosu "${CONTAINER_USER:-agent}" env HOME="${home}" \
-    codex mcp add titular \
+  como_titular "${home}" codex mcp add titular \
       --env "MOCK_FIXTURE=${fixture}" \
-      -- node "${MOCK_DIR}/mock-mcp.mjs" >&2
+      -- node "${MOCK_DIR}/mock-mcp.mjs" < /dev/null >&2
 
-  if [[ -n "${url}" && -n "${token}" ]]; then
-    echo "[config-mcp] codex: servidor 'sideband' NO registrado (ver TODO en config-mcp.sh)." >&2
-  fi
+  como_titular "${home}" codex mcp add sideband \
+      --url "${url}" \
+      --bearer-token-env-var SIDEBAND_ACCESS_TOKEN < /dev/null >&2
 }
 
 # --- pi --------------------------------------------------------------------------------------
-# Verificado contra pi 1.4.0: `pi mcp add` escribe ~/.pi/agent/mcp.json.
-#
-# `--bearer-token-env-var` guarda la referencia "Bearer ${SIDEBAND_ACCESS_TOKEN}" en el archivo,
-# no el valor: el token sólo vive en el entorno del proceso. Es la forma que preferimos; cuando
-# docs/agents/mcp-token-por-cli.md aterrice, confirma que coincide.
+# `pi mcp add` escribe $HOME/.pi/agent/mcp.json. Misma forma que codex: el archivo guarda el
+# nombre de la variable, el token sólo vive en el entorno del proceso.
 _mcp_pi() {
-  local home="$1" fixture="$2" url="$3" token="$4"
-  gosu "${CONTAINER_USER:-agent}" env HOME="${home}" \
-    pi mcp add titular --env "MOCK_FIXTURE=${fixture}" -- node "${MOCK_DIR}/mock-mcp.mjs" >&2
+  local home="$1" fixture="$2" url="$3"
+  como_titular "${home}" pi mcp add titular \
+      --env "MOCK_FIXTURE=${fixture}" -- node "${MOCK_DIR}/mock-mcp.mjs" >&2
 
-  if [[ -n "${url}" ]]; then
-    gosu "${CONTAINER_USER:-agent}" env HOME="${home}" \
-      pi mcp add sideband --url "${url}" --bearer-token-env-var SIDEBAND_ACCESS_TOKEN >&2
-  else
-    echo "[config-mcp] pi: falta TITULAR_MCP_URL; no registro 'sideband'." >&2
-  fi
+  como_titular "${home}" pi mcp add sideband \
+      --url "${url}" --bearer-token-env-var SIDEBAND_ACCESS_TOKEN >&2
 }
