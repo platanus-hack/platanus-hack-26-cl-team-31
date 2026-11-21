@@ -15,6 +15,7 @@ import { eventReferences } from "@/components/event-references"
 import { CopyButton, CopyId } from "@/components/copy-id"
 import { KeyValues, Muted } from "@/components/page"
 import { LevelBadge } from "@/components/status"
+import { buildPath } from "@/lib/api"
 import { formatAbsolute, formatDuration } from "@/lib/format"
 import { serviceLabel } from "@/lib/status"
 
@@ -67,7 +68,7 @@ export function EventSheet({
                     value: event.errorId ? (
                       <CopyId
                         value={event.errorId}
-                        to={`/errores/${event.errorId}`}
+                        to={buildPath("/errores/:id", { id: event.errorId })}
                         max={16}
                       />
                     ) : (
@@ -92,7 +93,7 @@ export function EventSheet({
             <SheetFooter className="flex-row flex-wrap border-t">
               {event.traceId ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link to={`/trazas/${event.traceId}`}>
+                  <Link to={buildPath("/trazas/:id", { id: event.traceId })}>
                     <WaypointsIcon data-icon="inline-start" />
                     Traza
                   </Link>
@@ -100,7 +101,9 @@ export function EventSheet({
               ) : null}
               {event.requestId ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link to={`/solicitudes/${event.requestId}`}>
+                  <Link
+                    to={buildPath("/solicitudes/:id", { id: event.requestId })}
+                  >
                     <InboxIcon data-icon="inline-start" />
                     Solicitud
                   </Link>
@@ -108,7 +111,7 @@ export function EventSheet({
               ) : null}
               {event.errorId ? (
                 <Button variant="outline" size="sm" asChild>
-                  <Link to={`/errores/${event.errorId}`}>
+                  <Link to={buildPath("/errores/:id", { id: event.errorId })}>
                     <BugIcon data-icon="inline-start" />
                     Error
                   </Link>
