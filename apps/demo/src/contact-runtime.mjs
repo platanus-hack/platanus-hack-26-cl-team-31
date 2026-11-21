@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual, promisify } from "node:util";
 
 const run = promisify(execFile);
-const toolScript = fileURLToPath(new URL("../../../apps/mcp/scripts/contact-interest-tool.mjs", import.meta.url));
+const toolScript = fileURLToPath(new URL("./contact-interest-tool.mjs", import.meta.url));
 
 // The wake receiver calls this binding only after finding the authorized request in the contact's inbox.
 export async function askContactOwner(name, interest, source) {

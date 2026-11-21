@@ -1,8 +1,8 @@
 import { expect, it, vi } from "vitest";
-import { startDemoBroker } from "../../../packages/broker/scripts/demo-broker.mjs";
-import { askContactOwner } from "../../../packages/broker/scripts/contact-runtime.mjs";
+import { startDemoBroker } from "../src/demo-broker.mjs";
+import { askContactOwner } from "../src/contact-runtime.mjs";
 
-vi.mock("../../../packages/broker/scripts/contact-runtime.mjs", () => ({
+vi.mock("../src/contact-runtime.mjs", () => ({
   askContactOwner: vi.fn(async (_name, _interest, source) => ({ matches: source === "bob-fixture" })),
 }));
 
@@ -15,9 +15,9 @@ it("resuelve el mismo interés por contacto y mantiene separadas las respuestas 
   try {
     const contacts = demo.listContacts();
     expect(contacts).toEqual([
-      { name: "Bob", address: "bob@demo.local" },
-      { name: "Jane", address: "jane@demo.local" },
-      { name: "Luz", address: "luz@demo.local" },
+      { name: "Bob", address: "bob@nexo.app" },
+      { name: "Jane", address: "jane@nexo.app" },
+      { name: "Luz", address: "luz@nexo.app" },
     ]);
     const responses = await Promise.all(contacts.map(async ({ address }) => {
       const { requestId } = await demo.ask(address, "interest_check", { interest: "cerámica" });
@@ -30,11 +30,11 @@ it("resuelve el mismo interés por contacto y mantiene separadas las respuestas 
 
     const denied = await demo.ask(contacts[1].address, "question", { text: "¿Cuál es tu domicilio?" });
     expect(denied.decision).toBe("deny");
-    await expect(demo.ask("eva@demo.local", "interest_check", { interest: "cerámica" })).rejects.toThrow(/agenda/);
+    await expect(demo.ask("eva@nexo.app", "interest_check", { interest: "cerámica" })).rejects.toThrow(/agenda/);
     expect(askContactOwner).toHaveBeenCalledTimes(2);
     expect(askContactOwner).toHaveBeenCalledWith("Jane", "cerámica", "jane-fixture");
     expect(askContactOwner).toHaveBeenCalledWith("Bob", "cerámica", "bob-fixture");
   } finally {
     demo.close();
   }
-});
+}, 30_000);

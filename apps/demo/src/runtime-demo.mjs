@@ -29,7 +29,7 @@ try {
 } finally {
   await db.end();
 }
-const toolScript = fileURLToPath(new URL("../../../apps/mcp/scripts/ana-runtime-tools.mjs", import.meta.url));
+const toolScript = fileURLToPath(new URL("./ana-runtime-tools.mjs", import.meta.url));
 const dir = await mkdtemp(join(tmpdir(), "nexo-ana-"));
 const receipt = join(dir, "broker-responses.jsonl");
 const config = { mcpServers: { ana: {
