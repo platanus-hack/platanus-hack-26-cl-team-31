@@ -65,6 +65,7 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0019_group_invitations.sql",
       "0020_tags.sql",
       "0021_vault_documents.sql",
+      "0022_vault_descriptions.sql",
       "0200_ask_receipts.sql",
       "0201_message_turns.sql",
     ]);

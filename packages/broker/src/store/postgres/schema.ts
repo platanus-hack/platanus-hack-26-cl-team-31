@@ -22,6 +22,7 @@ export const users = sideband.table("users", {
   displayName: text("display_name"),
   createdAt: time("created_at").notNull().defaultNow(),
   tagsSeeded: boolean("tags_seeded").notNull().default(false),
+  vaultSeeded: boolean("vault_seeded").notNull().default(false),
 });
 
 export const tags = sideband.table("tags", {
@@ -41,6 +42,7 @@ export const vaultCategories = sideband.table("vault_categories", {
   owner: text("owner_id").notNull().references(() => users.userId),
   id: text("category_id").notNull(),
   name: text("name").notNull(),
+  description: text("description").notNull().default(""),
 }, (t) => [primaryKey({ columns: [t.owner, t.id] })]);
 
 export const vaultEntries = sideband.table("vault_entries", {

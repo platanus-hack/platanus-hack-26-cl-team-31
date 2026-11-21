@@ -39,6 +39,7 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
   const close = useCloseModal();
   const { state, pending, run } = useVault();
   const [name, setName] = useState(category.name);
+  const [description, setDescription] = useState(category.description ?? "");
   const [allowed, setAllowed] = useState<string[]>(category.tags);
   const [entries, setEntries] = useState(category.entries);
   const [label, setLabel] = useState("");
@@ -68,10 +69,16 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="space-y-2">
         <label htmlFor={`vault-name-${category.id}`} className="sr-only">Nombre de la categoría</label>
         <input id={`vault-name-${category.id}`} value={name} maxLength={80} onChange={(event) => setName(event.target.value)}
           onBlur={() => { if (name.trim() && name.trim() !== category.name) run({ ...base, action: "rename", name: name.trim() }); }}
+          onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+          className={input} />
+        <label htmlFor={`vault-description-${category.id}`} className="sr-only">Descripción de la categoría</label>
+        <input id={`vault-description-${category.id}`} value={description} maxLength={280} placeholder="De qué trata esta categoría"
+          onChange={(event) => setDescription(event.target.value)}
+          onBlur={() => { if (description.trim() !== (category.description ?? "")) run({ ...base, action: "describe", description: description.trim() }); }}
           onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
           className={input} />
       </div>
@@ -165,6 +172,7 @@ export function CategoryRow({ category, tags }: { category: Category; tags: Tag[
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-ink">{category.name}</span>
+            {category.description && <span className="block truncate text-xs text-body">{category.description}</span>}
             <span className="block truncate text-xs text-muted">
               {count === 0 ? "Sin datos" : count === 1 ? "1 dato" : `${count} datos`} · {shared.length ? `Compartida con ${shared.map((tag) => tag.name).join(", ")}` : "Privada"}
             </span>
