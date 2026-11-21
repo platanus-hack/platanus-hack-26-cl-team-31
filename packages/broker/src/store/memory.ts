@@ -40,10 +40,11 @@ function transaction(state: State): StoreTx {
   }
 
   function canRead(owner: string, c: OwnerVault["categories"][number], reader: Address) {
-    if (!state.contacts.get(owner)?.has(reader)) return false;
+    // An individual decision exists only for a contact, and it wins. A public category is read by any user.
     const rule = state.memberRules.get(pairKey(owner, c.id))?.get(reader);
     if (rule !== undefined) return rule;
-    return (state.contactTags.get(owner)?.get(reader) ?? []).some(tag => c.tags.includes(tag));
+    if (c.visibility === "public") return true;
+    return !!state.contacts.get(owner)?.has(reader) && (state.contactTags.get(owner)?.get(reader) ?? []).some(tag => c.tags.includes(tag));
   }
 
   function listRecipientRequests(address: Address, status: "awaiting_agent" | "awaiting_owner"): RequestRow[] {
@@ -57,7 +58,7 @@ function transaction(state: State): StoreTx {
   // Every holder starts with the default categories. A deleted default stays deleted.
   function vaultOf(owner: string): OwnerVault {
     if (!state.vaults.has(owner) && state.users.has(owner)) {
-      state.vaults.set(owner, { categories: defaultVaultCategories.map(category => ({ ...category, entries: [], tags: [] })) });
+      state.vaults.set(owner, { categories: defaultVaultCategories.map(category => ({ ...category, visibility: "private", entries: [], tags: [] })) });
     }
     return state.vaults.get(owner) ?? { categories: [] };
   }
@@ -98,8 +99,8 @@ function transaction(state: State): StoreTx {
         address && connected.has(userId) && (!after || address > after) && (!q || address.includes(q)) ? [address] : []).sort().slice(0, limit);
     },
     async vaultCatalog(owner) {
-      return { categories: vaultOf(owner).categories.map(({ id, name, description, tags }) =>
-        structuredClone({ id, name, ...(description ? { description } : {}), tags: [...tags].sort() })) };
+      return { categories: vaultOf(owner).categories.map(({ id, name, description, visibility, tags }) =>
+        structuredClone({ id, name, ...(description ? { description } : {}), visibility, tags: [...tags].sort() })) };
     },
     async vaultMembers(owner, categoryId) {
       const category = vaultOf(owner).categories.find(c => c.id === categoryId);
@@ -116,7 +117,7 @@ function transaction(state: State): StoreTx {
     async changeVault(owner, id, change) {
       const vault = vaultOf(owner);
       if (change.action === "create") {
-        vault.categories.push({ id, name: change.name, entries: [], tags: [] });
+        vault.categories.push({ id, name: change.name, visibility: "private", entries: [], tags: [] });
         state.vaults.set(owner, vault);
         return true;
       }
@@ -128,6 +129,7 @@ function transaction(state: State): StoreTx {
           if (change.description) c.description = change.description;
           else delete c.description;
           break;
+        case "set_visibility": c.visibility = change.visibility; break;
         case "delete":
           state.memberRules.delete(pairKey(owner, id));
           for (const document of state.documents.values()) {
@@ -161,7 +163,8 @@ function transaction(state: State): StoreTx {
     async sharedVault(reader, to, id) {
       const owner = findUserByAddress(to)?.userId;
       if (!owner) return { categories: [] };
-      return { categories: (state.vaults.get(owner)?.categories ?? []).filter(c => (!id || id === c.id) && canRead(owner, c, reader))
+      // Listing shows every category. Opening one requires the read.
+      return { categories: vaultOf(owner).categories.filter(c => !id || id === c.id && canRead(owner, c, reader))
         .map(c => {
           const documents = id
             ? [...state.documents.values()]
@@ -180,6 +183,8 @@ function transaction(state: State): StoreTx {
             id: c.id,
             name: c.name,
             ...(c.description ? { description: c.description } : {}),
+            visibility: c.visibility,
+            canRead: canRead(owner, c, reader),
             ...(id ? { entries: structuredClone(c.entries) } : {}),
             ...(documents.length ? { documents } : {}),
           };

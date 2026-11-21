@@ -107,7 +107,8 @@ describe.skipIf(!testDatabaseUrl)("migración a etiquetas propias", () => {
     try {
       await store.tx(async (tx) => {
         expect((await tx.listTags("ana")).map((tag) => tag.id)).toEqual(["friend", "family", "work", clash, group]);
-        expect((await tx.sharedVault("bob@sideband.app", "ana@sideband.app")).categories).toEqual([{ id: category, name: "Salud" }]);
+        expect((await tx.sharedVault("bob@sideband.app", "ana@sideband.app")).categories.filter(c => c.canRead))
+          .toEqual([{ id: category, name: "Salud", visibility: "private", canRead: true }]);
         expect(await tx.deleteTag("eva", "work")).toBe(true);
         expect((await tx.listTags("eva")).map((tag) => tag.id)).toEqual(["friend", "family"]);
         await tx.createAddress("nuevo", "nuevo@sideband.app");
