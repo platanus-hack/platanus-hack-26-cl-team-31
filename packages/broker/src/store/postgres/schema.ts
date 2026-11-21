@@ -171,7 +171,8 @@ export const agentConnections = sideband.table("agent_connections", {
   createdAt: time("created_at").notNull(),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.agentId] }),
-  check("agent_connections_wake_secret_check", sql`(${table.wakeKind} = 'none') = (${table.wakeSecret} is null)`),
+  // "none" y "polling" no tienen secreto: nadie les escribe.
+  check("agent_connections_wake_secret_check", sql`(${table.wakeKind} in ('none', 'polling')) = (${table.wakeSecret} is null)`),
 ]);
 
 export const channels = sideband.table("channels", {
@@ -184,5 +185,5 @@ export const channels = sideband.table("channels", {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.name] }),
   check("channels_name_check", sql`${table.name} in (${values(channelNames)})`),
-  check("channels_wake_secret_check", sql`(${table.wakeKind} = 'none') = (${table.wakeSecret} is null)`),
+  check("channels_wake_secret_check", sql`(${table.wakeKind} in ('none', 'polling')) = (${table.wakeSecret} is null)`),
 ]);

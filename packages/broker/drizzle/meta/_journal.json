@@ -64,6 +64,13 @@
       "when": 1795285384428,
       "tag": "0008_personal_vault",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795288671833,
+      "tag": "0009_sondeo_sin_secreto",
+      "breakpoints": true
     }
   ]
 }

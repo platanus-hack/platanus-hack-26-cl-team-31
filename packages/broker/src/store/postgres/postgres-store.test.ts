@@ -245,7 +245,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(9);
+    expect(rows).toHaveLength(10);
   });
 
   // Rewind the vault and channel tables before replaying older fixtures.

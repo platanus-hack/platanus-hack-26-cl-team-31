@@ -249,6 +249,22 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("guarda una conexión y un canal de sondeo sin secreto y los devuelve sin campos extra", async () => {
+      const polling = { kind: "polling" } as const;
+      await store.tx(async (tx) => {
+        await tx.ensureAgentConnection({ userId: "carla", agentId: "cli", label: "CLI", wakeTarget: polling, createdAt: now });
+        await tx.putChannel({ userId: "carla", name: "whatsapp", wakeTarget: polling, createdAt: now });
+      });
+      await store.tx(async (tx) => {
+        const connection = await tx.getAgentConnection("carla", "cli");
+        expect(connection).toMatchObject({ agentId: "cli", label: "CLI" });
+        // Nadie le escribe: la conexión vuelve sin secreto ni ningún otro campo.
+        expect(connection?.wakeTarget).toEqual(polling);
+        expect(Object.keys(connection?.wakeTarget ?? {})).toEqual(["kind"]);
+        expect((await tx.getChannel("carla", "whatsapp"))?.wakeTarget).toEqual(polling);
+      });
+    });
+
     it("keeps one live grant per grantor, grantee and category, and hides revoked grants", async () => {
       const grant: GrantRow = {
         id: randomUUID(), grantorUserId: "bruno", granteeAddress: fromAddress,
