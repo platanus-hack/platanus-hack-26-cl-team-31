@@ -151,6 +151,14 @@ export const routes = {
     iss: "web",
     port: "owner.revokeAgent",
   },
+  ownerConnect: {
+    method: "POST",
+    path: "/v1/owner/connections",
+    body: z.object({ to: Address }),
+    response: RequesterViewSchema,
+    iss: "web",
+    port: "owner.connect",
+  },
   ownerStream: {
     method: "GET",
     path: "/v1/owner/stream",

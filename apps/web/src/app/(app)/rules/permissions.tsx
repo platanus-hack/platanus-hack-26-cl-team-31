@@ -25,7 +25,7 @@ export function Permissions(props: GrantListProps) {
 
   return (
     <div className="grid gap-3 sm:grid-cols-3">
-      {ToolName.options.map((tool) => {
+      {ToolName.options.filter((tool) => tool !== "connect").map((tool) => {
         const entries = value.map((grant, index) => ({ grant, index })).filter(({ grant }) => grant.tool === tool);
         return (
           <section key={tool} className="min-w-0 rounded-xl border border-[#dfe3d7] bg-[#fcfcf7] p-3">

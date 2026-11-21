@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  addConnection,
   Address,
   AskInput,
   fieldsOf,
@@ -14,6 +15,7 @@ import {
   type FinalOutcome,
   type Principal,
   type ReplyReceipt,
+  type RequesterView,
   type Scope,
   type ToolResult,
 } from "@team-31/protocol";
@@ -120,6 +122,44 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return connection;
   }
 
+  async function applyConnection(tx: StoreTx, row: RequestRow): Promise<void> {
+    if (row.tool !== "connect" || row.status !== "answered" || !row.fromUserId || !row.toUserId) return;
+    if (!row.result || !("accepted" in row.result) || !row.result.accepted) return;
+    await tx.putRules(row.toUserId, addConnection(await tx.getRules(row.toUserId) ?? noRules, row.fromAddress));
+    await tx.putRules(row.fromUserId, addConnection(await tx.getRules(row.fromUserId) ?? noRules, row.toAddress));
+  }
+
+  async function submit(tx: StoreTx, userId: string, input: AskInput): Promise<RequesterView | BrokerError> {
+    const { to, tool, args, purpose } = input;
+    const from = (await tx.getUser(userId))?.address;
+    if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
+    if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
+    const recipient = await tx.getUserByAddress(to);
+    const now = clock.now();
+    let row = await initialRequest({
+      fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
+    }, now);
+    const decision = recipient
+      ? evaluate({ rules: await tx.getRules(recipient.userId) ?? noRules, from, to, tool })
+      : { kind: "deny" as const, reason: "Dirección sin destinatario." };
+    switch (decision.kind) {
+      case "public":
+        row = await finalize(row, "answered", now, decision.result);
+        break;
+      case "allow":
+        row = { ...row, status: "awaiting_agent", allowedFields: decision.allowedFields, rule: decision.rule, guidance: decision.guidance };
+        break;
+      case "ask_owner":
+        row = { ...row, decisionReason: decision.reason };
+        break;
+      case "deny":
+        row = await finalize({ ...row, decisionReason: decision.reason }, "denied", now);
+        break;
+    }
+    await recordNew(tx, row, now);
+    return toRequesterView(row);
+  }
+
   type InitialRequest = Pick<RequestRow, "fromAddress" | "toAddress" | "fromUserId" | "toUserId" | "tool" | "args"> &
     Partial<Pick<RequestRow, "targetAgentId" | "purpose">>;
 
@@ -170,36 +210,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         requireScope(p, "nexo:ask");
         const parsed = AskInput.safeParse(input);
         if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
-        const { to, tool, args, purpose } = parsed.data;
         const view = await store.tx(async (tx) => {
           await activeAgent(tx, p);
-          const from = (await tx.getUser(p.userId))?.address;
-          if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
-          if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
-          const recipient = await tx.getUserByAddress(to);
-          const now = clock.now();
-          let row = await initialRequest({
-            fromUserId: p.userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
-          }, now);
-          const decision = recipient
-            ? evaluate({ rules: await tx.getRules(recipient.userId) ?? noRules, from, to, tool })
-            : { kind: "deny" as const, reason: "Dirección sin destinatario." };
-          switch (decision.kind) {
-            case "public":
-              row = await finalize(row, "answered", now, decision.result);
-              break;
-            case "allow":
-              row = { ...row, status: "awaiting_agent", allowedFields: decision.allowedFields, rule: decision.rule, guidance: decision.guidance };
-              break;
-            case "ask_owner":
-              row = { ...row, decisionReason: decision.reason };
-              break;
-            case "deny":
-              row = await finalize({ ...row, decisionReason: decision.reason }, "denied", now);
-              break;
-          }
-          await recordNew(tx, row, now);
-          return toRequesterView(row);
+          return submit(tx, p.userId, parsed.data);
         });
         if (view instanceof BrokerError) throw view;
         return view;
@@ -268,6 +281,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             droppedFields: droppedFields.filter((field) => declaredFields.includes(field)),
           };
           if (!await saveTransition(tx, row, changed)) return reject(closed());
+          await applyConnection(tx, changed);
           await tx.appendEvent({ requestId: row.id, at: now, kind: "response", status: changed.status });
           if (changed.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
           if (row.targetAgentId !== undefined) await tx.upsertAgentConnection({ ...connection, verifiedAt: now });
@@ -415,6 +429,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             changed = await finalize(transition(row, "answered"), "answered", now, parseResult(row.tool, decision.result));
           }
           if (!await saveTransition(tx, row, changed)) throw closed();
+          await applyConnection(tx, changed);
           await tx.appendEvent({ requestId, at: now, kind: "permission", status: changed.status });
           if (decision.kind === "approve_once") {
             await enqueue(tx, row, now, row.version + 1);
@@ -458,6 +473,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           await recordNew(tx, row, now);
           return { requestId: row.id };
         });
+      },
+
+      async connect(o, to) {
+        const target = Address.safeParse(to);
+        if (!target.success) throw new BrokerError("invalid_input", "La dirección no es válida.");
+        const view = await store.tx((tx) => submit(tx, o.userId, { to: target.data, tool: "connect", args: {} }));
+        if (view instanceof BrokerError) throw view;
+        return view;
       },
 
       async revokeAgent(o, agentId) {

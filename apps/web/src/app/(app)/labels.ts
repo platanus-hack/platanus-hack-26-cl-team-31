@@ -5,6 +5,7 @@ export const toolLabels = {
   availability: "Disponibilidad",
   question: "Pregunta",
   interest_check: "Interés",
+  connect: "Conexión",
 } satisfies Record<ToolName, string>;
 
 export const statusLabels = {
@@ -36,6 +37,7 @@ export const wakeLabels = {
 
 export const fieldLabels: Partial<Record<string, string>> = {
   displayName: "Nombre",
+  accepted: "Si acepta",
   headline: "Titular",
   available: "Si está disponible",
   freeSlots: "Horarios libres",

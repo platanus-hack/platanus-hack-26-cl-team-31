@@ -12,7 +12,7 @@ const inputSchema = AskInput.options[0].extend({
 
 export function registerAsk(server: McpServer, principal: Principal, agent: AgentPort) {
   server.registerTool("nexo_ask", {
-    description: "Pide a otra persona su perfil público (profile), disponibilidad (availability), coincidencia de interés (interest_check) o una respuesta (question). Consulta el resultado con nexo_check.",
+    description: "Pide a otra persona su perfil público (profile), disponibilidad (availability), coincidencia de interés (interest_check), una respuesta (question) o conectar como amigos (connect, con args vacío). Consulta el resultado con nexo_check.",
     inputSchema,
   }, (args) => runTool(principal, "nexo:ask", () => {
     const input = AskInput.safeParse(args);

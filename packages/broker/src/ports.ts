@@ -42,6 +42,7 @@ export interface OwnerPort {
   setWake(o: Owner, agentId: string, target: WakeTarget): Promise<void>;
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;
   revokeAgent(o: Owner, agentId: string): Promise<void>;
+  connect(o: Owner, to: Address): Promise<RequesterView>;
 }
 
 // Operational mutations for apps/admin. The broker keeps the invariant that each request ends in

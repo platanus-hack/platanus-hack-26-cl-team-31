@@ -33,9 +33,16 @@ function allow(
   };
 }
 
+export const connectGuidance =
+  "Pregúntale a tu titular si quiere conectar con esta dirección. Responde answered con accepted: true solo si lo confirma; si no, accepted: false.";
+
 export function evaluate({ rules, from, tool }: EvaluateInput): Decision {
   if (rules.blocked.includes(from)) {
     return { kind: "deny", reason: "remitente bloqueado" };
+  }
+
+  if (tool === "connect") {
+    return allow("solicitud de conexión", tool, ["accepted"], connectGuidance);
   }
 
   if (tool === "profile") {
