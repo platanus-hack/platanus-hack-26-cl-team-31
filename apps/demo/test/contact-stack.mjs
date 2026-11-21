@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { applyPostgresMigrations } from "@team-31/broker/postgres";
 import pg from "pg";
@@ -57,18 +58,23 @@ export async function configureBroker() {
 }
 
 export async function startBroker(cleanup) {
-  const entry = new URL("./dist/index.js", import.meta.resolve("@team-31/broker-service/package.json"));
-  const child = spawn(process.execPath, [fileURLToPath(entry)], { stdio: "ignore" });
+  // Proceso real del broker, ejecutado desde su código fuente con tsx y la condición
+  // "@team-31/source" (igual que Vitest): el test no depende del build de los paquetes.
+  const root = import.meta.resolve("@team-31/broker-service/package.json");
+  const tsx = createRequire(root).resolve("tsx");
+  const entry = fileURLToPath(new URL("./src/index.ts", root));
+  const child = spawn(process.execPath, ["--import", tsx, "--conditions=@team-31/source", entry], { stdio: "ignore" });
   const done = once(child, "exit");
   async function stop() {
     if (child.exitCode === null && child.signalCode === null) child.kill();
     await done;
   }
   cleanup.defer(stop);
+  // Solo espera el arranque (sale apenas responde /healthz): margen amplio para máquinas cargadas.
   await expect.poll(async () => {
     if (child.exitCode !== null) throw new Error("El proceso del broker terminó durante el arranque.");
     return fetch(process.env.BROKER_URL + "/healthz").then(res => res.ok, () => false);
-  }, { timeout: 6000, interval: 50 }).toBe(true);
+  }, { timeout: 20_000, interval: 50 }).toBe(true);
   return stop;
 }
 

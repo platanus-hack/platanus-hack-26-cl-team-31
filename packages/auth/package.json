@@ -6,18 +6,22 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
+      "@team-31/source": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./server": {
       "types": "./src/server.ts",
+      "@team-31/source": "./src/server.ts",
       "default": "./dist/server.js"
     },
     "./resource": {
       "types": "./src/resource.ts",
+      "@team-31/source": "./src/resource.ts",
       "default": "./dist/resource.js"
     },
     "./service": {
       "types": "./src/service.ts",
+      "@team-31/source": "./src/service.ts",
       "default": "./dist/service.js"
     }
   },

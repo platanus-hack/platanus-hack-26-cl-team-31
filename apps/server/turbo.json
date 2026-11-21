@@ -1,0 +1,10 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      // node --test importa y ejecuta dist/ de este paquete (y de sus dependencias).
+      "dependsOn": ["build", "transit"]
+    }
+  }
+}

@@ -6,14 +6,17 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
+      "@team-31/source": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./hono": {
       "types": "./src/hono.ts",
+      "@team-31/source": "./src/hono.ts",
       "default": "./dist/hono.js"
     },
     "./types": {
       "types": "./src/types.ts",
+      "@team-31/source": "./src/types.ts",
       "default": "./dist/types.js"
     }
   },

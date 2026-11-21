@@ -281,6 +281,12 @@ Levanta un stack aislado (como `docker:demo`), siembra un mundo determinista y l
 
 Las validaciones se ejecutan en el worktree local. El CI del repo del hackathon corre build y typecheck en cada push a `main`, sin disparar deploys.
 
+### Tests rápidos (caché y código fuente)
+
+- `pnpm test` cachea el resultado por paquete (turbo): si no cambió el paquete, sus dependencias del workspace ni `TEST_DATABASE_URL`/`DATABASE_URL`/`E2E_*`/`REDTEAM_*`, repite el log sin correr nada. Forzar: `pnpm test --force`. Un paquete: `pnpm test --filter @team-31/<pkg>`.
+- Los tests no esperan el build: Vitest resuelve los paquetes del workspace a `src/` con la condición de export `"@team-31/source"` (config base en `vitest.shared.ts`). Solo `apps/server` (node --test sobre `dist/`) compila antes: córrelo con `pnpm test --filter @team-31/server`, no con `pnpm --filter … test`.
+- Paquete nuevo con tests Vitest: agrega `vitest.config.ts` que extienda `vitest.shared.ts`; si exporta código, agrega `"@team-31/source": "./src/…"` junto a `types` en cada export. Si un test lee archivos de otro paquete que no es dependencia, decláralo en `inputs` de su `turbo.json` (ej. `apps/demo/turbo.json`).
+
 ## ⚠️ Al agregar infra o configuración nueva
 
 Si agregas un servicio (Redis, cola, etc.), una app que expone un puerto, o una variable de entorno, **en el mismo PR**:
