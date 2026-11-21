@@ -5,7 +5,7 @@ import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { observeWebRequest, webTelemetry } from "../../../../lib/telemetry";
+import { observeWebRequest, getTelemetry } from "../../../../lib/telemetry";
 
 import { clients, type ClientKind, type ManualWakeKind } from "./clients";
 import { connectContext, listConnections } from "./connections";
@@ -39,7 +39,8 @@ export async function saveWake(kind: ManualWakeKind, agentId: string, _state: Sa
 
   try {
     await broker.setWake(owner, agentId, target.data);
-  } catch {
+  } catch (error) {
+    getTelemetry().error("action saveWake", error);
     return { error: "No se pudo guardar el aviso. Comprueba que el agente siga conectado." };
   }
 
@@ -55,7 +56,7 @@ export async function startPing(kind: ClientKind, agentId: string): Promise<Ping
   }
 
   return observeWebRequest("POST", "/agents/connect", async (span): Promise<PingFeedback> => {
-    const telemetry = webTelemetry();
+    const telemetry = getTelemetry();
     telemetry.identify({ userId: owner.userId, agentId });
     try {
       const agent = (await broker.agents(owner)).find((item) => item.agentId === agentId && !item.revokedAt);
@@ -79,7 +80,7 @@ export async function readPingStatus(requestId: string) {
   const { owner, broker } = await connectContext();
 
   return observeWebRequest("POST", "/agents/connect", async (span) => {
-    const telemetry = webTelemetry();
+    const telemetry = getTelemetry();
     telemetry.identify({ userId: owner.userId, requestId });
     try {
       const items = await broker.activity(owner, 100);

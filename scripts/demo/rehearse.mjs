@@ -135,7 +135,7 @@ export async function rehearse(fixtures, { run, actors }, present) {
       terminal.once("close", () => prompts.abort());
       bridge = await browserLogin(fixtures, sessions.simon);
       console.log(`Abre una ventana privada con este enlace local de un uso: ${bridge.url}`);
-      console.log("Abre Inicio, Reglas y Agentes en pestañas del mismo navegador. Conserva El cable en una pestaña.");
+      console.log("Abre Inicio, Permisos y Agentes en pestañas del mismo navegador. Conserva El cable en una pestaña.");
       await terminal.question("Cuando El cable esté en vivo, pulsa Enter. ", { signal: prompts.signal });
       await bridge.close();
     }
@@ -185,24 +185,23 @@ export async function rehearse(fixtures, { run, actors }, present) {
       await interact("Muestra la tarjeta de Dot con el aviso y la respuesta en El cable.");
     });
 
-    await step("3. Claude Code local pregunta sin permiso previo.", async () => {
+    await step("3. Claude Code local pregunta sin permiso y Simon se lo da.", async () => {
+      assertFinal(await ask(claude), "deny");
+      console.log("   Sin permiso, Claude recibió deny y Simon no fue avisado.");
+      const mode = await interact(`En Permisos, da «Disponibilidad» a ${actors.claude.address} y deja marcado solo «Si está disponible». Escribe api si la app falla.`);
+      if (!present || mode === "api") {
+        await owner.setGrant(destination, { grantee: actors.claude.address, tool: "availability", fields: ["available"] });
+      }
       const pending = await ask(claude);
-      assert.equal(pending.waitingFor, "owner");
-      assert((await owner.pending(destination)).some((item) => item.requestId === pending.requestId));
-      const mode = await interact("En Inicio, actualiza y pulsa «Aprobar una vez» en la solicitud de Claude Code. Escribe api si la app falla.");
-      if (!present || mode === "api") await owner.decide(destination, pending.requestId, { kind: "approve_once" });
+      assert.equal(pending.waitingFor, "agent");
       await replyFromCalendar(claude, pending.requestId, ["available"]);
-      const again = await ask(claude);
-      assert.equal(again.waitingFor, "owner", "La aprobación se aplica a una sola solicitud.");
-      await owner.decide(destination, again.requestId, { kind: "deny" });
-      console.log("   Una nueva pregunta de Claude volvió a esperar al dueño.");
     });
 
-    await step(`4. Simon bloquea en vivo la dirección de Grok Bot local: ${actors.grok.address}`, async () => {
-      const mode = await interact("En Reglas, añade esta dirección en «Personas bloqueadas» y pulsa «Guardar reglas». Escribe api si la app falla.");
+    await step(`4. Simon revoca en vivo el permiso de Grok Bot local: ${actors.grok.address}`, async () => {
+      const mode = await interact("En Permisos, pulsa «Revocar» en la fila de esa dirección. Escribe api si la app falla.");
       if (!present || mode === "api") {
-        const rules = await owner.getRules(destination);
-        await owner.setRules(destination, { ...rules, blocked: [...rules.blocked, actors.grok.address] });
+        const grant = (await owner.grants(destination)).find(({ grantee }) => grantee === actors.grok.address);
+        await owner.revokeGrant(destination, grant.id);
       }
       const denied = await ask(grok);
       assertFinal(denied, "deny");

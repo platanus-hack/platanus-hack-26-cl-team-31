@@ -3,6 +3,7 @@ import { createBroker, createMemoryStore } from "@team-31/broker";
 import { createPostgresStore } from "@team-31/broker/postgres";
 import { createWaker } from "@team-31/wake";
 import type { BrokerEnv } from "./env.js";
+import type { BrokerServiceTelemetry } from "./telemetry.js";
 
 async function openStore(env: BrokerEnv) {
   if (!env.DATABASE_URL) {
@@ -14,9 +15,9 @@ async function openStore(env: BrokerEnv) {
   return { store, close: () => store.close() };
 }
 
-export async function composeBroker(env: BrokerEnv) {
+export async function composeBroker(env: BrokerEnv, telemetry?: Pick<BrokerServiceTelemetry, "shared">) {
   const signingKey = createPrivateKey({ key: env.BROKER_SIGNING_KEY, format: "jwk" });
-  const waker = createWaker({ allowInsecure: env.WAKE_ALLOW_INSECURE });
+  const waker = createWaker({ allowInsecure: env.WAKE_ALLOW_INSECURE, telemetry: telemetry?.shared });
   const { store, close } = await openStore(env);
   const broker = createBroker({
     store,
@@ -30,6 +31,7 @@ export async function composeBroker(env: BrokerEnv) {
       wakeRetryDelaysMs: [0, ...env.WAKE_RETRY_DELAYS_MS],
       addressDomain: "nexo.app",
     },
+    ...(telemetry ? { telemetry: telemetry.shared } : {}),
   });
   return { broker, close };
 }

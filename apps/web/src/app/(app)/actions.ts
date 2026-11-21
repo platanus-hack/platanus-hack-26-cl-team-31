@@ -1,22 +1,26 @@
 "use server";
 
 import { BrokerError } from "@team-31/broker/client";
-import { fieldsOf, LocalPart, OwnerDecision, SharingRules, ToolResultSchemas } from "@team-31/protocol";
+import { GrantInput, LocalPart, OwnerDecision, ToolResultSchemas } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ownerClient } from "@/lib/broker";
 import { onboardingFlow, type OnboardingSource } from "@/lib/onboarding-flow";
-import { observeWebRequest, webTelemetry } from "@/lib/telemetry";
+import { getTelemetry, observeWebRequest } from "@/lib/telemetry";
 
 import { getOwner, requireAddress } from "./owner";
 import { activityPageSize, validPage } from "./labels";
 
 type Feedback = { error?: string; message?: string; errorId?: string };
 
-function actionError(error: unknown, fallback: string) {
-  if (!(error instanceof BrokerError)) return fallback;
+// Domain errors become a message; anything else is recorded (without its message) before the fallback.
+function actionError(operation: string, error: unknown, fallback: string) {
+  if (!(error instanceof BrokerError) || error.code === "internal") {
+    getTelemetry().error(`action ${operation}`, error);
+    return fallback;
+  }
   switch (error.code) {
     case "not_found": return "El elemento ya no está disponible.";
     case "expired": return "La solicitud venció.";
@@ -35,7 +39,7 @@ export async function claimAddress(source: OnboardingSource, _: Feedback, form: 
 
   const flow = onboardingFlow(source);
   const feedback = await observeWebRequest("POST", "/onboarding", async (span) => {
-    const telemetry = webTelemetry();
+    const telemetry = getTelemetry();
     telemetry.identify({ userId: owner.userId });
     try {
       await ownerClient().claimAddress(owner, localPart.data);
@@ -43,11 +47,11 @@ export async function claimAddress(source: OnboardingSource, _: Feedback, form: 
         telemetry.emit("web.invite.progress", { attrs: { step: "address_claimed" } });
       }
     } catch (error) {
-      const errorId = telemetry.error("web.address.claim", error);
+      const errorId = telemetry.error("action claimAddress", error);
       span.setErrorId(errorId);
       const message = error instanceof BrokerError && error.code === "conflict"
         ? "Esa dirección ya está tomada"
-        : actionError(error, "No se pudo guardar la dirección. Intenta de nuevo.");
+        : actionError("claimAddress", error, "No se pudo guardar la dirección. Intenta de nuevo.");
       return { error: message, errorId };
     }
   });
@@ -64,33 +68,43 @@ export async function readHome() {
   return Promise.all([broker.pending(owner), broker.activity(owner, 4)]);
 }
 
-export async function readRules() {
+export async function readGrants() {
   await requireAddress();
   const owner = await getOwner();
-  return ownerClient().getRules(owner);
+  return ownerClient().grants(owner);
 }
 
-export async function saveRules(input: unknown): Promise<Feedback> {
+export async function saveGrant(_: Feedback, form: FormData): Promise<Feedback> {
   await requireAddress();
   const owner = await getOwner();
-  const parsed = SharingRules.safeParse(input);
-  if (!parsed.success) return { error: "Revisa el perfil y las direcciones de tus reglas." };
-
-  if (parsed.data.publicProfile && !parsed.data.publicProfile.displayName.trim()) {
-    return { error: "Escribe un nombre para el perfil público." };
-  }
-  const grants = [...Object.values(parsed.data.grants).flat(), ...Object.values(parsed.data.people).flat()];
-  if (grants.some((grant) => grant.fields.some((field) => !fieldsOf(grant.tool).includes(field)))) {
-    return { error: "Algún campo no pertenece a su tipo de solicitud." };
-  }
+  const parsed = GrantInput.safeParse(form instanceof FormData
+    ? { grantee: form.get("grantee"), tool: form.get("tool"), fields: form.getAll("fields") }
+    : undefined);
+  if (!parsed.success) return { error: "Escribe una dirección Nexo válida y elige al menos un dato." };
 
   try {
-    await ownerClient().setRules(owner, parsed.data);
+    await ownerClient().setGrant(owner, parsed.data);
   } catch (error) {
-    return { error: actionError(error, "No se pudieron guardar las reglas. Intenta de nuevo.") };
+    if (error instanceof BrokerError && error.code === "invalid_input") return { error: "Elige una dirección distinta a la tuya." };
+    return { error: actionError("saveGrant", error, "No se pudo guardar el permiso. Intenta de nuevo.") };
   }
-  revalidatePath("/rules");
-  return { message: "Reglas guardadas." };
+  revalidatePath("/grants");
+  return { message: "Permiso guardado." };
+}
+
+export async function revokeGrant(grantId: string): Promise<Feedback> {
+  await requireAddress();
+  const owner = await getOwner();
+  if (!routes.ownerRevokeGrant.params.safeParse({ id: grantId }).success || !grantId) return { error: "Elige un permiso válido." };
+
+  try {
+    await ownerClient().revokeGrant(owner, grantId);
+  } catch (error) {
+    return { error: actionError("revokeGrant", error, "No se pudo revocar el permiso. Intenta de nuevo.") };
+  }
+  revalidatePath("/grants");
+  revalidatePath("/activity");
+  return {};
 }
 
 export async function readActivity(input: unknown) {
@@ -137,7 +151,7 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
     }
     await broker.decide(owner, requestId, parsed.data);
   } catch (error) {
-    return { error: actionError(error, "No se pudo registrar la decisión. Intenta de nuevo.") };
+    return { error: actionError("decide", error, "No se pudo registrar la decisión. Intenta de nuevo.") };
   }
 
   revalidatePath("/");
@@ -163,7 +177,7 @@ export async function manageAgent(agentId: string, _: Feedback, form: FormData):
     if (operation === "ping") await ownerClient().ping(owner, agentId);
     else await ownerClient().revokeAgent(owner, agentId);
   } catch (error) {
-    return { error: actionError(error, "No se pudo completar la acción. Intenta de nuevo.") };
+    return { error: actionError("manageAgent", error, "No se pudo completar la acción. Intenta de nuevo.") };
   }
   revalidatePath("/agents");
   revalidatePath("/activity");

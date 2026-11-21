@@ -168,14 +168,11 @@ export async function seed({ test, owner, database, mcp, web }, fixture) {
     const { address } = await owner.me({ userId });
     actors[role] = { userId, address: address ?? await owner.claimAddress({ userId }, localPart(role, run)) };
   }
-  const availability = { tool: "availability", fields: ["available", "freeSlots"], guidance: "Comparte solo disponibilidad y bloques libres." };
-  await owner.setRules(actors.simon, {
-    circles: { equipo: [actors.dot.address, actors.grok.address] },
-    grants: { equipo: [availability] },
-    people: {}, blocked: [], defaultForUnknown: "ask_owner",
-  });
+  for (const { address } of [actors.dot, actors.grok]) {
+    await owner.setGrant(actors.simon, { grantee: address, tool: "availability", fields: ["available", "freeSlots"] });
+  }
   await saveState({ ...fixture, actors });
-  console.log(`Demo preparada para ${actors.simon.address}. Dot y Grok tienen permiso. Claude Code figura como desconocido.`);
+  console.log(`Demo preparada para ${actors.simon.address}. Dot y Grok tienen permiso. Claude Code todavía no.`);
 }
 
 export async function oauthAgent({ web, mcp }, { run, name, session }) {

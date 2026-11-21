@@ -10,7 +10,7 @@ vi.mock("./connections", () => ({
 }));
 vi.mock("../../../../lib/telemetry", () => ({
   observeWebRequest: (_method: string, _route: string, run: () => unknown) => run(),
-  webTelemetry: () => ({ identify: vi.fn(), emit: vi.fn() }),
+  getTelemetry: () => ({ identify: vi.fn(), emit: vi.fn() }),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));

@@ -115,6 +115,7 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `auth.token.verified` / `auth.token.rejected` | auth | issuer, reason (código) |
 | `auth.service_jwt.rejected` | auth | expectedIss, reason |
 | `auth.oauth.consent` | auth | clientId, granted |
+| `auth.scope.denied` | auth | scope, operation |
 | `web.invite.progress` | lifecycle | step (`opened`, `sign_in`, `claim_address`, `address_claimed` o `connect`) |
 | `web.agent.ping` | lifecycle | stage (`started` o `finished`), outcome, verified |
 | `mcp.tool.call` | tool | tool, outcome (`ok` \| `error` \| `denied`) |
@@ -124,6 +125,7 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `broker.request.closed` | lifecycle | outcome, escalated |
 | `broker.reply.rejected` | lifecycle | code (`nonce` \| `expired` \| `schema` \| `not_recipient` \| `closed`) |
 | `broker.owner.decided` | lifecycle | decision |
+| `broker.grant.set` / `broker.grant.revoked` | policy | grantId, tool, fields (cantidad) |
 | `wake.attempt` | wake | kind, attempt, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
 | `coordination.tool.call` | tool | tool, outcome |

@@ -1,10 +1,9 @@
-import type { SharingRules } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import type { AgentConnectionRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob } from "./store.js";
+import type { AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob } from "./store.js";
 
 type State = {
   users: Map<string, UserRow>;
-  rules: Map<string, SharingRules>;
+  grants: (GrantRow & { revokedAt?: Date })[];
   requests: Map<string, RequestRow>;
   events: RequestEvent[];
   wakes: Map<string, WakeJob>;
@@ -29,6 +28,10 @@ function transaction(state: State): StoreTx {
     return stored;
   }
 
+  function liveGrants(grantorUserId: string) {
+    return state.grants.filter((grant) => grant.grantorUserId === grantorUserId && !grant.revokedAt);
+  }
+
   return {
     async getUser(userId) {
       return structuredClone(state.users.get(userId) ?? null);
@@ -43,12 +46,29 @@ function transaction(state: State): StoreTx {
       }
       state.users.set(userId, { userId, createdAt: new Date(), ...user, address });
     },
-    async getRules(userId) {
-      return structuredClone(state.rules.get(userId) ?? null);
+    async putGrant(row) {
+      if (!state.users.has(row.grantorUserId)) state.users.set(row.grantorUserId, { userId: row.grantorUserId, createdAt: new Date() });
+      const live = liveGrants(row.grantorUserId)
+        .find((grant) => grant.granteeAddress === row.granteeAddress && grant.tool === row.tool);
+      if (!live) {
+        state.grants.push(structuredClone(row));
+        return structuredClone(row);
+      }
+      live.fields = structuredClone(row.fields);
+      return structuredClone(live);
     },
-    async putRules(userId, rules) {
-      if (!state.users.has(userId)) state.users.set(userId, { userId, createdAt: new Date() });
-      state.rules.set(userId, structuredClone(rules));
+    async listGrants(grantorUserId) {
+      return structuredClone(liveGrants(grantorUserId));
+    },
+    async getGrant(grantorUserId, granteeAddress, tool) {
+      return structuredClone(liveGrants(grantorUserId)
+        .find((grant) => grant.granteeAddress === granteeAddress && grant.tool === tool) ?? null);
+    },
+    async revokeGrant(id, grantorUserId, at) {
+      const live = liveGrants(grantorUserId).find((grant) => grant.id === id);
+      if (!live) return false;
+      live.revokedAt = structuredClone(at);
+      return true;
     },
     async insertRequest(row) {
       if (state.requests.has(row.id)) throw new BrokerError("conflict", "La solicitud ya existe.");
@@ -130,7 +150,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    users: new Map(), rules: new Map(), requests: new Map(),
+    users: new Map(), grants: [], requests: new Map(),
     events: [], wakes: new Map(), agents: new Map(),
   };
   let previous = Promise.resolve();

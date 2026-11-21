@@ -1,7 +1,7 @@
 "use server";
 
 import { getSession } from "./auth";
-import { webTelemetry } from "./telemetry";
+import { getTelemetry } from "./telemetry";
 
 const operations = ["share_invite", "copy_invite", "copy_connection", "start_google"] as const;
 
@@ -9,5 +9,5 @@ const operations = ["share_invite", "copy_invite", "copy_connection", "start_goo
 export async function reportBrowserFailure(operation: typeof operations[number]) {
   if (!operations.includes(operation)) return;
   const session = await getSession();
-  return webTelemetry().error(`web.browser.${operation}`, new Error(), { userId: session?.user.id });
+  return getTelemetry().error(`web.browser.${operation}`, new Error(), { userId: session?.user.id });
 }

@@ -30,7 +30,7 @@ vi.mock("@/lib/onboarding-flow", () => import("./onboarding-flow"));
 vi.mock("@/lib/telemetry", () => ({
   observeWebRequest: (_method: string, _route: string, run: (span: { setErrorId: () => void }) => unknown) =>
     run({ setErrorId: vi.fn() }),
-  webTelemetry: () => ({ identify: vi.fn(), emit: vi.fn(), error: () => "error-id" }),
+  getTelemetry: () => ({ identify: vi.fn(), emit: vi.fn(), error: () => "error-id" }),
 }));
 vi.mock("../app/(app)/owner", () => ({
   getAddress: mocks.getAddress,

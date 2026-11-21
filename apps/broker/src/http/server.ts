@@ -1,9 +1,11 @@
 import { BrokerError, type BrokerCore } from "@team-31/broker";
 import { ErrorBody, httpStatusOf } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
+import { createTelemetry, offSink, type Telemetry } from "@team-31/telemetry";
+import { honoTelemetry } from "@team-31/telemetry/hono";
 import { Hono, type Context } from "hono";
+import { routePath } from "hono/route";
 import type { z } from "zod";
-import { logFailure } from "../log.js";
 import { requireServiceIdentity, type AuthContext, type ServiceKeys } from "./auth.js";
 import { createMemoryRateLimiter, rateLimitError, type RateLimiter } from "./rate-limit.js";
 import { ownerStream } from "./stream.js";
@@ -47,10 +49,12 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.me(c.get("web"));
     case "owner.claimAddress":
       return { address: await owner.claimAddress(c.get("web"), (await parseBody(c, route.body)).localPart) };
-    case "owner.getRules":
-      return owner.getRules(c.get("web"));
-    case "owner.setRules":
-      return owner.setRules(c.get("web"), await parseBody(c, route.body));
+    case "owner.grants":
+      return { items: await owner.grants(c.get("web")) };
+    case "owner.setGrant":
+      return owner.setGrant(c.get("web"), await parseBody(c, route.body));
+    case "owner.revokeGrant":
+      return owner.revokeGrant(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "owner.pending":
       return { items: await owner.pending(c.get("web")) };
     case "owner.activity":
@@ -76,17 +80,26 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
   }
 }
 
-export function createHttpServer({ broker, publicKeys, limiter = createMemoryRateLimiter(), shutdown }: {
+// Correlates the http.request span with the request it touched (ids only, never the payload).
+function requestIdOf(c: HttpContext, result: unknown): string | undefined {
+  const fromResult = typeof result === "object" && result !== null ? (result as { requestId?: unknown }).requestId : undefined;
+  if (typeof fromResult === "string") return fromResult;
+  return c.req.param("id");
+}
+
+export function createHttpServer({ broker, publicKeys, limiter = createMemoryRateLimiter(), shutdown, telemetry = silentTelemetry() }: {
   broker: BrokerCore;
   publicKeys: ServiceKeys;
   limiter?: RateLimiter;
   shutdown?: AbortSignal;
+  telemetry?: Telemetry;
 }) {
   const app = new Hono<AuthContext>();
+  app.use(honoTelemetry(telemetry));
   const auth = {
-    mcp: requireServiceIdentity("mcp", publicKeys),
-    web: requireServiceIdentity("web", publicKeys),
-    admin: requireServiceIdentity("admin", publicKeys),
+    mcp: requireServiceIdentity("mcp", publicKeys, telemetry),
+    web: requireServiceIdentity("web", publicKeys, telemetry),
+    admin: requireServiceIdentity("admin", publicKeys, telemetry),
   };
 
   for (const route of Object.values(routes)) {
@@ -97,13 +110,16 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
         const caller = route.iss === "admin" ? `admin:${c.get("admin").adminId}` : c.get(route.iss).userId;
         const blocked = await limiter.consume(caller, bucket);
         if (blocked) {
+          telemetry.emit("http.rate_limited", { attrs: { route: route.path, bucket } });
           c.header("Retry-After", String(blocked.retryAfter));
           throw rateLimitError();
         }
       }
-      if ("contentType" in route) return ownerStream(c, broker.owner, route.response, shutdown);
+      if ("contentType" in route) return ownerStream(c, broker.owner, route.response, telemetry, shutdown);
 
       const result = route.port === null ? { ok: true } : await callPort(route, c, broker);
+      const requestId = requestIdOf(c, result);
+      if (requestId) telemetry.identify({ requestId });
       const response = route.response.parse(result);
       if ("status" in route) return c.body(null, route.status);
       return c.json(response);
@@ -115,10 +131,17 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
     if (error instanceof BrokerError && error.code !== "internal") {
       const { code, message } = error;
       if (code === "unauthorized") c.header("WWW-Authenticate", "Bearer");
+      // An expected domain error is not an internal error: the span keeps its 4xx status.
+      c.error = undefined;
       return c.json(ErrorBody.parse({ error: { code, message } }), httpStatusOf(code));
     }
-    c.header("X-Error-Id", logFailure(c.req.routePath, error));
+    c.header("X-Error-Id", telemetry.error(`${c.req.method} ${routePath(c)}`, error));
     return c.json(ErrorBody.parse({ error: { code: "internal", message: "Ocurrió un error interno en el broker." } }), 500);
   });
   return app;
+}
+
+// Tests and embedded uses may omit telemetry: the server stays instrumented without writing anywhere.
+function silentTelemetry(): Telemetry {
+  return createTelemetry({ service: "broker", sink: offSink(), heartbeatMs: 0, lifecycle: false });
 }

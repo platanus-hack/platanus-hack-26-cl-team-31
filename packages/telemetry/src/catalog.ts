@@ -82,6 +82,13 @@ export const catalog = [
     attrs: { expectedIss: code(), reason: code() },
   }),
   defineEvent({ name: "auth.oauth.consent", kind: "auth", description: "Decisión de consentimiento OAuth.", attrs: { clientId: id(), granted: bool() } }),
+  defineEvent({
+    name: "auth.scope.denied",
+    kind: "auth",
+    level: "warn",
+    description: "Una identidad autenticada no tiene el permiso (scope) que exige la operación.",
+    attrs: { scope: code(), operation: code() },
+  }),
 
   defineEvent({
     name: "web.invite.progress",
@@ -134,6 +141,13 @@ export const catalog = [
     attrs: { code: z.enum(["nonce", "expired", "schema", "not_recipient", "closed"]) },
   }),
   defineEvent({ name: "broker.owner.decided", kind: "lifecycle", description: "El dueño decidió una solicitud escalada.", attrs: { decision: code() } }),
+  defineEvent({
+    name: "broker.grant.set",
+    kind: "policy",
+    description: "El dueño creó o cambió un permiso. Sin la dirección autorizada: solo el id, la herramienta y cuántos campos.",
+    attrs: { grantId: id(), tool: code(), fields: int().nonnegative() },
+  }),
+  defineEvent({ name: "broker.grant.revoked", kind: "policy", description: "El dueño revocó un permiso.", attrs: { grantId: id() } }),
 
   defineEvent({
     name: "wake.attempt",
@@ -147,7 +161,7 @@ export const catalog = [
     name: "demo.contact.seeded",
     kind: "lifecycle",
     description: "Preparación de una identidad ficticia para el broker local de Contactos de Ana.",
-    attrs: { action: z.enum(["rules", "address", "wake"]) },
+    attrs: { action: z.enum(["grants", "address", "wake"]) },
   }),
   defineEvent({
     name: "coordination.tool.call",

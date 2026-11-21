@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
+import { Grant, GrantInput } from "./grants.js";
 import { ActivityItem, AgentConnection, OwnerDecision, OwnerPendingItem } from "./owner.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
-import { SharingRules } from "./rules.js";
 import { WakeTarget } from "./wake.js";
 
 const requestParams = z.object({ id: z.string() });
@@ -80,20 +80,28 @@ export const routes = {
     iss: "web",
     port: "owner.claimAddress",
   },
-  ownerGetRules: {
+  ownerGrants: {
     method: "GET",
-    path: "/v1/owner/rules",
-    response: SharingRules,
+    path: "/v1/owner/grants",
+    response: z.object({ items: z.array(Grant) }),
     iss: "web",
-    port: "owner.getRules",
+    port: "owner.grants",
   },
-  ownerSetRules: {
+  ownerSetGrant: {
     method: "PUT",
-    path: "/v1/owner/rules",
-    body: SharingRules,
+    path: "/v1/owner/grants",
+    body: GrantInput,
+    response: Grant,
+    iss: "web",
+    port: "owner.setGrant",
+  },
+  ownerRevokeGrant: {
+    method: "DELETE",
+    path: "/v1/owner/grants/:id",
+    params: requestParams,
     ...noContent,
     iss: "web",
-    port: "owner.setRules",
+    port: "owner.revokeGrant",
   },
   ownerPending: {
     method: "GET",

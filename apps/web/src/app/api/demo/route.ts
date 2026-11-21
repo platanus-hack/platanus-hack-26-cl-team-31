@@ -3,6 +3,7 @@ import { checkContactRuntime, reportContactError, runContactSession } from "@tea
 import { resolve } from "node:path";
 import { IncompleteModelReply, readHistory, runDemoAgent, selectTools } from "../../../lib/demo-chat";
 import { asRecord, identities, isPerson, maxMessage, type ModelState, type Person } from "../../../lib/demo";
+import { observeRoute } from "../../../lib/telemetry";
 
 function json(body: object, status = 200, errorId?: string) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store", ...(errorId && { "X-Error-Id": errorId }) } });
@@ -58,7 +59,17 @@ async function checkModel(): Promise<ModelState> {
   } catch { return "offline"; }
 }
 
-export async function GET(request: Request) {
+const route = "/api/demo";
+
+export function GET(request: Request) {
+  return observeRoute(request, route, () => status(request));
+}
+
+export function POST(request: Request) {
+  return observeRoute(request, route, () => chat(request));
+}
+
+async function status(request: Request) {
   if (!isLocal(request)) return json({ api: false, model: "offline" }, 404);
   if (new URL(request.url).searchParams.get("mode") === "contacts") {
     try {
@@ -72,7 +83,7 @@ export async function GET(request: Request) {
   return json({ api, model }, api && model === "ready" ? 200 : 503);
 }
 
-export async function POST(request: Request) {
+async function chat(request: Request) {
   if (!isLocal(request, true)) return json({ text: "Esta demo solo está disponible desde el dashboard local." }, 403);
   let input: Record<string, unknown> | null;
   try {

@@ -180,15 +180,24 @@ importers:
       '@team-31/broker':
         specifier: workspace:*
         version: link:../../packages/broker
+      '@team-31/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
       '@team-31/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@team-31/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
       '@team-31/wake':
         specifier: workspace:*
         version: link:../../packages/wake
       hono:
         specifier: 4.13.19
         version: 4.13.19
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -254,6 +263,9 @@ importers:
       '@team-31/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@team-31/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -276,6 +288,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@4.6.7)
+      '@team-31/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
       pg:
         specifier: ^8.16.3
         version: 8.23.1
@@ -314,7 +329,7 @@ importers:
         specifier: workspace:^
         version: link:../../packages/protocol
       '@team-31/telemetry':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../packages/telemetry
       better-auth:
         specifier: 1.7.18
@@ -356,6 +371,9 @@ importers:
 
   e2e:
     devDependencies:
+      '@hono/node-server':
+        specifier: 2.1.11
+        version: 2.1.11(hono@4.13.19)
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.7)
@@ -365,18 +383,30 @@ importers:
       '@team-31/broker':
         specifier: workspace:*
         version: link:../packages/broker
+      '@team-31/ops':
+        specifier: workspace:*
+        version: link:../packages/ops
       '@team-31/protocol':
         specifier: workspace:*
         version: link:../packages/protocol
+      '@team-31/telemetry':
+        specifier: workspace:*
+        version: link:../packages/telemetry
       '@team-31/typescript-config':
         specifier: workspace:*
         version: link:../packages/typescript-config
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
       jose:
         specifier: 6.2.15
         version: 6.2.15
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -429,6 +459,9 @@ importers:
       '@team-31/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@team-31/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       drizzle-orm:
         specifier: 0.45.4
         version: 0.45.4(@types/pg@8.23.1)(kysely@0.29.9)(pg@8.23.1)
@@ -519,6 +552,9 @@ importers:
       '@team-31/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@team-31/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
     devDependencies:
       '@team-31/typescript-config':
         specifier: workspace:*

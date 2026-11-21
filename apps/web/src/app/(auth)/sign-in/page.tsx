@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { getGoogleOptions } from "@/lib/auth-env.mjs";
 import { getOAuthRequest } from "@/lib/auth-request";
 import { onboardingFlow } from "@/lib/onboarding-flow";
-import { observeWebRequest, webTelemetry } from "@/lib/telemetry";
+import { observeWebRequest, getTelemetry } from "@/lib/telemetry";
 
 import { GoogleButton } from "./google-button";
 
@@ -31,7 +31,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
   const session = !request && (flow.source === "invite"
     ? await observeWebRequest("GET", "/sign-in", async (span) => {
         const session = await getSession();
-        const telemetry = webTelemetry();
+        const telemetry = getTelemetry();
         if (session) telemetry.identify({ userId: session.user.id });
         telemetry.emit("web.invite.progress", { attrs: { step: "sign_in" } });
         if (params.error) {

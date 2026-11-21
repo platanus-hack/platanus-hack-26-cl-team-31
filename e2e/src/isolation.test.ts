@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { enabled, rulesFor, seedAgents } from "./fixtures.js";
+import { enabled, grantTo, seedAgents } from "./fixtures.js";
 
 describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
   test("cada bandeja, nonce y respuesta pertenece a su solicitud", async () => {
@@ -11,7 +11,7 @@ describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
     const { ownerPort, agents } = await seedAgents("isolation", Math.max(3, Math.ceil(count / 28)));
     for (const recipient of agents) {
       const senders = agents.filter((agent) => agent !== recipient).map(({ address }) => address);
-      await ownerPort.setRules(recipient.owner, rulesFor(senders, "question", ["answer"]));
+      await grantTo(ownerPort, recipient.owner, senders, "question", ["answer"]);
     }
 
     const messages = await Promise.all(Array.from({ length: count }, async (_, index) => {

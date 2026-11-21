@@ -1,13 +1,13 @@
 import Link from "next/link";
 
 import { onboardingFlow } from "@/lib/onboarding-flow";
-import { observeWebRequest, webTelemetry } from "@/lib/telemetry";
+import { observeWebRequest, getTelemetry } from "@/lib/telemetry";
 
 import { primaryButton } from "../../(app)/ui";
 
 export default async function InvitePage() {
   await observeWebRequest("GET", "/invite", () => {
-    webTelemetry().emit("web.invite.progress", { attrs: { step: "opened" } });
+    getTelemetry().emit("web.invite.progress", { attrs: { step: "opened" } });
   });
   return (
     <>

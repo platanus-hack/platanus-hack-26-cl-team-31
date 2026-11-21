@@ -1,11 +1,12 @@
 import { generateKeyPairSync } from "node:crypto";
 import { mintServiceToken } from "@team-31/auth/service";
 import { createBroker, createMemoryStore } from "@team-31/broker";
-import { ActivityItem, ErrorBody, Scope, type Waker } from "@team-31/protocol";
+import { ActivityItem, ErrorBody, Scope, type GrantInput, type Waker } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
+import { createTelemetry, memorySink } from "@team-31/telemetry";
 import { createMemoryRateLimiter } from "./http/rate-limit.js";
 import { createHttpServer } from "./http/server.js";
 import { startWorker } from "./worker.js";
@@ -15,6 +16,7 @@ const web = generateKeyPairSync("ed25519");
 const signing = generateKeyPairSync("ed25519");
 const publicKeys = { mcp: mcp.publicKey.export({ format: "jwk" }), web: web.publicKey.export({ format: "jwk" }) };
 const question = { to: "bruno@nexo.app", tool: "question", args: { text: "¿Vienes mañana?" } };
+const grantToAlice: GrantInput = { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] };
 const mcpEvents = {
   kind: "mcp_events",
   callbackUrl: "https://example.com/events",
@@ -97,6 +99,20 @@ afterEach(() => {
 });
 
 describe("HTTP interno del broker", () => {
+  it("crea, lista y revoca un grant del titular", async () => {
+    const app = createHttpServer({ broker: fixture().broker, publicKeys });
+    const [bruno, alice] = await Promise.all([owner("bruno"), owner("alice")]);
+    const grant = await call(app, routes.ownerSetGrant, { token: bruno, body: grantToAlice });
+    expect(grant).toMatchObject(grantToAlice);
+    expect(await call(app, routes.ownerGrants, { token: bruno })).toEqual({ items: [grant] });
+    expect(await call(app, routes.ownerGrants, { token: alice })).toEqual({ items: [] });
+
+    const path = `/v1/owner/grants/${grant.id}`;
+    await expectError(await request(app, routes.ownerRevokeGrant, { token: alice, path }), 404, "not_found");
+    await call(app, routes.ownerRevokeGrant, { token: bruno, path });
+    expect(await call(app, routes.ownerGrants, { token: bruno })).toEqual({ items: [] });
+  });
+
   it("recorre el contrato completo con JWT de servicio y completa ask, inbox, reply y status", async () => {
     const { broker, waker } = fixture();
     const app = createHttpServer({ broker, publicKeys });
@@ -109,18 +125,21 @@ describe("HTTP interno del broker", () => {
     await call(app, routes.ownerClaimAddress, { token: alice, body: { localPart: "alice" } });
     expect(await call(app, routes.ownerClaimAddress, { token: bruno, body: { localPart: "bruno" } }))
       .toEqual({ address: "bruno@nexo.app" });
-    expect(await call(app, routes.ownerGetRules, { token: bruno })).toMatchObject({ defaultForUnknown: "ask_owner" });
+    const denied = await call(app, routes.agentAsk, { token: aliceBot, body: question });
+    expect(denied).toMatchObject({ final: true, decision: "deny" });
+
+    await call(app, routes.ownerSetGrant, { token: bruno, body: grantToAlice });
+    expect((await call(app, routes.ownerGrants, { token: bruno })).items).toMatchObject([grantToAlice]);
 
     const waiting = await call(app, routes.agentAsk, { token: aliceBot, body: question });
-    expect(waiting).toMatchObject({ final: false, waitingFor: "owner" });
+    const [escalated] = (await call(app, routes.agentInbox, { token: brunoBot })).items;
+    await call(app, routes.agentReply, { token: brunoBot, body: {
+      requestId: escalated!.requestId, nonce: escalated!.nonce, outcome: "needs_owner",
+    } });
     expect((await call(app, routes.ownerPending, { token: bruno })).items[0]?.requestId).toBe(waiting.requestId);
     await call(app, routes.ownerDecide, {
       token: bruno, path: `/v1/owner/requests/${waiting.requestId}/decision`, body: { kind: "deny" },
     });
-
-    const rules = { circles: { amigos: ["alice@nexo.app"] }, grants: { amigos: [{ tool: "question", fields: ["answer"] }] } };
-    await call(app, routes.ownerSetRules, { token: bruno, body: rules });
-    expect(await call(app, routes.ownerGetRules, { token: bruno })).toMatchObject(rules);
     const capabilityPath = `${routes.agentCapabilities.path}?to=bruno@nexo.app`;
     expect((await call(app, routes.agentCapabilities, { token: aliceBot, path: capabilityPath })).tools)
       .toContainEqual(expect.objectContaining({ tool: "question", allowedFields: ["answer"] }));
@@ -133,7 +152,7 @@ describe("HTTP interno del broker", () => {
     const asked = await call(app, routes.agentAsk, { token: aliceBot, body: { ...question, userId: "carla" } });
     expect(asked).toMatchObject({ final: false, waitingFor: "agent" });
     await broker.tick(new Date());
-    expect(waker.wake).toHaveBeenCalledWith(mcpEvents, { event: "nexo.request.created", requestId: asked.requestId });
+    expect(waker.wake).toHaveBeenCalledWith(mcpEvents, { event: "nexo.request.created", requestId: asked.requestId }, expect.objectContaining({ attempt: 1 }));
     const inbox = (await call(app, routes.agentInbox, { token: brunoBot })).items;
     expect(inbox).toHaveLength(1);
     const item = inbox[0]!;
@@ -151,8 +170,9 @@ describe("HTTP interno del broker", () => {
 
     const stream = streamEvents(await request(app, routes.ownerStream, { token: bruno }));
     try {
-      expect((await stream.next()).item).toMatchObject({ requestId: waiting.requestId, direction: "received" });
-      expect((await stream.next()).item).toMatchObject({ requestId: asked.requestId, direction: "received" });
+      for (const { requestId } of [denied, waiting, asked]) {
+        expect((await stream.next()).item).toMatchObject({ requestId, direction: "received" });
+      }
     } finally {
       await stream.close();
     }
@@ -184,22 +204,32 @@ describe("HTTP interno del broker", () => {
 
   it("valida JSON, query y respuestas y correlaciona los 500 sin publicar datos", async () => {
     const { broker } = fixture();
-    const app = createHttpServer({ broker, publicKeys });
+    const sink = memorySink();
+    const telemetry = createTelemetry({ service: "broker", sink, heartbeatMs: 0, lifecycle: false });
+    const app = createHttpServer({ broker, publicKeys, telemetry });
     const [webToken, mcpToken] = await Promise.all([owner("alice"), agent("alice")]);
     await expectError(await request(app, routes.agentAsk, { token: mcpToken, raw: "{" }), 400, "invalid_input");
     await expectError(await request(app, routes.agentAsk, { token: mcpToken, body: { tool: "unknown" } }), 400, "invalid_input");
     await expectError(await request(app, routes.ownerActivity, { token: webToken, path: "/v1/owner/activity?limit=0" }), 400, "invalid_input");
 
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Expected 4xx errors are not internal errors.
+    expect(sink.find("error")).toEqual([]);
+
     const me = vi.spyOn(broker.owner, "me").mockResolvedValue({ userId: "alice", address: "private-metadata" });
     const invalid = await request(app, routes.ownerMe, { token: webToken });
     const errorId = invalid.headers.get("X-Error-Id");
     expect(errorId).toBeTruthy();
     await expectError(invalid, 500, "internal");
-    expect(log).toHaveBeenCalledWith("[broker] Error interno", expect.objectContaining({ errorId, type: "invalid_schema" }));
+    expect(sink.find("error")).toEqual([expect.objectContaining({
+      errorId, userId: "alice", attrs: expect.objectContaining({ operation: "GET /v1/owner/me", type: "invalid_schema" }),
+    })]);
+    expect(sink.find("http.request").at(-1)).toMatchObject({
+      errorId, status: "error", attrs: { route: "/v1/owner/me", status: 500, bucket: "5xx" },
+    });
     me.mockRejectedValue(new Error("private-metadata"));
     await expectError(await request(app, routes.ownerMe, { token: webToken }), 500, "internal");
-    expect(JSON.stringify(log.mock.calls)).not.toContain("private-metadata");
+    expect(sink.find("error")).toHaveLength(2);
+    expect(JSON.stringify(sink.records)).not.toContain("private-metadata");
   });
 
   it("limita por usuario dentro de cada grupo y aplica Retry-After", async () => {
@@ -230,7 +260,11 @@ describe("HTTP interno del broker", () => {
     const app = createHttpServer({ broker, publicKeys });
     const [aliceBot, bruno, carla] = await Promise.all([agent("alice"), owner("bruno"), owner("carla")]);
     const unrelated = await call(app, routes.agentAsk, { token: aliceBot, body: { ...question, to: "carla@nexo.app" } });
+    await broker.owner.setGrant({ userId: "bruno" }, grantToAlice);
     const asked = await call(app, routes.agentAsk, { token: aliceBot, body: question });
+    const brunoBot = { userId: "bruno", agentId: "bruno-agent", scopes: Scope.options };
+    const [item] = await broker.agent.inbox(brunoBot);
+    await broker.agent.reply(brunoBot, { requestId: asked.requestId, nonce: item!.nonce, outcome: "needs_owner" });
     const brunoStream = streamEvents(await request(app, routes.ownerStream, { token: bruno }));
     const carlaStream = streamEvents(await request(app, routes.ownerStream, { token: carla }));
     let finalId: string;
@@ -264,8 +298,9 @@ describe("HTTP interno del broker", () => {
     await broker.owner.claimAddress({ userId: "bruno" }, "bruno");
     const app = createHttpServer({ broker, publicKeys });
     const token = await agent("alice");
+    await broker.owner.setGrant({ userId: "bruno" }, grantToAlice);
     const asked = await call(app, routes.agentAsk, { token, body: question });
-    const stop = startWorker(broker);
+    const stop = startWorker(broker, { error: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(2_000);
       expect(await call(app, routes.agentStatus, { token, path: `/v1/agent/requests/${asked.requestId}` }))
@@ -282,7 +317,7 @@ describe("HTTP interno del broker", () => {
     let complete!: (value: typeof report) => void;
     const inflight = new Promise<typeof report>((resolve) => { complete = resolve; });
     const tick = vi.fn().mockReturnValueOnce(inflight).mockResolvedValue(report);
-    const stop = startWorker({ tick });
+    const stop = startWorker({ tick }, { error: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(3_000);
       expect(tick).toHaveBeenCalledTimes(1);
