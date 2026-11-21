@@ -234,6 +234,6 @@ function previousAnswer(reply: ChatReply | null) {
   const queries = reply.traces.filter(({ tool }) => tool === "availability_check")
     .map(({ input }) => typeof input.recipient === "string" && typeof input.slot === "string"
       ? `${input.recipient} a las ${formatSlot(input.slot)} (Santiago)` : null).filter(Boolean);
-  return queries.length ? `Consulté por ${queries.join(", ")}. Para dar otra respuesta debo consultar de nuevo.`
-    : "Consulté el estado en Nexo. Para dar otra respuesta debo consultar de nuevo.";
+  return queries.length ? `La pregunta anterior era por la disponibilidad de ${queries.join(", ")}.`
+    : "Consulté el estado en Nexo.";
 }
