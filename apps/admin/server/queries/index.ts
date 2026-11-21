@@ -40,6 +40,7 @@ import {
   encodeCursor,
   iso,
   isoOrNull,
+  canAssumeRole,
   likeContains,
   likePrefix,
   num,
@@ -789,6 +790,12 @@ export function createPgAdminQueries({
 
     sql: async (text) => {
       const query = checkReadOnlySql(text)
+      if (!(await canAssumeRole(pool, "nexo_admin_ro"))) {
+        throw new AdminQueryError(
+          "invalid_input",
+          "SQL deshabilitado: el usuario de base no puede asumir nexo_admin_ro (modo degradado, ver docs/admin.md#producción)."
+        )
+      }
       return ro(async (db) => {
         const started = performance.now()
         // Protocolo extendido: Postgres rechaza más de una sentencia aunque el filtro fallara.
