@@ -31,7 +31,7 @@ export default async function AgentsPage() {
                 <tr key={agent.agentId} className="align-top">
                   <th scope="row" className="max-w-56 px-4 py-4 font-medium [overflow-wrap:anywhere]">
                     {agent.label}
-                    <span className={`mt-1 block text-xs font-medium ${agent.revokedAt ? "text-danger" : "text-accent"}`}>
+                    <span className={`mt-1 block text-xs font-medium ${agent.revokedAt ? "text-danger" : "text-accent-ink"}`}>
                       {agent.revokedAt ? "Desconectado" : "Conectado"}
                     </span>
                   </th>

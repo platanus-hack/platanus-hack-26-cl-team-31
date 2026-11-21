@@ -53,7 +53,7 @@ export async function Wizard({ kind, agentId, install, login, wake }: WizardProp
           {agentId !== undefined && !selected && (
             <p role="status" className="text-sm text-danger">No se encontró esa conexión. Selecciona un agente de tu cuenta.</p>
           )}
-          {selected && <p className="text-sm font-medium text-accent [overflow-wrap:anywhere]">Conexión seleccionada: {selected.label}</p>}
+          {selected && <p className="text-sm font-medium text-accent-ink [overflow-wrap:anywhere]">Conexión seleccionada: {selected.label}</p>}
           <div className="flex flex-wrap items-end gap-2">
             {connections.length > 0 && (
               <form action={selectConnection.bind(null, kind)} className="flex flex-wrap items-end gap-2">
@@ -79,7 +79,7 @@ export async function Wizard({ kind, agentId, install, login, wake }: WizardProp
           {wake}
           {client.wakeInstruction && <CopyBox label="Instrucción para activar el aviso" value={client.wakeInstruction} />}
           {wakeReady && (
-            <p className="text-sm font-medium text-accent">
+            <p className="text-sm font-medium text-accent-ink">
               {kind === "dot" ? "Aviso conectado mediante eventos MCP." : "El agente ya tiene un aviso configurado."}
             </p>
           )}

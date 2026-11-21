@@ -27,7 +27,7 @@ export function AddressForm({ source }: { source: OnboardingSource }) {
       </div>
       <div id="address-preview" className="rounded-xl border border-line stage px-4 py-3">
         <p className="text-xs font-medium text-body">Vista previa</p>
-        <p className="mt-1 break-all font-mono text-sm text-accent">{localPart || "tu-nombre"}@{ADDRESS_DOMAIN}</p>
+        <p className="mt-1 break-all font-mono text-sm text-accent-ink">{localPart || "tu-nombre"}@{ADDRESS_DOMAIN}</p>
       </div>
       <Feedback {...state} />
       <button disabled={pending} className={primaryButton}>{pending ? "Guardando…" : "Guardar dirección"}</button>

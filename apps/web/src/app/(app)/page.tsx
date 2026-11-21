@@ -28,7 +28,7 @@ export default async function HomePage() {
                 <span className="break-all font-medium">{invitations[0]!.address}</span>
                 {invitations.length > 1 ? ` y ${invitations.length - 1} más quieren conectar contigo.` : " quiere conectar contigo."}
               </span>
-              <span className="shrink-0 text-sm font-medium text-accent">Responder ›</span>
+              <span className="shrink-0 text-sm font-medium text-accent-ink">Responder ›</span>
             </Link>
           )}
           {pending.length === 0 && invitations.length === 0 ? <Empty>No tienes solicitudes pendientes.</Empty> : (

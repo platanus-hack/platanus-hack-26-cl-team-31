@@ -34,13 +34,13 @@ export function SharingPicker({ value, onChange }: { value: Sharing; onChange: (
     <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-stage">
       <div className="space-y-2 px-4 py-3">
         <p id={legend} className="text-[0.9375rem] font-medium">Disponibilidad</p>
-        <div role="radiogroup" aria-labelledby={legend} className="grid grid-cols-3 gap-1 rounded-lg bg-chip p-1">
+        <div role="radiogroup" aria-labelledby={legend} className="grid grid-cols-3 gap-1.5">
           {availabilityOptions.map((option) => {
             const active = value.availability === option.value;
             return (
               <button key={option.value} type="button" role="radio" aria-checked={active}
                 onClick={() => onChange({ ...value, availability: option.value })}
-                className={`min-h-9 cursor-pointer rounded-md px-1.5 text-[0.8125rem] leading-tight font-medium transition sm:text-sm ${active ? "bg-ink text-canvas shadow-sm" : "text-muted hover:text-ink"}`}>
+                className={`min-h-9 cursor-pointer rounded-full px-1.5 text-[13px] leading-tight font-medium pill transition ${active ? "bg-chip-active text-ink" : "bg-chip text-ink/80 hover:bg-chip-hover"}`}>
                 {option.label}
               </button>
             );
