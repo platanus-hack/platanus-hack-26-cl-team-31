@@ -4,7 +4,7 @@ import { routes } from "./http.js";
 
 it.each(Object.values(routes))("$method $path has a schema and the designated issuer", (route) => {
   expect(route.response.safeParse).toBeTypeOf("function");
-  const issuer = route.path.startsWith("/v1/agent/") ? "mcp" : "web";
+  const issuer = route.path.startsWith("/v1/agent/") ? "mcp" : route.path.startsWith("/v1/admin/") ? "admin" : "web";
   expect(route.iss).toBe(route.path === "/healthz" ? null : issuer);
 });
 
@@ -20,6 +20,16 @@ it("uses an empty response schema for 204 routes", () => {
 it("validates the activity limit as a positive integer", () => {
   expect(routes.ownerActivity.query.parse({ limit: "5" })).toEqual({ limit: 5 });
   expect(routes.ownerActivity.query.safeParse({ limit: "0" }).success).toBe(false);
+});
+
+it("requires a reason of 10 to 500 characters on admin mutations", () => {
+  const body = routes.adminExpire.body;
+  expect(body.safeParse({ reason: "Atascada por un aviso caído" }).success).toBe(true);
+  expect(body.safeParse({ reason: "corta" }).success).toBe(false);
+  expect(body.safeParse({ reason: "          relleno  " }).success).toBe(false);
+  expect(body.safeParse({ reason: "x".repeat(501) }).success).toBe(false);
+  expect(body.safeParse({}).success).toBe(false);
+  expect(routes.adminRevokeAgent.params.parse({ userId: "u1", agentId: "a1" })).toEqual({ userId: "u1", agentId: "a1" });
 });
 
 it("matches the HTTP error status contract", () => {

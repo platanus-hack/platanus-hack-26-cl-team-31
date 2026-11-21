@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { Owner, Principal } from "@team-31/protocol";
+import { AdminActor, Owner, Principal } from "@team-31/protocol";
 import { importJWK, jwtVerify, SignJWT, type JWK } from "jose";
 
 import { parseScopes } from "./scopes.js";
 
-type ServiceIssuer = "mcp" | "web";
+export type ServiceIssuer = "mcp" | "web" | "admin";
 type PublicKeys = Partial<Record<ServiceIssuer, JWK>>;
 
 type MintOptions = { sub: string; privateKey: JWK } & (
   | { iss: "mcp"; azp: string; scopes?: Principal["scopes"] }
   | { iss: "web"; azp?: never; scopes?: never }
+  // The admin server signs as the operator: `sub` is the admin ID and `email` its verified address.
+  | { iss: "admin"; email: string; azp?: never; scopes?: never }
 );
 
 const ALGORITHM = "EdDSA";
@@ -20,6 +22,12 @@ function requireId(value: unknown): asserts value is string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error("El token de servicio requiere una identidad.");
   }
+}
+
+function parseAdmin(adminId: string, email: unknown): AdminActor {
+  const actor = AdminActor.safeParse({ adminId, email });
+  if (!actor.success) throw new Error("El token de servicio del admin requiere un correo válido.");
+  return actor.data;
 }
 
 async function importKey(jwk: JWK | undefined, privateKey: boolean) {
@@ -44,6 +52,8 @@ export async function mintServiceToken(options: MintOptions): Promise<string> {
       scopes: options.scopes ?? [],
     });
     claims = { azp: principal.agentId, scope: principal.scopes.join(" ") };
+  } else if (options.iss === "admin") {
+    claims = { email: parseAdmin(options.sub, options.email).email };
   }
 
   return new SignJWT(claims)
@@ -57,7 +67,7 @@ export async function mintServiceToken(options: MintOptions): Promise<string> {
     .sign(await importKey(options.privateKey, true));
 }
 
-type ServiceIdentity = { mcp: Principal; web: Owner };
+type ServiceIdentity = { mcp: Principal; web: Owner; admin: AdminActor };
 
 export function verifyServiceToken<I extends ServiceIssuer>(
   token: string,
@@ -66,7 +76,7 @@ export function verifyServiceToken<I extends ServiceIssuer>(
 export async function verifyServiceToken(
   token: string,
   { publicKeys, expectedIss }: { publicKeys: PublicKeys; expectedIss: ServiceIssuer },
-): Promise<Principal | Owner> {
+): Promise<Principal | Owner | AdminActor> {
   const { payload } = await jwtVerify(token, await importKey(publicKeys[expectedIss], false), {
     algorithms: [ALGORITHM],
     issuer: expectedIss,
@@ -89,6 +99,8 @@ export async function verifyServiceToken(
       scopes: parseScopes(payload.scope),
     });
   }
+
+  if (expectedIss === "admin") return parseAdmin(payload.sub, payload.email);
 
   return Owner.parse({ userId: payload.sub });
 }

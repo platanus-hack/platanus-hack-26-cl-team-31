@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Address, LocalPart } from "./address.js";
+import { AdminActionInput } from "./admin.js";
 import { ActivityItem, AgentConnection, OwnerDecision, OwnerPendingItem } from "./owner.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
@@ -9,6 +10,7 @@ import { WakeTarget } from "./wake.js";
 
 const requestParams = z.object({ id: z.string() });
 const agentParams = z.object({ agentId: z.string() });
+const adminAgentParams = z.object({ userId: z.string(), agentId: z.string() });
 const noContent = { status: 204, response: z.undefined() } as const;
 
 export const routes = {
@@ -156,6 +158,33 @@ export const routes = {
     response: ActivityItem,
     iss: "web",
     port: null,
+  },
+  adminRewake: {
+    method: "POST",
+    path: "/v1/admin/requests/:id/rewake",
+    params: requestParams,
+    body: AdminActionInput,
+    ...noContent,
+    iss: "admin",
+    port: "admin.rewake",
+  },
+  adminExpire: {
+    method: "POST",
+    path: "/v1/admin/requests/:id/expire",
+    params: requestParams,
+    body: AdminActionInput,
+    ...noContent,
+    iss: "admin",
+    port: "admin.expire",
+  },
+  adminRevokeAgent: {
+    method: "POST",
+    path: "/v1/admin/agents/:userId/:agentId/revoke",
+    params: adminAgentParams,
+    body: AdminActionInput,
+    ...noContent,
+    iss: "admin",
+    port: "admin.revokeAgent",
   },
   health: {
     method: "GET",
