@@ -9,6 +9,9 @@ const inputSchema = AskInput.options[0].extend({
   tool: ToolName,
   groupId: AskInput.options[4].shape.groupId.describe("Solo para connect: ID del grupo elegido por el titular o null para Sin grupo."),
   args: z.union(Object.values(ToolArgs)),
+}).meta({
+  if: { properties: { tool: { const: "connect" } } },
+  then: { required: ["groupId"] },
 });
 
 export function registerAsk(server: McpServer, principal: Principal, agent: AgentPort, telemetry: ToolTelemetry) {
