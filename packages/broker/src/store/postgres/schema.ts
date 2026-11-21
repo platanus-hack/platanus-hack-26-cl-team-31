@@ -88,7 +88,7 @@ export const vaultDocuments = sideband.table("vault_documents", {
   createdAt: time("created_at").notNull(),
 }, (t) => [
   uniqueIndex("vault_documents_owner_idempotency_idx").on(t.owner, t.idempotencyKey),
-  foreignKey({ columns: [t.owner, t.categoryId], foreignColumns: [vaultCategories.owner, vaultCategories.id] }).onDelete("cascade"),
+  foreignKey({ name: "vault_documents_category_fk", columns: [t.owner, t.categoryId], foreignColumns: [vaultCategories.owner, vaultCategories.id] }).onDelete("cascade"),
   check("vault_documents_size_check", sql`${t.sizeBytes} >= 0 AND ${t.sizeBytes} <= 5242880`),
 ]);
 

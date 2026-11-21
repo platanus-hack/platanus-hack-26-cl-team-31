@@ -120,6 +120,13 @@
       "when": 1795295327266,
       "tag": "0014_custom_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795301751624,
+      "tag": "0015_vault_documents",
+      "breakpoints": true
     }
   ]
 }
