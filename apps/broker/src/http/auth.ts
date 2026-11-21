@@ -19,6 +19,7 @@ export function requireServiceIdentity<I extends keyof ServiceKeys>(
   telemetry: Pick<Telemetry, "emit" | "identify">,
 ): MiddlewareHandler<AuthContext> {
   return async (c, next) => {
+    c.header("Cache-Control", "no-store");
     const token = /^Bearer ([^\s]+)$/i.exec(c.req.header("Authorization") ?? "")?.[1];
     if (!token) {
       telemetry.emit("auth.service_jwt.rejected", { attrs: { expectedIss, reason: "missing_token" } });

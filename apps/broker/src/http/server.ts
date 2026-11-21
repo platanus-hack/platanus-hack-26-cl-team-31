@@ -157,7 +157,6 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   for (const route of Object.values(routes)) {
     app.on([route.method], [route.path], ...(route.iss ? [auth[route.iss]] : []), async (c: HttpContext) => {
       if (route.iss) {
-        c.header("Cache-Control", "no-store");
         const bucket = askPorts.includes(route.port) ? "ask" : route.port === "agent.reply" ? "reply" : "other";
         const caller = route.iss === "admin" ? `admin:${c.get("admin").adminId}` : c.get(route.iss).userId;
         const blocked = await limiter.consume(caller, bucket);
