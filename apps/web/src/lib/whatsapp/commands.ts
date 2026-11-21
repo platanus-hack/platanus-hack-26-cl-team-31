@@ -19,13 +19,17 @@ type WhatsAppBroker = Pick<OwnerPort, "ask" | "status" | "activity" | "contacts"
 const words = (text: string) =>
   text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").match(/[\p{L}\p{N}]+/gu)?.join(" ") ?? "";
 
-async function acceptInvitation(broker: WhatsAppBroker, owner: Owner, text: string) {
-  const help = "¿Qué quieres compartir? Escribe «acepta a nombre@sideband.app y compártele disponibilidad, intereses, salud, preguntas abiertas o nada», usando solo las opciones que elijas.";
+function parseAcceptance(text: string) {
   const match = /^acepta a (\S+?)(?: y comp[aá]rtele (?:solo )?(.+?))?[.!]?$/iu.exec(text);
-  if (!match?.[1] || !match[2]) return help;
+  if (!match?.[1] || !match[2]) return;
   const share = parseSharingCategories(match[2]);
-  if (!share) return help;
-  const ref = match[1].toLowerCase();
+  if (share) return { ref: match[1].toLowerCase(), share };
+}
+
+async function acceptInvitation(broker: WhatsAppBroker, owner: Owner, text: string) {
+  const acceptance = parseAcceptance(text);
+  if (!acceptance) return "¿Qué quieres compartir? Escribe «acepta a nombre@sideband.app y compártele disponibilidad, intereses, salud, preguntas abiertas o nada», usando solo las opciones que elijas.";
+  const { ref, share } = acceptance;
   const matches = (await broker.contacts(owner)).incoming.filter(({ address }) =>
     ref.includes("@") ? address === ref : words(address.split("@")[0]!) === words(ref));
   if (!matches.length) return "No encontré una invitación pendiente de esa persona. Revisa su dirección Sideband.";
@@ -68,60 +72,62 @@ export function isConversationInput(text: string): boolean {
   return !!text && !statusCommand.test(text) && !contactsCommand.test(text) && !acceptCommand.test(text);
 }
 
+type ReportResult = (action: "ask" | "status", view: RequesterView) => void;
+
+async function readStatus(broker: WhatsAppBroker, owner: Owner, onResult: ReportResult, id?: string) {
+  id ??= (await broker.activity(owner, 100))
+    .find((item) => item.direction === "sent")?.requestId;
+  if (!id) return "No encontré solicitudes recientes enviadas desde tu cuenta.";
+  try {
+    const view = await broker.status(owner, id);
+    onResult("status", view);
+    return summarize(view);
+  } catch (error) {
+    if (error instanceof BrokerError && error.code === "not_found") return "No encontré esa solicitud en tu cuenta.";
+    throw error;
+  }
+}
+
+const explicitQuestion = /^(?:\/pregunta\s+|preg[uú]nta(?:le)?\s+a\s+)(\S+?)(?::\s*|\s+)(\S[\s\S]*)$/i;
+
+async function askExplicitQuestion(broker: WhatsAppBroker, owner: Owner, onResult: ReportResult, text: string) {
+  const match = explicitQuestion.exec(text);
+  if (!match?.[2]) return askHelp;
+  const address = Address.safeParse(match[1]?.toLowerCase());
+  if (!address.success) return askHelp;
+  const to = address.data;
+  const category = "general";
+  const input = AskInput.safeParse({ to, tool: "question", args: { text: match[2], category } });
+  if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
+  const view = await broker.ask(owner, input.data, "whatsapp");
+  onResult("ask", view);
+  if (view.decision !== "deny") return summarize(view);
+  // The broker denies without a reason. What the contact shares is already in the owner's own
+  // contacts view, so naming the missing category reveals nothing new.
+  let contacts;
+  try {
+    ({ contacts } = await broker.contacts(owner));
+  } catch (error) {
+    getTelemetry().error("whatsapp.denial.contacts", error, { userId: owner.userId, requestId: view.requestId });
+    return summarize(view);
+  }
+  const contact = contacts.find(({ address }) => address === to);
+  if (!contact) return `${to} no está entre tus contactos.`;
+  if (!contact.receives.includes(category)) return `${to} no te comparte ${notShared[category]}.`;
+  return summarize(view);
+}
+
 export async function runCommand(
-  broker: WhatsAppBroker, owner: Owner, text: string,
-  onResult: (action: "ask" | "status", view: RequesterView) => void,
+  broker: WhatsAppBroker, owner: Owner, text: string, onResult: ReportResult,
   messageFlow?: (text: string) => Promise<MessageReply>,
 ): Promise<string> {
   const status = statusCommand.exec(text);
-  async function readStatus(id?: string) {
-    id ??= (await broker.activity(owner, 100))
-      .find((item) => item.direction === "sent")?.requestId;
-    if (!id) return "No encontré solicitudes recientes enviadas desde tu cuenta.";
-    try {
-      const view = await broker.status(owner, id);
-      onResult("status", view);
-      return summarize(view);
-    } catch (error) {
-      if (error instanceof BrokerError && error.code === "not_found") return "No encontré esa solicitud en tu cuenta.";
-      throw error;
-    }
-  }
-
-  async function listContacts() {
-    const { contacts } = await broker.contacts(owner);
-    return contactsText(contacts);
-  }
-
-  async function ask(to: string, question: string, category: Category) {
-    const input = AskInput.safeParse({ to, tool: "question", args: { text: question, category } });
-    if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
-    const view = await broker.ask(owner, input.data, "whatsapp");
-    onResult("ask", view);
-    if (view.decision !== "deny") return summarize(view);
-    // The broker denies without a reason. What the contact shares is already in the owner's own
-    // contacts view, so naming the missing category reveals nothing new.
-    let contacts;
-    try {
-      ({ contacts } = await broker.contacts(owner));
-    } catch (error) {
-      getTelemetry().error("whatsapp.denial.contacts", error, { userId: owner.userId, requestId: view.requestId });
-      return summarize(view);
-    }
-    const contact = contacts.find(({ address }) => address === to);
-    if (!contact) return `${to} no está entre tus contactos.`;
-    if (!contact.receives.includes(category)) return `${to} no te comparte ${notShared[category]}.`;
-    return summarize(view);
-  }
-
-  if (status || !messageFlow && /^¿?\s*ya respondi[oó]\s*\??$/i.test(text)) return readStatus(status?.[1]);
-  if (contactsCommand.test(text)) return listContacts();
+  if (status) return readStatus(broker, owner, onResult, status[1]);
+  if (contactsCommand.test(text)) return contactsText((await broker.contacts(owner)).contacts);
   if (acceptCommand.test(text)) return acceptInvitation(broker, owner, text);
   if (messageFlow && text) return formatMessageReply(await messageFlow(text));
-  const match = /^(?:\/pregunta\s+|preg[uú]nta(?:le)?\s+a\s+)(\S+?)(?::\s*|\s+)(\S[\s\S]*)$/i.exec(text);
-  const explicit = Address.safeParse(match?.[1]?.toLowerCase());
-  const command = explicit.success && match?.[2] ? { to: explicit.data, question: match[2] } : undefined;
-  return command ? ask(command.to, command.question, "general") : askHelp;
+  if (/^¿?\s*ya respondi[oó]\s*\??$/i.test(text)) return readStatus(broker, owner, onResult);
+  return askExplicitQuestion(broker, owner, onResult, text);
 }
 
 function contactsText(contacts: { address: string; receives: Category[] }[]): string {
@@ -129,16 +135,19 @@ function contactsText(contacts: { address: string; receives: Category[] }[]): st
   return ["Tus contactos:", ...contacts.map(({ address, receives }) => `• ${address}: te comparte ${describeSharing(receives)}`)].join("\n");
 }
 
+function requestRepliesText(reply: Extract<MessageReply, { kind: "requests" }>): string {
+  const lines = reply.items.map(summarize);
+  for (const ref of reply.confirmed ?? []) lines.push(`Solicitud confirmada para ${ref.to}. ID ${ref.requestId}.`);
+  if (reply.unconfirmedCount) lines.push(`Quedan ${reply.unconfirmedCount} envíos por confirmar. Escribe «continuar» para retomarlos.`);
+  return lines.join("\n");
+}
+
 export function formatMessageReply(reply: MessageReply): string {
   switch (reply.kind) {
     case "clarification":
       return [reply.question, ...(reply.choices ?? []).map((choice, index) => `${index + 1}. ${choice.label}`)].join("\n");
-    case "requests": {
-      const lines = reply.items.map(summarize);
-      for (const ref of reply.confirmed ?? []) lines.push(`Solicitud confirmada para ${ref.to}. ID ${ref.requestId}.`);
-      if (reply.unconfirmedCount) lines.push(`Quedan ${reply.unconfirmedCount} envíos por confirmar. Escribe «continuar» para retomarlos.`);
-      return lines.join("\n");
-    }
+    case "requests":
+      return requestRepliesText(reply);
     case "contacts":
       return contactsText(reply.data.contacts.map(({ address, theyShare }) => ({ address, receives: theyShare })));
     case "profiles":
