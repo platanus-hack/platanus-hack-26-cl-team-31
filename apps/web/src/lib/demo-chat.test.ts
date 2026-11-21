@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { readHistory, runDemoAgent, selectTools } from "./demo-chat";
+import { IncompleteModelReply, readHistory, runDemoAgent, selectTools } from "./demo-chat";
 
 const tools = selectTools({ tools: ["availability_check", "meeting_get", "group_leave"].map(name => ({ name, inputSchema: { type: "object" } })) });
 const input = { recipient: "bob", group: "futbol", slot: "2026-11-28T21:00:00.000Z", minutes: 60 };
@@ -42,5 +42,16 @@ describe("agente de demo", () => {
     expect(ask).toHaveBeenCalledTimes(5);
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(reply.traces).toHaveLength(1);
+  });
+
+  it("distinguishes truncated model output from a connection failure and keeps any tool results", async () => {
+    const invoke = vi.fn(async () => ({ status: "not_shareable" }));
+    const ask = vi.fn<Parameters<typeof runDemoAgent>[0]["ask"]>()
+      .mockResolvedValueOnce({ tool_calls: [call("availability_check")] })
+      .mockRejectedValueOnce(new IncompleteModelReply());
+    const reply = await runDemoAgent({ ...defaults, ask, invoke });
+    expect(reply.error).toBe("model");
+    expect(reply.text).toContain("no terminó de redactar");
+    expect(reply.traces?.[0].data).toEqual({ status: "not_shareable" });
   });
 });

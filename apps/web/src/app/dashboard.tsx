@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { asRecord, formatSlot, identities, maxHistory, maxMessage, people, statuses, type ChatReply, type ChatTurn, type Person, type ToolTrace } from "@/lib/demo";
+import { asRecord, formatSlot, identities, maxHistory, maxMessage, people, statuses, type ChatReply, type ChatTurn, type ModelState, type Person, type ToolTrace } from "@/lib/demo";
 
 type Message = { id: number; prompt: string; reply: ChatReply | null };
-type Services = { api: boolean; model: boolean };
+type Services = { api: boolean; model: ModelState };
 
 const suggestions: Record<Person, [string, string][]> = {
   ana: [["Consultar disponibilidad", "Hola, estoy organizando un partido. ¿Le acomoda a Bob el sábado a las seis de la tarde?"], ["Proponer un horario", "Invita a Bob y Carla a jugar el sábado. Propón las 4 o las 6 de la tarde como opciones."]],
@@ -75,13 +75,23 @@ export function Dashboard() {
   const refocus = useRef(false);
   const sequence = useRef(0);
   const messages = history[person];
+  const ready = services?.api && services.model === "ready";
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/demo", { signal: controller.signal })
-      .then(async response => setServices(await response.json()))
-      .catch(() => { if (!controller.signal.aborted) setServices({ api: false, model: false }); });
-    return () => controller.abort();
+    let timer: ReturnType<typeof setTimeout>;
+    async function check() {
+      try {
+        const response = await fetch("/api/demo", { signal: controller.signal });
+        setServices(await response.json());
+        if (response.ok) return;
+      } catch {
+        if (!controller.signal.aborted) setServices({ api: false, model: "offline" });
+      }
+      if (!controller.signal.aborted) timer = setTimeout(check, 8000);
+    }
+    void check();
+    return () => { controller.abort(); clearTimeout(timer); };
   }, [refresh]);
 
   useEffect(() => {
@@ -92,9 +102,9 @@ export function Dashboard() {
     }
   }, [messages]);
 
-  async function send(message: string) {
+async function send(message: string) {
     const prompt = message.trim();
-    if (!prompt || pending) return;
+    if (!prompt || pending || !ready) return;
     const sender = person;
     const id = ++sequence.current;
     refocus.current = !messages?.length;
@@ -102,9 +112,7 @@ export function Dashboard() {
       .slice(-maxHistory / 2).flatMap(({ prompt, reply }) => [
         { role: "user", content: prompt },
         // Reconsultar la API en lugar de dar al modelo resultados que pueden haber perdido permiso.
-        { role: "assistant", content: reply?.traces?.length
-          ? "Consulté el estado en Nexo; debo volver a consultar para dar datos actuales."
-          : reply?.text ?? "" },
+        { role: "assistant", content: previousAnswer(reply) },
       ]);
     setPending(true);
     setDraft("");
@@ -117,9 +125,9 @@ export function Dashboard() {
       });
       reply = await response.json();
       if (reply.error) {
-        const service = reply.error;
-        setServices(current => ({ api: true, model: true, ...current, [service]: false }));
-      } else if (response.ok) setServices({ api: true, model: true });
+        if (reply.modelState) setDraft(current => current || prompt);
+        setRefresh(value => value + 1);
+      }
       for (const { tool, data } of reply.traces ?? []) {
         if (typeof data.request_id === "string") {
           const requestId = data.request_id;
@@ -128,7 +136,8 @@ export function Dashboard() {
         if (tool === "meeting_propose" && typeof data.id === "string") setMeetingId(data.id);
       }
     } catch {
-      setServices({ api: false, model: false });
+      setServices({ api: false, model: "offline" });
+      setRefresh(value => value + 1);
       reply = { error: "api", text: "No pude contactar el servidor local. Revisa la conexión e inténtalo de nuevo." };
     } finally {
       setPending(false);
@@ -154,7 +163,7 @@ export function Dashboard() {
             }
           }}
           placeholder="Escríbele a Nexo…" maxLength={maxMessage} />
-        <button type="submit" className="send" aria-label="Enviar mensaje" disabled={pending || !draft.trim()}><Arrow up /></button>
+        <button type="submit" className="send" aria-label="Enviar mensaje" disabled={!ready || pending || !draft.trim()}><Arrow up /></button>
       </form>
     </>;
   }
@@ -177,12 +186,14 @@ export function Dashboard() {
       <header className="header">
         <p>Fútbol del sábado <span>· 28 nov · Santiago</span></p>
         <button type="button" className="connection" onClick={() => setRefresh(value => value + 1)} title="Comprobar conexión">
-          <i className={services?.api && services.model ? "online" : ""} />
-          {!services ? "Conectando…" : services.api && services.model ? "Agente listo" : !services.api ? "API desconectada" : "Modelo sin conexión"}
+          <i className={ready ? "online" : ""} />
+          {!services ? "Conectando…" : ready ? "Agente listo" : !services.api ? "API desconectada" : services.model === "missing" ? "Modelo no instalado" : "Ollama sin conexión"}
         </button>
       </header>
-      {services && (!services.api || !services.model) && <p className="notice" role="status">
-        {!services.api ? <>Levanta la API con <code>pnpm agents:up 3</code>.</> : <>Arranca Ollama y descarga el modelo de la demo. Las instrucciones están en el README.</>}
+      {services && !ready && <p className="notice" role="status">
+        {!services.api ? <>Levanta la API con <code>pnpm agents:up 3</code>.</>
+          : services.model === "missing" ? "Ollama está conectado. Si el modelo se está descargando, el chat se habilitará al terminar. Si no, sigue los pasos del README."
+            : "No hay conexión con Ollama. Inícialo siguiendo los pasos del README."}
       </p>}
 
       {hasMessages ? <>
@@ -216,4 +227,13 @@ export function Dashboard() {
       </div>}
     </main>
   </div>;
+}
+
+function previousAnswer(reply: ChatReply | null) {
+  if (!reply?.traces?.length) return reply?.text ?? "";
+  const queries = reply.traces.filter(({ tool }) => tool === "availability_check")
+    .map(({ input }) => typeof input.recipient === "string" && typeof input.slot === "string"
+      ? `${input.recipient} a las ${formatSlot(input.slot)} (Santiago)` : null).filter(Boolean);
+  return queries.length ? `Consulté por ${queries.join(", ")}. Para dar otra respuesta debo consultar de nuevo.`
+    : "Consulté el estado en Nexo. Para dar otra respuesta debo consultar de nuevo.";
 }

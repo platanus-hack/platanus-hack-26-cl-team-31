@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { readHistory, runDemoAgent, selectTools } from "@/lib/demo-chat";
-import { asRecord, identities, isPerson, maxMessage, type Person } from "@/lib/demo";
+import { IncompleteModelReply, readHistory, runDemoAgent, selectTools } from "@/lib/demo-chat";
+import { asRecord, identities, isPerson, maxMessage, type ModelState, type Person } from "@/lib/demo";
 
 function json(body: object, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -25,7 +25,10 @@ function localUrl(address: string | undefined, port: string | undefined) {
 
 const apiUrl = () => localUrl(process.env.COORDINATION_API_URL, process.env.COORDINATION_PORT);
 const modelUrl = () => localUrl(process.env.DEMO_MODEL_URL, process.env.DEMO_MODEL_PORT);
-const modelName = () => process.env.DEMO_MODEL || "qwen3:4b";
+const modelName = () => {
+  const name = process.env.DEMO_MODEL?.trim() || "qwen3:4b-instruct";
+  return name.split("/").at(-1)?.includes(":") ? name : `${name}:latest`;
+};
 
 async function tokenFor(person: Person) {
   // Next runs from apps/web. These are the worktree's seeded demo credentials.
@@ -44,19 +47,20 @@ async function checkApi() {
   } catch { return false; }
 }
 
-async function checkModel() {
+async function checkModel(): Promise<ModelState> {
   try {
     const response = await fetch(`${modelUrl()}/api/tags`, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(3000) });
-    if (!response.ok) return false;
+    if (!response.ok) return "offline";
     const { models } = await response.json();
-    return Array.isArray(models) && models.some(model => model.name === modelName());
-  } catch { return false; }
+    if (!Array.isArray(models)) return "offline";
+    return models.some(model => model.name === modelName()) ? "ready" : "missing";
+  } catch { return "offline"; }
 }
 
 export async function GET(request: Request) {
-  if (!isLocal(request)) return json({ api: false, model: false }, 404);
+  if (!isLocal(request)) return json({ api: false, model: "offline" }, 404);
   const [api, model] = await Promise.all([checkApi(), checkModel()]);
-  return json({ api, model }, api && model ? 200 : 503);
+  return json({ api, model }, api && model === "ready" ? 200 : 503);
 }
 
 export async function POST(request: Request) {
@@ -88,6 +92,13 @@ export async function POST(request: Request) {
     return json({ text: "No hay conexión con la API o faltan las identidades. Levanta el entorno con pnpm agents:up 3.", error: "api" }, 503);
   }
 
+  const modelState = await checkModel();
+  if (modelState !== "ready") {
+    return json({ error: "model", modelState, text: modelState === "missing"
+      ? `Ollama está conectado, pero ${modelName()} aún no está instalado. Espera a que termine la descarga.`
+      : "No pude conectar con Ollama. Verifica que esté corriendo." }, 503);
+  }
+
   const deadline = AbortSignal.any([request.signal, AbortSignal.timeout(90_000)]);
   const reply = await runDemoAgent({
     person, message, history: readHistory(input.history), meetingId: input.meetingId, requestId: input.requestId, tools,
@@ -96,12 +107,14 @@ export async function POST(request: Request) {
         method: "POST", cache: "no-store", redirect: "error", signal: deadline,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: modelName(), messages, tools, stream: false, think: false, keep_alive: "15m",
-          options: { temperature: 0.1, num_ctx: 8192, num_predict: 450 },
+          model: modelName(), messages, tools, stream: false, keep_alive: "15m",
+          options: { temperature: 0.35, repeat_penalty: 1.1, num_ctx: 8192, num_predict: 1200 },
         }),
       });
       if (!response.ok) throw new Error("Ollama no disponible.");
-      return (await response.json()).message;
+      const result = await response.json();
+      if (result.done_reason === "length") throw new IncompleteModelReply();
+      return result.message;
     },
     async invoke(tool, args) {
       const response = await fetch(`${backend}/tools/${tool}`, {

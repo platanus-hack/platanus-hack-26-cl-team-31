@@ -13,7 +13,8 @@ export function isPerson(value: unknown): value is Person {
 }
 
 export type ToolTrace = { tool: string; input: Record<string, unknown>; data: Record<string, unknown> };
-export type ChatReply = { text: string; traces?: ToolTrace[]; error?: "model" | "api" };
+export type ModelState = "ready" | "missing" | "offline";
+export type ChatReply = { text: string; traces?: ToolTrace[]; error?: "model" | "api"; modelState?: ModelState };
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
 export const maxMessage = 2000;
