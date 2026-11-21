@@ -41,31 +41,47 @@ holders() {
   printf '%s' "$out"
 }
 
-# Mata y NO vuelve hasta confirmar que el puerto quedó libre. Si sigue ocupado, falla ruidosamente
-# en vez de arrancar un segundo proceso que no podrá escuchar y morirá con EADDRINUSE en silencio.
+# Mata el GRUPO de procesos, no sólo al que escucha. Matar la hoja no sirve: `tsx watch` y `turbo`
+# la respawnean, y los padres quedan huérfanos peleando por el puerto. Así se acumularon once
+# árboles vivos —el más viejo de 3 h 28 min— hasta agotar los FSEvents y hacer que `next dev`
+# entrara en pánico en toda la máquina.
+groups_on() {
+  local port="$1" pid
+  for pid in $(holders "$port"); do ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' '; done | sort -u
+}
+
+# No vuelve hasta confirmar que el puerto quedó libre. Si sigue ocupado falla ruidosamente, en vez
+# de arrancar un segundo proceso que no podrá escuchar y morirá con EADDRINUSE sin que nadie lo vea.
 free_port() {
-  local port="$1" pids
-  pids="$(holders "$port")"
-  [ -z "$pids" ] && return 0
-  echo "  · matando $(echo "$pids" | tr '\n' ' ')en :$port"
-  # shellcheck disable=SC2086
-  kill $pids 2>/dev/null || true
+  local port="$1" gids
+  [ -z "$(holders "$port")" ] && return 0
+  gids="$(groups_on "$port")"
+  echo "  · matando grupo(s) $(echo "$gids" | tr '\n' ' ')en :$port"
+  for g in $gids; do kill -- -"$g" 2>/dev/null || true; done
   for _ in $(seq 1 20); do [ -z "$(holders "$port")" ] && return 0; sleep 0.5; done
-  pids="$(holders "$port")"
-  # shellcheck disable=SC2086
-  [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+  for g in $(groups_on "$port"); do kill -9 -- -"$g" 2>/dev/null || true; done
   for _ in $(seq 1 10); do [ -z "$(holders "$port")" ] && return 0; sleep 0.5; done
   echo "  ✗ :$port sigue ocupado por $(holders "$port" | tr '\n' ' ')" >&2
   return 1
 }
 
-wait_listen() {
+# Escuchar no es estar sano: un servicio puede abrir el puerto y caerse enseguida, y entonces
+# `status` miente. /healthz responde en los tres.
+healthy() {
+  case "$1" in
+    web)    curl -fsS -m 3 -o /dev/null "http://127.0.0.1:${WEB_PORT}/sign-in" 2>/dev/null ;;
+    mcp)    curl -fsS -m 3 -o /dev/null "http://127.0.0.1:${MCP_PORT}/healthz" 2>/dev/null ;;
+    broker) curl -fsS -m 3 -o /dev/null "http://127.0.0.1:${BROKER_PORT}/healthz" 2>/dev/null ;;
+  esac
+}
+
+wait_healthy() {
   local port="$1" name="$2"
   for _ in $(seq 1 120); do
-    [ -n "$(holders "$port")" ] && { echo "  ✓ $name escuchando en :$port"; return 0; }
+    if healthy "$name"; then echo "  ✓ $name sano en :$port"; return 0; fi
     sleep 1
   done
-  echo "  ✗ $name no llegó a escuchar en :$port — revisa $LOGS/$name.log" >&2
+  echo "  ✗ $name no llegó a responder sano en :$port — revisa $LOGS/$name.log" >&2
   tail -15 "$LOGS/$name.log" >&2 2>/dev/null || true
   return 1
 }
@@ -81,7 +97,7 @@ start_one() {
     broker) nohup pnpm with-env env WAKE_ALLOW_INSECURE=1 \
               pnpm --filter @team-31/broker-service dev >"$LOGS/broker.log" 2>&1 & ;;
   esac
-  wait_listen "$port" "$name"
+  wait_healthy "$port" "$name"
 }
 
 targets() { case "${1:-all}" in all) echo "broker mcp web";; *) echo "$1";; esac; }
@@ -89,11 +105,22 @@ targets() { case "${1:-all}" in all) echo "broker mcp web";; *) echo "$1";; esac
 case "${1:-status}" in
   up|restart) for s in $(targets "${2:-all}"); do echo "$s:"; start_one "$s"; done ;;
   down)       for s in $(targets "${2:-all}"); do echo "$s:"; free_port "$(port_of "$s")"; done ;;
+  clean)
+    # Árboles de desarrollo de ESTE worktree que ya no escuchan nada: huérfanos de reinicios
+    # anteriores. Se matan por grupo; si no, sus hijos sobreviven y vuelven a pelear el puerto.
+    gids="$(ps -Ao pgid=,command= | grep -F "$ROOT" | grep -E "tsx watch|turbo|next dev|next-server|pnpm" \
+            | grep -v grep | awk '{print $1}' | sort -u)"
+    vivos="$(for s in broker mcp web; do for pid in $(holders "$(port_of "$s")"); do ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' '; done; done | sort -u)"
+    for g in $gids; do
+      echo "$vivos" | grep -qx "$g" && { echo "  · conservo el grupo $g (sirve un puerto)"; continue; }
+      echo "  · matando grupo huérfano $g"; kill -9 -- -"$g" 2>/dev/null || true
+    done ;;
   status)
     for s in broker mcp web; do
       p="$(port_of "$s")"; h="$(holders "$p")"
-      if [ -n "$h" ]; then printf "%-7s :%-6s arriba (%s)\n" "$s" "$p" "$(echo "$h" | tr '\n' ' ' | sed 's/ $//')"
-      else printf "%-7s :%-6s abajo\n" "$s" "$p"; fi
+      if [ -z "$h" ]; then printf "%-7s :%-6s abajo\n" "$s" "$p"
+      elif healthy "$s"; then printf "%-7s :%-6s sano (%s)\n" "$s" "$p" "$(echo "$h" | tr '\n' ' ' | sed 's/ $//')"
+      else printf "%-7s :%-6s ESCUCHA PERO NO RESPONDE (%s)\n" "$s" "$p" "$(echo "$h" | tr '\n' ' ' | sed 's/ $//')"; fi
     done ;;
   *) sed -n '3,9p' "$0"; exit 1 ;;
 esac
