@@ -15,6 +15,10 @@
     "./postgres": {
       "types": "./src/store/postgres/index.ts",
       "default": "./dist/store/postgres/index.js"
+    },
+    "./sanitize/claude": {
+      "types": "./src/sanitize/claude-redactor.ts",
+      "default": "./dist/sanitize/claude-redactor.js"
     }
   },
   "scripts": {
@@ -24,16 +28,18 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.12.0",
     "@team-31/protocol": "workspace:*",
     "@team-31/telemetry": "workspace:*",
     "drizzle-orm": "0.45.4",
     "pg": "8.23.1",
-    "@team-31/telemetry": "workspace:*"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@team-31/typescript-config": "workspace:*",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
+    "fast-check": "4.10.3",
     "typescript": "5.9.3"
   }
 }
