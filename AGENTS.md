@@ -23,6 +23,7 @@ Al terminar con un worktree: `pnpm teardown` (borra sus contenedores/datos y lib
 | -------- | --------------- | --------------- |
 | web      | `WEB_PORT`      | `3000 + SLOT`   |
 | MCP Nexo | `MCP_PORT` | `4100 + SLOT` |
+| broker Nexo | `BROKER_PORT` | `4200 + SLOT` |
 | agentes (HTTP local) | `COORDINATION_PORT` | `4310 + SLOT` |
 | postgres | `POSTGRES_PORT` | `54320 + SLOT`  |
 
@@ -49,6 +50,13 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 - `pnpm env:init` genera `MCP_RESOURCE_URL` con el puerto del worktree, y `AUTH_ISSUER` y `AUTH_JWKS_URL` con el puerto web. Ajusta los valores en `.env.local` si cambias el origen público.
 - Con `BROKER_URL` y `MCP_SERVICE_PRIVATE_KEY` configuradas, usa `pnpm build --filter @team-31/mcp^...` y `pnpm dev --filter @team-31/mcp`. El MCP escucha en loopback por defecto y expone `GET /healthz`.
 - La [guía del MCP](apps/mcp/README.md) cubre stdio de desarrollo y el perfil Compose `nexo`.
+
+## Broker Nexo
+
+- Después de `pnpm bootstrap`, configura los secretos en `.env.local` y ejecuta `pnpm dev --filter @team-31/broker-service`. `pnpm env:init` actualiza worktrees existentes y genera `BROKER_PORT` y `BROKER_URL`.
+- Configura `BROKER_SIGNING_KEY` (JWK privada Ed25519), `NONCE_KEY` (32 bytes en base64), `SERVICE_JWT_PUBLIC_KEYS` (JWK públicas `mcp` y `web`) y `WAKE_SECRETS_KEY` (32 bytes en base64, requerida con `DATABASE_URL`). Conserva las claves entre reinicios. Configura `REQUEST_TTL_SECONDS` o `WAKE_RETRY_DELAYS_MS` para probar plazos y reintentos más cortos.
+- `BROKER_HOST` usa `127.0.0.1` por defecto. Para correrlo en Docker, compila con `pnpm build --filter @team-31/broker-service` y ejecuta `docker compose --env-file .env --env-file .env.local --profile nexo up -d broker`. Compose solo publica el puerto en loopback.
+- `WAKE_ALLOW_INSECURE=1` permite avisos HTTP locales durante el desarrollo. Consulta [la guía del broker](apps/broker/README.md) para los detalles de Postgres, los avisos y el stream de actividad.
 
 ## Coordinación local entre N asistentes
 

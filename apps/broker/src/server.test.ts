@@ -1,0 +1,293 @@
+import { generateKeyPairSync } from "node:crypto";
+import { mintServiceToken } from "@team-31/auth/service";
+import { createBroker, createMemoryStore } from "@team-31/broker";
+import { ActivityItem, ErrorBody, Scope, type Waker } from "@team-31/protocol";
+import { routes } from "@team-31/protocol/http";
+import { SignJWT } from "jose";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { z } from "zod";
+import { createMemoryRateLimiter } from "./http/rate-limit.js";
+import { createHttpServer } from "./http/server.js";
+import { startWorker } from "./worker.js";
+
+const mcp = generateKeyPairSync("ed25519");
+const web = generateKeyPairSync("ed25519");
+const signing = generateKeyPairSync("ed25519");
+const publicKeys = { mcp: mcp.publicKey.export({ format: "jwk" }), web: web.publicKey.export({ format: "jwk" }) };
+const question = { to: "bruno@nexo.app", tool: "question", args: { text: "¿Vienes mañana?" } };
+const mcpEvents = {
+  kind: "mcp_events",
+  callbackUrl: "https://example.com/events",
+  secret: "whsec_test-only",
+  subscriptionId: "test-subscription",
+  refreshBefore: null,
+};
+
+function fixture(requestTtlSeconds = 900) {
+  const waker = {
+    wake: vi.fn<Waker["wake"]>().mockResolvedValue({ ok: true, ms: 1, retryable: false }),
+    verifyCallback: vi.fn<Waker["verifyCallback"]>().mockResolvedValue({ ok: true }),
+  } satisfies Waker;
+  const broker = createBroker({
+    store: createMemoryStore(), waker, clock: { now: () => new Date() },
+    signingKey: signing.privateKey, nonceKey: new Uint8Array(32),
+    config: { requestTtlSeconds, wakeRetryDelaysMs: [0, 0, 0], addressDomain: "nexo.app" },
+  });
+  return { broker, waker };
+}
+
+const owner = (sub: string) => mintServiceToken({ iss: "web", sub, privateKey: web.privateKey.export({ format: "jwk" }) });
+const agent = (sub: string, azp = `${sub}-agent`) => mintServiceToken({
+  iss: "mcp", sub, azp, scopes: Scope.options, privateKey: mcp.privateKey.export({ format: "jwk" }),
+});
+
+type App = ReturnType<typeof createHttpServer>;
+type Route = { method: string; path: string; response: z.ZodType; status?: number };
+function request(app: App, route: Route, { token, body, raw, path = route.path }: {
+  token?: string; body?: unknown; raw?: string; path?: string;
+} = {}) {
+  const payload = raw ?? (body === undefined ? undefined : JSON.stringify(body));
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (payload !== undefined) headers.set("Content-Type", "application/json");
+  return app.request(path, { method: route.method, body: payload, headers });
+}
+
+async function call<S extends z.ZodType>(app: App, route: Route & { response: S }, options?: Parameters<typeof request>[2]): Promise<z.output<S>> {
+  const response = await request(app, route, options);
+  expect(response.status, response.ok ? undefined : await response.clone().text()).toBe(route.status ?? 200);
+  return route.response.parse(response.status === 204 ? undefined : await response.json());
+}
+
+async function expectError(response: Response, status: number, code: string) {
+  expect(response.status).toBe(status);
+  expect(ErrorBody.parse(await response.json()).error.code).toBe(code);
+}
+
+function streamEvents(response: Response) {
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Content-Type")).toBe("text/event-stream");
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  return {
+    async next() {
+      for (;;) {
+        const end = buffer.indexOf("\n\n");
+        if (end !== -1) {
+          const frame = buffer.slice(0, end);
+          buffer = buffer.slice(end + 2);
+          if (!frame.startsWith("event: activity\n")) continue;
+          const data = /^data: (.*)$/m.exec(frame)?.[1];
+          const id = /^id: (.*)$/m.exec(frame)?.[1];
+          expect(id).toBeTruthy();
+          return { item: ActivityItem.parse(JSON.parse(data!)), id: id! };
+        }
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error("El stream se cerró antes de recibir un evento.");
+        buffer += chunk.value;
+      }
+    },
+    close: () => reader.cancel(),
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+describe("HTTP interno del broker", () => {
+  it("recorre el contrato completo con JWT de servicio y completa ask, inbox, reply y status", async () => {
+    const { broker, waker } = fixture();
+    const app = createHttpServer({ broker, publicKeys });
+    const [alice, bruno, aliceBot, brunoBot, carlaBot] = await Promise.all([
+      owner("alice"), owner("bruno"), agent("alice"), agent("bruno"), agent("carla"),
+    ]);
+
+    expect(await call(app, routes.health)).toEqual({ ok: true });
+    expect(await call(app, routes.ownerMe, { token: bruno })).toEqual({ userId: "bruno" });
+    await call(app, routes.ownerClaimAddress, { token: alice, body: { localPart: "alice" } });
+    expect(await call(app, routes.ownerClaimAddress, { token: bruno, body: { localPart: "bruno" } }))
+      .toEqual({ address: "bruno@nexo.app" });
+    expect(await call(app, routes.ownerGetRules, { token: bruno })).toMatchObject({ defaultForUnknown: "ask_owner" });
+
+    const waiting = await call(app, routes.agentAsk, { token: aliceBot, body: question });
+    expect(waiting).toMatchObject({ final: false, waitingFor: "owner" });
+    expect((await call(app, routes.ownerPending, { token: bruno })).items[0]?.requestId).toBe(waiting.requestId);
+    await call(app, routes.ownerDecide, {
+      token: bruno, path: `/v1/owner/requests/${waiting.requestId}/decision`, body: { kind: "deny" },
+    });
+
+    const rules = { circles: { amigos: ["alice@nexo.app"] }, grants: { amigos: [{ tool: "question", fields: ["answer"] }] } };
+    await call(app, routes.ownerSetRules, { token: bruno, body: rules });
+    expect(await call(app, routes.ownerGetRules, { token: bruno })).toMatchObject(rules);
+    expect(await call(app, routes.agentConnectWake, { token: brunoBot, body: mcpEvents }))
+      .toMatchObject({ agentId: "bruno-agent", wakeKind: "mcp_events" });
+    expect(waker.verifyCallback).toHaveBeenCalledWith(mcpEvents);
+    expect((await call(app, routes.ownerAgents, { token: bruno })).items).toHaveLength(1);
+
+    const asked = await call(app, routes.agentAsk, { token: aliceBot, body: { ...question, userId: "carla" } });
+    expect(asked).toMatchObject({ final: false, waitingFor: "agent" });
+    await broker.tick(new Date());
+    expect(waker.wake).toHaveBeenCalledWith(mcpEvents, { event: "nexo.request.created", requestId: asked.requestId });
+    const inbox = (await call(app, routes.agentInbox, { token: brunoBot })).items;
+    expect(inbox).toHaveLength(1);
+    const item = inbox[0]!;
+    expect(item).toMatchObject({ requestId: asked.requestId, from: "alice@nexo.app", senderMessage: { trusted: false } });
+    expect(await call(app, routes.agentReply, { token: brunoBot, body: {
+      requestId: item.requestId, nonce: item.nonce, outcome: "answered", result: { answer: "Sí" },
+    } })).toMatchObject({ requestId: asked.requestId, status: "answered" });
+    const path = `/v1/agent/requests/${asked.requestId}`;
+    expect(await call(app, routes.agentStatus, { token: aliceBot, path })).toMatchObject({
+      final: true, outcome: "answered", result: { answer: "Sí" }, signature: expect.any(String),
+    });
+    await expectError(await request(app, routes.agentStatus, { token: carlaBot, path }), 404, "not_found");
+    expect((await call(app, routes.ownerActivity, { token: bruno, path: "/v1/owner/activity?limit=1" })).items)
+      .toMatchObject([{ requestId: asked.requestId, direction: "received", status: "answered" }]);
+
+    const stream = streamEvents(await request(app, routes.ownerStream, { token: bruno }));
+    try {
+      expect((await stream.next()).item).toMatchObject({ requestId: waiting.requestId, direction: "received" });
+      expect((await stream.next()).item).toMatchObject({ requestId: asked.requestId, direction: "received" });
+    } finally {
+      await stream.close();
+    }
+    await call(app, routes.agentDisconnectWake, { token: brunoBot, path: "/v1/agent/wake/test-subscription" });
+    await call(app, routes.ownerSetWake, { token: bruno, path: "/v1/owner/agents/bruno-agent/wake", body: { kind: "none" } });
+    expect(await call(app, routes.ownerPing, { token: bruno, path: "/v1/owner/agents/bruno-agent/ping" }))
+      .toMatchObject({ requestId: expect.any(String) });
+    await call(app, routes.ownerRevokeAgent, { token: bruno, path: "/v1/owner/agents/bruno-agent" });
+    expect((await call(app, routes.ownerAgents, { token: bruno })).items[0]?.revokedAt).toBeDefined();
+  });
+
+  it("separa emisores y rechaza tokens vencidos, faltantes o sin alcance", async () => {
+    const app = createHttpServer({ ...fixture(), publicKeys });
+    const [webToken, mcpToken] = await Promise.all([owner("alice"), agent("alice")]);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const expired = await new SignJWT({ azp: "alice-agent", scope: "nexo:ask" })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer("mcp").setAudience("broker").setSubject("alice").setJti("expired")
+      .setIssuedAt(timestamp - 100).setExpirationTime(timestamp - 40).sign(mcp.privateKey);
+    const noScope = await mintServiceToken({ iss: "mcp", sub: "alice", azp: "alice-agent", privateKey: mcp.privateKey.export({ format: "jwk" }) });
+
+    for (const token of [webToken, expired, undefined]) {
+      await expectError(await request(app, routes.agentAsk, { token, body: question }), 401, "unauthorized");
+    }
+    await expectError(await request(app, routes.ownerMe, { token: mcpToken }), 401, "unauthorized");
+    await expectError(await request(app, routes.ownerStream, { token: mcpToken }), 401, "unauthorized");
+    await expectError(await request(app, routes.agentAsk, { token: noScope, body: question }), 403, "forbidden");
+  });
+
+  it("valida JSON, query y respuestas y correlaciona los 500 sin publicar datos", async () => {
+    const { broker } = fixture();
+    const app = createHttpServer({ broker, publicKeys });
+    const [webToken, mcpToken] = await Promise.all([owner("alice"), agent("alice")]);
+    await expectError(await request(app, routes.agentAsk, { token: mcpToken, raw: "{" }), 400, "invalid_input");
+    await expectError(await request(app, routes.agentAsk, { token: mcpToken, body: { tool: "unknown" } }), 400, "invalid_input");
+    await expectError(await request(app, routes.ownerActivity, { token: webToken, path: "/v1/owner/activity?limit=0" }), 400, "invalid_input");
+
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const me = vi.spyOn(broker.owner, "me").mockResolvedValue({ userId: "alice", address: "private-metadata" });
+    const invalid = await request(app, routes.ownerMe, { token: webToken });
+    const errorId = invalid.headers.get("X-Error-Id");
+    expect(errorId).toBeTruthy();
+    await expectError(invalid, 500, "internal");
+    expect(log).toHaveBeenCalledWith("[broker] Error interno", expect.objectContaining({ errorId, type: "invalid_schema" }));
+    me.mockRejectedValue(new Error("private-metadata"));
+    await expectError(await request(app, routes.ownerMe, { token: webToken }), 500, "internal");
+    expect(JSON.stringify(log.mock.calls)).not.toContain("private-metadata");
+  });
+
+  it("limita por usuario dentro de cada grupo y aplica Retry-After", async () => {
+    let time = 0;
+    const limiter = createMemoryRateLimiter(() => time);
+    const app = createHttpServer({ ...fixture(), publicKeys, limiter });
+    const [aliceBot, secondBot, brunoBot] = await Promise.all([agent("alice"), agent("alice", "other-bot"), agent("bruno")]);
+    for (let i = 0; i < 30; i++) {
+      await expectError(await request(app, routes.agentAsk, { token: aliceBot, body: {} }), 400, "invalid_input");
+    }
+    const blocked = await request(app, routes.agentAsk, { token: secondBot, body: {} });
+    expect(blocked.headers.get("Retry-After")).toBe("60");
+    await expectError(blocked, 429, "rate_limited");
+    await expectError(await request(app, routes.agentAsk, { token: brunoBot, body: {} }), 400, "invalid_input");
+    expect(await call(app, routes.agentInbox, { token: aliceBot })).toEqual({ items: [] });
+
+    for (const [bucket, limit] of [["reply", 120], ["other", 300]] as const) {
+      for (let i = 0; i < limit; i++) expect(await limiter.consume("unrelated-user", bucket)).toBeUndefined();
+      expect(await limiter.consume("unrelated-user", bucket)).toEqual({ retryAfter: 60 });
+    }
+    time += 60_000;
+    await expectError(await request(app, routes.agentAsk, { token: aliceBot, body: {} }), 400, "invalid_input");
+  });
+
+  it("emite cambios del dueño y reenvía snapshots con IDs estables al reconectar", async () => {
+    const { broker } = fixture();
+    for (const userId of ["alice", "bruno", "carla"]) await broker.owner.claimAddress({ userId }, userId);
+    const app = createHttpServer({ broker, publicKeys });
+    const [aliceBot, bruno, carla] = await Promise.all([agent("alice"), owner("bruno"), owner("carla")]);
+    const unrelated = await call(app, routes.agentAsk, { token: aliceBot, body: { ...question, to: "carla@nexo.app" } });
+    const asked = await call(app, routes.agentAsk, { token: aliceBot, body: question });
+    const brunoStream = streamEvents(await request(app, routes.ownerStream, { token: bruno }));
+    const carlaStream = streamEvents(await request(app, routes.ownerStream, { token: carla }));
+    let finalId: string;
+    try {
+      expect((await carlaStream.next()).item.requestId).toBe(unrelated.requestId);
+      const pending = await brunoStream.next();
+      expect(pending.item).toMatchObject({ requestId: asked.requestId, status: "awaiting_owner" });
+      await broker.owner.decide({ userId: "bruno" }, asked.requestId, { kind: "deny" });
+      const final = await brunoStream.next();
+      expect(final.item).toMatchObject({ requestId: asked.requestId, status: "declined" });
+      expect(final.id).not.toBe(pending.id);
+      finalId = final.id;
+    } finally {
+      await Promise.all([brunoStream.close(), carlaStream.close()]);
+    }
+    const reconnect = streamEvents(await app.request(routes.ownerStream.path, {
+      headers: { Authorization: `Bearer ${await owner("bruno")}`, "Last-Event-ID": finalId },
+    }));
+    try {
+      expect(await reconnect.next()).toMatchObject({ id: finalId, item: { requestId: asked.requestId, status: "declined" } });
+    } finally {
+      await reconnect.close();
+    }
+  });
+
+  it("cierra con una respuesta firmada al alcanzar un TTL de 2 segundos", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    const { broker } = fixture(2);
+    await broker.owner.claimAddress({ userId: "alice" }, "alice");
+    await broker.owner.claimAddress({ userId: "bruno" }, "bruno");
+    const app = createHttpServer({ broker, publicKeys });
+    const token = await agent("alice");
+    const asked = await call(app, routes.agentAsk, { token, body: question });
+    const stop = startWorker(broker);
+    try {
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(await call(app, routes.agentStatus, { token, path: `/v1/agent/requests/${asked.requestId}` }))
+        .toMatchObject({ final: true, outcome: "expired", signature: expect.any(String) });
+      expect(log).toHaveBeenCalledWith("[broker] Worker", expect.objectContaining({ expired: 1 }));
+    } finally {
+      await stop();
+    }
+  });
+
+  it("omite intervalos mientras una pasada del worker sigue abierta", async () => {
+    vi.useFakeTimers();
+    const report = { expired: 0, wakesOk: 0, wakesRetried: 0, wakesFailed: 0 };
+    let complete!: (value: typeof report) => void;
+    const inflight = new Promise<typeof report>((resolve) => { complete = resolve; });
+    const tick = vi.fn().mockReturnValueOnce(inflight).mockResolvedValue(report);
+    const stop = startWorker({ tick });
+    try {
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(tick).toHaveBeenCalledTimes(1);
+      complete(report);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(tick).toHaveBeenCalledTimes(2);
+    } finally {
+      complete(report);
+      await stop();
+    }
+  });
+});

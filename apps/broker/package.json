@@ -1,0 +1,30 @@
+{
+  "name": "@team-31/broker-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm -w build --filter '@team-31/broker-service^...' && tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo node_modules"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.11",
+    "@team-31/auth": "workspace:*",
+    "@team-31/broker": "workspace:*",
+    "@team-31/protocol": "workspace:*",
+    "@team-31/wake": "workspace:*",
+    "hono": "4.13.19",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@team-31/typescript-config": "workspace:*",
+    "@types/node": "24.19.2",
+    "jose": "6.2.15",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

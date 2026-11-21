@@ -23,6 +23,7 @@ if [ -z "$SLOT" ]; then
     port_busy $((3000 + s)) && continue
     port_busy $((54320 + s)) && continue
     port_busy $((4100 + s)) && continue
+    port_busy $((4200 + s)) && continue
     port_busy $((4310 + s)) && continue
     SLOT=$s; break
   done
@@ -34,6 +35,7 @@ echo "$SLOT $ROOT" >>"$REGISTRY"
 WEB_PORT=$((3000 + SLOT))
 MCP_PORT=$((4100 + SLOT))
 POSTGRES_PORT=$((54320 + SLOT))
+BROKER_PORT=$((4200 + SLOT))
 COORDINATION_PORT=$((4310 + SLOT))
 BETTER_AUTH_URL=http://127.0.0.1:$WEB_PORT
 AUTH_ISSUER=$BETTER_AUTH_URL/api/auth
@@ -50,6 +52,8 @@ MCP_RESOURCE_URL=http://127.0.0.1:$MCP_PORT/mcp
 AUTH_ISSUER=$AUTH_ISSUER
 AUTH_JWKS_URL=$AUTH_ISSUER/jwks
 POSTGRES_PORT=$POSTGRES_PORT
+BROKER_PORT=$BROKER_PORT
+BROKER_URL=http://127.0.0.1:$BROKER_PORT
 COORDINATION_PORT=$COORDINATION_PORT
 COORDINATION_API_URL=http://127.0.0.1:$COORDINATION_PORT
 
@@ -58,4 +62,4 @@ TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app_te
 ENV
 
 [ -f "$ROOT/.env.local" ] || cp "$ROOT/.env.local.example" "$ROOT/.env.local"
-echo "✔ .env listo (slot $SLOT): web :$WEB_PORT · mcp :$MCP_PORT · postgres :$POSTGRES_PORT"
+echo "✔ .env listo (slot $SLOT): web :$WEB_PORT · mcp :$MCP_PORT · broker :$BROKER_PORT · postgres :$POSTGRES_PORT"
