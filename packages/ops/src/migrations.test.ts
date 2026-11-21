@@ -62,6 +62,7 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0003_roles.sql",
       "0004_prune.sql",
       "0005_identity_phone.sql",
+      "0006_whatsapp.sql",
     ]);
     expect(await applyOpsMigrations({ databaseUrl })).toEqual([]);
     expect(await views()).toEqual(["v_errors", "v_events", "v_service_health"]);
@@ -123,6 +124,21 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
     await db.query("SELECT ops.refresh_views()");
     expect(await asRole("nexo_admin_ro", "SELECT * FROM admin.audit")).toEqual([]);
     await expect(asRole("nexo_admin_ro", "SELECT * FROM admin.tokens")).rejects.toMatchObject({ code: "42501" });
+  });
+
+  it("expone solo recuentos de WhatsApp cuando el esquema web aparece después", async () => {
+    await db.query(`
+      CREATE TABLE public."user" (id text PRIMARY KEY, "phoneNumber" text, whatsapp_linked_at timestamptz);
+      CREATE SCHEMA whatsapp;
+      CREATE TABLE whatsapp.pairing (expires_at timestamptz);
+      CREATE TABLE whatsapp.receipt (expires_at timestamptz);
+      INSERT INTO public."user" VALUES ('ana', '+56955550123', now());
+      INSERT INTO whatsapp.pairing VALUES (now() - interval '1 minute'), (now() + interval '1 minute');
+    `);
+    await applyOpsMigrations({ databaseUrl });
+    expect(await asRole("nexo_admin_ro", "SELECT * FROM ops.v_whatsapp"))
+      .toEqual([{ linked_accounts: "1", active_pairings: "1", inbound_receipts: "0" }]);
+    await expect(asRole("nexo_admin_ro", "SELECT * FROM whatsapp.pairing")).rejects.toMatchObject({ code: "42501" });
   });
 
   it("prune_events borra solo lo más viejo que la retención", async () => {

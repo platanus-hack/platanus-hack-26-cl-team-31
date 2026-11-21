@@ -118,6 +118,14 @@ export const routes = {
     iss: "web",
     port: "owner.activity",
   },
+  ownerAsk: {
+    method: "POST", path: "/v1/owner/requests", body: AskInput,
+    response: RequesterViewSchema, iss: "web", port: "owner.ask",
+  },
+  ownerStatus: {
+    method: "GET", path: "/v1/owner/requests/:id", params: requestParams,
+    response: RequesterViewSchema, iss: "web", port: "owner.status",
+  },
   ownerDecide: {
     method: "POST",
     path: "/v1/owner/requests/:id/decision",
