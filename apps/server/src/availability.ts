@@ -1,9 +1,13 @@
-import { readFileSync } from "node:fs";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { defineTool } from "./tool.js";
 
-const grants = readFileSync(new URL("../../broker/src/group-permission.sql", import.meta.url), "utf8");
+// Pairs (requester, recipient, group) where the requester may ask and the recipient shares in that group.
+const grants = `
+  SELECT asker.person_id AS requester, owner.person_id AS recipient, asker.group_id
+  FROM memberships asker
+  JOIN memberships owner ON owner.group_id = asker.group_id
+  WHERE asker.can_ask AND owner.can_share`;
 const permission = `SELECT 1 FROM (${grants}) g WHERE requester=$1 AND recipient=$2 AND group_id=$3`;
 const notShareable = { status: "not_shareable" } as const;
 const groupName = z.string().trim().min(1).max(128);
