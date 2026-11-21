@@ -128,7 +128,7 @@ export interface Store {
 
 export interface StoreTx {
   networkAddresses(after: Address | undefined, limit: number, q?: string): Promise<Address[]>;
-  vaultCatalog(owner: string): Promise<VaultCatalog>;
+  vaultCatalog(owner: string, lockNames?: boolean): Promise<VaultCatalog>;
   vaultMembers(owner: string, categoryId: string): Promise<Address[] | null>;
   ownerVault(owner: string): Promise<OwnerVault>;
   changeVault(owner: string, id: string, change: VaultChange): Promise<boolean>;

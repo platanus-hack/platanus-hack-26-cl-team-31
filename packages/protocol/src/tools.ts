@@ -2,7 +2,7 @@ import { z } from "zod";
 import { categories, Category } from "./categories.js";
 import { Sharing } from "./sharing.js";
 
-export const ToolName = z.enum(["profile", "availability", "question", "interest_check", "connect"]);
+export const ToolName = z.enum(["profile", "availability", "question", "interest_check", "connect", "vault_access"]);
 export type ToolName = z.infer<typeof ToolName>;
 
 // Execution is fixed by the service contract. It is never an argument supplied by the sender.
@@ -12,7 +12,8 @@ export const toolExecution = {
   question: "owner_runtime",
   interest_check: "owner_runtime",
   connect: "owner_runtime",
-} as const satisfies Record<ToolName, "stored" | "owner_runtime">;
+  vault_access: "owner_decision",
+} as const satisfies Record<ToolName, "stored" | "owner_runtime" | "owner_decision">;
 
 export type RuntimeTool = {
   [K in ToolName]: (typeof toolExecution)[K] extends "owner_runtime" ? K : never;
@@ -49,6 +50,7 @@ export const ToolArgs = {
   // Questions stored before categories carry none: they read as open questions.
   question: z.strictObject({ text: z.string().min(1).max(1000), category: Category.default("general") }),
   connect: z.strictObject({ share: Sharing.optional() }),
+  vault_access: z.strictObject({ categoryName: z.string().trim().min(1).max(80) }),
 } as const;
 
 export const ToolResultSchemas = {
@@ -63,6 +65,7 @@ export const ToolResultSchemas = {
   }),
   question: z.object({ answer: z.string().min(1).max(1000) }),
   connect: z.object({ accepted: z.boolean() }),
+  vault_access: z.object({ accepted: z.boolean() }),
 } as const;
 
 export const ToolResult = z.union([
@@ -80,7 +83,7 @@ export function fieldsOf(tool: ToolName): string[] {
 
 export const Capability = z.object({
   tool: ToolName,
-  execution: z.enum(["stored", "owner_runtime"]),
+  execution: z.enum(["stored", "owner_runtime", "owner_decision"]),
   inputSchema: z.record(z.string(), z.unknown()),
   allowedFields: z.array(z.string()),
   // The categories the sender may ask about with this tool. Empty for tools outside the catalog.

@@ -23,7 +23,7 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
   const owner = await getOwner();
   if (!(form instanceof FormData)) return { error: "Elige una decisión válida." };
   const kind = form.get("decision");
-  const validKind = kind === "approve_once" || kind === "deny" || kind === "yes" || kind === "no" || kind === "answer";
+  const validKind = kind === "grant_vault_read" || kind === "approve_once" || kind === "deny" || kind === "yes" || kind === "no" || kind === "answer";
   if (!routes.ownerDecide.params.safeParse({ id: requestId }).success || !requestId || !validKind) {
     return { error: "Elige una decisión válida." };
   }

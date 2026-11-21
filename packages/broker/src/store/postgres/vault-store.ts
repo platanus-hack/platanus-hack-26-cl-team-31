@@ -23,7 +23,10 @@ async function insertWithParents(db: Tx, insert: (tx: Tx) => Promise<unknown>) {
 }
 
 export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "contactGroups" | "changeContactGroup"> {
-  async function vaultCatalog(owner: string): Promise<VaultCatalog> {
+  // Serialize name resolution (including an absent name) with category creation, rename and deletion.
+  const lockNames = (owner: string) => db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}, 417))`);
+  async function vaultCatalog(owner: string, forNameResolution = false): Promise<VaultCatalog> {
+    if (forNameResolution) await lockNames(owner);
     const rows = await db.select({ id: c.id, name: c.name }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
     const categories: VaultCatalog["categories"] = rows.map(row => ({ ...row, groups: [], contactGroups: [] }));
     if (!categories.length) return { categories };
@@ -91,6 +94,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       return true;
     },
     async changeVault(owner, id, change) {
+      if (change.action === "create" || change.action === "rename" || change.action === "delete") await lockNames(owner);
       const category = and(eq(c.owner, owner), eq(c.id, id));
       if (change.action === "create") {
         await db.insert(c).values({ owner, id, name: change.name });

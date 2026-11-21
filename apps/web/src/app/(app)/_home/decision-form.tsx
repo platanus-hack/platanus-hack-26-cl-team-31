@@ -21,7 +21,8 @@ export function DecisionForm({ id, tool, escalated }: { id: string; tool: ToolNa
         </label>
       )}
       <div className="flex flex-wrap gap-2">
-        {!escalated && <button className={primaryButton} name="decision" value="approve_once" disabled={pending}>Aprobar una vez</button>}
+        {tool === "vault_access" && <button className={primaryButton} name="decision" value="grant_vault_read" disabled={pending}>Conceder lectura</button>}
+        {!escalated && tool !== "vault_access" && <button className={primaryButton} name="decision" value="approve_once" disabled={pending}>Aprobar una vez</button>}
         {escalated && tool === "availability" && (
           <>
             <button className={primaryButton} name="decision" value="yes" disabled={pending}>Sí puedo</button>

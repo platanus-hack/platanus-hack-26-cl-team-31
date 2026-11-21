@@ -6,6 +6,7 @@ export const toolLabels = {
   question: "Pregunta",
   interest_check: "Interés",
   connect: "Conexión",
+  vault_access: "Acceso a la bóveda",
 } satisfies Record<ToolName, string>;
 
 export const statusLabels = {
