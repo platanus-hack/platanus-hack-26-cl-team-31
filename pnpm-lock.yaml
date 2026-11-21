@@ -395,9 +395,9 @@ importers:
       '@team-31/auth':
         specifier: workspace:*
         version: link:../../packages/auth
-      '@team-31/broker':
+      '@team-31/broker-client':
         specifier: workspace:*
-        version: link:../../packages/broker
+        version: link:../../packages/broker-client
       '@team-31/demo':
         specifier: workspace:*
         version: link:../demo
