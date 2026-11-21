@@ -1,6 +1,7 @@
 import type { KeyObject, webcrypto } from "node:crypto";
 import type {
   ActivityItem,
+  AdminActor,
   Capability,
   Address,
   AgentConnection,
@@ -43,6 +44,19 @@ export interface OwnerPort {
   revokeAgent(o: Owner, agentId: string): Promise<void>;
 }
 
+// Operational mutations for apps/admin. The broker keeps the invariant that each request ends in
+// exactly one final state, so the admin never writes nexo.* directly. `reason` is 10 to 500 chars.
+export interface AdminPort {
+  // Only for an `awaiting_agent` request that has not expired. Queues the next wake attempt.
+  rewake(a: AdminActor, requestId: string, reason: string): Promise<void>;
+  // Closes a pending request as `expired` through the same path as the expiry sweep.
+  expire(a: AdminActor, requestId: string, reason: string): Promise<void>;
+  // Same as OwnerPort.revokeAgent, for any user.
+  revokeAgent(a: AdminActor, userId: string, agentId: string, reason: string): Promise<void>;
+}
+
+export type { AdminActor } from "@team-31/protocol";
+
 export type TickReport = {
   expired: number;
   wakesOk: number;
@@ -53,6 +67,7 @@ export type TickReport = {
 export type BrokerCore = {
   agent: AgentPort;
   owner: OwnerPort;
+  admin: AdminPort;
   tick(now: Date): Promise<TickReport>;
 };
 

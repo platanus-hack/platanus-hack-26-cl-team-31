@@ -21,6 +21,7 @@ import { BrokerError } from "../errors.js";
 import { evaluate, filterResult } from "../policy/index.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import type { RequestRow, StoreTx } from "../store/store.js";
+import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
 import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
 import {
@@ -89,9 +90,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     };
   }
 
-  async function enqueue(tx: StoreTx, row: RequestRow, now: Date, requestVersion: number): Promise<void> {
+  async function enqueue(tx: StoreTx, row: RequestRow, now: Date, requestVersion: number, attempt = 1): Promise<void> {
     await tx.enqueueWake({
-      id: randomUUID(), requestId: row.id, requestVersion, attempt: 1, runAt: now, state: "queued",
+      id: randomUUID(), requestId: row.id, requestVersion, attempt, runAt: now, state: "queued",
     });
   }
 
@@ -100,10 +101,13 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return tx.updateRequest(row.id, patch, row.version);
   }
 
-  async function closePending(tx: StoreTx, row: RequestRow, outcome: "expired" | "delivery_failed", at: Date): Promise<boolean> {
+  // The only path that closes a pending request without a reply. `code` marks who closed it, e.g. the admin.
+  async function closePending(
+    tx: StoreTx, row: RequestRow, outcome: "expired" | "delivery_failed", at: Date, code?: string,
+  ): Promise<boolean> {
     const final = await finalize(transition(row, outcome), outcome, at);
     if (!await saveTransition(tx, row, final)) return false;
-    await tx.appendEvent({ requestId: row.id, at, kind: "delivery", status: outcome });
+    await tx.appendEvent({ requestId: row.id, at, kind: "delivery", status: outcome, ...(code ? { code } : {}) });
     return true;
   }
 
@@ -457,13 +461,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async revokeAgent(o, agentId) {
-        await store.tx(async (tx) => {
-          const connection = await tx.getAgentConnection(o.userId, agentId, true);
-          if (!connection) throw notFound();
-          if (!connection.revokedAt) await tx.upsertAgentConnection({ ...connection, revokedAt: clock.now() });
-        });
+        await store.tx((tx) => revokeConnection(tx, o.userId, agentId, clock.now()));
       },
     },
+
+    admin: createAdminPort(deps, { closePending, enqueue }),
 
     tick: createWorker(deps, closePending),
   };
