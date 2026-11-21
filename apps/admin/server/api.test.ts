@@ -253,6 +253,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     const [url, init] = brokerFetch.mock.calls[0]!
     expect(String(url)).toBe(`${BROKER_URL}/v1/admin/requests/req_1/rewake`)
     expect(init?.method).toBe("POST")
+    expect(init?.redirect).toBe("error")
     expect(JSON.parse(String(init?.body))).toEqual({ reason: "el aviso se perdió" })
     const token = String(new Headers(init?.headers).get("authorization")).replace("Bearer ", "")
     const { payload } = await jwtVerify(token, publicJwk, { issuer: "admin", audience: "broker", algorithms: ["EdDSA"] })
