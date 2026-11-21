@@ -118,7 +118,6 @@ export function AgentFlow({
   const [selection, setSelection] = useState<Selection>(null);
   const [shownOwners, setShownOwners] = useState<Set<string> | null>(null);
   const [hiddenActors, setHiddenActors] = useState<Set<string>>(() => new Set(defaultHiddenActors ?? []));
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const selectEvent = useCallback((id: string | null) => setSelection(id === null ? null : { kind: "event", id }), []);
   const {
     flow, clock, paused, setPaused, speed, setSpeed, history, seeking, announcement, inspect, pending,
@@ -259,15 +258,7 @@ export function AgentFlow({
 
   const selectedEvent = selection?.kind === "event" ? findEvent(selection.id) : undefined;
   const selectedActor = selection?.kind === "actor" ? flow.actors.get(selection.id) : undefined;
-  const timeline = recordLog.slice(-TIMELINE_LIMIT).reverse();
-  // Entradas seguidas a la red (menos de 2 s entre una y otra) se agrupan: «3 personas se unieron».
-  const timelineItems: AppliedEvent[][] = [];
-  for (const entry of timeline) {
-    const group = timelineItems[timelineItems.length - 1];
-    const head = group?.[group.length - 1];
-    if (group && head && entry.event.step === "joined" && head.event.step === "joined" && Math.abs(head.t - entry.t) < 2_000) group.push(entry);
-    else timelineItems.push([entry]);
-  }
+  const timelineExpansion = useTimelineExpansion(inspectMany);
   const modeState = paused ? "paused" : mode === "live" ? "live" : "playing";
   const modeText = paused ? "En pausa" : mode === "live" ? "En vivo" : `Repetición · ${speed}×`;
   const fade = (entry: AppliedEvent) => Math.max(0, Math.min(1, (LABEL_MS - (clock - entry.t)) / 400));
@@ -724,41 +715,8 @@ export function AgentFlow({
 
         {sidePanels ? (
         <div className="af-side">
-          <section className="af-panel af-timeline" aria-label="Línea de tiempo">
-            <p className="af-eyebrow">Línea de tiempo</p>
-            {timeline.length === 0 ? <p className="af-placeholder">Los pasos aparecen aquí a medida que ocurren.</p> : null}
-            <ol className="af-list">
-              {timelineItems.map((item) =>
-                item.length === 1 ? (
-                  <li key={item[0]!.event.id} className={clock - item[0]!.t < 600 ? "af-new" : undefined}>
-                    <StepButton entry={item[0]!} current={selection?.kind === "event" && selection.id === item[0]!.event.id} timeLabel={timeLabel} onClick={() => pick(item[0]!.event.id)} />
-                  </li>
-                ) : (
-                  <li key={`group-${item[0]!.event.id}`} className={clock - item[0]!.t < 600 ? "af-new" : undefined}>
-                    <JoinGroup
-                      entries={item}
-                      open={openGroups.has(item[item.length - 1]!.event.id)}
-                      onToggle={() => {
-                        const id = item[item.length - 1]!.event.id;
-                        const opening = !openGroups.has(id);
-                        setOpenGroups((current) => {
-                          const next = new Set(current);
-                          if (next.has(id)) next.delete(id);
-                          else next.add(id);
-                          return next;
-                        });
-                        // Abrir el grupo repite toda la ola de entradas.
-                        if (opening) inspectMany(item.map((e) => e.event.id));
-                      }}
-                      timeLabel={timeLabel}
-                      onSelect={pick}
-                      selectedId={selection?.kind === "event" ? selection.id : undefined}
-                    />
-                  </li>
-                ),
-              )}
-            </ol>
-          </section>
+          <Timeline log={recordLog} clock={clock} expansion={timelineExpansion} selectedId={selection?.kind === "event" ? selection.id : undefined}
+            timeLabel={timeLabel} onSelect={pick} />
           <section className="af-panel af-detail" aria-label="Detalle">
             <p className="af-eyebrow">Detalle</p>
             {selectedEvent ? (
@@ -814,6 +772,62 @@ function route(event: FlowEvent): string {
   const name = (endpoint: FlowEvent["from"]) =>
     endpoint === BROKER ? "Broker" : endpoint.role === "owner" ? `${endpoint.owner.label} (titular)` : `${endpoint.owner.label} · ${endpoint.label}`;
   return event.from === event.to ? name(event.from) : `${name(event.from)} → ${name(event.to)}`;
+}
+
+// Keep expanded groups across hiding and reopening the panels.
+function useTimelineExpansion(inspectMany: (ids: string[]) => void) {
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
+  function toggle(id: string, entries: AppliedEvent[]) {
+    if (!openGroups.has(id)) inspectMany(entries.map((entry) => entry.event.id));
+    setOpenGroups((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  return { openGroups, toggle };
+}
+
+function Timeline({ log, clock, selectedId, expansion, timeLabel, onSelect }: {
+  log: AppliedEvent[];
+  clock: number;
+  selectedId?: string;
+  expansion: ReturnType<typeof useTimelineExpansion>;
+  timeLabel: (entry: AppliedEvent) => string;
+  onSelect: (id: string) => void;
+}) {
+  const timeline = log.slice(-TIMELINE_LIMIT).reverse();
+  // Entradas seguidas a la red (menos de 2 s entre una y otra) se agrupan: «3 personas se unieron».
+  const timelineItems: AppliedEvent[][] = [];
+  for (const entry of timeline) {
+    const group = timelineItems[timelineItems.length - 1];
+    const head = group?.[group.length - 1];
+    if (group && head && entry.event.step === "joined" && head.event.step === "joined" && Math.abs(head.t - entry.t) < 2_000) group.push(entry);
+    else timelineItems.push([entry]);
+  }
+  return (
+    <section className="af-panel af-timeline" aria-label="Línea de tiempo">
+      <p className="af-eyebrow">Línea de tiempo</p>
+      {timeline.length === 0 ? <p className="af-placeholder">Los pasos aparecen aquí a medida que ocurren.</p> : null}
+      <ol className="af-list">
+        {timelineItems.map((entries) => {
+          const newest = entries[0]!;
+          const groupId = entries[entries.length - 1]!.event.id;
+          return (
+            <li key={entries.length === 1 ? newest.event.id : `group-${groupId}`} className={clock - newest.t < 600 ? "af-new" : undefined}>
+              {entries.length === 1 ? (
+                <StepButton entry={newest} current={selectedId === newest.event.id} timeLabel={timeLabel} onClick={() => onSelect(newest.event.id)} />
+              ) : (
+                <JoinGroup entries={entries} open={expansion.openGroups.has(groupId)} onToggle={() => expansion.toggle(groupId, entries)}
+                  timeLabel={timeLabel} onSelect={onSelect} selectedId={selectedId} />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
 }
 
 function StepButton({ entry, current, timeLabel, onClick }: { entry: AppliedEvent; current: boolean; timeLabel: (entry: AppliedEvent) => string; onClick: () => void }) {
