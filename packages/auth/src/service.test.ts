@@ -5,7 +5,12 @@ import { mintServiceToken, verifyServiceToken } from "./service.js";
 
 const mcp = await generateKeyPair("EdDSA", { extractable: true });
 const web = await generateKeyPair("EdDSA", { extractable: true });
-const publicKeys = { mcp: await exportJWK(mcp.publicKey), web: await exportJWK(web.publicKey) };
+const admin = await generateKeyPair("EdDSA", { extractable: true });
+const publicKeys = {
+  mcp: await exportJWK(mcp.publicKey),
+  web: await exportJWK(web.publicKey),
+  admin: await exportJWK(admin.publicKey),
+};
 const sub = "user-1";
 const azp = "agent-1";
 
@@ -75,5 +80,57 @@ describe("JWT de servicio", () => {
       .sign(mcp.privateKey);
 
     await expect(verifyServiceToken(token, { publicKeys, expectedIss: "mcp" })).rejects.toThrow("identidad");
+  });
+
+  describe("emisor admin", () => {
+    const email = "ops@nexo.app";
+    const mintAdmin = async (options: { sub?: string; email?: string } = {}) => mintServiceToken({
+      iss: "admin", sub: options.sub ?? "admin-1", email: options.email ?? email, privateKey: await exportJWK(admin.privateKey),
+    });
+
+    it("firma y verifica la identidad del operador con sub y email", async () => {
+      const token = await mintAdmin();
+      const claims = decodeJwt(token);
+      expect(claims).toMatchObject({ iss: "admin", aud: "broker", sub: "admin-1", email });
+      expect(claims).not.toHaveProperty("azp");
+      expect(claims).not.toHaveProperty("scope");
+      expect(claims.exp! - claims.iat!).toBe(60);
+      await expect(verifyServiceToken(token, { publicKeys, expectedIss: "admin" })).resolves.toEqual({
+        adminId: "admin-1", email,
+      });
+    });
+
+    it("no mintea sin correo válido ni sin identidad", async () => {
+      await expect(mintAdmin({ email: "no-es-correo" })).rejects.toThrow("correo");
+      await expect(mintAdmin({ sub: " " })).rejects.toThrow("identidad");
+    });
+
+    it("rechaza tokens admin donde se espera mcp o web, y tokens web donde se espera admin", async () => {
+      const token = await mintAdmin();
+      await expect(verifyServiceToken(token, { publicKeys, expectedIss: "web" })).rejects.toBeTruthy();
+      await expect(verifyServiceToken(token, { publicKeys, expectedIss: "mcp" })).rejects.toBeTruthy();
+      await expect(verifyServiceToken(webToken, { publicKeys, expectedIss: "admin" })).rejects.toBeTruthy();
+      // Even with a shared key, the issuer claim keeps the identities apart.
+      await expect(verifyServiceToken(webToken, { expectedIss: "admin", publicKeys: { admin: publicKeys.web } }))
+        .rejects.toMatchObject({ claim: "iss" });
+      await expect(verifyServiceToken(token, { expectedIss: "web", publicKeys: { web: publicKeys.admin } }))
+        .rejects.toMatchObject({ claim: "iss" });
+    });
+
+    it("rechaza un JWT admin sin email o sin clave admin configurada", async () => {
+      const token = await new SignJWT({})
+        .setProtectedHeader({ alg: "EdDSA" })
+        .setIssuer("admin")
+        .setAudience("broker")
+        .setSubject("admin-1")
+        .setJti("test-token")
+        .setIssuedAt()
+        .setExpirationTime("60s")
+        .sign(admin.privateKey);
+      await expect(verifyServiceToken(token, { publicKeys, expectedIss: "admin" })).rejects.toThrow("correo");
+      await expect(verifyServiceToken(await mintAdmin(), {
+        expectedIss: "admin", publicKeys: { mcp: publicKeys.mcp, web: publicKeys.web },
+      })).rejects.toThrow("Ed25519");
+    });
   });
 });

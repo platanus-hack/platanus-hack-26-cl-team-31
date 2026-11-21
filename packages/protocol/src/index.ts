@@ -1,4 +1,5 @@
 export * from "./address.js";
+export * from "./admin.js";
 export * from "./errors.js";
 export * from "./fixtures.js";
 export * from "./owner.js";

@@ -42,7 +42,8 @@ const settings = z.object({
     .default("10000,30000")
     .transform((value) => value.split(",").map(Number))
     .pipe(z.array(z.number().int().min(0).max(2_147_483_647)).length(2)),
-  SERVICE_JWT_PUBLIC_KEYS: json(z.object({ mcp: publicKey, web: publicKey })),
+  // `admin` is optional: without it every /v1/admin/* request answers 401.
+  SERVICE_JWT_PUBLIC_KEYS: json(z.object({ mcp: publicKey, web: publicKey, admin: publicKey.optional() })),
   WAKE_ALLOW_INSECURE: z.enum(["0", "1"]).default("0").transform((flag) => flag === "1"),
 }).superRefine((env, ctx) => {
   if (env.NODE_ENV === "production" && env.WAKE_ALLOW_INSECURE) {
