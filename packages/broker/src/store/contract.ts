@@ -210,11 +210,14 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
 
     it("registers agents idempotently across concurrent calls and preserves configured or revoked rows", async () => {
       const base: AgentConnectionRow = { userId: "carla", agentId: "bot", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now };
+      let inserts = 0;
       const created = await Promise.all([
-        store.tx((tx) => tx.ensureAgentConnection(base)),
-        store.tx((tx) => tx.ensureAgentConnection(base)),
+        store.tx((tx) => tx.ensureAgentConnection(base, () => inserts++)),
+        store.tx((tx) => tx.ensureAgentConnection(base, () => inserts++)),
       ]);
       expect(created).toMatchObject([base, base]);
+      // Only the call that inserted the row reports it (broker.agent.connected).
+      expect(inserts).toBe(1);
       await store.tx(async (tx) => {
         const configured: AgentConnectionRow = {
           ...base, wakeTarget: { kind: "standard_webhook", url: "https://example.com/callback", secret: "whsec_test" },

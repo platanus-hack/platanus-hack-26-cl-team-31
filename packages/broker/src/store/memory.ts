@@ -244,8 +244,9 @@ function transaction(state: State): StoreTx {
       const job = state.wakes.get(id);
       if (job?.state === "queued" && job.runAt > now) job.runAt = structuredClone(now);
     },
-    async ensureAgentConnection(row) {
+    async ensureAgentConnection(row, onCreated) {
       const existing = state.agents.get(pairKey(row.userId, row.agentId));
+      if (!existing) onCreated?.();
       return structuredClone(existing ?? putAgent(row));
     },
     async upsertAgentConnection(row) {

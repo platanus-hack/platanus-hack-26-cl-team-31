@@ -417,9 +417,11 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       ));
     },
 
-    async ensureAgentConnection(row) {
+    async ensureAgentConnection(row, onCreated) {
       await ensureUser(row.userId, row.createdAt);
-      await db.insert(agentConnections).values(writeConnection(row)).onConflictDoNothing();
+      const inserted = await db.insert(agentConnections).values(writeConnection(row)).onConflictDoNothing()
+        .returning({ agentId: agentConnections.agentId });
+      if (inserted.length > 0) onCreated?.();
       const connection = await getAgentConnection(row.userId, row.agentId, true);
       if (!connection) throw new BrokerError("internal", "No se pudo registrar la conexión del agente.");
       return connection;

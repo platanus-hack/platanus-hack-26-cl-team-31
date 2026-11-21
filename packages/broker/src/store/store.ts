@@ -184,7 +184,8 @@ export interface StoreTx {
 
   // Creates the user if needed, inserts only if missing, and locks the returned row
   // until the transaction ends. Preserves the wake configuration and revocation.
-  ensureAgentConnection(row: AgentConnectionRow): Promise<AgentConnectionRow>;
+  // onCreated runs only when this call inserted the row (presence telemetry).
+  ensureAgentConnection(row: AgentConnectionRow, onCreated?: () => void): Promise<AgentConnectionRow>;
   upsertAgentConnection(row: AgentConnectionRow): Promise<void>;
   // Oldest first, then by agent ID in UTF-8 byte order.
   listPublicAgents(): Promise<PublicAgent[]>;

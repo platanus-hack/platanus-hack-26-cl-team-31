@@ -146,6 +146,27 @@ describe("telemetría del core del broker", () => {
     expect(grantEvents).not.toContain("alice@sideband.app");
   });
 
+  it("registra la presencia: la primera llamada conecta al agente y solo la primera revocación cuenta", async () => {
+    const carla: Principal = { userId: "carla", agentId: "carla-bot", scopes };
+    await broker.agent.inbox(carla);
+    await broker.agent.inbox(carla);
+    expect(sink.find("broker.agent.connected")).toEqual([
+      expect.objectContaining({ userId: "carla", agentId: "carla-bot", attrs: { kind: "none" } }),
+    ]);
+
+    await broker.owner.revokeAgent({ userId: "carla" }, "carla-bot");
+    await broker.owner.revokeAgent({ userId: "carla" }, "carla-bot");
+    await broker.agent.inbox(alice);
+    await broker.admin.revokeAgent(operator, "alice", "alice-bot", "Agente comprometido en la demo");
+    expect(sink.find("broker.agent.revoked")).toEqual([
+      expect.objectContaining({ userId: "carla", agentId: "carla-bot", attrs: { by: "owner" } }),
+      expect.objectContaining({ userId: "alice", agentId: "alice-bot", attrs: { by: "admin" } }),
+    ]);
+    // Una llamada de un agente revocado no lo vuelve a conectar.
+    await expect(broker.agent.inbox(carla)).rejects.toMatchObject({ code: "not_found" });
+    expect(sink.find("broker.agent.connected").filter((record) => record.userId === "carla")).toHaveLength(1);
+  });
+
   it("una solicitud sin permiso queda denegada con su código", async () => {
     await broker.owner.claimAddress({ userId: "carla" }, "carla");
     await broker.agent.ask(alice, { to: "carla@sideband.app", tool: "question", args: { text: secretText, category: "general" } });

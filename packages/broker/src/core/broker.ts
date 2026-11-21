@@ -224,7 +224,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const { userId, agentId } = principal;
     const connection = await tx.ensureAgentConnection({
       userId, agentId, label: agentId, wakeTarget: { kind: "none" }, createdAt: clock.now(),
-    });
+    }, () => record(tx, "broker.agent.connected", { userId, agentId, attrs: { kind: "none" } }));
     if (connection.revokedAt) throw notFound();
     return connection;
   }
@@ -1002,7 +1002,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async revokeAgent(o, agentId) {
-        await store.tx((tx) => revokeConnection(tx, o.userId, agentId, clock.now()));
+        await store.tx((tx) => revokeConnection(tx, o.userId, agentId, clock.now(), (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "owner" } })));
       },
     },
 
