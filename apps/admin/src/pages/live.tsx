@@ -1,5 +1,4 @@
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
 import { EraserIcon, PauseIcon, PlayIcon } from "lucide-react"
 import { EventKind, Service, type TelemetryEvent } from "@shared/contract"
 import { cn } from "cn"
@@ -25,16 +24,12 @@ import {
 import { Page, PageHeader, Panel } from "@/components/page"
 import { StatusDot } from "@/components/status"
 import { AttrChips } from "@/components/timeline"
-import {
-  api,
-  subscribeLive,
-  type LiveFilters,
-  type LiveStatus,
-} from "@/lib/api"
+import { subscribeLive, type LiveFilters, type LiveStatus } from "@/lib/api"
 import { formatDuration, useNow } from "@/lib/format"
 import { levelTone, serviceColor, serviceLabel } from "@/lib/status"
 
 const MAX_EVENTS = 500
+const FLUSH_INTERVAL_MS = 100
 const clock = new Intl.DateTimeFormat("es-CL", {
   hour: "2-digit",
   minute: "2-digit",
@@ -62,79 +57,141 @@ type Filters = {
 
 type StreamProps = { liveFilters: LiveFilters; filterBar: React.ReactNode }
 
+type Feed = {
+  live: TelemetryEvent[]
+  buffer: TelemetryEvent[]
+  paused: boolean
+}
+
+function mergeEvents(newer: TelemetryEvent[], older: TelemetryEvent[]) {
+  const unique = new Map<string, TelemetryEvent>()
+  for (const event of [...newer, ...older]) {
+    if (!unique.has(event.id)) unique.set(event.id, event)
+    if (unique.size === MAX_EVENTS) break
+  }
+  return [...unique.values()]
+}
+
+const LiveRow = React.memo(function LiveRow({
+  event,
+  onSelect,
+}: {
+  event: TelemetryEvent
+  onSelect: (event: TelemetryEvent) => void
+}) {
+  return (
+    <TableRow className="cursor-pointer" onClick={() => onSelect(event)}>
+      <TableCell className="py-1 pl-4 font-mono text-xs text-muted-foreground tabular-nums">
+        {clock.format(new Date(event.at))}
+      </TableCell>
+      <TableCell className="py-1">
+        <span className="flex items-center gap-1.5 font-mono text-xs">
+          <span
+            className="size-1.5 rounded-[1px]"
+            style={{ background: serviceColor[event.service] }}
+          />
+          {serviceLabel[event.service]}
+        </span>
+      </TableCell>
+      <TableCell className="py-1">
+        <span className="flex items-center gap-1.5">
+          <StatusDot tone={levelTone[event.level]} small />
+          <span
+            className={cn(
+              "font-mono text-xs",
+              event.level === "error" && "text-status-error",
+              event.level === "warn" && "text-status-warn"
+            )}
+          >
+            {event.name}
+          </span>
+        </span>
+      </TableCell>
+      <TableCell className="hidden w-full max-w-0 py-1 lg:table-cell">
+        <AttrChips
+          attrs={event.attrs}
+          className="flex-nowrap overflow-hidden"
+        />
+      </TableCell>
+      <TableCell className="hidden py-1 font-mono text-xs text-muted-foreground md:table-cell">
+        {event.requestId ?? "—"}
+      </TableCell>
+      <TableCell className="py-1 pr-4 text-right font-mono text-xs text-muted-foreground tabular-nums">
+        {formatDuration(event.durationMs)}
+      </TableCell>
+    </TableRow>
+  )
+})
+
 // La cola vive en un componente con `key` por filtros: al cambiarlos se reinicia el estado
 // y la suscripción, sin efectos que reseteen estado a mano.
 function LiveStream({ liveFilters, filterBar }: StreamProps) {
   const now = useNow()
-  const [live, setLive] = React.useState<TelemetryEvent[]>([])
-  const [buffer, setBuffer] = React.useState<TelemetryEvent[]>([])
-  const [showHistory, setShowHistory] = React.useState(true)
-  const [paused, setPaused] = React.useState(false)
+  const [feed, setFeed] = React.useState<Feed>({
+    live: [],
+    buffer: [],
+    paused: false,
+  })
+  const { live, buffer, paused } = feed
   const [status, setStatus] = React.useState<LiveStatus>("connecting")
   const [selected, setSelected] = React.useState<TelemetryEvent | null>(null)
-  const [freshIds, setFreshIds] = React.useState<Set<string>>(() => new Set())
-  const pausedRef = React.useRef(paused)
-  React.useEffect(() => {
-    pausedRef.current = paused
-  }, [paused])
+  const pending = React.useRef(new Map<string, TelemetryEvent>())
 
-  // Historial inicial con los mismos filtros; luego la cola en vivo.
-  const history = useQuery({
-    queryKey: ["events", "live-backfill", liveFilters],
-    queryFn: ({ signal }) =>
-      api("events", { query: { ...liveFilters, limit: 50 } }, { signal }),
-    staleTime: Infinity,
-    gcTime: 0,
-  })
+  const flush = React.useCallback(() => {
+    if (pending.current.size === 0) return
+    const batch = [...pending.current.values()].reverse()
+    pending.current.clear()
+    setFeed((prev) =>
+      prev.paused
+        ? { ...prev, buffer: mergeEvents(batch, prev.buffer) }
+        : { ...prev, live: mergeEvents(batch, prev.live) }
+    )
+  }, [])
 
   React.useEffect(() => {
-    const timers = new Set<ReturnType<typeof setTimeout>>()
+    const queue = pending.current
+    let timer: ReturnType<typeof setTimeout> | undefined
     const stop = subscribeLive(liveFilters, {
       onStatus: setStatus,
       onEvent: (event) => {
-        if (pausedRef.current) {
-          setBuffer((prev) => [event, ...prev].slice(0, MAX_EVENTS))
-          return
+        queue.delete(event.id)
+        queue.set(event.id, event)
+        if (queue.size > MAX_EVENTS) {
+          const oldest = queue.keys().next()
+          if (!oldest.done) queue.delete(oldest.value)
         }
-        setLive((prev) => [event, ...prev].slice(0, MAX_EVENTS))
-        setFreshIds((prev) => new Set(prev).add(event.id))
-        const timer = setTimeout(() => {
-          timers.delete(timer)
-          setFreshIds((prev) => {
-            const next = new Set(prev)
-            next.delete(event.id)
-            return next
-          })
-        }, 1_200)
-        timers.add(timer)
+        timer ??= setTimeout(() => {
+          timer = undefined
+          flush()
+        }, FLUSH_INTERVAL_MS)
       },
     })
     return () => {
       stop()
-      for (const timer of timers) clearTimeout(timer)
+      clearTimeout(timer)
+      queue.clear()
     }
-  }, [liveFilters])
+  }, [liveFilters, flush])
+
+  function pause() {
+    flush()
+    setFeed((prev) => ({ ...prev, paused: true }))
+  }
 
   function resume() {
-    setLive((prev) => [...buffer, ...prev].slice(0, MAX_EVENTS))
-    setBuffer([])
-    setPaused(false)
+    flush()
+    setFeed((prev) => ({
+      live: mergeEvents(prev.buffer, prev.live),
+      buffer: [],
+      paused: false,
+    }))
   }
 
   function clear() {
-    setLive([])
-    setBuffer([])
-    setShowHistory(false)
+    pending.current.clear()
+    setFeed((prev) => ({ ...prev, live: [], buffer: [] }))
   }
 
-  const events = React.useMemo(
-    () =>
-      (showHistory ? [...live, ...(history.data?.items ?? [])] : live).slice(
-        0,
-        MAX_EVENTS
-      ),
-    [live, history.data, showHistory]
-  )
   const perMinute = live.filter((e) => Date.parse(e.at) >= now - 60_000).length
   const meta = statusMeta[status]
 
@@ -166,11 +223,7 @@ function LiveStream({ liveFilters, filterBar }: StreamProps) {
                 ) : null}
               </Button>
             ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setPaused(true)}
-              >
+              <Button size="sm" variant="outline" onClick={pause}>
                 <PauseIcon data-icon="inline-start" />
                 Pausar
               </Button>
@@ -208,67 +261,20 @@ function LiveStream({ liveFilters, filterBar }: StreamProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {events.length === 0 ? (
+            {live.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell
                   colSpan={6}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
-                  {history.isPending
-                    ? "Cargando historial…"
+                  {status === "connecting"
+                    ? "Conectando…"
                     : "Esperando eventos…"}
                 </TableCell>
               </TableRow>
             ) : null}
-            {events.map((event) => (
-              <TableRow
-                key={event.id}
-                className={cn(
-                  "cursor-pointer",
-                  freshIds.has(event.id) &&
-                    "animate-in bg-muted/40 duration-500 fade-in-0 slide-in-from-top-1"
-                )}
-                onClick={() => setSelected(event)}
-              >
-                <TableCell className="py-1 pl-4 font-mono text-xs text-muted-foreground tabular-nums">
-                  {clock.format(new Date(event.at))}
-                </TableCell>
-                <TableCell className="py-1">
-                  <span className="flex items-center gap-1.5 font-mono text-xs">
-                    <span
-                      className="size-1.5 rounded-[1px]"
-                      style={{ background: serviceColor[event.service] }}
-                    />
-                    {serviceLabel[event.service]}
-                  </span>
-                </TableCell>
-                <TableCell className="py-1">
-                  <span className="flex items-center gap-1.5">
-                    <StatusDot tone={levelTone[event.level]} small />
-                    <span
-                      className={cn(
-                        "font-mono text-xs",
-                        event.level === "error" && "text-status-error",
-                        event.level === "warn" && "text-status-warn"
-                      )}
-                    >
-                      {event.name}
-                    </span>
-                  </span>
-                </TableCell>
-                <TableCell className="hidden w-full max-w-0 py-1 lg:table-cell">
-                  <AttrChips
-                    attrs={event.attrs}
-                    className="flex-nowrap overflow-hidden"
-                  />
-                </TableCell>
-                <TableCell className="hidden py-1 font-mono text-xs text-muted-foreground md:table-cell">
-                  {event.requestId ?? "—"}
-                </TableCell>
-                <TableCell className="py-1 pr-4 text-right font-mono text-xs text-muted-foreground tabular-nums">
-                  {formatDuration(event.durationMs)}
-                </TableCell>
-              </TableRow>
+            {live.map((event) => (
+              <LiveRow key={event.id} event={event} onSelect={setSelected} />
             ))}
           </TableBody>
         </Table>

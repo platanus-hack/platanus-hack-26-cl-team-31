@@ -3,7 +3,7 @@
 import type { Service, TelemetryEvent } from "@shared/contract"
 
 import type { LiveFilters, LiveHandlers } from "@/lib/api"
-import { hex, nextEventId, requests, uuid } from "@/mocks/fixtures"
+import { hex, historyEvents, nextEventId, requests, uuid } from "@/mocks/fixtures"
 
 type Template = Pick<TelemetryEvent, "service" | "kind" | "name" | "level"> & {
   weight: number
@@ -257,7 +257,11 @@ export function startMockLive(
   handlers: LiveHandlers
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined
-  const open = setTimeout(() => handlers.onStatus("open"), 300)
+  const open = setTimeout(() => {
+    handlers.onStatus("open")
+    const initial = historyEvents().filter((event) => matches(event, filters))
+    for (const event of initial.slice(0, 50).reverse()) handlers.onEvent(event)
+  }, 300)
   const tick = () => {
     // Ráfagas ocasionales para que se sienta como tráfico real.
     const burst = Math.random() < 0.15 ? r(2, 5) : 1
