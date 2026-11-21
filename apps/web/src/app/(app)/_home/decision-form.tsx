@@ -5,14 +5,17 @@ import type { ToolName } from "@team-31/protocol";
 
 import { decide } from "../actions";
 import { button, Feedback, input, primaryButton } from "../ui";
+import { settled } from "../optimistic";
+
+const initial = {};
 
 export function DecisionForm({ id, tool, escalated }: { id: string; tool: ToolName; escalated: boolean }) {
-  const [state, submit, pending] = useActionState(decide.bind(null, id), {});
+  const [state, submit, pending] = useActionState(decide.bind(null, id), initial);
   const [answer, setAnswer] = useState("");
   const isQuestion = escalated && tool === "question";
 
   return (
-    <form action={submit} className="mt-4 space-y-3">
+    <form action={submit} data-gone={settled(state, pending, initial) || undefined} className="mt-4 space-y-3">
       {isQuestion && (
         <label className="block text-sm font-medium">
           Tu respuesta

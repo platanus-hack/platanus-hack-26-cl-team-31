@@ -37,7 +37,7 @@ export default async function HomePage() {
                 const slot = item.tool === "availability" ? item.args : undefined;
                 const interest = item.tool === "interest_check" ? item.args.interest : undefined;
                 return (
-                  <li key={item.requestId} className={`${card} p-5`}>
+                  <li key={item.requestId} className={`${card} p-5 has-[[data-gone]]:hidden`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="break-all font-medium">{item.from}</h3>
                       <p className="rounded-full bg-chip px-2.5 py-1 text-xs font-medium text-body">{toolLabels[item.tool]}</p>

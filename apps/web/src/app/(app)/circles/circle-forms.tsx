@@ -5,6 +5,7 @@ import { useActionState, useEffect } from "react";
 import { createCircle, inviteToCircle } from "./actions";
 import { Feedback, input, primaryButton } from "../ui";
 import { Modal, ModalCancel, useCloseModal } from "../modal";
+import { settled } from "../optimistic";
 
 type Result = { error?: string; message?: string; errorId?: string };
 
@@ -51,12 +52,12 @@ export function InviteMember({ circleId, circleName }: { circleId: string; circl
   );
 }
 
-export function CircleButton({ action, className, label, children }: {
-  action: () => Promise<Result>; className: string; label?: string; children: string;
+export function CircleButton({ action, className, label, hides, children }: {
+  action: () => Promise<Result>; className: string; label?: string; hides: "circle" | "member" | "invitation"; children: string;
 }) {
-  const [state, submit, pending] = useActionState(action, {});
+  const [state, submit, pending] = useActionState(action, initial);
   return (
-    <form action={submit} className="flex items-center gap-2">
+    <form action={submit} data-gone={settled(state, pending, initial) ? hides : undefined} className="flex items-center gap-2">
       <Feedback {...state} />
       <button className={className} disabled={pending} aria-label={label}>{children}</button>
     </form>
