@@ -1,0 +1,23 @@
+name: Sincronizar el espejo de producción
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  dispatch:
+    if: github.repository == 'platanus-hack/platanus-hack-26-cl-team-31'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Encolar la sincronización en el repositorio personal
+        env:
+          GH_TOKEN: ${{ secrets.RENDER_MIRROR_ACTIONS_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::Configura RENDER_MIRROR_ACTIONS_TOKEN en los secrets de Actions del repo original (ver README)."
+            exit 1
+          fi
+          gh workflow run sync.yml --repo mpenalozag/nexo-render --ref main
