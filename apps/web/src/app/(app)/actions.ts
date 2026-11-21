@@ -7,12 +7,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ownerClient } from "@/lib/broker";
-import { getTelemetry } from "@/lib/telemetry";
+import { onboardingFlow, type OnboardingSource } from "@/lib/onboarding-flow";
+import { getTelemetry, observeWebRequest } from "@/lib/telemetry";
 
 import { getOwner, requireAddress } from "./owner";
 import { activityPageSize, validPage } from "./labels";
 
-type Feedback = { error?: string; message?: string };
+type Feedback = { error?: string; message?: string; errorId?: string };
 
 // Domain errors become a message; anything else is recorded (without its message) before the fallback.
 function actionError(operation: string, error: unknown, fallback: string) {
@@ -29,23 +30,35 @@ function actionError(operation: string, error: unknown, fallback: string) {
   }
 }
 
-export async function claimAddress(_: Feedback, form: FormData): Promise<Feedback> {
+export async function claimAddress(source: OnboardingSource, _: Feedback, form: FormData): Promise<Feedback> {
   const owner = await getOwner();
   const localPart = LocalPart.safeParse(form instanceof FormData ? form.get("localPart") : undefined);
   if (!localPart.success) {
     return { error: "Usa de 2 a 31 caracteres, con letras minúsculas, números, puntos, guiones o guiones bajos. Empieza con una letra o número." };
   }
 
-  try {
-    await ownerClient().claimAddress(owner, localPart.data);
-  } catch (error) {
-    if (error instanceof BrokerError && error.code === "conflict") {
-      return { error: "Esa dirección ya está tomada" };
+  const flow = onboardingFlow(source);
+  const feedback = await observeWebRequest("POST", "/onboarding", async (span) => {
+    const telemetry = getTelemetry();
+    telemetry.identify({ userId: owner.userId });
+    try {
+      await ownerClient().claimAddress(owner, localPart.data);
+      if (flow.source === "invite") {
+        telemetry.emit("web.invite.progress", { attrs: { step: "address_claimed" } });
+      }
+    } catch (error) {
+      const errorId = telemetry.error("action claimAddress", error);
+      span.setErrorId(errorId);
+      const message = error instanceof BrokerError && error.code === "conflict"
+        ? "Esa dirección ya está tomada"
+        : actionError("claimAddress", error, "No se pudo guardar la dirección. Intenta de nuevo.");
+      return { error: message, errorId };
     }
-    return { error: actionError("claimAddress", error, "No se pudo guardar la dirección. Intenta de nuevo.") };
-  }
+  });
+  if (feedback) return feedback;
+
   revalidatePath("/", "layout");
-  redirect("/");
+  redirect(flow.destination);
 }
 
 export async function readHome() {

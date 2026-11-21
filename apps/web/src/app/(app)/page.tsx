@@ -1,18 +1,24 @@
 import Link from "next/link";
 import { ToolArgs } from "@team-31/protocol";
 
+import { getAuthBaseUrl } from "@/lib/auth-env.mjs";
+
 import { readHome } from "./actions";
 import { ActivityList } from "./activity-list";
 import { DecisionForm } from "./decision-form";
+import { InviteActions } from "./invite-actions";
 import { toolLabels } from "./labels";
 import { card, Empty, Heading, Stamp, textLink } from "./ui";
 
 export default async function HomePage() {
   const [pending, activity] = await readHome();
+  const inviteUrl = new URL("/invite", new URL(getAuthBaseUrl()).origin).href;
 
   return (
     <>
-      <Heading title="Inicio">Revisa solicitudes y respuestas de tus agentes.</Heading>
+      <Heading title="Inicio" action={<InviteActions url={inviteUrl} />}>
+        Revisa solicitudes y respuestas de tus agentes.
+      </Heading>
       <div className="grid items-start gap-8 lg:grid-cols-[1.35fr_1fr]">
         <section aria-labelledby="pending-title">
           <h2 id="pending-title" className="mb-4 text-xl font-semibold tracking-tight">Por revisar</h2>

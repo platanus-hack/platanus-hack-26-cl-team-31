@@ -6,24 +6,33 @@ import { useActionState, useEffect, useState } from "react";
 import { Feedback, primaryButton, secondaryText, Status } from "../../../ui";
 import { readPingStatus, startPing } from "../actions";
 import type { ClientKind } from "../clients";
+import { CopyBox } from "./CopyBox";
 
 const descriptions: Record<RequestStatus, string> = {
   awaiting_agent: "Prueba enviada. Esperando al agente.",
   awaiting_owner: "El agente pidió tu decisión. Revisa las solicitudes de Nexo.",
-  answered: "El agente respondió a la prueba.",
-  no_data: "El agente confirmó que recibió la prueba.",
+  answered: "La prueba se cerró sin una respuesta final del agente. Vuelve a probar.",
+  no_data: "La prueba se cerró sin confirmar la respuesta del agente. Vuelve a probar.",
   delivery_failed: "El aviso falló. Revisa la configuración del aviso y vuelve a probar.",
   expired: "La prueba venció sin que el agente respondiera.",
   declined: "El agente rechazó la prueba.",
   denied: "La prueba fue denegada.",
 };
 
-export function PingButton({ agentId, kind }: { agentId: string; kind: ClientKind }) {
+type PingResult = {
+  requestId: string;
+  ping?: { status: RequestStatus; verified: boolean };
+  readError?: true | string;
+};
+
+export function PingButton({ agentId, kind, address }: { agentId: string; kind: ClientKind; address: string }) {
   const [state, action, sending] = useActionState(startPing.bind(null, kind, agentId), {});
-  const [result, setResult] = useState<{ requestId: string; status?: RequestStatus; readError?: boolean }>();
+  const [result, setResult] = useState<PingResult>();
   const requestId = state.requestId;
   const current = result?.requestId === requestId ? result : undefined;
-  const status = requestId ? current?.status ?? "awaiting_agent" : undefined;
+  const missing = current && !current.ping && !current.readError;
+  const status = requestId && !missing ? current?.ping?.status ?? "awaiting_agent" : undefined;
+  const verified = current?.ping?.verified;
   const waiting = status === "awaiting_agent" || status === "awaiting_owner";
 
   useEffect(() => {
@@ -31,16 +40,22 @@ export function PingButton({ agentId, kind }: { agentId: string; kind: ClientKin
 
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
+    function showReadError(id: string, error: true | string) {
+      setResult((previous) => ({
+        requestId: id,
+        ping: previous?.requestId === id ? previous.ping : undefined,
+        readError: error,
+      }));
+    }
     async function poll(id: string) {
       try {
-        const latest = await readPingStatus(id);
-        if (active) setResult({ requestId: id, status: latest });
+        const response = await readPingStatus(id);
+        if (!active) return;
+        if (response && "errorId" in response && response.errorId) showReadError(id, response.errorId);
+        else if (response?.status) setResult({ requestId: id, ping: response });
+        else setResult({ requestId: id });
       } catch {
-        if (active) setResult((previous) => ({
-          requestId: id,
-          status: previous?.requestId === id ? previous.status : undefined,
-          readError: true,
-        }));
+        if (active) showReadError(id, true);
       } finally {
         if (active) timer = setTimeout(() => void poll(id), 2000);
       }
@@ -57,16 +72,30 @@ export function PingButton({ agentId, kind }: { agentId: string; kind: ClientKin
       <form action={action}>
         <button disabled={sending || waiting} className={primaryButton}>{sending ? "Enviando…" : "Probar"}</button>
       </form>
-      <Feedback error={state.error} />
+      <Feedback error={state.error} errorId={state.errorId} />
       <div role="status" className="space-y-2">
-        {status && (
+        {verified ? (
+          <p className="text-sm font-semibold text-[#28513b]">El agente respondió a la prueba.</p>
+        ) : status && (
           <>
             <Status status={status} />
             <p className={secondaryText}>{descriptions[status]}</p>
           </>
         )}
-        {current?.readError && <p className={secondaryText}>Se perdió la actualización. Volveremos a consultar el estado.</p>}
+        {missing && <p className={secondaryText}>La prueba ya no está disponible. Vuelve a probar.</p>}
+        {current?.readError && (
+          <p className={secondaryText}>
+            Se perdió la actualización. Volveremos a consultar el estado.
+            {typeof current.readError === "string" && <> Código de error <code>{current.readError}</code>.</>}
+          </p>
+        )}
       </div>
+      {verified && !sending && (
+        <>
+          <CopyBox label="Dirección Nexo" value={address} copyLabel="Copiar mi dirección Nexo" />
+          <p className={secondaryText}>Comparte tu dirección para que puedan enviarte solicitudes.</p>
+        </>
+      )}
     </div>
   );
 }
