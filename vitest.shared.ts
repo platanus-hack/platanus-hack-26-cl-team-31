@@ -9,5 +9,6 @@ import { defineConfig } from "vitest/config";
 const conditions = ["@team-31/source", "module", "node", "development|production"];
 
 export default defineConfig({
+  resolve: { conditions: ["@team-31/source", "module", "browser", "development|production"] },
   ssr: { resolve: { conditions } },
 });
