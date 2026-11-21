@@ -14,8 +14,8 @@
     "infra:reset": "docker compose down -v && docker compose up -d --wait",
     "teardown": "./scripts/teardown.sh",
     "dev": "./scripts/with-env.sh turbo run dev",
-    "build": "./scripts/with-env.sh turbo run build",
-    "test": "./scripts/with-env.sh turbo run test",
+    "build": "./scripts/with-env.sh --optional-env turbo run build",
+    "test": "./scripts/with-env.sh --optional-env turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules"
