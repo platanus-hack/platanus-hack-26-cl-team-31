@@ -2,7 +2,7 @@ import { RequestStatus } from "@team-31/protocol";
 import { sql } from "drizzle-orm";
 import {
   bigserial, boolean, check, customType, index, integer, jsonb, pgSchema,
-  primaryKey, text, timestamp,
+  primaryKey, text, timestamp, uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const nexo = pgSchema("nexo");
@@ -26,6 +26,19 @@ export const sharingRules = nexo.table("sharing_rules", {
   rules: jsonb("rules").notNull(),
   updatedAt: time("updated_at").notNull().defaultNow(),
 });
+
+export const grants = nexo.table("grants", {
+  id: text("id").primaryKey(),
+  grantorUserId: text("grantor_user_id").notNull().references(() => users.userId),
+  granteeAddress: text("grantee_address").notNull(),
+  tool: text("tool").notNull(),
+  fields: text("fields").array().notNull(),
+  createdAt: time("created_at").notNull(),
+  revokedAt: time("revoked_at"),
+}, (table) => [
+  uniqueIndex("grants_live_idx").on(table.grantorUserId, table.granteeAddress, table.tool)
+    .where(sql`${table.revokedAt} is null`),
+]);
 
 export const requests = nexo.table("requests", {
   id: text("id").primaryKey(),

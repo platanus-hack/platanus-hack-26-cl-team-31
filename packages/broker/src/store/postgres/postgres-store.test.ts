@@ -239,7 +239,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM nexo.__drizzle_migrations");
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
   });
 
   it("recovers only legacy one-time approvals with an audit event", async () => {
@@ -258,6 +258,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     });
     // Restore the legacy schema and migration journal while keeping the fixture rows.
     await isolated.query("ALTER TABLE nexo.requests DROP COLUMN approved_once");
+    await isolated.query("DROP TABLE nexo.grants");
     await isolated.query("DELETE FROM nexo.__drizzle_migrations WHERE id > 1");
 
     await applyPostgresMigrations({ databaseUrl });

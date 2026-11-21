@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { SharingRules } from "@team-31/protocol";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { AgentConnectionRow, RequestRow, Store, WakeJob } from "./store.js";
+import type { AgentConnectionRow, GrantRow, RequestRow, Store, WakeJob } from "./store.js";
 
 // makeStore supplies an isolated store per test, including an empty wake queue.
 export function runStoreContractTests(makeStore: () => Store | Promise<Store>): void {
@@ -138,6 +138,30 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.ensureAgentConnection(base)).toMatchObject(configured);
         expect(await tx.listAgentConnections("carla")).toMatchObject([configured]);
         expect(await tx.getAgentConnection("bruno", "bot", true)).toBeNull();
+      });
+    });
+
+    it("keeps one live grant per grantor, grantee and tool, and hides revoked grants", async () => {
+      const grant: GrantRow = {
+        id: randomUUID(), grantorUserId: "bruno", granteeAddress: fromAddress,
+        tool: "availability", fields: ["available"], createdAt: now,
+      };
+      await store.tx(async (tx) => {
+        expect(await tx.putGrant(grant)).toEqual(grant);
+        const widened = { ...grant, fields: ["available", "freeSlots"] };
+        expect(await tx.putGrant({ ...widened, id: randomUUID() })).toEqual(widened);
+        expect(await tx.listGrants("bruno")).toEqual([widened]);
+        expect(await tx.getGrant("bruno", fromAddress, "question")).toBeNull();
+        expect(await tx.getGrant("alice", fromAddress, "availability")).toBeNull();
+
+        expect(await tx.revokeGrant(grant.id, "alice", now)).toBe(false);
+        expect(await tx.revokeGrant(grant.id, "bruno", now)).toBe(true);
+        expect(await tx.revokeGrant(grant.id, "bruno", now)).toBe(false);
+        expect(await tx.getGrant("bruno", fromAddress, "availability")).toBeNull();
+
+        const again = { ...grant, id: randomUUID() };
+        expect(await tx.putGrant(again)).toEqual(again);
+        expect(await tx.listGrants("bruno")).toEqual([again]);
       });
     });
   });
