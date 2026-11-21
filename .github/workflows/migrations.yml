@@ -27,6 +27,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git diff --exit-code --no-renames --diff-filter=MDT "$BASE_SHA" HEAD -- 'packages/broker/drizzle/*.sql' 'packages/ops/sql/*.sql'
+          node --test scripts/check-migration-journal.test.mjs
           node scripts/check-migration-journal.mjs "$BASE_SHA"
 
       - uses: pnpm/action-setup@v4
