@@ -602,6 +602,9 @@ importers:
       '@team-31/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      '@team-31/wake':
+        specifier: workspace:*
+        version: link:../wake
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
