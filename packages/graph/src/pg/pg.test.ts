@@ -80,6 +80,24 @@ describe.skipIf(!url)("PgGraphIndex (Postgres)", () => {
     }
   });
 
+  it("interestedIn carga adyacencias y cuenta las consultas de cada búsqueda", async () => {
+    await baseGraph();
+    const filter: EdgeFilter = (arc) => arc.scope === "";
+    const opts = { k: 5, filter };
+    const source = "person:p0";
+    const topic = "topic:t0";
+    const expected = mem.interestedIn(source, topic, opts).paths.map((path) => path.cost);
+    expect(expected).toHaveLength(opts.k);
+
+    const searches = await Promise.all([index.interestedIn(source, topic, opts), index.interestedIn(source, topic, opts)]);
+    for (const result of searches) {
+      expect(result.paths.map((path) => path.cost)).toEqual(expected);
+      expect(result.queries).toBe(result.stats.fetches);
+      expect(result.rowsFetched).toBeGreaterThan(0);
+    }
+    expect(searches[0].rowsFetched).toBe(searches[1].rowsFetched);
+  });
+
   it("apply incremental = memoria", async () => {
     await baseGraph();
     dirty = true;
