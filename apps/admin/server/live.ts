@@ -65,19 +65,9 @@ export async function liveStream(
   telemetry: Pick<Telemetry, "error" | "emit">,
   slots: LiveSlots,
   spec: LiveSpec,
-  {
-    pollMs = 1_000,
-    heartbeatMs = 15_000,
-    backlog = 50,
-    lookbackMs = 3_000,
-    maxCatchUp = 50_000,
-    writeTimeoutMs = 30_000,
-    maxStreams = 6,
-    shutdown,
-  }: LiveOptions = {},
+  options: LiveOptions = {},
 ) {
-  // Un proceso que se está apagando (deploy, reinicio) sigue atendiendo las conexiones keep-alive
-  // que ya tenía: rechazar con Connection: close obliga al navegador a reconectar en uno nuevo.
+  const { maxStreams = 6, shutdown } = options
   if (shutdown?.aborted) {
     c.header("Connection", "close")
     throw new AdminHttpError("upstream", "El admin se está reiniciando. Vuelve a conectar.")
@@ -86,7 +76,40 @@ export async function liveStream(
   if (open >= maxStreams) {
     throw new AdminHttpError("rate_limited", `Ya tienes ${maxStreams} conexiones en vivo abiertas.`, { retryAfter: 5 })
   }
+  // Reserva antes del primer await: también cuentan las conexiones que están leyendo su primera página.
+  slots.set(spec.principalId, open + 1)
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    const remaining = slots.get(spec.principalId)! - 1
+    if (remaining > 0) slots.set(spec.principalId, remaining)
+    else slots.delete(spec.principalId)
+  }
+  try {
+    return await openStream(c, queries, telemetry, spec, release, options)
+  } catch (error) {
+    release()
+    throw error
+  }
+}
 
+async function openStream(
+  c: Context,
+  queries: AdminQueries,
+  telemetry: Pick<Telemetry, "error" | "emit">,
+  spec: LiveSpec,
+  release: () => void,
+  {
+    pollMs = 1_000,
+    heartbeatMs = 15_000,
+    backlog = 50,
+    lookbackMs = 3_000,
+    maxCatchUp = 50_000,
+    writeTimeoutMs = 30_000,
+    shutdown,
+  }: LiveOptions = {},
+) {
   const lastEventId = c.req.header("last-event-id")
   const resumeFrom = lastEventId && CURSOR.test(lastEventId) ? lastEventId : spec.after
   let cursor = resumeFrom
@@ -124,7 +147,6 @@ export async function liveStream(
   }
   const initial = await fetchPage()
 
-  slots.set(spec.principalId, open + 1)
   const startedAt = Date.now()
   let delivered = 0
   let reason: "client" | "shutdown" | "error" | "stalled" = "client"
@@ -195,9 +217,7 @@ export async function liveStream(
       }
     } finally {
       signal.removeEventListener("abort", abort)
-      const remaining = (slots.get(spec.principalId) ?? 1) - 1
-      if (remaining > 0) slots.set(spec.principalId, remaining)
-      else slots.delete(spec.principalId)
+      release()
       telemetry.emit("admin.live.closed", {
         userId: spec.principalId,
         durationMs: Date.now() - startedAt,
