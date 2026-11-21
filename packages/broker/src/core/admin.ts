@@ -2,6 +2,7 @@ import { AdminActor, AdminReason } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import type { AdminPort, BrokerDeps } from "../ports.js";
 import type { RequestRow, StoreTx } from "../store/store.js";
+import type { RecordEvent } from "./events.js";
 
 export type AdminEventCode = "admin_rewake" | "admin_expire" | "admin_revoke";
 
@@ -9,6 +10,8 @@ export type AdminEventCode = "admin_rewake" | "admin_expire" | "admin_revoke";
 export type AdminHelpers = {
   closePending(tx: StoreTx, row: RequestRow, outcome: "expired", at: Date, code: AdminEventCode): Promise<boolean>;
   enqueue(tx: StoreTx, row: RequestRow, now: Date, requestVersion: number, attempt: number): Promise<void>;
+  // Records a telemetry event that is emitted only if the transaction commits.
+  record: RecordEvent;
 };
 
 function notFound(): BrokerError {
@@ -33,7 +36,7 @@ export async function revokeConnection(tx: StoreTx, userId: string, agentId: str
   if (!connection.revokedAt) await tx.upsertAgentConnection({ ...connection, revokedAt: at });
 }
 
-export function createAdminPort({ store, clock }: BrokerDeps, { closePending, enqueue }: AdminHelpers): AdminPort {
+export function createAdminPort({ store, clock, telemetry }: BrokerDeps, { closePending, enqueue, record }: AdminHelpers): AdminPort {
   return {
     async rewake(actor, requestId, reason) {
       requireAction(actor, reason);
@@ -49,7 +52,10 @@ export function createAdminPort({ store, clock }: BrokerDeps, { closePending, en
         if (!await tx.updateRequest(row.id, {}, row.version)) throw invalidState();
         await enqueue(tx, row, now, row.version + 1, attempts + 1);
         await tx.appendEvent({ requestId: row.id, at: now, kind: "wake", code: "admin_rewake" });
-        // TODO(admin): admin.action { action: "rewake", target: requestId } con requestId y agentId (row.targetAgentId)
+        record(tx, "admin.action", {
+          requestId: row.id, ...(row.targetAgentId ? { agentId: row.targetAgentId } : {}),
+          attrs: { action: "rewake", target: row.id },
+        });
       });
     },
 
@@ -61,9 +67,8 @@ export function createAdminPort({ store, clock }: BrokerDeps, { closePending, en
         if (row.status !== "awaiting_agent" && row.status !== "awaiting_owner") throw invalidState();
         // A concurrent sweep, reply or decision bumps the version first and this close loses the race.
         if (!await closePending(tx, row, "expired", clock.now(), "admin_expire")) throw invalidState();
-        // TODO(admin): broker.request.status_changed { from: row.status, to: "expired", by: "admin" }
-        // TODO(admin): broker.request.closed { outcome: "expired", escalated: row.escalated }
-        // TODO(admin): admin.action { action: "expire", target: requestId }
+        // closePending records status_changed (by admin, from the code) and closed.
+        record(tx, "admin.action", { requestId: row.id, attrs: { action: "expire", target: row.id } });
       });
     },
 
@@ -71,7 +76,7 @@ export function createAdminPort({ store, clock }: BrokerDeps, { closePending, en
       requireAction(actor, reason);
       await store.tx((tx) => revokeConnection(tx, userId, agentId, clock.now()));
       // Revocation has no request, so it leaves no request_event (code admin_revoke goes to telemetry).
-      // TODO(admin): admin.action { action: "admin_revoke", target: `${userId}/${agentId}` } con userId y agentId
+      telemetry?.emit("admin.action", { userId, agentId, attrs: { action: "admin_revoke", target: `${userId}/${agentId}` } });
     },
   };
 }
