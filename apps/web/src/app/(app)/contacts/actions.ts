@@ -1,7 +1,7 @@
 "use server";
 
 import { Address, ContactTag, Sharing } from "@team-31/protocol";
-import { BrokerError } from "@team-31/broker/client";
+import { BrokerError } from "@team-31/broker-client";
 import { revalidatePath } from "next/cache";
 import { ownerClient } from "@/lib/broker";
 import { actionError, type Feedback } from "../action-feedback";

@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { BrokerError } from "@team-31/broker/client";
+import { BrokerError } from "@team-31/broker-client";
 import { readWebhookBody } from "@team-31/wake";
 import { ownerClient } from "../../../../lib/broker";
 import { emptyResponse, getTelemetry, observeRoute } from "../../../../lib/telemetry";

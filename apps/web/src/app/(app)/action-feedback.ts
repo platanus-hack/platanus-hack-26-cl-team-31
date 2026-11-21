@@ -1,4 +1,4 @@
-import { BrokerError } from "@team-31/broker/client";
+import { BrokerError } from "@team-31/broker-client";
 import { getTelemetry } from "@/lib/telemetry";
 
 export type Feedback = { error?: string; message?: string; errorId?: string };

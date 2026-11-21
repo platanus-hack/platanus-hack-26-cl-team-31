@@ -1,4 +1,4 @@
-import { BrokerError, type OwnerPort } from "@team-31/broker/client";
+import { BrokerError, type OwnerPort } from "@team-31/broker-client";
 import { Address, AskInput, type Category, type Owner, type RequesterView } from "@team-31/protocol";
 import { describeSharing } from "../../app/(app)/contacts/describe";
 import type { InterpretMessage } from "./claude";

@@ -93,7 +93,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.changeVault("bruno", categoryId, { action: "create", name: "Salud" });
         expect(await tx.vaultMembers("alice", categoryId)).toBeNull();
         expect(await tx.changeVault("bruno", categoryId, member)).toBe(false);
-        await tx.addFriend("bruno", fromAddress);
+        await tx.addContact("bruno", fromAddress);
         expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
         expect(await tx.changeVault("bruno", categoryId, member)).toBe(true);
         expect(await tx.vaultMembers("bruno", categoryId)).toEqual([fromAddress]);
@@ -105,9 +105,9 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [] });
         expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
         await tx.changeVault("bruno", categoryId, member);
-        await tx.removeFriend("bruno", fromAddress);
+        await tx.removeContact("bruno", fromAddress);
         await tx.setContactTag("bruno", fromAddress, null);
-        await tx.addFriend("bruno", fromAddress);
+        await tx.addContact("bruno", fromAddress);
         expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
       });
     });
@@ -120,7 +120,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.changeVault("bruno", id, { action: "set_group", categoryId: id, group: "family", allowed: true });
         await tx.setContactTag("bruno", fromAddress, "family");
         expect(await tx.sharedVault(fromAddress, toAddress, id)).toEqual({ categories: [] });
-        await tx.addFriend("bruno", fromAddress);
+        await tx.addContact("bruno", fromAddress);
         expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [{ id, name: "Necesidades" }] });
         expect((await tx.sharedVault(fromAddress, toAddress, id)).categories[0]?.entries).toEqual([{ label: "Sábado", value: "Taladro" }]);
         expect(await tx.changeVault("alice", id, { action: "delete", categoryId: id })).toBe(false);
@@ -141,7 +141,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.changeVault("bruno", categoryId, { action: "create", name: "Privada" });
         await tx.changeVault("bruno", categoryId, { action: "put_entry", categoryId, label: "Dato", value: "Prueba" });
         expect(await tx.changeContactGroup("bruno", groupId, add)).toBe(false);
-        await tx.addFriend("bruno", fromAddress);
+        await tx.addContact("bruno", fromAddress);
         expect(await tx.changeContactGroup("alice", groupId, add)).toBe(false);
         await tx.changeContactGroup("bruno", groupId, add);
         await tx.changeContactGroup("bruno", groupId, add);
@@ -156,8 +156,8 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.changeContactGroup("bruno", groupId, { ...add, action: "remove_contact" });
         expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [] });
         await tx.changeContactGroup("bruno", groupId, add);
-        await tx.removeFriend("bruno", fromAddress);
-        await tx.addFriend("bruno", fromAddress);
+        await tx.removeContact("bruno", fromAddress);
+        await tx.addContact("bruno", fromAddress);
         expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
         await tx.changeContactGroup("bruno", groupId, add);
         await tx.changeContactGroup("bruno", groupId, { action: "delete", groupId });

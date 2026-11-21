@@ -225,7 +225,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     // Opposite-direction acceptances acquire the same membership rows in the same order.
     participants.sort((a, b) => a.userId.localeCompare(b.userId));
     for (const { userId, address, share } of participants) {
-      if (!await tx.addFriend(userId, address)) continue;
+      if (!await tx.addContact(userId, address)) continue;
       await grants.applySharing(tx, userId, address, share);
     }
     record(tx, "broker.contact.connected", { requestId: row.id, userId: row.toUserId });
@@ -246,10 +246,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   }
 
   // A repeated invitation returns the open one. Crossed invitations accept the received one.
-  async function existingInvitation(
+  async function reuseOrAcceptInvitation(
     tx: StoreTx, userId: string, to: Address, share: Sharing | undefined, byAgent: boolean,
   ): Promise<RequesterView | BrokerError | "accepted" | null> {
-    if ((await tx.listFriends(userId)).includes(to)) return new BrokerError("invalid_input", "Ya son contactos.");
+    if ((await tx.listContactAddresses(userId)).includes(to)) return new BrokerError("invalid_input", "Ya son contactos.");
     const now = clock.now();
     const open = (await tx.listOpenInvitations(userId)).filter((row) => row.expiresAt > now);
     const sent = open.find((row) => row.fromUserId === userId && row.toAddress === to);
@@ -271,7 +271,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
     const recipient = await tx.getUserByAddress(to);
     const offer = input.tool === "connect" ? input.args.share : undefined;
-    const existing = recipient && tool === "connect" ? await existingInvitation(tx, userId, to, offer, agentId !== undefined) : null;
+    const existing = recipient && tool === "connect" ? await reuseOrAcceptInvitation(tx, userId, to, offer, agentId !== undefined) : null;
     if (existing instanceof BrokerError || (existing && existing !== "accepted")) return existing;
     const now = clock.now();
     let row = await initialRequest({
@@ -410,7 +410,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   async function outgoingContacts(tx: StoreTx, userId: string) {
     const mine = await tx.listGrants(userId);
     const tags = await tx.listContactTags(userId);
-    return (await tx.listFriends(userId)).map((address) => ({
+    return (await tx.listContactAddresses(userId)).map((address) => ({
       address, ...(tags.has(address) ? { tag: tags.get(address)! } : {}),
       gives: categoriesOf(mine.filter((grant) => grant.granteeAddress === address)),
     }));
@@ -448,7 +448,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       sides.sort((a, b) => a.userId.localeCompare(b.userId));
       let removed = false;
       for (const { userId, address } of sides) {
-        removed = await tx.removeFriend(userId, address) || removed;
+        removed = await tx.removeContact(userId, address) || removed;
         await tx.setContactTag(userId, address, null);
         await grants.applySharing(tx, userId, address, []);
         await denyUnauthorizedInboxRequests(tx, userId);
@@ -895,7 +895,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         const parsed = Sharing.safeParse(sharing);
         if (!address.success || !parsed.success) throw new BrokerError("invalid_input", "Lo que compartes no es válido.");
         await store.tx(async (tx) => {
-          if (!(await tx.listFriends(o.userId)).includes(address.data)) throw notFound();
+          if (!(await tx.listContactAddresses(o.userId)).includes(address.data)) throw notFound();
           await grants.applySharing(tx, o.userId, address.data, parsed.data);
           await denyUnauthorizedInboxRequests(tx, o.userId);
         });
@@ -906,7 +906,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         const label = ContactTag.safeParse(tag);
         if (!address.success || !label.success) throw new BrokerError("invalid_input", "La etiqueta no es válida.");
         await store.tx(async (tx) => {
-          if (!(await tx.listFriends(o.userId)).includes(address.data)) throw notFound();
+          if (!(await tx.listContactAddresses(o.userId)).includes(address.data)) throw notFound();
           await tagContact(tx, o.userId, address.data, label.data);
           await grants.applySharing(tx, o.userId, address.data, (await presetsOf(tx, o.userId))[label.data]);
           await denyUnauthorizedInboxRequests(tx, o.userId);

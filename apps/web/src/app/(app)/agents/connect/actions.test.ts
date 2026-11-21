@@ -1,4 +1,4 @@
-import type { OwnerPort } from "@team-31/broker/client";
+import type { OwnerPort } from "@team-31/broker-client";
 import type { ActivityEvent, ActivityItem, RequestStatus } from "@team-31/protocol";
 import { describe, expect, it, vi } from "vitest";
 

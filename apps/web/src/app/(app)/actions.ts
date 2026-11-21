@@ -7,7 +7,6 @@ import { revalidatePath } from "next/cache";
 import { ownerClient } from "@/lib/broker";
 
 import { getOwner, readAsOwner, requireAddress } from "./owner";
-import { activityPageSize, parseActivityPage } from "./labels";
 
 import { actionError, type Feedback } from "./action-feedback";
 
@@ -17,13 +16,6 @@ export async function readHome() {
     return Promise.all([broker.pending(owner), broker.activity(owner, 4), broker.contacts(owner)]);
   });
   return [pending.filter((item) => item.tool !== "connect"), activity, incoming] as const;
-}
-
-export async function readActivity(input: unknown) {
-  const page = parseActivityPage(input);
-  const last = page * activityPageSize;
-  const { data: items } = await readAsOwner((owner) => ownerClient().activity(owner, last + 1));
-  return { items: items.slice(last - activityPageSize, last), hasNext: items.length > last };
 }
 
 export async function decide(requestId: string, _: Feedback, form: FormData): Promise<Feedback> {

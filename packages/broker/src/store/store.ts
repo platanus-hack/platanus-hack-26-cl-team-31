@@ -148,10 +148,10 @@ export interface StoreTx {
   // False when the grantor has no live grant with that id.
   revokeGrant(id: string, grantorUserId: string, at: Date): Promise<boolean>;
 
-  listFriends(userId: string): Promise<Address[]>;
+  listContactAddresses(userId: string): Promise<Address[]>;
   // True when this transaction creates a new membership.
-  addFriend(userId: string, address: Address): Promise<boolean>;
-  removeFriend(userId: string, address: Address): Promise<boolean>;
+  addContact(userId: string, address: Address): Promise<boolean>;
+  removeContact(userId: string, address: Address): Promise<boolean>;
   // The tag a holder put on each contact. A null tag removes it.
   listContactTags(userId: string): Promise<Map<Address, ContactTag>>;
   setContactTag(userId: string, address: Address, tag: ContactTag | null): Promise<void>;

@@ -17,7 +17,7 @@
     "@better-auth/oauth-provider": "1.7.18",
     "@team-31/agent-flow": "workspace:*",
     "@team-31/auth": "workspace:*",
-    "@team-31/broker": "workspace:*",
+    "@team-31/broker-client": "workspace:*",
     "@team-31/demo": "workspace:*",
     "@team-31/protocol": "workspace:^",
     "@team-31/telemetry": "workspace:*",

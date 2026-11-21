@@ -212,19 +212,19 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       return revoked.length > 0;
     },
 
-    async listFriends(userId) {
+    async listContactAddresses(userId) {
       const rows = await db.select({ address: friends.address }).from(friends)
         .where(eq(friends.userId, userId)).orderBy(asc(friends.address));
       return rows.map(({ address }) => parseStored(Address, address));
     },
 
-    async addFriend(userId, address) {
+    async addContact(userId, address) {
       const inserted = await db.insert(friends).values({ userId, address }).onConflictDoNothing()
         .returning({ address: friends.address });
       return inserted.length > 0;
     },
 
-    async removeFriend(userId, address) {
+    async removeContact(userId, address) {
       const removed = await db.delete(friends).where(and(eq(friends.userId, userId), eq(friends.address, address)))
         .returning({ address: friends.address });
       return removed.length > 0;

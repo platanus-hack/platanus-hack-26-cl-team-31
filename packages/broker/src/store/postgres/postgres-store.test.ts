@@ -414,9 +414,9 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect(await tx.listEvents([row.id])).toMatchObject([{ kind: "received" }]);
           expect(await tx.updateRequest(row.id, { guidance: "updated by runtime" }, row.version)).toBe(true);
           const friend = "alice@sideband.app";
-          expect(await tx.addFriend("bruno", friend)).toBe(true);
-          expect(await tx.addFriend("bruno", friend)).toBe(false);
-          expect(await tx.listFriends("bruno")).toEqual([friend]);
+          expect(await tx.addContact("bruno", friend)).toBe(true);
+          expect(await tx.addContact("bruno", friend)).toBe(false);
+          expect(await tx.listContactAddresses("bruno")).toEqual([friend]);
           const groupId = randomUUID();
           const categoryId = randomUUID();
           const group = { id: groupId, name: "Instituciones", members: [friend] };
@@ -441,7 +441,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([]);
           expect(await tx.changeContactGroup("bruno", groupId, { groupId, action: "delete" })).toBe(true);
           expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
-          expect(await tx.removeFriend("bruno", friend)).toBe(true);
+          expect(await tx.removeContact("bruno", friend)).toBe(true);
         });
       } finally {
         await runtime.close();

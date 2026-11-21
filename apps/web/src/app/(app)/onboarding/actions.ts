@@ -1,6 +1,6 @@
 "use server";
 
-import { BrokerError } from "@team-31/broker/client";
+import { BrokerError } from "@team-31/broker-client";
 import { LocalPart } from "@team-31/protocol";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
