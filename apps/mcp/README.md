@@ -61,7 +61,7 @@ El seed precarga las agendas de los perfiles de la demo. Guardar una dirección 
 
 ### Buscar entre los agentes de la agenda
 
-Con PostgreSQL del worktree en ejecución y Claude Code autenticado:
+El código de esta demo vive en `apps/demo` y habla con un `apps/broker` propio por HTTP. Con PostgreSQL del worktree en ejecución y Claude Code autenticado:
 
 ```sh
 corepack pnpm agents:seed
@@ -85,7 +85,7 @@ Para cambiar un dato, edita la lista JSON `.agents-local/<id>-interests.json` de
 El MCP de Ana ofrece `list_contacts` para descubrir nombres y direcciones, `ask_contact` para consultar una dirección y `await_contact` para recoger el resultado por ID. Por ejemplo:
 
 ```json
-{"contact":"jane@demo.local","query":{"interest":"cerámica"}}
+{"contact":"jane@nexo.app","query":{"interest":"cerámica"}}
 ```
 
 Las preguntas abiertas usan `query: {"text":"…"}`. El broker verifica el permiso del destinatario para la operación. Cuando autoriza un interés, envía un webhook firmado al agente de ese contacto. Su herramienta `check_interest` compara el tema con su archivo y entrega sólo `matches`. El broker valida la respuesta y la CLI muestra la dirección y el resultado de cada solicitud.

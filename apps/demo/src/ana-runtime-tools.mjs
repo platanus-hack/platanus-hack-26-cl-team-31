@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Address, ToolArgs } from "@team-31/protocol";
 import { z } from "zod";
-import { startDemoBroker } from "../../../packages/broker/scripts/demo-broker.mjs";
+import { startDemoBroker } from "./demo-broker.mjs";
 
 const [directoryJson, receipt] = process.argv.slice(2);
 const demo = await startDemoBroker(JSON.parse(directoryJson));
