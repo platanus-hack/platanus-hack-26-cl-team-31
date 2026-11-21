@@ -36,6 +36,11 @@ export function createWorker({ store, waker, config }: BrokerDeps, closePending:
       try {
         const { ok, retryable, ms, status } = await waker.wake(target.wakeTarget, {
           requestId: job.requestId, event: WAKE_EVENT,
+        }, {
+          attempt: job.attempt,
+          final: config.wakeRetryDelaysMs[job.attempt] === undefined,
+          userId: target.userId,
+          agentId: target.agentId,
         });
         // Adapters may return diagnostic text. Persist only structured metadata.
         result = { ok, retryable, ms, status };

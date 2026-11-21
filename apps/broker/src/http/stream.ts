@@ -4,7 +4,7 @@ import type { OwnerPort } from "@team-31/broker";
 import { routes } from "@team-31/protocol/http";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { logFailure } from "../log.js";
+import type { Telemetry } from "@team-31/telemetry";
 import type { AuthContext } from "./auth.js";
 
 const POLL_MS = 1_000;
@@ -15,6 +15,7 @@ export async function ownerStream(
   c: Context<AuthContext>,
   owner: OwnerPort,
   schema: typeof routes.ownerStream.response,
+  telemetry: Pick<Telemetry, "error">,
   shutdown?: AbortSignal,
 ) {
   const identity = c.get("web");
@@ -55,7 +56,7 @@ export async function ownerStream(
         items = await snapshot();
       }
     } catch (error) {
-      if (!signal.aborted) logFailure(routes.ownerStream.path, error);
+      if (!signal.aborted) telemetry.error(`GET ${routes.ownerStream.path}`, error);
     } finally {
       signal.removeEventListener("abort", abort);
     }

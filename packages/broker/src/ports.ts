@@ -19,6 +19,7 @@ import type {
   WakeTarget,
   Waker,
 } from "@team-31/protocol";
+import type { BrokerTelemetry } from "./core/events.js";
 import type { Store } from "./store/store.js";
 
 export interface AgentPort {
@@ -83,6 +84,10 @@ export type BrokerDeps = {
   signingKey: webcrypto.CryptoKey | KeyObject;
   nonceKey: Uint8Array;
   config: { requestTtlSeconds: number; wakeRetryDelaysMs: number[]; addressDomain: string };
+  // Lifecycle, policy and permission events (docs/admin.md#3). Optional so the core stays decoupled.
+  telemetry?: BrokerTelemetry;
 };
+
+export type { BrokerTelemetry } from "./core/events.js";
 
 export type CreateBroker = (deps: BrokerDeps) => BrokerCore;

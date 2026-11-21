@@ -6,6 +6,7 @@ import { routes } from "@team-31/protocol/http";
 import { SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
+import { createTelemetry, memorySink } from "@team-31/telemetry";
 import { createMemoryRateLimiter } from "./http/rate-limit.js";
 import { createHttpServer } from "./http/server.js";
 import { startWorker } from "./worker.js";
@@ -151,7 +152,7 @@ describe("HTTP interno del broker", () => {
     const asked = await call(app, routes.agentAsk, { token: aliceBot, body: { ...question, userId: "carla" } });
     expect(asked).toMatchObject({ final: false, waitingFor: "agent" });
     await broker.tick(new Date());
-    expect(waker.wake).toHaveBeenCalledWith(mcpEvents, { event: "nexo.request.created", requestId: asked.requestId });
+    expect(waker.wake).toHaveBeenCalledWith(mcpEvents, { event: "nexo.request.created", requestId: asked.requestId }, expect.objectContaining({ attempt: 1 }));
     const inbox = (await call(app, routes.agentInbox, { token: brunoBot })).items;
     expect(inbox).toHaveLength(1);
     const item = inbox[0]!;
@@ -203,22 +204,32 @@ describe("HTTP interno del broker", () => {
 
   it("valida JSON, query y respuestas y correlaciona los 500 sin publicar datos", async () => {
     const { broker } = fixture();
-    const app = createHttpServer({ broker, publicKeys });
+    const sink = memorySink();
+    const telemetry = createTelemetry({ service: "broker", sink, heartbeatMs: 0, lifecycle: false });
+    const app = createHttpServer({ broker, publicKeys, telemetry });
     const [webToken, mcpToken] = await Promise.all([owner("alice"), agent("alice")]);
     await expectError(await request(app, routes.agentAsk, { token: mcpToken, raw: "{" }), 400, "invalid_input");
     await expectError(await request(app, routes.agentAsk, { token: mcpToken, body: { tool: "unknown" } }), 400, "invalid_input");
     await expectError(await request(app, routes.ownerActivity, { token: webToken, path: "/v1/owner/activity?limit=0" }), 400, "invalid_input");
 
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Expected 4xx errors are not internal errors.
+    expect(sink.find("error")).toEqual([]);
+
     const me = vi.spyOn(broker.owner, "me").mockResolvedValue({ userId: "alice", address: "private-metadata" });
     const invalid = await request(app, routes.ownerMe, { token: webToken });
     const errorId = invalid.headers.get("X-Error-Id");
     expect(errorId).toBeTruthy();
     await expectError(invalid, 500, "internal");
-    expect(log).toHaveBeenCalledWith("[broker] Error interno", expect.objectContaining({ errorId, type: "invalid_schema" }));
+    expect(sink.find("error")).toEqual([expect.objectContaining({
+      errorId, userId: "alice", attrs: expect.objectContaining({ operation: "GET /v1/owner/me", type: "invalid_schema" }),
+    })]);
+    expect(sink.find("http.request").at(-1)).toMatchObject({
+      errorId, status: "error", attrs: { route: "/v1/owner/me", status: 500, bucket: "5xx" },
+    });
     me.mockRejectedValue(new Error("private-metadata"));
     await expectError(await request(app, routes.ownerMe, { token: webToken }), 500, "internal");
-    expect(JSON.stringify(log.mock.calls)).not.toContain("private-metadata");
+    expect(sink.find("error")).toHaveLength(2);
+    expect(JSON.stringify(sink.records)).not.toContain("private-metadata");
   });
 
   it("limita por usuario dentro de cada grupo y aplica Retry-After", async () => {
@@ -289,7 +300,7 @@ describe("HTTP interno del broker", () => {
     const token = await agent("alice");
     await broker.owner.setGrant({ userId: "bruno" }, grantToAlice);
     const asked = await call(app, routes.agentAsk, { token, body: question });
-    const stop = startWorker(broker);
+    const stop = startWorker(broker, { error: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(2_000);
       expect(await call(app, routes.agentStatus, { token, path: `/v1/agent/requests/${asked.requestId}` }))
@@ -306,7 +317,7 @@ describe("HTTP interno del broker", () => {
     let complete!: (value: typeof report) => void;
     const inflight = new Promise<typeof report>((resolve) => { complete = resolve; });
     const tick = vi.fn().mockReturnValueOnce(inflight).mockResolvedValue(report);
-    const stop = startWorker({ tick });
+    const stop = startWorker({ tick }, { error: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(3_000);
       expect(tick).toHaveBeenCalledTimes(1);

@@ -148,6 +148,7 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 - Después de `pnpm bootstrap`, inicia solo el broker con `pnpm dev --filter @team-31/broker-service`. `pnpm env:init` actualiza worktrees existentes y genera `BROKER_PORT` y `BROKER_URL`.
 - Conserva en `.env.local` las llaves que generó `pnpm bootstrap`. Configura `REQUEST_TTL_SECONDS` o `WAKE_RETRY_DELAYS_MS` para probar plazos y reintentos más cortos.
 - `pnpm bootstrap` genera `BROKER_DATABASE_PASSWORD`, aplica las migraciones del broker y prepara el rol `nexo_broker`. El broker local se conecta con ese rol. `DATABASE_URL` del worktree se usa para migrar y para los demás servicios que ya la consumen. Para repetir la preparación de la base del broker, ejecuta `pnpm nexo:broker:migrate`.
+- Ese mismo paso (`db:prepare`, que también corre al iniciar `pnpm dev` del broker) aplica las migraciones de `ops` después de `nexo.*` y del esquema OAuth, ejecuta `ops.refresh_views()` y otorga a `nexo_broker` `INSERT` en `ops.events` (permiso directo: el rol no puede ser miembro de `nexo_telemetry_writer`). Así el broker escribe su telemetría con su propio rol; `TELEMETRY_DATABASE_URL` la redirige a otra conexión.
 - `BROKER_HOST` usa `127.0.0.1` por defecto. Para correrlo en Docker, compila con `pnpm build --filter @team-31/broker-service` y ejecuta `docker compose --env-file .env --env-file .env.local --profile nexo up -d broker`. Compose solo publica el puerto en loopback.
 - `WAKE_ALLOW_INSECURE=1` permite avisos HTTP locales durante el desarrollo. Consulta [la guía del broker](apps/broker/README.md) para los detalles de Postgres, los avisos y el stream de actividad.
 
@@ -191,14 +192,25 @@ Nexo se depura en producción con `apps/admin` (panel + MCP de administración).
 
 En la descripción del PR agrega una línea **«Cómo se ve en el admin:»** con el evento, la vista o la pantalla donde se observa el cambio.
 
-Hoy solo `apps/admin` importa `@team-31/telemetry`. Broker, MCP, web y `apps/server` registran con `console` hasta ADM-07, y `packages/ops/sql/` solo contiene `0001_events.sql`. Al tocar uno de esos servicios, instrumenta lo que cambias con `createTelemetry` y reemplaza los `// TODO(admin): <evento>` del archivo por la llamada real.
+Todos los servicios están instrumentados (ADM-07). Al tocar uno, extiende su telemetría en el mismo lugar:
+
+| Servicio | Dónde | Eventos |
+| --- | --- | --- |
+| broker HTTP (`broker`) y worker (`worker`) | `apps/broker/src/telemetry.ts`, `http/server.ts`, `http/auth.ts` | `http.request`, `auth.service_jwt.rejected`, `http.rate_limited`, `error` (con `X-Error-Id`) y latido de cada servicio |
+| core del broker | `packages/broker/src/core/events.ts` (`BrokerDeps.telemetry`, opcional) | `broker.policy.evaluated`, `broker.request.created`/`status_changed`/`closed`, `broker.reply.rejected`, `broker.owner.decided`, `admin.action`, `auth.scope.denied`. Se registran dentro de la transacción y se emiten solo si confirma |
+| avisos | `packages/wake` (`createWaker({ telemetry })`, inyectada) | `wake.attempt` (span por intento) y `wake.exhausted` |
+| MCP | `apps/mcp/src/http.ts`, `tools/result.ts`, `events.ts` | `http.request`, `auth.token.verified`/`rejected`, `mcp.tool.call` (también `events/*`), `auth.scope.denied`. En stdio la telemetría nunca va a stdout |
+| web | `apps/web/src/lib/telemetry.ts` (singleton), `instrumentation.ts` | `http.request` (`observeRoute`), `auth.oauth.consent`, `error` (también `onRequestError`) |
+| coordinación | `apps/server/src/http.ts` | `http.request`, `coordination.tool.call`, `auth.token.rejected`, `error` |
+
+Las llamadas internas al broker usan `tracedFetch` (opción `fetch` de `createAgentClient`/`createOwnerClient`), así que una solicitud por el MCP deja en `ops.events` spans de `mcp` y `broker` con el mismo `trace_id` y `request_id` (prueba en `e2e/src/trace.test.ts`, que no requiere el stack).
 
 ## Admin y observabilidad
 
 - App en `apps/admin`: SPA React + Vite + shadcn (preset Nova, Radix) en `src/`, servidor Hono (API, auth y MCP admin) en `server/` y contrato compartido en `shared/`. Instrucciones en [apps/admin/AGENTS.md](apps/admin/AGENTS.md).
 - `pnpm dev --filter @team-31/admin` levanta la SPA en `ADMIN_PORT` (Vite, con proxy de `/api` y `/mcp`) y el servidor admin en `ADMIN_API_PORT` (`tsx watch`). Acceso por `ADMIN_OPERATORS`/`ADMIN_VIEWERS` (Google con `ADMIN_GOOGLE_CLIENT_ID/SECRET`) o, fuera de producción, `ADMIN_DEV_AUTH=1` y `POST /api/admin/dev-login`. Esquema `admin` en producción: `pnpm with-env pnpm --filter @team-31/admin admin:auth:migrate`. Compose: servicio `admin` del perfil `nexo` (todo en `ADMIN_PORT`, solo loopback). Detalles en [apps/admin/README.md](apps/admin/README.md).
-- Esquema `ops` en Postgres (`packages/ops`): `ops.events` (telemetría) y vistas redactadas `ops.v_*`. Migrar: `pnpm --filter @team-31/ops build && pnpm with-env pnpm --filter @team-31/ops migrate`.
-- Telemetría: `@team-31/telemetry` (`createTelemetry`, `tracedFetch`) y `@team-31/telemetry/hono` (`honoTelemetry`). Instrumentación en 5 líneas y catálogo en [packages/telemetry/README.md](packages/telemetry/README.md). `TELEMETRY_SINK=postgres|console|off`.
+- Esquema `ops` en Postgres (`packages/ops`): `ops.events` (telemetría) y vistas redactadas `ops.v_*`. `pnpm bootstrap` lo migra (vía `pnpm nexo:broker:migrate`, ver Broker Nexo). A mano: `pnpm --filter @team-31/ops build && pnpm with-env pnpm --filter @team-31/ops migrate`. `applyOpsMigrations` siempre termina con `ops.refresh_views()`, que crea las vistas cuyas tablas ya existen: vuelve a migrar después de crear tablas nuevas.
+- Telemetría: `@team-31/telemetry` (`createTelemetry`, `tracedFetch`) y `@team-31/telemetry/hono` (`honoTelemetry`). Instrumentación en 5 líneas y catálogo en [packages/telemetry/README.md](packages/telemetry/README.md). `TELEMETRY_SINK=postgres|console|off`; `postgres` usa `TELEMETRY_DATABASE_URL` o `DATABASE_URL`. En dev los servicios escriben en `ops.events` del worktree; Compose pasa ambas variables a broker, MCP y coordinación.
 - Variables `ADMIN_*` y `TELEMETRY_*` en `.env.local.example`.
 - UI: usa la skill `shadcn` (`.agents/skills/shadcn`, enlazada en `.claude/skills`) y el MCP `shadcn` de `.mcp.json`. Componentes con `pnpm dlx shadcn@latest add <componente>` desde `apps/admin`.
 

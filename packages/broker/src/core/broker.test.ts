@@ -296,7 +296,11 @@ describe("cierre y avisos", () => {
     advance(30_000);
     expect((await broker.tick(now)).wakesFailed).toBe(1);
     await expectFinal(alice, view.requestId, "unanswered", "delivery_failed");
-    expect(wake.mock.calls).toEqual(Array.from({ length: 3 }, () => [webhook, { requestId: view.requestId, event: WAKE_EVENT }]));
+    expect(wake.mock.calls).toEqual([1, 2, 3].map((attempt) => [
+      webhook,
+      { requestId: view.requestId, event: WAKE_EVENT },
+      { attempt, final: attempt === 3, userId: bruno.userId, agentId: bruno.agentId },
+    ]));
     expect((await broker.owner.agents(bruno))[0]).toMatchObject({ lastWakeAt: now.toISOString(), wakeKind: "standard_webhook" });
     expect(JSON.stringify(await broker.owner.activity(bruno))).not.toContain("diagnóstico sensible");
   });
@@ -346,7 +350,7 @@ describe("cierre y avisos", () => {
     await broker.agent.reply(bruno, { ...item, outcome: "needs_owner" });
     await broker.owner.decide(bruno, view.requestId, { kind: "approve_once" });
     expect((await broker.tick(now)).wakesOk).toBe(1);
-    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: view.requestId, event: WAKE_EVENT });
+    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: view.requestId, event: WAKE_EVENT }, expect.objectContaining({ attempt: 1, final: false, userId: bruno.userId }));
   });
 });
 
@@ -363,7 +367,7 @@ describe("conexiones y prueba de aviso", () => {
     await expect(broker.agent.reply(another, { ...item, nonce: deriveNonce(nonceKey, ping.requestId), outcome: "no_data" }))
       .rejects.toMatchObject({ code: "not_found" });
     await broker.tick(now);
-    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: ping.requestId, event: WAKE_EVENT });
+    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: ping.requestId, event: WAKE_EVENT }, expect.objectContaining({ attempt: 1, final: false, userId: bruno.userId }));
     await broker.agent.reply(bruno, { ...item, outcome: "no_data" });
     const agents = await broker.owner.agents(bruno);
     expect(agents.find(({ agentId }) => agentId === bruno.agentId)).toMatchObject({ verifiedAt: now.toISOString(), wakeKind: "standard_webhook" });

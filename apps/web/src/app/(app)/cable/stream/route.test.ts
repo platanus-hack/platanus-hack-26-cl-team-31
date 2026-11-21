@@ -1,3 +1,4 @@
+import { createTelemetry, memorySink } from "@team-31/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getSession } from "../../../../lib/auth";
@@ -7,8 +8,14 @@ import { GET } from "./route";
 vi.mock("../../../../lib/auth", () => ({ getSession: vi.fn() }));
 vi.mock("../../../../lib/broker", () => ({
   brokerUrl: () => "https://broker.example.test",
+  brokerFetch: () => (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),
   getServiceToken: vi.fn(),
 }));
+
+// The web singleton (lib/telemetry) reads this holder: tests write to memory, never to a database.
+const sink = memorySink();
+(globalThis as unknown as { __nexoWebTelemetry: unknown }).__nexoWebTelemetry =
+  createTelemetry({ service: "web", sink, heartbeatMs: 0, lifecycle: false });
 
 const activity = {
   requestId: "request-123",
@@ -48,6 +55,7 @@ function frames(...chunks: string[]) {
 }
 
 afterEach(() => {
+  sink.clear();
   vi.resetAllMocks();
   vi.unstubAllGlobals();
 });
@@ -87,6 +95,9 @@ describe("GET /cable/stream", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Content-Type")).toBe("text/event-stream; charset=utf-8");
     expect(response.headers.has("X-Internal-Token")).toBe(false);
+    expect(sink.find("http.request")).toEqual([expect.objectContaining({
+      service: "web", userId: "ana", attrs: { method: "GET", route: "/cable/stream", status: 200, bucket: "2xx" },
+    })]);
 
     const body = await response.text();
     const { decisionReason, internalReason, ...publicActivity } = activity;
@@ -133,5 +144,16 @@ describe("GET /cable/stream", () => {
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("reports a broker failure with X-Error-Id and without its message", async () => {
+    session("ana");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("detalle privado del broker")));
+    const response = await GET(new Request(streamUrl));
+    expect(response.status).toBe(502);
+    const [error] = sink.find("error");
+    expect(error).toMatchObject({ userId: "ana", attrs: expect.objectContaining({ operation: "GET /cable/stream" }) });
+    expect(response.headers.get("X-Error-Id")).toBe(error?.errorId);
+    expect(JSON.stringify(sink.records)).not.toContain("detalle privado");
   });
 });

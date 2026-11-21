@@ -19,6 +19,7 @@
     "@team-31/auth": "workspace:*",
     "@team-31/broker": "workspace:*",
     "@team-31/protocol": "workspace:*",
+    "@team-31/telemetry": "workspace:*",
     "zod": "^4.6.7"
   },
   "devDependencies": {

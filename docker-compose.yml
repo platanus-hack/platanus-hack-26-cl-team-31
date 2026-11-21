@@ -37,6 +37,9 @@ services:
       REQUEST_TTL_SECONDS: ${REQUEST_TTL_SECONDS:-900}
       WAKE_RETRY_DELAYS_MS: ${WAKE_RETRY_DELAYS_MS:-10000,30000}
       WAKE_ALLOW_INSECURE: ${WAKE_ALLOW_INSECURE:-0}
+      # Telemetría (ops.events). Sin TELEMETRY_DATABASE_URL usa DATABASE_URL: nexo_broker tiene INSERT en ops.events.
+      TELEMETRY_SINK: ${TELEMETRY_SINK:-}
+      TELEMETRY_DATABASE_URL: ${TELEMETRY_DATABASE_URL:-}
     ports:
       - "127.0.0.1:${BROKER_PORT:-}:${BROKER_PORT:-}"
     depends_on:
@@ -54,6 +57,8 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app
       COORDINATION_PORT: ${COORDINATION_PORT}
       COORDINATION_HOST: 0.0.0.0
+      TELEMETRY_SINK: ${TELEMETRY_SINK:-}
+      TELEMETRY_DATABASE_URL: ${TELEMETRY_DATABASE_URL:-}
     ports:
       - "127.0.0.1:${COORDINATION_PORT}:${COORDINATION_PORT}"
     depends_on:
@@ -85,8 +90,14 @@ services:
       BROKER_URL: ${BROKER_URL:-}
       MCP_SERVICE_PRIVATE_KEY: ${MCP_SERVICE_PRIVATE_KEY:-}
       MCP_DEV_AUTH: ${MCP_DEV_AUTH:-0}
+      # El MCP no tiene base propia: escribe su telemetría en el Postgres del stack.
+      TELEMETRY_SINK: ${TELEMETRY_SINK:-}
+      TELEMETRY_DATABASE_URL: ${TELEMETRY_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/app}
     ports:
       - "127.0.0.1:${MCP_PORT}:${MCP_PORT}"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   # Admin de Nexo (SPA + API + MCP admin en un solo puerto). Compila antes con
   # `pnpm build --filter @team-31/admin...`. Ver apps/admin/README.md.

@@ -4,12 +4,32 @@ import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpGuard } from "@team-31/auth/resource";
 import type { AgentPort } from "@team-31/broker/client";
 import { Scope, type Principal } from "@team-31/protocol";
+import type { Telemetry } from "@team-31/telemetry";
 import { createServer } from "./server.js";
+import { silentTelemetry } from "./telemetry.js";
 
 const mcpPath = "/mcp";
 const metadataPath = "/.well-known/oauth-protected-resource";
 
-export function createHttpServer(options: Parameters<typeof createMcpGuard>[0], agent: AgentPort) {
+// Route pattern for http.request: never the raw path or its query.
+function routeOf(path: string | undefined): string {
+  if (path === mcpPath || path === "/healthz") return path;
+  if (path === metadataPath || path === metadataPath + mcpPath) return path;
+  return "unmatched";
+}
+
+// Code of a rejected access token. The token and the verifier's message are never recorded.
+function rejectionReason(authorization: string | undefined, status: number): string {
+  if (!authorization) return "missing_token";
+  if (!/^(Bearer|DPoP) \S+$/i.test(authorization)) return "malformed_header";
+  return status === 401 ? "invalid_token" : `http_${status}`;
+}
+
+export function createHttpServer(
+  options: Parameters<typeof createMcpGuard>[0],
+  agent: AgentPort,
+  telemetry: Telemetry = silentTelemetry(),
+) {
   const guard = createMcpGuard(options);
   const resource = new URL(options.audience);
   const metadata = {
@@ -20,22 +40,48 @@ export function createHttpServer(options: Parameters<typeof createMcpGuard>[0], 
   };
 
   return createNodeServer((req, res) => {
-    void handle(req, res).catch(() => {
-      console.error("[nexo-mcp] Error al procesar una solicitud HTTP.");
-      if (!res.headersSent) {
-        res.writeHead(500, { "Content-Type": "application/json" }).end(JSON.stringify({
-          jsonrpc: "2.0",
-          id: null,
-          error: { code: ErrorCode.InternalError, message: "No se pudo procesar la solicitud." },
-        }));
-      } else if (!res.writableEnded) {
-        res.end();
-      }
-    });
+    const path = req.url?.split("?", 1)[0];
+    const route = routeOf(path);
+    const run = route === "/healthz" ? () => handle(req, res, path) : () => observed(req, res, path, route);
+    void run().catch((error: unknown) => failed(req, res, route, error));
   });
 
-  async function handle(req: IncomingMessage, res: ServerResponse) {
-    const path = req.url?.split("?", 1)[0];
+  // Span http.request that continues the caller's traceparent and answers X-Trace-Id.
+  function observed(req: IncomingMessage, res: ServerResponse, path: string | undefined, route: string) {
+    return telemetry.span("http.request", {
+      traceparent: typeof req.headers.traceparent === "string" ? req.headers.traceparent : null,
+      attrs: { method: req.method ?? "UNKNOWN", route },
+    }, async (span) => {
+      if (!res.headersSent) res.setHeader("X-Trace-Id", span.traceId);
+      try {
+        await handle(req, res, path);
+      } catch (error) {
+        span.setErrorId(failed(req, res, route, error));
+      }
+      const status = res.statusCode;
+      span.set({ status, bucket: `${Math.floor(status / 100)}xx` });
+      if (status >= 500) {
+        span.setStatus("error");
+        span.setLevel("error");
+      }
+    });
+  }
+
+  function failed(req: IncomingMessage, res: ServerResponse, route: string, error: unknown): string {
+    const errorId = telemetry.error(`${req.method ?? "UNKNOWN"} ${route}`, error);
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json", "X-Error-Id": errorId }).end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: ErrorCode.InternalError, message: "No se pudo procesar la solicitud." },
+      }));
+    } else if (!res.writableEnded) {
+      res.end();
+    }
+    return errorId;
+  }
+
+  async function handle(req: IncomingMessage, res: ServerResponse, path: string | undefined) {
     if (req.method === "GET") {
       if (path === "/healthz") {
         res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true }));
@@ -71,16 +117,22 @@ export function createHttpServer(options: Parameters<typeof createMcpGuard>[0], 
       return new Response(null, { status: 204 });
     });
 
+    const authorization = req.headers.authorization;
+    const devToken = options.devAuth === true && /^Bearer dev:/i.test(authorization ?? "");
+    const issuer = devToken ? "dev" : options.issuer;
     if (!principal) {
+      telemetry.emit("auth.token.rejected", { attrs: { issuer, reason: rejectionReason(authorization, authResult.status) } });
       res.writeHead(authResult.status, Object.fromEntries(authResult.headers)).end(await authResult.text());
       return;
     }
+    telemetry.identify({ userId: principal.userId, agentId: principal.agentId });
+    telemetry.emit("auth.token.verified", { attrs: { issuer, reason: devToken ? "dev_token" : "jwt" } });
     if (res.destroyed) return;
 
-    const server = createServer(principal, agent);
+    const server = createServer(principal, agent, telemetry);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.once("close", () => {
-      void server.close().catch(() => console.error("[nexo-mcp] Error al cerrar la conexión MCP."));
+      void server.close().catch((error: unknown) => telemetry.error("mcp.close", error));
     });
     await server.connect(transport);
     await transport.handleRequest(req, res);

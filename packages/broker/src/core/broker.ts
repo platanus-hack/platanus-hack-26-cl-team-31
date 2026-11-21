@@ -27,6 +27,7 @@ import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
 import {
   toActivityItem, toAgentConnection, toGrant, toInboxItem, toOwnerPendingItem, toRequesterView,
 } from "./views.js";
+import { createLifecycleEvents } from "./events.js";
 import { createWorker } from "./worker.js";
 
 // A request stays authorized while the recipient's grant to the sender still covers its fields.
@@ -49,13 +50,45 @@ function expired(): BrokerError {
   return new BrokerError("expired", "La solicitud venció.");
 }
 
-function requireScope(principal: Principal, scope: Scope): void {
-  if (!principal.scopes.includes(scope)) throw new BrokerError("forbidden", "El agente no tiene permiso para esta acción.");
+type Actor = "agent" | "owner" | "broker" | "admin";
+
+// Code of a rejected reply for broker.reply.rejected (never the message).
+function rejectionCode(error: BrokerError) {
+  switch (error.code) {
+    case "forbidden": return "nonce";
+    case "expired": return "expired";
+    case "invalid_input": return "schema";
+    case "not_found": return "not_recipient";
+    default: return "closed";
+  }
 }
 
 export function createBroker(deps: BrokerDeps): BrokerCore {
-  const { clock, config, nonceKey, signingKey, store, waker } = deps;
+  const { clock, config, nonceKey, signingKey, waker } = deps;
+  const events = createLifecycleEvents(deps.store, deps.telemetry);
+  const { store, record } = events;
+  const observedDeps: BrokerDeps = { ...deps, store };
   const systemAddress = Address.parse(`system@${config.addressDomain}`);
+
+  function requireScope(principal: Principal, scope: Scope, operation: string): void {
+    if (principal.scopes.includes(scope)) return;
+    events.emit("auth.scope.denied", {
+      userId: principal.userId, agentId: principal.agentId, attrs: { scope, operation },
+    });
+    throw new BrokerError("forbidden", "El agente no tiene permiso para esta acción.");
+  }
+
+  // One status_changed per persisted transition, plus closed when it reaches a final state.
+  function recordTransition(tx: StoreTx, before: RequestRow, after: RequestRow, by: Actor): void {
+    record(tx, "broker.request.status_changed", {
+      requestId: before.id, attrs: { from: before.status, to: after.status, by },
+    });
+    if (after.closedAt) {
+      record(tx, "broker.request.closed", {
+        requestId: before.id, attrs: { outcome: after.status, escalated: after.escalated },
+      });
+    }
+  }
 
   function deadline(now: Date): Date {
     return new Date(now.getTime() + config.requestTtlSeconds * 1000);
@@ -105,6 +138,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const final = await finalize(transition(row, outcome), outcome, at);
     if (!await saveTransition(tx, row, final)) return false;
     await tx.appendEvent({ requestId: row.id, at, kind: "delivery", status: outcome, ...(code ? { code } : {}) });
+    recordTransition(tx, row, final, code?.startsWith("admin_") ? "admin" : "broker");
     return true;
   }
 
@@ -136,8 +170,19 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     });
   }
 
-  async function recordNew(tx: StoreTx, row: RequestRow, now: Date) {
+  async function recordNew(tx: StoreTx, row: RequestRow, now: Date, rule: string, agentId?: string) {
     await tx.insertRequest(row);
+    record(tx, "broker.request.created", {
+      requestId: row.id,
+      userId: row.fromUserId ?? row.toUserId,
+      ...(agentId ? { agentId } : {}),
+      attrs: { tool: row.tool, rule, ...(row.targetAgentId ? { targetAgentId: row.targetAgentId } : {}) },
+    });
+    if (row.closedAt) {
+      record(tx, "broker.request.closed", {
+        requestId: row.id, attrs: { outcome: row.status, escalated: row.escalated },
+      });
+    }
     await tx.appendEvent({ requestId: row.id, at: now, kind: "received" });
     await tx.appendEvent({ requestId: row.id, at: now, kind: "permission", status: row.status });
     if (row.status === "awaiting_agent") await enqueue(tx, row, now, row.version);
@@ -154,6 +199,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       const now = clock.now();
       const denied = await finalize(transition(row, "denied"), "denied", now);
       if (!await saveTransition(tx, row, denied)) throw closed();
+      recordTransition(tx, row, denied, "owner");
       await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: "denied" });
     }
   }
@@ -161,7 +207,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   return {
     agent: {
       async capabilities(p, to) {
-        requireScope(p, "nexo:ask");
+        requireScope(p, "nexo:ask", "agent.capabilities");
         return store.tx(async tx => {
           await activeAgent(tx, p);
           const from = (await tx.getUser(p.userId))?.address;
@@ -173,7 +219,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async ask(p, input) {
-        requireScope(p, "nexo:ask");
+        requireScope(p, "nexo:ask", "agent.ask");
         const parsed = AskInput.safeParse(input);
         if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
         const { to, tool, args, purpose } = parsed.data;
@@ -188,6 +234,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             fromUserId: p.userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
           }, now);
           const grant = recipient && await tx.getGrant(recipient.userId, from, tool);
+          // Stable rule code for telemetry: `rule` and `decisionReason` are display text.
+          const ruleCode = grant ? "grant" : recipient ? "no_grant" : "no_recipient";
+          record(tx, "broker.policy.evaluated", {
+            requestId: row.id, userId: p.userId, agentId: p.agentId,
+            attrs: { tool, decision: grant ? "allow" : "deny", rule: ruleCode },
+          });
           if (grant) {
             const rule = `Permiso para ${tool}: ${grant.fields.join(", ")}`;
             row = { ...row, status: "awaiting_agent", allowedFields: grant.fields, rule };
@@ -195,7 +247,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
             row = await finalize({ ...row, decisionReason }, "denied", now);
           }
-          await recordNew(tx, row, now);
+          await recordNew(tx, row, now, ruleCode, p.agentId);
           return toRequesterView(row);
         });
         if (view instanceof BrokerError) throw view;
@@ -203,7 +255,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async inbox(p) {
-        requireScope(p, "nexo:inbox");
+        requireScope(p, "nexo:inbox", "agent.inbox");
         return store.tx(async (tx) => {
           await activeAgent(tx, p);
           const address = (await tx.getUser(p.userId))?.address;
@@ -216,15 +268,19 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async reply(p, input) {
-        requireScope(p, "nexo:reply");
+        requireScope(p, "nexo:reply", "agent.reply");
         const result = await store.tx<ReplyReceipt | BrokerError>(async (tx) => {
           const connection = await activeAgent(tx, p);
           const row = await tx.getRequest(input.requestId, { toUserId: p.userId });
-          if (!row || (row.targetAgentId !== undefined && row.targetAgentId !== p.agentId)) return notFound();
+          if (!row || (row.targetAgentId !== undefined && row.targetAgentId !== p.agentId)) {
+            record(tx, "broker.reply.rejected", { requestId: input.requestId, attrs: { code: "not_recipient" } });
+            return notFound();
+          }
 
           const now = clock.now();
           async function reject(error: BrokerError): Promise<BrokerError> {
             await tx.appendEvent({ requestId: input.requestId, at: now, kind: "response", code: error.code });
+            record(tx, "broker.reply.rejected", { requestId: input.requestId, attrs: { code: rejectionCode(error) } });
             return error;
           }
           if (row.status !== "awaiting_agent") return reject(closed());
@@ -265,6 +321,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             droppedFields: droppedFields.filter((field) => declaredFields.includes(field)),
           };
           if (!await saveTransition(tx, row, changed)) return reject(closed());
+          recordTransition(tx, row, changed, "agent");
           await tx.appendEvent({ requestId: row.id, at: now, kind: "response", status: changed.status });
           if (changed.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
           if (row.targetAgentId !== undefined) await tx.upsertAgentConnection({ ...connection, verifiedAt: now });
@@ -276,7 +333,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async status(p, id) {
-        requireScope(p, "nexo:status");
+        requireScope(p, "nexo:status", "agent.status");
         const view = await store.tx(async (tx) => {
           await activeAgent(tx, p);
           const row = await tx.getRequest(id, { fromUserId: p.userId });
@@ -292,8 +349,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async connectWake(p, target) {
-        // TODO(admin): registrar la decisión de permiso de suscripción con userId y agentId.
-        requireScope(p, WAKE_SUBSCRIPTION_SCOPE);
+        requireScope(p, WAKE_SUBSCRIPTION_SCOPE, "agent.connectWake");
         const parsed = WakeTarget.safeParse(target);
         if (!parsed.success) throw new BrokerError("invalid_input", "La configuración del aviso no es válida.");
         const wakeTarget = parsed.data;
@@ -311,8 +367,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async disconnectWake(p, subscriptionId) {
-        // TODO(admin): registrar la decisión de permiso de cancelación con userId y agentId.
-        requireScope(p, WAKE_SUBSCRIPTION_SCOPE);
+        requireScope(p, WAKE_SUBSCRIPTION_SCOPE, "agent.disconnectWake");
         await store.tx(async (tx) => {
           const connection = await activeAgent(tx, p);
           if (connection.wakeTarget.kind !== "mcp_events" || connection.wakeTarget.subscriptionId !== subscriptionId) {
@@ -345,7 +400,6 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async setGrant(o, input) {
-        // TODO(admin): emitir grant.set con userId cuando el broker tenga telemetría (ADM-07).
         const parsed = GrantInput.safeParse(input);
         if (!parsed.success) throw new BrokerError("invalid_input", "El permiso no es válido.");
         const { grantee, tool, fields } = parsed.data;
@@ -356,6 +410,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const grant = await tx.putGrant({
             id: randomUUID(), grantorUserId: o.userId, granteeAddress: grantee, tool, fields, createdAt: clock.now(),
           });
+          // The grantee address stays out of telemetry: only the grant id, tool and field count.
+          record(tx, "broker.grant.set", {
+            userId: o.userId, attrs: { grantId: grant.id, tool, fields: fields.length },
+          });
           // Narrowing an existing grant leaves pending requests that expect the old fields.
           await cancelUnauthorized(tx, o.userId);
           return toGrant(grant);
@@ -363,9 +421,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async revokeGrant(o, grantId) {
-        // TODO(admin): emitir grant.revoked con userId cuando el broker tenga telemetría (ADM-07).
         await store.tx(async (tx) => {
           if (!await tx.revokeGrant(grantId, o.userId, clock.now())) throw notFound();
+          record(tx, "broker.grant.revoked", { userId: o.userId, attrs: { grantId } });
           await cancelUnauthorized(tx, o.userId);
         });
       },
@@ -415,6 +473,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             changed = await finalize(transition(row, "answered"), "answered", now, parseResult(row.tool, decision.result));
           }
           if (!await saveTransition(tx, row, changed)) throw closed();
+          record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: decision.kind } });
+          recordTransition(tx, row, changed, "owner");
           await tx.appendEvent({ requestId, at: now, kind: "permission", status: changed.status });
           if (decision.kind === "approve_once") {
             await enqueue(tx, row, now, row.version + 1);
@@ -455,7 +515,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             rule: "Prueba de conexión solicitada por el dueño",
             allowedFields: fieldsOf("question"),
           };
-          await recordNew(tx, row, now);
+          await recordNew(tx, row, now, "ping");
           return { requestId: row.id };
         });
       },
@@ -465,8 +525,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
     },
 
-    admin: createAdminPort(deps, { closePending, enqueue }),
+    admin: createAdminPort(observedDeps, { closePending, enqueue, record }),
 
-    tick: createWorker(deps, closePending),
+    tick: createWorker(observedDeps, closePending),
   };
 }

@@ -7,14 +7,19 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ownerClient } from "@/lib/broker";
+import { getTelemetry } from "@/lib/telemetry";
 
 import { getOwner, requireAddress } from "./owner";
 import { activityPageSize, validPage } from "./labels";
 
 type Feedback = { error?: string; message?: string };
 
-function actionError(error: unknown, fallback: string) {
-  if (!(error instanceof BrokerError)) return fallback;
+// Domain errors become a message; anything else is recorded (without its message) before the fallback.
+function actionError(operation: string, error: unknown, fallback: string) {
+  if (!(error instanceof BrokerError) || error.code === "internal") {
+    getTelemetry().error(`action ${operation}`, error);
+    return fallback;
+  }
   switch (error.code) {
     case "not_found": return "El elemento ya no está disponible.";
     case "expired": return "La solicitud venció.";
@@ -37,7 +42,7 @@ export async function claimAddress(_: Feedback, form: FormData): Promise<Feedbac
     if (error instanceof BrokerError && error.code === "conflict") {
       return { error: "Esa dirección ya está tomada" };
     }
-    return { error: actionError(error, "No se pudo guardar la dirección. Intenta de nuevo.") };
+    return { error: actionError("claimAddress", error, "No se pudo guardar la dirección. Intenta de nuevo.") };
   }
   revalidatePath("/", "layout");
   redirect("/");
@@ -68,7 +73,7 @@ export async function saveGrant(_: Feedback, form: FormData): Promise<Feedback> 
     await ownerClient().setGrant(owner, parsed.data);
   } catch (error) {
     if (error instanceof BrokerError && error.code === "invalid_input") return { error: "Elige una dirección distinta a la tuya." };
-    return { error: actionError(error, "No se pudo guardar el permiso. Intenta de nuevo.") };
+    return { error: actionError("saveGrant", error, "No se pudo guardar el permiso. Intenta de nuevo.") };
   }
   revalidatePath("/grants");
   return { message: "Permiso guardado." };
@@ -82,7 +87,7 @@ export async function revokeGrant(grantId: string): Promise<Feedback> {
   try {
     await ownerClient().revokeGrant(owner, grantId);
   } catch (error) {
-    return { error: actionError(error, "No se pudo revocar el permiso. Intenta de nuevo.") };
+    return { error: actionError("revokeGrant", error, "No se pudo revocar el permiso. Intenta de nuevo.") };
   }
   revalidatePath("/grants");
   revalidatePath("/activity");
@@ -133,7 +138,7 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
     }
     await broker.decide(owner, requestId, parsed.data);
   } catch (error) {
-    return { error: actionError(error, "No se pudo registrar la decisión. Intenta de nuevo.") };
+    return { error: actionError("decide", error, "No se pudo registrar la decisión. Intenta de nuevo.") };
   }
 
   revalidatePath("/");
@@ -159,7 +164,7 @@ export async function manageAgent(agentId: string, _: Feedback, form: FormData):
     if (operation === "ping") await ownerClient().ping(owner, agentId);
     else await ownerClient().revokeAgent(owner, agentId);
   } catch (error) {
-    return { error: actionError(error, "No se pudo completar la acción. Intenta de nuevo.") };
+    return { error: actionError("manageAgent", error, "No se pudo completar la acción. Intenta de nuevo.") };
   }
   revalidatePath("/agents");
   revalidatePath("/activity");
