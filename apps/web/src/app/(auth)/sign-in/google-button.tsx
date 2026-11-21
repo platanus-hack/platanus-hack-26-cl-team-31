@@ -32,11 +32,11 @@ export function GoogleButton({ callbackURL, errorCallbackURL }: { callbackURL: s
         type="button"
         onClick={signIn}
         disabled={pending}
-        className="min-h-11 w-full cursor-pointer rounded-xl bg-[#234c33] px-4 py-2.5 font-semibold text-white hover:bg-[#173623] disabled:opacity-70"
+        className="min-h-11 w-full cursor-pointer rounded-full bg-ink px-4 py-2.5 font-medium text-canvas transition hover:bg-white disabled:opacity-70"
       >
         {pending ? "Conectando…" : "Entrar con Google"}
       </button>
-      {failed && <p role="alert" className="mt-3 text-sm text-red-800">No se pudo abrir Google. Intenta de nuevo.</p>}
+      {failed && <p role="alert" className="mt-3 text-sm text-danger">No se pudo abrir Google. Intenta de nuevo.</p>}
     </div>
   );
 }

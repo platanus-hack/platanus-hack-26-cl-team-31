@@ -16,15 +16,15 @@ export default async function ConnectPage({ searchParams }: PageProps<"/agents/c
         {selected ? `Elige el tipo de bot para configurar ${selected.label}.` : "Conecta tu agente o usa Nexo desde WhatsApp."}
       </Heading>
       {agentId !== undefined && !selected && (
-        <p role="status" className="mb-5 text-sm text-[#792f26]">No se encontró esa conexión. Puedes elegir otro bot.</p>
+        <p role="status" className="mb-5 text-sm text-danger">No se encontró esa conexión. Puedes elegir otro bot.</p>
       )}
       <ul className="grid gap-4 md:grid-cols-3">
         <li>
           <Link href="/agents/connect/whatsapp" prefetch={false}
-            className={`${card} group flex h-full flex-col gap-3 p-6 transition hover:border-[#8aa78e]`}>
-            <h2 className="text-lg font-semibold">WhatsApp</h2>
+            className={`${card} group flex h-full flex-col gap-3 p-6 hover:bg-card-hover`}>
+            <h2 className="text-[15px] font-medium tracking-[-0.01em]">WhatsApp</h2>
             <p className={secondaryText}>Vincula tu teléfono y usa tu cuenta de Nexo desde el chat.</p>
-            <span className="mt-auto pt-1 text-sm font-semibold text-[#28513b] group-hover:underline">Conectar WhatsApp <span aria-hidden="true">→</span></span>
+            <span className="mt-auto pt-1 text-sm font-medium text-accent group-hover:underline">Conectar WhatsApp <span aria-hidden="true">→</span></span>
           </Link>
         </li>
         {choices.map((kind) => {
@@ -33,10 +33,10 @@ export default async function ConnectPage({ searchParams }: PageProps<"/agents/c
           return (
             <li key={kind}>
               <Link href={`/agents/connect/${kind}${linksToAgent}`} prefetch={false}
-                className={`${card} group flex h-full flex-col gap-3 p-6 transition hover:border-[#8aa78e]`}>
-                <h2 className="text-lg font-semibold">{client.name}</h2>
+                className={`${card} group flex h-full flex-col gap-3 p-6 hover:bg-card-hover`}>
+                <h2 className="text-[15px] font-medium tracking-[-0.01em]">{client.name}</h2>
                 <p className={secondaryText}>{client.description}</p>
-                <span className="mt-auto pt-1 text-sm font-semibold text-[#28513b] group-hover:underline">Configurar {client.name} <span aria-hidden="true">→</span></span>
+                <span className="mt-auto pt-1 text-sm font-medium text-accent group-hover:underline">Configurar {client.name} <span aria-hidden="true">→</span></span>
               </Link>
             </li>
           );

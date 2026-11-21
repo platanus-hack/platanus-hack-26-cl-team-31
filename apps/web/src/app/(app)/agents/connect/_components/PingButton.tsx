@@ -75,7 +75,7 @@ export function PingButton({ agentId, kind, address }: { agentId: string; kind: 
       <Feedback error={state.error} errorId={state.errorId} />
       <div role="status" className="space-y-2">
         {verified ? (
-          <p className="text-sm font-semibold text-[#28513b]">El agente respondió a la prueba.</p>
+          <p className="text-sm font-medium text-accent">El agente respondió a la prueba.</p>
         ) : status && (
           <>
             <Status status={status} />

@@ -24,7 +24,7 @@ export function AgentControls({ agentId, revoked }: { agentId: string; revoked: 
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setConfirm(false)} disabled={pending} className={button}>Cancelar</button>
             <button name="operation" value="revoke" disabled={pending}
-              className={`${button} border-[#e8c8c1] text-[#792f26] hover:bg-[#f6e8e4]`}>Confirmar desconexión</button>
+              className={`${button} border-danger-line text-danger hover:bg-danger-bg`}>Confirmar desconexión</button>
           </div>
         </div>
       ))}

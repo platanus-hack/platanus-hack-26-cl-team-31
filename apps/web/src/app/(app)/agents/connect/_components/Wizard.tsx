@@ -51,13 +51,13 @@ export async function Wizard({ kind, agentId, install, login, wake }: WizardProp
           {login}
           <p className={secondaryText}>Cuando el cliente abra Nexo, revisa los permisos en la pantalla de autorización y elige <strong>Autorizar</strong>. De vuelta en tu cliente, pídele al agente que consulte <code>nexo_inbox</code> y luego actualiza la lista.</p>
           {agentId !== undefined && !selected && (
-            <p role="status" className="text-sm text-[#792f26]">No se encontró esa conexión. Selecciona un agente de tu cuenta.</p>
+            <p role="status" className="text-sm text-danger">No se encontró esa conexión. Selecciona un agente de tu cuenta.</p>
           )}
-          {selected && <p className="text-sm font-semibold text-[#28513b] [overflow-wrap:anywhere]">Conexión seleccionada: {selected.label}</p>}
+          {selected && <p className="text-sm font-medium text-accent [overflow-wrap:anywhere]">Conexión seleccionada: {selected.label}</p>}
           <div className="flex flex-wrap items-end gap-2">
             {connections.length > 0 && (
               <form action={selectConnection.bind(null, kind)} className="flex flex-wrap items-end gap-2">
-                <label className="block min-w-0 text-sm font-semibold">
+                <label className="block min-w-0 text-sm font-medium">
                   Agente autorizado
                   <select className={`${input} mt-1 block max-w-64`} name="agentId" defaultValue={selected?.agentId ?? ""} required>
                     <option value="" disabled>Selecciona un agente</option>
@@ -79,7 +79,7 @@ export async function Wizard({ kind, agentId, install, login, wake }: WizardProp
           {wake}
           {client.wakeInstruction && <CopyBox label="Instrucción para activar el aviso" value={client.wakeInstruction} />}
           {wakeReady && (
-            <p className="text-sm font-semibold text-[#28513b]">
+            <p className="text-sm font-medium text-accent">
               {kind === "dot" ? "Aviso conectado mediante eventos MCP." : "El agente ya tiene un aviso configurado."}
             </p>
           )}

@@ -13,13 +13,13 @@ export function WakeForm({ agentId, kind }: { agentId: string; kind: ManualWakeK
   return (
     <form action={action} className="max-w-xl space-y-3">
       <div>
-        <label htmlFor={`${id}-url`} className="mb-1 block text-sm font-semibold">
+        <label htmlFor={`${id}-url`} className="mb-1 block text-sm font-medium">
           {kind === "openclaw" ? "URL pública del gateway" : "URL del webhook"}
         </label>
         <input id={`${id}-url`} className={input} name="url" type="url" required />
       </div>
       <div>
-        <label htmlFor={`${id}-secret`} className="mb-1 block text-sm font-semibold">
+        <label htmlFor={`${id}-secret`} className="mb-1 block text-sm font-medium">
           {kind === "openclaw" ? "Token del hook" : "Llave de la rutina"}
         </label>
         <input id={`${id}-secret`} className={input} name="secret" type="password" autoComplete="new-password" required minLength={16} />

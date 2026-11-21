@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
+import { Brand } from "./brand";
 import { Navigation } from "./nav";
 import { getAddress } from "./owner";
 
@@ -15,27 +16,27 @@ async function Workspace({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <header className="border-b border-[#e1e5da] bg-[#fffefa]">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-8 gap-y-3 px-5 py-4 sm:px-8">
-          <Link href="/" aria-label="Nexo, inicio" className="text-2xl font-bold tracking-tight">Nexo<span aria-hidden="true" className="text-[#54824b]">.</span></Link>
+      <header className="sticky top-0 z-20 border-b border-line bg-canvas/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-[1056px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+          <Link href="/" aria-label="Nexo, inicio" className="mr-2 rounded-full"><Brand /></Link>
           {address && (
             <>
               <Navigation />
-              <span className="max-w-full break-all rounded-lg bg-[#f1f3eb] px-2.5 py-1.5 font-mono text-xs text-[#3b5138] sm:ml-auto">{address}</span>
+              <span className="inline-flex h-8 max-w-full items-center truncate rounded-full bg-chip px-3 font-mono text-xs text-body sm:ml-auto">{address}</span>
             </>
           )}
         </div>
       </header>
-      <main id="contenido" className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 sm:py-12">{children}</main>
+      <main id="contenido" className="mx-auto w-full max-w-[1056px] px-4 pt-12 pb-20 sm:px-6 sm:pt-16">{children}</main>
     </>
   );
 }
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <div lang="es" className="min-h-dvh bg-[#f5f5ef] font-sans text-[#20261d]">
-      <a href="#contenido" className="sr-only rounded-lg bg-white p-3 focus:not-sr-only focus:absolute focus:z-10">Saltar al contenido</a>
-      <Suspense fallback={<p role="status" className="mx-auto max-w-6xl px-5 py-10 text-sm text-[#525e50]">Cargando…</p>}>
+    <div className="min-h-dvh bg-canvas font-sans text-ink">
+      <a href="#contenido" className="sr-only rounded-full bg-card px-4 py-2 text-sm focus:not-sr-only focus:absolute focus:z-30 focus:m-3">Saltar al contenido</a>
+      <Suspense fallback={<p role="status" className="mx-auto max-w-[1056px] px-6 py-10 text-[13px] text-muted">Cargando…</p>}>
         <Workspace>{children}</Workspace>
       </Suspense>
     </div>
