@@ -32,19 +32,19 @@ function upsert(items: ActivityItem[], item: ActivityItem) {
 function LiveCard({ item }: { item: ActivityItem }) {
   return (
     <article className={`${card} overflow-hidden`}>
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e6e8df] px-5 py-4 sm:px-6">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2 className="text-lg font-semibold">{toolLabels[item.tool]}</h2>
-            <p className="text-xs font-medium text-[#525e50]">{item.direction === "sent" ? "Enviada" : "Recibida"}</p>
+            <h2 className="text-[15px] font-medium tracking-[-0.01em]">{toolLabels[item.tool]}</h2>
+            <p className="text-xs font-medium text-muted">{item.direction === "sent" ? "Enviada" : "Recibida"}</p>
           </div>
-          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 break-all font-mono text-sm text-[#525e50]">
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 break-all font-mono text-sm text-muted">
             <span>{item.from}</span><span aria-label="a">→</span><span>{item.to}</span>
           </p>
-          <p className="mt-2 text-xs text-[#525e50]">Plazo <Stamp value={item.expiresAt} /></p>
+          <p className="mt-2 text-xs text-muted">Plazo <Stamp value={item.expiresAt} /></p>
         </div>
         {item.status === "no_data" ? (
-          <span className="inline-block rounded-full bg-[#f6e8e4] px-2.5 py-1 text-xs font-semibold text-[#792f26]">
+          <span className="inline-block rounded-full bg-danger-bg px-2.5 py-1 text-xs font-medium text-danger">
             {statusLabels.no_data}
           </span>
         ) : <Status status={item.status} />}
@@ -52,41 +52,41 @@ function LiveCard({ item }: { item: ActivityItem }) {
 
       <div className="px-5 py-5 sm:px-6">
         {item.events.length > 0 ? (
-          <ol aria-label="Recorrido de la solicitud" className="ml-1.5 border-l border-[#cfdac9]">
+          <ol aria-label="Recorrido de la solicitud" className="ml-1.5 border-l border-line">
             {item.events.map((event, index) => (
               <li key={index} className="relative flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-4 pl-5 last:pb-0">
-                <span aria-hidden="true" className="absolute top-1.5 -left-[5px] size-[9px] rounded-full bg-[#829e78] ring-2 ring-[#fffefa]" />
-                <time dateTime={event.at} className="font-mono text-xs tabular-nums text-[#525e50]">
+                <span aria-hidden="true" className="absolute top-1.5 -left-[5px] size-[9px] rounded-full bg-accent ring-2 ring-card" />
+                <time dateTime={event.at} className="font-mono text-xs tabular-nums text-muted">
                   {clock.format(new Date(event.at))}
                 </time>
                 <p className="text-sm font-medium">{eventLabels[event.kind]}</p>
-                {event.status && <p className="text-xs text-[#525e50]">{statusLabels[event.status]}</p>}
+                {event.status && <p className="text-xs text-muted">{statusLabels[event.status]}</p>}
               </li>
             ))}
           </ol>
-        ) : <p className="text-sm text-[#525e50]">Aún no hay eventos registrados.</p>}
+        ) : <p className="text-sm text-muted">Aún no hay eventos registrados.</p>}
 
         {(Boolean(item.droppedFields?.length) ||
           (item.direction === "received" && (item.decisionReason || item.internalReason))) && (
-          <dl className="mt-5 space-y-2 rounded-xl bg-[#f2f4ed] px-4 py-3 text-sm">
+          <dl className="mt-5 space-y-2 rounded-xl stage px-4 py-3 text-sm">
             {Boolean(item.droppedFields?.length) && (
               <div>
-                <dt className="font-semibold">Campos eliminados</dt>
-                <dd className="mt-0.5 wrap-anywhere text-[#525e50]">
+                <dt className="font-medium">Campos eliminados</dt>
+                <dd className="mt-0.5 wrap-anywhere text-muted">
                   {item.droppedFields?.map((field) => fieldLabels[field] ?? field).join(", ")}
                 </dd>
               </div>
             )}
             {item.direction === "received" && item.decisionReason && (
               <div>
-                <dt className="font-semibold">Motivo de la decisión</dt>
-                <dd className="mt-0.5 wrap-anywhere text-[#525e50]">{item.decisionReason}</dd>
+                <dt className="font-medium">Motivo de la decisión</dt>
+                <dd className="mt-0.5 wrap-anywhere text-muted">{item.decisionReason}</dd>
               </div>
             )}
             {item.direction === "received" && item.internalReason && (
               <div>
-                <dt className="font-semibold">Motivo interno</dt>
-                <dd className="mt-0.5 wrap-anywhere text-[#525e50]">{item.internalReason}</dd>
+                <dt className="font-medium">Motivo interno</dt>
+                <dd className="mt-0.5 wrap-anywhere text-muted">{item.internalReason}</dd>
               </div>
             )}
           </dl>
@@ -136,8 +136,8 @@ export function LiveActivity() {
   return (
     <div className="max-w-4xl">
       <Heading title="El cable" action={(
-        <p role="status" className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
-          connection === "live" ? "bg-[#e3eedf] text-[#315232]" : "bg-[#fbedcb] text-[#664710]"
+        <p role="status" className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${
+          connection === "live" ? "bg-success-bg text-success" : "bg-warn-bg text-warn"
         }`}>
           <span aria-hidden="true" className="size-2 rounded-full bg-current" />
           {connectionLabels[connection]}

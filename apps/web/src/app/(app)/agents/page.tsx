@@ -17,7 +17,7 @@ export default async function AgentsPage() {
         <div className={`${card} overflow-x-auto`} tabIndex={0} role="region" aria-label="Lista de agentes">
           <table className="w-full min-w-184 text-left text-sm">
             <caption className="sr-only">Agentes conectados y desconectados</caption>
-            <thead className="bg-[#f0f2e9] text-xs font-semibold text-[#465744]">
+            <thead className="bg-chip-hover text-xs font-medium text-body">
               <tr>
                 <th scope="col" className="px-4 py-3">Agente</th>
                 <th scope="col" className="px-4 py-3">Tipo de aviso</th>
@@ -26,12 +26,12 @@ export default async function AgentsPage() {
                 <th scope="col" className="px-4 py-3">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#e6e8df]">
+            <tbody className="divide-y divide-line">
               {agents.map((agent) => (
                 <tr key={agent.agentId} className="align-top">
-                  <th scope="row" className="max-w-56 px-4 py-4 font-semibold [overflow-wrap:anywhere]">
+                  <th scope="row" className="max-w-56 px-4 py-4 font-medium [overflow-wrap:anywhere]">
                     {agent.label}
-                    <span className={`mt-1 block text-xs font-medium ${agent.revokedAt ? "text-[#792f26]" : "text-[#28513b]"}`}>
+                    <span className={`mt-1 block text-xs font-medium ${agent.revokedAt ? "text-danger" : "text-accent"}`}>
                       {agent.revokedAt ? "Desconectado" : "Conectado"}
                     </span>
                   </th>

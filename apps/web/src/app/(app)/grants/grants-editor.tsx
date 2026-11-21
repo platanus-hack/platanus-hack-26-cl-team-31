@@ -10,10 +10,10 @@ import { button, card, Empty, Feedback, input, primaryButton } from "../ui";
 function GrantRow({ grant, onEdit }: { grant: Grant; onEdit: () => void }) {
   const [state, submit, pending] = useActionState(revokeGrant.bind(null, grant.id), {});
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 border-t border-[#dfe3d7] py-3">
+    <li className="flex flex-wrap items-center justify-between gap-3 border-t border-line py-3">
       <div>
-        <p className="font-semibold">{toolLabels[grant.tool]}</p>
-        <p className="text-sm text-[#525e50]">{grant.fields.map((field) => fieldLabels[field] ?? field).join(", ")}</p>
+        <p className="font-medium">{toolLabels[grant.tool]}</p>
+        <p className="text-sm text-muted">{grant.fields.map((field) => fieldLabels[field] ?? field).join(", ")}</p>
         <Feedback {...state} />
       </div>
       <form action={submit} className="flex gap-2">
@@ -28,12 +28,12 @@ function GrantFields({ tool, grant }: { tool: GrantTool; grant?: Grant }) {
   const [selected, setSelected] = useState(grant?.fields ?? []);
   return (
     <fieldset className="space-y-2">
-      <legend className="text-sm font-semibold">Datos que puede recibir</legend>
+      <legend className="text-sm font-medium">Datos que puede recibir</legend>
       {fieldsOf(tool).map((field) => (
         <label key={field} className="flex w-fit cursor-pointer items-center gap-2 text-sm">
           <input type="checkbox" name="fields" value={field} checked={selected.includes(field)}
             onChange={(event) => setSelected(event.target.checked ? [...selected, field] : selected.filter((item) => item !== field))}
-            className="size-4 accent-[#28513b]" />
+            className="size-4 accent-accent" />
           {fieldLabels[field] ?? field}
         </label>
       ))}
@@ -64,14 +64,14 @@ export function GrantsEditor({ grants, initialAddress }: { grants: Grant[]; init
   return (
     <div className="space-y-8">
       <form action={submit} onReset={(event) => event.preventDefault()} className={`${card} space-y-4 p-5`}>
-        <h2 className="text-lg font-semibold">{current ? "Editar permiso" : "Dar un permiso"}</h2>
-        <label className="block text-sm font-semibold">
+        <h2 className="text-[15px] font-medium tracking-[-0.01em]">{current ? "Editar permiso" : "Dar un permiso"}</h2>
+        <label className="block text-sm font-medium">
           Dirección Nexo de la persona
           <input name="grantee" required value={address} placeholder="ana@nexo.app" autoCapitalize="none" spellCheck={false}
             onChange={(event) => setAddress(event.target.value.trim().toLowerCase())} list="friends" className={`${input} mt-1`} />
           <datalist id="friends">{Array.from(friends.keys(), (friend) => <option key={friend} value={friend} />)}</datalist>
         </label>
-        <label className="block text-sm font-semibold">
+        <label className="block text-sm font-medium">
           Qué puede consultar
           <select ref={toolSelect} name="tool" value={tool} onChange={(event) => setTool(GrantTool.parse(event.target.value))} className={`${input} mt-1`}>
             {GrantTool.options.map((option) => <option key={option} value={option}>{toolLabels[option]}</option>)}
@@ -85,11 +85,11 @@ export function GrantsEditor({ grants, initialAddress }: { grants: Grant[]; init
       </form>
 
       <section aria-labelledby="friends-heading" className="space-y-3">
-        <h2 id="friends-heading" className="text-lg font-semibold">Personas con permiso</h2>
+        <h2 id="friends-heading" className="text-[15px] font-medium tracking-[-0.01em]">Personas con permiso</h2>
         {friends.size === 0 && <Empty>Todavía no le diste permiso a nadie.</Empty>}
         {Array.from(friends, ([friend, permissions]) => (
           <article key={friend} className={`${card} px-5 pt-4`}>
-            <h3 className="mb-3 break-all font-semibold">{friend}</h3>
+            <h3 className="mb-3 break-all font-medium">{friend}</h3>
             <ul>{permissions.map((grant) => <GrantRow key={grant.id} grant={grant} onEdit={() => edit(grant)} />)}</ul>
           </article>
         ))}

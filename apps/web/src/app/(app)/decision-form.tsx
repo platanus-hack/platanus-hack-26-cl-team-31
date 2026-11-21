@@ -14,7 +14,7 @@ export function DecisionForm({ id, tool, escalated }: { id: string; tool: ToolNa
   return (
     <form action={submit} className="mt-4 space-y-3">
       {isQuestion && (
-        <label className="block text-sm font-semibold">
+        <label className="block text-sm font-medium">
           Tu respuesta
           <textarea name="answer" value={answer} onChange={(event) => setAnswer(event.target.value)}
             rows={3} maxLength={1000} className={`${input} mt-1 block`} />

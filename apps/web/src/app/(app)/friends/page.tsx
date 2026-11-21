@@ -15,7 +15,7 @@ export default async function FriendsPage() {
         <ConnectForm />
       </section>
       <section aria-labelledby="friends-title">
-        <h2 id="friends-title" className="mb-4 text-xl font-semibold tracking-tight">Conectados</h2>
+        <h2 id="friends-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Conectados</h2>
         {friends.length === 0 ? <Empty>Todavía no tienes amigos conectados.</Empty> : (
           <ul className="space-y-2">
             {friends.map((address) => (

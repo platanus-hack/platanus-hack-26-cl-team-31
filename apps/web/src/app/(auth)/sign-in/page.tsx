@@ -21,8 +21,8 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
   if (isOAuth && !request) {
     return (
       <>
-        <h1 className="text-2xl font-semibold">El enlace de autorización venció o no es válido</h1>
-        <p className="mt-3 text-[#525a4c]">Vuelve a iniciar la conexión desde tu agente.</p>
+        <h1 className="text-[22px] leading-tight font-medium tracking-[-0.02em]">El enlace de autorización venció o no es válido</h1>
+        <p className="mt-3 text-muted">Vuelve a iniciar la conexión desde tu agente.</p>
       </>
     );
   }
@@ -44,14 +44,14 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
 
   return (
     <>
-      <h1 className="text-3xl font-semibold tracking-tight">Entrar a Nexo</h1>
-      <p className="mt-3 text-[#525a4c]">
+      <h1 className="text-[28px] leading-[1.15] font-medium tracking-[-0.025em]">Entrar a Nexo</h1>
+      <p className="mt-3 text-muted">
         {request
           ? "Inicia sesión con tu cuenta de Google para revisar los permisos del agente."
           : "Conecta tus agentes y decide qué pueden compartir en tu nombre."}
       </p>
       {params.error && (
-        <p role="alert" className="mt-4 text-sm text-red-800">
+        <p role="alert" className="mt-4 text-sm text-danger">
           No se pudo completar el inicio de sesión. Intenta de nuevo.
         </p>
       )}
@@ -61,7 +61,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
           errorCallbackURL={request ? `/sign-in?${request.signedQuery}` : flow.signIn}
         />
       ) : (
-        <p className="mt-4 text-sm text-[#525a4c]" role="status">
+        <p className="mt-4 text-sm text-muted" role="status">
           Configura las credenciales de Google en el entorno local para iniciar sesión.
         </p>
       )}

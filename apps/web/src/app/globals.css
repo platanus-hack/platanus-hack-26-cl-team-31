@@ -1,26 +1,68 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-roboto-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  --color-canvas: #121212;
+  --color-card: #181818;
+  --color-card-hover: #1c1c1c;
+  --color-stage: #131313;
+  --color-chip: rgb(255 255 255 / 0.07);
+  --color-chip-hover: rgb(255 255 255 / 0.1);
+  --color-line: rgb(255 255 255 / 0.07);
+  --color-line-strong: rgb(255 255 255 / 0.14);
+  --color-ink: #ededed;
+  --color-body: #cacaca;
+  --color-muted: #8f8f8f;
+  --color-subtle: #767676;
+  --color-accent: #55cfff;
+  --color-success: #7ddba3;
+  --color-success-bg: rgb(125 219 163 / 0.1);
+  --color-warn: #f2c66d;
+  --color-warn-bg: rgb(242 198 109 / 0.1);
+  --color-info: #7db4ff;
+  --color-info-bg: rgb(0 113 252 / 0.18);
+  --color-danger: #ff8f80;
+  --color-danger-bg: rgb(255 120 100 / 0.1);
+  --color-danger-line: rgb(255 120 100 / 0.3);
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@utility surface {
+  box-shadow:
+    0 1px 3px 0 rgb(0 0 0 / 0.04),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.04);
+}
+
+@utility stage {
+  background-color: var(--color-stage);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.02),
+    inset 0 0 0 1px rgb(191 192 203 / 0.08);
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background: var(--color-canvas);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: rgb(85 207 255 / 0.25);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
 }
