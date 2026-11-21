@@ -1,9 +1,10 @@
-import type { ToolName } from "./tools.js";
-
 // Plain values without zod, so client components can import them (`@team-31/protocol/constants`)
-// without shipping the schemas. The schemas in categories.ts and sharing.ts are built from them.
+// without shipping the schemas. The schemas for categories, tags and tools are built from them.
 
 export const ADDRESS_DOMAIN = "sideband.app";
+
+export const toolNames = ["profile", "availability", "question", "interest_check", "connect", "vault_access"] as const;
+type ToolName = (typeof toolNames)[number];
 
 export const categoryNames = ["availability", "interests", "health", "general"] as const;
 export type Category = (typeof categoryNames)[number];
