@@ -8,7 +8,12 @@ import { runTool, type ToolTelemetry } from "./result.js";
 // resultados en vez de un unknown que no dice nada. El ejemplo va en la descripción porque el
 // anyOf no indica cuál rama corresponde a la solicitud que se está respondiendo: eso lo dice
 // allowedFields de la bandeja. El filtro del broker sigue siendo quien decide qué viaja.
-const result = z.union(Object.values(ToolResultSchemas)).describe(
+// El error de la unión es lo único que el agente ve cuando se equivoca de forma, y el SDK lo
+// publica como «<mensaje> at result». Un codex real leyó tres veces «Invalid input at result» y
+// siguió mandando el objeto serializado como string: el mensaje tiene que nombrar la forma.
+const result = z.union(Object.values(ToolResultSchemas), {
+  error: 'result debe ser un objeto JSON con los campos de allowedFields —{"answer": "..."}—, no texto ni ese objeto serializado como string',
+}).describe(
   "Objeto JSON cuyas claves son exactamente las de allowedFields de la solicitud en tu bandeja. "
   + "Nunca texto suelto ni el objeto serializado como string. "
   + 'Ejemplos: allowedFields ["answer"] → {"answer": "..."}; ["matches"] → {"matches": true}; '

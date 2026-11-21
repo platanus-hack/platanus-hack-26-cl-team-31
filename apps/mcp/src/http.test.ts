@@ -206,7 +206,10 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     },
     share: { description: expect.stringContaining("connect") },
   });
-  expect((await bob.callTool({ name: "sideband_reply", arguments: { ...answer, result: JSON.stringify(answer.result) } })).isError).toBe(true);
+  // Rechazarlo no basta: el motivo tiene que decirle al agente qué forma esperaba.
+  const asString = await bob.callTool({ name: "sideband_reply", arguments: { ...answer, result: JSON.stringify(answer.result) } });
+  expect(asString.isError).toBe(true);
+  expect(JSON.stringify(asString.content)).toContain("objeto JSON");
 
   expect((await ana.callTool({ name: "sideband_ask", arguments: { to: pending.to, tool: "connect", args: {} } })).isError).toBe(true);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
