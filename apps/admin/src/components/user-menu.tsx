@@ -6,8 +6,10 @@ import {
   MoonIcon,
   SunIcon,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { initials } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
@@ -33,16 +35,6 @@ import {
 import { useTheme } from "@/components/theme-provider"
 import { isMock } from "@/lib/api"
 import { refreshSession, useSession } from "@/lib/session"
-
-function initials(name: string | null, email: string) {
-  const source = name ?? email
-  return source
-    .split(/[\s@.]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
-    .join("")
-}
 
 export const roleLabel = { operator: "Operador", viewer: "Lector" } as const
 
@@ -112,7 +104,7 @@ export function UserMenu() {
                   <AvatarImage src={user.image} alt={user.name ?? user.email} />
                 ) : null}
                 <AvatarFallback className="rounded-lg">
-                  {initials(user.name, user.email)}
+                  {initials(user.name?.trim() || user.email)}
                 </AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
@@ -177,7 +169,7 @@ export function UserMenu() {
             ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={() => void logout()}>
+              <DropdownMenuItem onSelect={() => void logout().catch(() => toast.error("No se pudo cerrar la sesión."))}>
                 <LogOutIcon />
                 Cerrar sesión
               </DropdownMenuItem>

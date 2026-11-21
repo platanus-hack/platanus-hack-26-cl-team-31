@@ -15,9 +15,11 @@ import {
   type WakeTarget,
   type Waker,
 } from "@team-31/protocol";
+import { createTelemetry, memorySink } from "@team-31/telemetry";
+import { createWaker } from "@team-31/wake";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
-import { createOwnerRuntime, localQuestionSource, localReadTool } from "../client/runtime.js";
+import { createOwnerRuntime, localQuestionSource, localReadTool } from "@team-31/broker-client";
 import { deriveNonce, verifyJson } from "./crypto.js";
 
 const principals: Record<"alice" | "bruno" | "carla", Principal> = {
@@ -371,6 +373,20 @@ describe("aislamiento y concurrencia", () => {
 });
 
 describe("cierre y avisos", () => {
+  it("atiende avisos entre lotes de solicitudes vencidas", async () => {
+    for (let i = 0; i < 101; i++) {
+      await askAvailability();
+      await broker.tick(now);
+    }
+    advance(900_000);
+    await broker.agent.inbox(bruno);
+    await broker.owner.setWake(bruno, bruno.agentId, webhook);
+    const live = await askAvailability();
+    expect(await broker.tick(now)).toMatchObject({ expired: 100, wakesOk: 1 });
+    expect(wake.mock.calls.map(([, notice]) => notice.requestId)).toContain(live.requestId);
+    expect((await broker.tick(now)).expired).toBe(1);
+  });
+
   it("vence solicitudes de agente y dueño en el plazo exacto", async () => {
     const agent = await askAvailability();
     const owner = await askAndEscalate();
@@ -427,6 +443,36 @@ describe("cierre y avisos", () => {
     expect((await broker.tick(now)).wakesFailed).toBe(1);
     expect(wake).toHaveBeenCalledTimes(1);
     await expectFinal(alice, second.requestId, "unanswered", "delivery_failed");
+  });
+
+  it("espera a los avisos en curso antes de propagar el error de otro aviso", async () => {
+    await broker.agent.connectWake(bruno, webhook);
+    const failed = await askAvailability();
+    await askAvailability();
+    const tx = deps.store.tx.bind(deps.store);
+    vi.spyOn(deps.store, "tx").mockImplementation((run) => tx((store) => run({
+      ...store,
+      getRequest(id, ...args) {
+        if (id === failed.requestId) throw new Error("Error de lectura");
+        return store.getRequest(id, ...args);
+      },
+    })));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    wake.mockImplementationOnce(async () => {
+      await pending;
+      return { ok: true, retryable: false, ms: 1 };
+    });
+    const settled = vi.fn();
+    const ticking = broker.tick(now).catch(settled);
+    try {
+      await vi.waitFor(() => expect(wake).toHaveBeenCalledOnce());
+      expect(settled).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await ticking;
+    }
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ message: "Error de lectura" }));
   });
 
   it("preserva una respuesta que llega mientras dos trabajadores compiten por el aviso", async () => {
@@ -622,6 +668,18 @@ describe("ejecución en el runtime del titular", () => {
     expect(await broker.agent.status(alice, request.requestId)).toMatchObject({ decision: "deny" });
   });
 
+  it("shares a failed wake with overlapping callers and retries the next delivery", async () => {
+    const request = await askAvailability();
+    const read = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ available: true });
+    const onWake = createOwnerRuntime(broker.agent, bruno, [localReadTool("availability", read)]);
+    const wake = notice(request.requestId);
+    const settled = await Promise.allSettled([onWake(wake), onWake(wake)]);
+    expect(settled).toMatchObject([{ status: "rejected", reason: { message: "offline" } }, { status: "rejected", reason: { message: "offline" } }]);
+    expect(read).toHaveBeenCalledOnce();
+    await onWake(wake);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it("filtra la salida antes de enviarla al broker y procesa un aviso repetido una sola vez", async () => {
     const request = await askAvailability();
     const reply = vi.fn(broker.agent.reply);
@@ -646,6 +704,21 @@ describe("solicitudes de conexión", () => {
     const item = await inboxItem(bruno, request.requestId);
     return { request, item };
   }
+
+  it("preserves the original tag and sharing offer across conflicting invitation retries", async () => {
+    const to = "bruno@sideband.app";
+    const first = await broker.owner.connect(carla, { to, share: [], tag: "work" });
+    expect((await broker.owner.connect(carla, { to, share: [], tag: "work" })).requestId).toBe(first.requestId);
+    expect((await broker.owner.connect(carla, { to, tag: "work" })).requestId).toBe(first.requestId);
+    await expect(broker.owner.connect(carla, { to, share: ["availability"] })).rejects.toMatchObject({ code: "conflict" });
+    await expect(broker.owner.connect(carla, { to, tag: "family" })).rejects.toMatchObject({ code: "conflict" });
+    await broker.owner.answerInvitation(bruno, first.requestId, { accept: true, share: [] });
+    expect((await broker.owner.contacts(carla)).contacts).toMatchObject([{ address: to, gives: [], tag: "work" }]);
+    await broker.owner.removeContact(carla, to);
+    const grant = await broker.owner.setGrant(carla, { grantee: to, category: "general" });
+    await broker.owner.removeContact(carla, to);
+    expect(await broker.owner.grants(carla)).toContainEqual(grant);
+  });
 
   it("sin elección explícita el agente no acepta; el titular aún puede aceptar desde Contactos", async () => {
     const { request, item } = await invite();
@@ -751,7 +824,7 @@ describe("solicitudes de conexión", () => {
     expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tag: "friend", gives: contactTags.friend.sharing });
     await expect(broker.owner.setContactTag(carla, "diego@sideband.app", "friend")).rejects.toMatchObject({ code: "not_found" });
 
-    await broker.owner.removeFriend(carla, "bruno@sideband.app");
+    await broker.owner.removeContact(carla, "bruno@sideband.app");
     const again = await broker.owner.connect(carla, "bruno@sideband.app");
     await broker.owner.answerInvitation(bruno, again.requestId, { accept: true });
     expect((await broker.owner.contacts(carla)).contacts[0]).not.toHaveProperty("tag");
@@ -790,7 +863,7 @@ describe("solicitudes de conexión", () => {
     await broker.owner.answerInvitation(bruno, request.requestId, { accept: true });
     const pending = await broker.agent.ask(carla, availability);
 
-    await broker.owner.removeFriend(bruno, "carla@sideband.app");
+    await broker.owner.removeContact(bruno, "carla@sideband.app");
     expect(await friends(bruno)).toEqual([]);
     expect(await friends(carla)).toEqual([]);
     expect(await broker.owner.grants(bruno)).toEqual([aliceGrant]);
@@ -923,7 +996,7 @@ describe("círculos", () => {
     });
     expect(directRequest).toMatchObject({ final: false, waitingFor: "agent" });
 
-    await broker.owner.removeFriend(bruno, carlaAddress);
+    await broker.owner.removeContact(bruno, carlaAddress);
     expect((await broker.owner.contacts(bruno)).contacts).toEqual([]);
     expect(await inboxItem(bruno, circleRequest.requestId)).toMatchObject({ allowedFields: ["available", "freeSlots"] });
     expect(await broker.agent.status(carla, directRequest.requestId)).toMatchObject({ final: true, decision: "deny" });
@@ -1007,6 +1080,27 @@ describe("avisos al canal de origen", () => {
     }
     expect(channelNotices()).toHaveLength(3);
     await expectFinal(alice, view.requestId, "allow", "answered", { answer: "Sí" });
+  });
+
+  it.each(["recovered", "attempted", "threw"] as const)("reports one exhausted origin notice (%s)", async (mode) => {
+    const sink = memorySink();
+    const telemetry = createTelemetry({ service: "worker", sink, lifecycle: false });
+    // An insecure callback is rejected locally by the real adapter.
+    await broker.owner.setChannel(alice, "whatsapp", { ...channelHook, url: "http://127.0.0.1/notice" });
+    const view = await broker.owner.ask(alice, question, "whatsapp");
+    await broker.tick(now);
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, view.requestId), outcome: "answered", result: { answer: "Sí" } });
+    const waker = mode === "attempted" ? createWaker({ allowInsecure: false, telemetry }) : deps.waker;
+    broker = createBroker({ ...deps, waker, telemetry, config: { ...deps.config, wakeRetryDelaysMs: [0] } });
+    if (mode === "recovered") {
+      const lease = new Date(now.getTime() + 60_000);
+      const jobs = await deps.store.tx((tx) => tx.claimDueWakes(now, lease, 1));
+      expect(jobs).toMatchObject([{ audience: "origin", attempt: 1 }]);
+      advance(60_000);
+    }
+    if (mode === "threw") wake.mockRejectedValueOnce(new Error("adapter unavailable"));
+    await broker.tick(now);
+    expect(sink.find("wake.exhausted")).toMatchObject([{ requestId: view.requestId, attrs: { attempts: 1 } }]);
   });
 
   it("rechaza un canal o un aviso inválido", async () => {

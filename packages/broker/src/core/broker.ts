@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   Address,
+  ConnectInput,
+  systemLocalPart,
   AskInput,
   basicSharing,
   categories,
@@ -22,13 +24,13 @@ import {
   OwnerDecision,
   ReplyInput,
   WakeTarget,
-  WAKE_SUBSCRIPTION_SCOPE,
+  agentScopes,
   ChannelName,
   type FinalOutcome,
+  type Owner,
   type Principal,
   type ReplyReceipt,
   type RequesterView,
-  type Scope,
   type ToolResult,
   ContactGroupChange,
 } from "@team-31/protocol";
@@ -47,7 +49,7 @@ import {
 } from "./views.js";
 import { createLifecycleEvents } from "./events.js";
 import { createWorker } from "./worker.js";
-import { createGrantWriter, sharingRule, stillAuthorized } from "./grants.js";
+import { categoriesOf, createGrantWriter, sharingRule, stillAuthorized } from "./grants.js";
 import { createCirclePort } from "./circles.js";
 
 const connectionFields = fieldsOf("connect");
@@ -88,12 +90,13 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   const events = createLifecycleEvents(deps.store, deps.telemetry);
   const { store, record } = events;
   const grants = createGrantWriter(clock, record);
-  const systemAddress = Address.parse(`system@${config.addressDomain}`);
+  const systemAddress = Address.parse(`${systemLocalPart}@${config.addressDomain}`);
 
-  function requireScope(principal: Principal, scope: Scope, operation: string): void {
+  function requireScope(principal: Principal, operation: keyof typeof agentScopes): void {
+    const scope = agentScopes[operation];
     if (principal.scopes.includes(scope)) return;
     events.emit("auth.scope.denied", {
-      userId: principal.userId, agentId: principal.agentId, attrs: { scope, operation },
+      userId: principal.userId, agentId: principal.agentId, attrs: { scope, operation: `agent.${operation}` },
     });
     throw new BrokerError("forbidden", "El agente no tiene permiso para esta acción.");
   }
@@ -101,7 +104,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   // One status_changed per persisted transition, plus closed when it reaches a final state.
   // A request written from a channel notifies it when it starts waiting for the recipient's owner
   // and when it closes. Decisions taken while creating it already reached the caller.
-  async function recordTransition(tx: StoreTx, before: RequestRow, after: RequestRow, by: Actor): Promise<void> {
+  async function recordTransitionAndScheduleOriginWake(tx: StoreTx, before: RequestRow, after: RequestRow, by: Actor): Promise<void> {
     record(tx, "broker.request.status_changed", {
       requestId: before.id, attrs: { from: before.status, to: after.status, by },
     });
@@ -166,7 +169,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const final = await finalize(transition(row, outcome), outcome, at);
     if (!await saveTransition(tx, row, final)) return false;
     await tx.appendEvent({ requestId: row.id, at, kind: "delivery", status: outcome, ...(code ? { code } : {}) });
-    await recordTransition(tx, row, final, code?.startsWith("admin_") ? "admin" : "broker");
+    await recordTransitionAndScheduleOriginWake(tx, row, final, code?.startsWith("admin_") ? "admin" : "broker");
     return true;
   }
 
@@ -225,7 +228,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     // Opposite-direction acceptances acquire the same membership rows in the same order.
     participants.sort((a, b) => a.userId.localeCompare(b.userId));
     for (const { userId, address, share } of participants) {
-      if (!await tx.addFriend(userId, address)) continue;
+      if (!await tx.addContact(userId, address)) continue;
       await grants.applySharing(tx, userId, address, share);
     }
     record(tx, "broker.contact.connected", { requestId: row.id, userId: row.toUserId });
@@ -240,32 +243,17 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       : await finalize(transition(row, "declined"), "declined", now);
     if (!await saveTransition(tx, row, changed)) throw closed();
     await applyConnection(tx, changed, share);
-    await recordTransition(tx, row, changed, by);
+    await recordTransitionAndScheduleOriginWake(tx, row, changed, by);
     await tx.appendEvent({ requestId: row.id, at: now, kind: "permission", status: changed.status });
     await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
   }
 
-  // A repeated invitation returns the open one. Crossed invitations accept the received one.
-  async function existingInvitation(
-    tx: StoreTx, userId: string, to: Address, share: Sharing | undefined, byAgent: boolean,
-  ): Promise<RequesterView | BrokerError | "accepted" | null> {
-    if ((await tx.listFriends(userId)).includes(to)) return new BrokerError("invalid_input", "Ya son contactos.");
-    const now = clock.now();
-    const open = (await tx.listOpenInvitations(userId)).filter((row) => row.expiresAt > now);
-    const sent = open.find((row) => row.fromUserId === userId && row.toAddress === to);
-    if (sent) return toRequesterView(sent);
-    const received = open.find((row) => row.toUserId === userId && row.fromAddress === to);
-    if (!received) return null;
-    if (byAgent) return new BrokerError("invalid_input", "Esta persona ya te invitó. Revisa la invitación recibida.");
-    await closeInvitation(tx, received, true, share, "owner");
-    return "accepted";
-  }
-
   async function submit(
-    tx: StoreTx, userId: string, input: AskInput, origin: { agentId?: string; channel?: ChannelName },
+    tx: StoreTx, userId: string, input: AskInput, origin: { agentId?: string; channel?: ChannelName; tag?: ContactTag },
   ): Promise<RequesterView | BrokerError> {
     const { agentId, channel } = origin;
-    const { to, tool, args, purpose } = input;
+    const { to, tool, purpose } = input;
+    let args = input.args;
     const from = (await tx.getUser(userId))?.address;
     if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Sideband.");
     if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
@@ -275,10 +263,35 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       if (!matches) return notFound();
     }
     const recipient = await tx.getUserByAddress(to);
-    const offer = input.tool === "connect" ? input.args.share : undefined;
-    const existing = recipient && tool === "connect" ? await existingInvitation(tx, userId, to, offer, agentId !== undefined) : null;
-    if (existing instanceof BrokerError || (existing && existing !== "accepted")) return existing;
+    let offer = input.tool === "connect" ? input.args.share : undefined;
     const now = clock.now();
+    let crossedInvitationAccepted = false;
+    if (recipient && tool === "connect") {
+      if ((await tx.listContactAddresses(userId)).includes(to)) return new BrokerError("invalid_input", "Ya son contactos.");
+      const open = (await tx.listOpenInvitations(userId)).filter((row) => row.expiresAt > now);
+      const sent = open.find((row) => row.fromUserId === userId && row.toAddress === to);
+      if (sent) {
+        if (!agentId) {
+          const previousTag = (await tx.listContactTags(userId)).get(to);
+          if ((origin.tag !== undefined && previousTag !== origin.tag) || (offer !== undefined && !sameSharing(offerOf(sent), offer))) {
+            return new BrokerError("conflict", "Ya hay una invitación pendiente con otra configuración.");
+          }
+        }
+        return toRequesterView(sent);
+      }
+      if (origin.tag && offer === undefined) {
+        offer = (await presetsOf(tx, userId))[origin.tag];
+        args = { share: offer };
+      }
+      const received = open.find((row) => row.toUserId === userId && row.fromAddress === to);
+      if (received) {
+        if (agentId) return new BrokerError("invalid_input", "Esta persona ya te invitó. Revisa la invitación recibida.");
+        await closeInvitation(tx, received, true, offer, "owner");
+        crossedInvitationAccepted = true;
+      }
+      if (origin.tag) await tagContact(tx, userId, to, origin.tag);
+      else await tx.setContactTag(userId, to, null);
+    }
     let row = await initialRequest({
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
       originChannel: channel,
@@ -294,7 +307,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       requestId: row.id, userId, ...(agentId ? { agentId } : {}),
       attrs: { tool, ...(category ? { category } : {}), decision: invitation || allowed ? "allow" : "deny", rule: ruleCode },
     });
-    if (existing === "accepted") {
+    if (crossedInvitationAccepted) {
       row = await finalize({
         ...row, status: "awaiting_agent", allowedFields: connectionFields, rule: "Invitación mutua",
       }, "answered", now, { accepted: true });
@@ -313,7 +326,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       const decisionReason = recipient ? "Sin permiso para esta categoría." : "Dirección sin destinatario.";
       row = await finalize({ ...row, decisionReason }, "denied", now);
     }
-    await recordNew(tx, row, now, ruleCode, agentId);
+    await persistNewRequest(tx, row, now, ruleCode, agentId);
     return toRequesterView(row);
   }
 
@@ -336,7 +349,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     });
   }
 
-  async function recordNew(tx: StoreTx, row: RequestRow, now: Date, rule: string, agentId?: string) {
+  async function persistNewRequest(tx: StoreTx, row: RequestRow, now: Date, rule: string, agentId?: string) {
     await tx.insertRequest(row);
     record(tx, "broker.request.created", {
       requestId: row.id,
@@ -357,7 +370,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
   // Cancel pending work atomically if the old authorization is no longer valid.
   // Already queued notices carry only an ID and must re-read the inbox.
-  async function cancelUnauthorized(tx: StoreTx, userId: string): Promise<void> {
+  async function denyUnauthorizedInboxRequests(tx: StoreTx, userId: string): Promise<void> {
     const owner = await tx.getUser(userId);
     if (!owner?.address) return;
     for (const row of await tx.listInbox(owner.address)) {
@@ -365,7 +378,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       const now = clock.now();
       const denied = await finalize(transition(row, "denied"), "denied", now);
       if (!await saveTransition(tx, row, denied)) throw closed();
-      await recordTransition(tx, row, denied, "owner");
+      await recordTransitionAndScheduleOriginWake(tx, row, denied, "owner");
       await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: "denied" });
     }
   }
@@ -412,6 +425,15 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     record(tx, "broker.contact.tagged", { userId, attrs: { tag } });
   }
 
+  async function listContactsWithOutgoingSharing(tx: StoreTx, userId: string) {
+    const mine = await tx.listGrants(userId);
+    const tags = await tx.listContactTags(userId);
+    return (await tx.listContactAddresses(userId)).map((address) => ({
+      address, ...(tags.has(address) ? { tag: tags.get(address)! } : {}),
+      gives: categoriesOf(mine.filter((grant) => grant.granteeAddress === address)),
+    }));
+  }
+
   async function directory(tx: StoreTx, userId: string) {
     const contacts = (await tx.listContacts(userId))
       .map(({ gives, receives, ...identity }) => ({ ...identity, theyShare: receives, youShare: gives }));
@@ -445,8 +467,30 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (!await tx.changeVault(userId, categoryId, change)) throw notFound();
     record(tx, "broker.vault.changed", { userId, agentId, attrs: { action: change.action,
       ...(change.action === "set_group" ? { group: change.group, allowed: change.allowed } : {}),
-      ...(change.action === "set_contact_group" ? { allowed: change.allowed } : {}) } });
+      ...(change.action === "set_contact_group" || change.action === "set_member" ? { allowed: change.allowed } : {}) } });
     return { categoryId };
+  }
+
+  async function removeContact(o: Owner, contact: Address) {
+    if (!Address.safeParse(contact).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
+    await store.tx(async (tx) => {
+      const me = (await tx.getUser(o.userId))?.address;
+      const other = await tx.getUserByAddress(contact);
+      const sides = [{ userId: o.userId, address: contact }];
+      if (other && me) sides.push({ userId: other.userId, address: me });
+      sides.sort((a, b) => a.userId.localeCompare(b.userId));
+      let removed = false;
+      for (const { userId, address } of sides) {
+        removed = await tx.removeContact(userId, address) || removed;
+      }
+      if (!removed) return;
+      for (const { userId, address } of sides) {
+        await tx.setContactTag(userId, address, null);
+        await grants.applySharing(tx, userId, address, []);
+        await denyUnauthorizedInboxRequests(tx, userId);
+      }
+      record(tx, "broker.contact.removed", { userId: o.userId });
+    });
   }
 
   return {
@@ -455,14 +499,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         await store.tx(tx => ensureActiveAgentConnection(tx, p));
       },
       async contactGroups(p) {
-        requireScope(p, "sideband:vault", "agent.contactGroups");
+        requireScope(p, "contactGroups");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return tx.contactGroups(p.userId);
         });
       },
       async changeContactGroup(p, input) {
-        requireScope(p, "sideband:vault", "agent.changeContactGroup");
+        requireScope(p, "changeContactGroup");
         const parsed = ContactGroupChange.safeParse(input);
         if (!parsed.success) throw new BrokerError("invalid_input", "Revisa el grupo y el contacto.");
         const change = parsed.data;
@@ -476,28 +520,37 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
       async vaultCatalog(p) {
-        requireScope(p, "sideband:vault", "agent.vaultCatalog");
+        requireScope(p, "vaultCatalog");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return tx.vaultCatalog(p.userId);
         });
       },
+      async vaultMembers(p, categoryId) {
+        requireScope(p, "vaultMembers");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          const members = await tx.vaultMembers(p.userId, categoryId);
+          if (!members) throw notFound();
+          return { members };
+        });
+      },
       async changeVault(p, change) {
-        requireScope(p, "sideband:vault", "agent.changeVault");
+        requireScope(p, "changeVault");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return changeVault(tx, p.userId, change, p.agentId);
         });
       },
       async queryVault(p, input) {
-        requireScope(p, "sideband:ask", "agent.queryVault");
+        requireScope(p, "queryVault");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return queryVault(tx, p.userId, input, p.agentId);
         });
       },
       async capabilities(p, to) {
-        requireScope(p, "sideband:ask", "agent.capabilities");
+        requireScope(p, "capabilities");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           const from = (await tx.getUser(p.userId))?.address;
@@ -517,12 +570,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async ask(p, input) {
-        requireScope(p, "sideband:ask", "agent.ask");
+        requireScope(p, "ask");
         return ask(p.userId, input, { principal: p });
       },
 
       async inbox(p, includeInvitations = false) {
-        requireScope(p, "sideband:inbox", "agent.inbox");
+        requireScope(p, "inbox");
         return store.tx(async (tx) => {
           await ensureActiveAgentConnection(tx, p);
           const address = (await tx.getUser(p.userId))?.address;
@@ -537,7 +590,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async reply(p, input) {
-        requireScope(p, "sideband:reply", "agent.reply");
+        requireScope(p, "reply");
         const parsed = ReplyInput.safeParse(input);
         if (!parsed.success) {
           telemetry?.emit("broker.reply.rejected", {
@@ -576,7 +629,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             if (!parsed.data.share || ToolResultSchemas.connect.safeParse(parsed.data.result).data?.accepted !== true) {
               return reject(new BrokerError("invalid_input", "Para aceptar, incluye accepted: true y las categorías elegidas por tu titular."));
             }
-            requireScope(p, "sideband:accept", "agent.reply.connect");
+            requireScope(p, "reply.connect");
           } else if (parsed.data.share !== undefined) {
             return reject(new BrokerError("invalid_input", "Solo una aceptación lleva categorías para compartir."));
           }
@@ -590,7 +643,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const { changed, receipt, flags } = response;
           if (!await saveTransition(tx, row, changed)) return reject(closed());
           if (answeringInvitation) await applyConnection(tx, changed, parsed.data.share);
-          await recordTransition(tx, row, changed, "agent");
+          await recordTransitionAndScheduleOriginWake(tx, row, changed, "agent");
           if (flags.length > 0 || changed.droppedFields.length > 0) {
             record(tx, "broker.reply.sanitized", {
               requestId,
@@ -611,15 +664,25 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async searchPublicProfiles(p, query) {
-        requireScope(p, "sideband:ask", "agent.searchPublicProfiles");
+        requireScope(p, "searchPublicProfiles");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           return searchProfiles(tx, p.userId, query, p.agentId);
         });
       },
 
+      async networkUsers(p, after) {
+        requireScope(p, "networkUsers");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          const pageSize = 50;
+          const rows = await tx.networkAddresses(after, pageSize + 1);
+          const addresses = rows.slice(0, pageSize);
+          return { addresses, ...(rows.length > pageSize ? { nextCursor: addresses.at(-1) } : {}) };
+        });
+      },
       async contacts(p) {
-        requireScope(p, "sideband:ask", "agent.contacts");
+        requireScope(p, "contacts");
         return store.tx(async (tx) => {
           await ensureActiveAgentConnection(tx, p);
           return directory(tx, p.userId);
@@ -627,12 +690,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async status(p, id) {
-        requireScope(p, "sideband:status", "agent.status");
+        requireScope(p, "status");
         return status(p.userId, id, p);
       },
 
       async connectWake(p, target) {
-        requireScope(p, WAKE_SUBSCRIPTION_SCOPE, "agent.connectWake");
+        requireScope(p, "connectWake");
         const parsed = WakeTarget.safeParse(target);
         if (!parsed.success) throw new BrokerError("invalid_input", "La configuración del aviso no es válida.");
         const wakeTarget = parsed.data;
@@ -657,7 +720,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async disconnectWake(p, subscriptionId) {
-        requireScope(p, WAKE_SUBSCRIPTION_SCOPE, "agent.disconnectWake");
+        requireScope(p, "disconnectWake");
         await store.tx(async (tx) => {
           const connection = await ensureActiveAgentConnection(tx, p);
           if (connection.wakeTarget.kind !== "mcp_events" || connection.wakeTarget.subscriptionId !== subscriptionId) {
@@ -682,7 +745,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async claimAddress(o, localPart) {
-        if (!LocalPart.safeParse(localPart).success || localPart === "system") {
+        if (!LocalPart.safeParse(localPart).success || localPart === systemLocalPart) {
           throw new BrokerError("invalid_input", "Elige una parte local válida y disponible.");
         }
         const address = `${localPart}@${config.addressDomain}`;
@@ -709,7 +772,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async revokeGrant(o, grantId) {
         await store.tx(async (tx) => {
           if (!await grants.revokeGrant(tx, o.userId, grantId)) throw notFound();
-          await cancelUnauthorized(tx, o.userId);
+          await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
 
@@ -724,14 +787,15 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
 
-      async activity(o, limit = 30) {
+      async activity(o, query = {}) {
+        const { limit = 30, requestId } = typeof query === "number" ? { limit: query } : query;
         if (!Number.isSafeInteger(limit) || limit < 1) {
           throw new BrokerError("invalid_input", "El límite de actividad debe ser un entero positivo.");
         }
         return store.tx(async (tx) => {
           const address = (await tx.getUser(o.userId))?.address;
           if (!address) return [];
-          const rows = (await tx.listActivity(address, limit))
+          const rows = (await tx.listActivity(address, limit, requestId))
             .filter((row) => row.fromUserId === o.userId || row.toUserId === o.userId);
           const events = await tx.listEvents(rows.map((row) => row.id));
           return rows.map((row) => toActivityItem(row, events.filter((event) => event.requestId === row.id), o.userId));
@@ -760,7 +824,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (!await saveTransition(tx, row, changed)) throw closed();
           await applyConnection(tx, changed);
           record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: decision.kind } });
-          await recordTransition(tx, row, changed, "owner");
+          await recordTransitionAndScheduleOriginWake(tx, row, changed, "owner");
           await tx.appendEvent({ requestId, at: now, kind: "permission", status: changed.status });
           if (decision.kind === "approve_once") {
             await enqueue(tx, row, now, row.version + 1);
@@ -820,23 +884,17 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             rule: "Prueba de conexión solicitada por el dueño",
             allowedFields: fieldsOf("question"),
           };
-          await recordNew(tx, row, now, "ping");
+          await persistNewRequest(tx, row, now, "ping");
           return { requestId: row.id };
         });
       },
 
-      async connect(o, to, share, tag) {
-        const target = Address.safeParse(to);
-        if (!target.success) throw new BrokerError("invalid_input", "La dirección no es válida.");
-        const offer = share === undefined ? undefined : Sharing.safeParse(share);
-        if (offer && !offer.success) throw new BrokerError("invalid_input", "Lo que compartes no es válido.");
-        const label = tag === undefined ? undefined : ContactTag.safeParse(tag);
-        if (label && !label.success) throw new BrokerError("invalid_input", "La etiqueta no es válida.");
+      async connect(o, to: Address | ConnectInput, share?: Sharing, tag?: ContactTag) {
+        const input = ConnectInput.safeParse(typeof to === "string" ? { to, share, tag } : to);
+        if (!input.success) throw new BrokerError("invalid_input", "La invitación no es válida.");
+        const invitation = input.data;
         const view = await store.tx(async (tx) => {
-          const sharing = offer?.data ?? (label ? (await presetsOf(tx, o.userId))[label.data] : undefined);
-          const result = await submit(tx, o.userId, { to: target.data, tool: "connect", args: sharing ? { share: sharing } : {} }, {});
-          if (!(result instanceof BrokerError) && label) await tagContact(tx, o.userId, target.data, label.data);
-          return result;
+          return submit(tx, o.userId, { to: invitation.to, tool: "connect", args: { share: invitation.share } }, { tag: invitation.tag });
         });
         if (view instanceof BrokerError) throw view;
         return view;
@@ -864,9 +922,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         const parsed = Sharing.safeParse(sharing);
         if (!address.success || !parsed.success) throw new BrokerError("invalid_input", "Lo que compartes no es válido.");
         await store.tx(async (tx) => {
-          if (!(await tx.listFriends(o.userId)).includes(address.data)) throw notFound();
+          if (!(await tx.listContactAddresses(o.userId)).includes(address.data)) throw notFound();
           await grants.applySharing(tx, o.userId, address.data, parsed.data);
-          await cancelUnauthorized(tx, o.userId);
+          await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
 
@@ -875,10 +933,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         const label = ContactTag.safeParse(tag);
         if (!address.success || !label.success) throw new BrokerError("invalid_input", "La etiqueta no es válida.");
         await store.tx(async (tx) => {
-          if (!(await tx.listFriends(o.userId)).includes(address.data)) throw notFound();
+          if (!(await tx.listContactAddresses(o.userId)).includes(address.data)) throw notFound();
           await tagContact(tx, o.userId, address.data, label.data);
           await grants.applySharing(tx, o.userId, address.data, (await presetsOf(tx, o.userId))[label.data]);
-          await cancelUnauthorized(tx, o.userId);
+          await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
 
@@ -890,11 +948,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const previous = (await presetsOf(tx, o.userId))[label.data];
           await tx.putTagPreset(o.userId, label.data, parsed.data);
           record(tx, "broker.tag.preset_set", { userId: o.userId, attrs: { tag: label.data, categories: parsed.data.length } });
-          for (const contact of await tx.listContacts(o.userId)) {
+          for (const contact of await listContactsWithOutgoingSharing(tx, o.userId)) {
             if (contact.tag !== label.data || !sameSharing(contact.gives, previous)) continue;
             await grants.applySharing(tx, o.userId, contact.address, parsed.data);
           }
-          await cancelUnauthorized(tx, o.userId);
+          await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
 
@@ -916,26 +974,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (error) throw error;
       },
 
-      ...createCirclePort({ store, clock }, record, cancelUnauthorized),
+      ...createCirclePort({ store, clock }, record, denyUnauthorizedInboxRequests),
 
-      async removeFriend(o, friend) {
-        if (!Address.safeParse(friend).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
-        await store.tx(async (tx) => {
-          const me = (await tx.getUser(o.userId))?.address;
-          const other = await tx.getUserByAddress(friend);
-          const sides = [{ userId: o.userId, address: friend }];
-          if (other && me) sides.push({ userId: other.userId, address: me });
-          sides.sort((a, b) => a.userId.localeCompare(b.userId));
-          let removed = false;
-          for (const { userId, address } of sides) {
-            removed = await tx.removeFriend(userId, address) || removed;
-            await tx.setContactTag(userId, address, null);
-            await grants.applySharing(tx, userId, address, []);
-            await cancelUnauthorized(tx, userId);
-          }
-          if (removed) record(tx, "broker.contact.removed", { userId: o.userId });
-        });
-      },
+      removeContact,
+      removeFriend: removeContact,
 
       async revokeAgent(o, agentId) {
         await store.tx((tx) => revokeConnection(tx, o.userId, agentId, clock.now(), (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "owner" } })));

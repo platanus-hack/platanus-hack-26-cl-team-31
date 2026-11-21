@@ -12,6 +12,7 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@team-31/auth": "workspace:*",
     "@team-31/broker": "workspace:*",
+    "@team-31/broker-client": "workspace:*",
     "@team-31/message-flow": "workspace:*",
     "@team-31/ops": "workspace:*",
     "@team-31/protocol": "workspace:*",

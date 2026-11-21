@@ -1,8 +1,18 @@
 import { z } from "zod";
 import { Address } from "./address.js";
 import { Category } from "./categories.js";
-import { ToolArgs, ToolName, ToolResult, ToolResultSchemas } from "./tools.js";
+import { ToolArgs, ToolName, ToolResultSchemas } from "./tools.js";
 import { ContactTag, Sharing } from "./sharing.js";
+
+export function withToolArgs<Shape extends z.ZodRawShape>(shape: Shape) {
+  return z.discriminatedUnion("tool", [
+    z.object({ ...shape, tool: z.literal("interest_check"), args: ToolArgs.interest_check }),
+    z.object({ ...shape, tool: z.literal("profile"), args: ToolArgs.profile }),
+    z.object({ ...shape, tool: z.literal("availability"), args: ToolArgs.availability }),
+    z.object({ ...shape, tool: z.literal("question"), args: ToolArgs.question }),
+    z.object({ ...shape, tool: z.literal("connect"), args: ToolArgs.connect }),
+  ]);
+}
 
 export const RequiredRelation = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("contact"), tag: ContactTag.optional() }),
@@ -10,21 +20,13 @@ export const RequiredRelation = z.discriminatedUnion("kind", [
 ]);
 export type RequiredRelation = z.infer<typeof RequiredRelation>;
 
-const askBase = z.object({
+export const AskInput = withToolArgs({
+  to: Address, purpose: z.string().max(200).optional(),
   idempotencyKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9_.:-]+$/).optional(),
   requireRelation: RequiredRelation.optional(),
-  to: Address,
-  purpose: z.string().max(200).optional(),
 });
-
-export const AskInput = z.discriminatedUnion("tool", [
-  askBase.extend({ tool: z.literal("interest_check"), args: ToolArgs.interest_check }),
-  askBase.extend({ tool: z.literal("profile"), args: ToolArgs.profile }),
-  askBase.extend({ tool: z.literal("availability"), args: ToolArgs.availability }),
-  askBase.extend({ tool: z.literal("question"), args: ToolArgs.question }),
-  askBase.extend({ tool: z.literal("connect"), args: ToolArgs.connect }),
-]);
 export type AskInput = z.infer<typeof AskInput>;
+export type AskArguments = z.input<typeof AskInput>;
 
 export const BotOutcome = z.enum(["answered", "no_data", "needs_owner", "declined"]);
 export type BotOutcome = z.infer<typeof BotOutcome>;
@@ -54,26 +56,28 @@ const finalRequesterBase = requesterBase.extend({
   signature: z.string().min(1),
 });
 
+const answered = finalRequesterBase.extend({ decision: z.literal("allow"), outcome: z.literal("answered") });
+function answeredWith<T extends ToolName>(tool: T) {
+  return answered.extend({ tool: z.literal(tool), result: ToolResultSchemas[tool] });
+}
+const answeredView = z.discriminatedUnion("tool", [
+  answeredWith("profile"), answeredWith("availability"), answeredWith("interest_check"),
+  answeredWith("question"), answeredWith("connect"),
+]);
+
 export const RequesterView = z.discriminatedUnion("decision", [
   requesterBase.extend({
     final: z.literal(false),
     decision: z.literal("pending"),
     waitingFor: z.enum(["agent", "owner"]),
   }),
-  finalRequesterBase.extend({
-    decision: z.literal("allow"),
-    outcome: z.literal("answered"),
-    result: ToolResult,
-  }),
+  answeredView,
   finalRequesterBase.extend({
     decision: z.literal("unanswered"),
     outcome: z.enum(["no_data", "expired", "delivery_failed"]),
   }),
   finalRequesterBase.extend({ decision: z.literal("deny") }),
-]).refine(
-  (view) => view.decision !== "allow" || ToolResultSchemas[view.tool].safeParse(view.result).success,
-  { error: "El resultado no corresponde a la herramienta.", path: ["result"] },
-);
+]);
 export type RequesterView = z.infer<typeof RequesterView>;
 
 export const RequesterViewSchema = RequesterView;
@@ -85,12 +89,10 @@ export const SenderMessage = z.object({
 });
 export type SenderMessage = z.infer<typeof SenderMessage>;
 
-export const InboxItem = z.object({
+export const InboxItem = withToolArgs({
   requestId: z.string(),
   nonce: z.string(),
-  tool: ToolName,
   from: Address,
-  args: z.unknown(),
   expiresAt: z.iso.datetime({ offset: true }),
   allowedFields: z.array(z.string()),
   ownerAuthorization: z.object({
@@ -101,10 +103,7 @@ export const InboxItem = z.object({
   }),
   senderMessage: SenderMessage,
   howToReply: z.string(),
-}).refine(
-  (item) => ToolArgs[item.tool].safeParse(item.args).success,
-  { error: "Los argumentos no corresponden a la herramienta.", path: ["args"] },
-);
+});
 export type InboxItem = z.infer<typeof InboxItem>;
 
 export const ReplyArguments = z.object({

@@ -1,6 +1,6 @@
 import { ErrorBody, type ErrorCode } from "@team-31/protocol";
-import { routes } from "@team-31/protocol/http";
-import { BrokerError } from "../errors.js";
+import { routes, type RouteInput } from "@team-31/protocol/http";
+import { BrokerError } from "./errors.js";
 
 type Schema<Value> = {
   safeParse(input: unknown): { success: true; data: Value } | { success: false };
@@ -17,10 +17,6 @@ type HttpRoute<Value = unknown> = {
 };
 
 type HttpInput = { params?: unknown; query?: unknown; body?: unknown };
-type RouteInput<Route> = {
-  [Key in keyof HttpInput & keyof Route]: Route[Key] extends Schema<infer Value> ? Value : never;
-};
-
 export type ClientOptions<Identity> = {
   baseUrl: string;
   getServiceToken: (identity: Identity) => Promise<string>;
@@ -145,6 +141,7 @@ export function createHttpClient<Identity>(
           },
           body,
           signal,
+          cache: "no-store",
           redirect: "error",
         });
       };

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const people = {
   ana: { name: "Ana", role: "Organizadora" },
   bob: { name: "Bob", role: "Participante" },
@@ -12,9 +14,15 @@ export function isPerson(value: unknown): value is Person {
   return typeof value === "string" && Object.hasOwn(people, value);
 }
 
-export type ToolTrace = { tool: string; input: Record<string, unknown>; data: Record<string, unknown> };
-export type ModelState = "ready" | "missing" | "offline";
-export type ChatReply = { text: string; traces?: ToolTrace[]; error?: "model" | "api"; modelState?: ModelState };
+const record = z.record(z.string(), z.unknown());
+const ToolTrace = z.object({ tool: z.string(), input: record, data: record });
+export type ToolTrace = z.infer<typeof ToolTrace>;
+const ModelState = z.enum(["ready", "missing", "offline"]);
+export type ModelState = z.infer<typeof ModelState>;
+export const ChatReply = z.object({
+  text: z.string(), traces: z.array(ToolTrace).optional(), error: z.enum(["model", "api"]).optional(), modelState: ModelState.optional(),
+});
+export type ChatReply = z.infer<typeof ChatReply>;
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
 export const maxMessage = 2000;

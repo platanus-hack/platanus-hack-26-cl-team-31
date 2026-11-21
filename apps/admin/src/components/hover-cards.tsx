@@ -13,18 +13,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { RelativeTime } from "@/components/relative-time"
 import { RequestStatusBadge } from "@/components/status"
-import { formatDuration } from "@/lib/format"
+import { formatDuration, initials } from "@/lib/format"
 import { requestQuery, userQuery } from "@/lib/queries"
 import { toolLabel } from "@/lib/status"
-
-function initials(text: string) {
-  return text
-    .split(/[\s@._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join("")
-}
 
 export function PersonHoverCard({
   id,

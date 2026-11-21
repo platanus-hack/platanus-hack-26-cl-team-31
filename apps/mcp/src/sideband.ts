@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createAgentClient } from "@team-31/broker/client";
+import { createAgentClient } from "@team-31/broker-client";
 import { createMessageRuntime } from "@team-31/message-flow/runtime";
 import { Scope } from "@team-31/protocol";
 import { tracedFetch } from "@team-31/telemetry";

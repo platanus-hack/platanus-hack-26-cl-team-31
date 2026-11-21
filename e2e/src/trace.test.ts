@@ -7,7 +7,7 @@ import { serve, type ServerType } from "@hono/node-server";
 import { createBroker, createMemoryStore } from "@team-31/broker";
 import { applyPostgresMigrations, createPostgresStore } from "@team-31/broker/postgres";
 import { connectAgent } from "./agents.js";
-import { createAgentClient } from "@team-31/broker/client";
+import { createAgentClient } from "@team-31/broker-client";
 import { createMessageRuntime } from "@team-31/message-flow/runtime";
 import { RequesterView } from "@team-31/protocol";
 import { z } from "zod";

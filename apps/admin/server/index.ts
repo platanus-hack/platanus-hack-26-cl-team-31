@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server"
 import { createTelemetry, tracedFetch, type Telemetry } from "@team-31/telemetry"
-import type { AdminQueries } from "../shared/queries.js"
+import { createPgRevealer } from "./queries/reveal.js"
 import { createPgAdminQueries } from "./queries/index.js"
 import { createAdminApp } from "./app.js"
 import { createPgAuditLog, migrateAdminTables } from "./audit.js"
@@ -8,49 +8,16 @@ import { createAdminAuth, createRoleResolver, migrateAdminAuth, type AdminAuthOp
 import { createBrokerAdminClient } from "./broker.js"
 import { createAdminPool } from "./db.js"
 import { allowListFromEnv, readEnv, type AdminEnv } from "./env.js"
-import { AdminHttpError } from "./errors.js"
 import { startPruneTask } from "./prune.js"
 import { createAdminLimiters } from "./rate-limit.js"
 import { createPgTokenStore } from "./tokens.js"
-import type { Revealer } from "./types.js"
 
 // Servidor admin: API, auth y MCP. En dev escucha en ADMIN_API_PORT (Vite sirve la SPA en
 // ADMIN_PORT); con ADMIN_SERVE_SPA=1 sirve todo en ADMIN_PORT. Ver docs/admin.md#8.
 
-// AdminQueries lo implementa ADM-02. Mientras sea un stub, la API responde `upstream`.
-function loadQueries(databaseUrl: string): AdminQueries {
-  try {
-    return createPgAdminQueries({ databaseUrl })
-  } catch {
-    console.warn("[admin] AdminQueries aún no está disponible (ADM-02). Las lecturas responderán 502.")
-    return new Proxy({} as AdminQueries, {
-      get: () => async () => {
-        throw new AdminHttpError("upstream", "Las consultas del admin aún no están disponibles.")
-      },
-    })
-  }
-}
-
-// createPgRevealer vive en server/queries/reveal.ts (ADM-02). Se carga dinámicamente para
-// que el build pase aunque el módulo todavía no exista.
-async function loadRevealer(databaseUrl: string): Promise<Revealer> {
-  const specifier = "./queries/reveal.js"
-  try {
-    const module = (await import(specifier)) as { createPgRevealer?: (options: { databaseUrl: string }) => Revealer }
-    if (typeof module.createPgRevealer === "function") return module.createPgRevealer({ databaseUrl })
-  } catch {
-    // Aún no existe.
-  }
-  console.warn("[admin] El revelado de payloads aún no está disponible (ADM-02).")
-  return {
-    reveal: async () => {
-      throw new AdminHttpError("upstream", "Revelar payloads aún no está disponible.")
-    },
-  }
-}
-
-async function start(env: AdminEnv, telemetry: Telemetry) {
+async function start(env: AdminEnv, telemetry: Telemetry, resources: AsyncDisposableStack) {
   const pool = createAdminPool(env.databaseUrl)
+  resources.defer(() => pool.end())
   await migrateAdminTables(pool)
   const audit = createPgAuditLog(pool, telemetry)
   const roleOf = createRoleResolver(allowListFromEnv(process.env), { devAuth: env.devAuth })
@@ -71,11 +38,16 @@ async function start(env: AdminEnv, telemetry: Telemetry) {
   const tokens = createPgTokenStore(pool)
   const shutdown = new AbortController()
 
+  const queries = createPgAdminQueries({ databaseUrl: env.readOnlyDatabaseUrl })
+  resources.defer(() => queries.close())
+  const revealer = createPgRevealer({ databaseUrl: env.databaseUrl })
+  resources.defer(() => revealer.close())
+
   const app = createAdminApp({
     auth,
     roleOf,
-    queries: loadQueries(env.readOnlyDatabaseUrl),
-    revealer: await loadRevealer(env.databaseUrl),
+    queries,
+    revealer,
     tokens,
     authenticateToken: (bearer) => tokens.authenticate(bearer),
     audit,
@@ -91,6 +63,7 @@ async function start(env: AdminEnv, telemetry: Telemetry) {
   })
 
   const stopPrune = startPruneTask(pool, env.retentionDays, telemetry)
+  resources.defer(stopPrune)
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, ({ address, port }) => {
     console.info(`[admin] escuchando en ${address}:${port}${env.serveSpa ? " (SPA + API + MCP)" : " (API + MCP)"}`)
     if (env.devAuth) console.info("[admin] ADMIN_DEV_AUTH=1: POST /api/admin/dev-login habilitado")
@@ -99,7 +72,6 @@ async function start(env: AdminEnv, telemetry: Telemetry) {
   async function stop() {
     if (shutdown.signal.aborted) return
     shutdown.abort()
-    stopPrune()
     try {
       const closed = new Promise<void>((resolve) => server.close(() => resolve()))
       // Las conexiones keep-alive ociosas se cierran ya; las ocupadas (streams en vivo, que el
@@ -110,11 +82,12 @@ async function start(env: AdminEnv, telemetry: Telemetry) {
       force.unref()
       await closed
       clearTimeout(force)
-      await pool.end()
-      await telemetry.shutdown()
+      await resources.disposeAsync()
     } catch (error) {
       telemetry.error("shutdown", error)
       process.exitCode = 1
+    } finally {
+      await telemetry.shutdown()
     }
   }
 
@@ -138,13 +111,16 @@ try {
 if (env) {
   // service.started, latido cada 30 s y sink según TELEMETRY_SINK (postgres por defecto con DATABASE_URL).
   const telemetry = createTelemetry({ service: "admin", version: process.env.npm_package_version ?? "0.0.1" })
+  const resources = new AsyncDisposableStack()
   try {
-    await start(env, telemetry)
+    await start(env, telemetry, resources)
   } catch (error) {
     const errorId = telemetry.error("startup", error)
     const code = (error as { code?: unknown } | null)?.code
     console.error(`[admin] No se pudo iniciar (errorId ${errorId}${typeof code === "string" ? `, ${code}` : ""}).`)
     process.exitCode = 1
+    try { await resources.disposeAsync() }
+    catch (cleanupError) { telemetry.error("startup.cleanup", cleanupError) }
     await telemetry.shutdown()
   }
 }

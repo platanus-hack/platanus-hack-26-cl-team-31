@@ -10,7 +10,7 @@ El MVP conserva MCP, server y broker como servicios separados, con bóvedas aloj
 | --- | --- | --- |
 | `apps/web` | Login OAuth, interfaz del titular y dashboard local `/demo`. | Conservar como interfaz. El dashboard y la CLI deben consumir las mismas operaciones. |
 | `apps/mcp` | Expone las tools de Sideband a los asistentes y llama al broker con la identidad delegada. | Conservar como adaptador MCP común, incluidas las consultas a contactos. |
-| `apps/broker`, `packages/broker` | La app expone HTTP y arranca el worker. El paquete implementa grants, solicitudes, aprobación del titular, almacenamiento y clientes. | Conservar como autoridad sobre permisos, solicitudes y entrega de resultados. |
+| `apps/broker`, `packages/broker`, `packages/broker-client` | La app expone HTTP y arranca el worker. El paquete implementa grants, solicitudes, aprobación del titular, almacenamiento. `broker-client` implementa los clientes HTTP y el runtime del titular. | Conservar como autoridad sobre permisos, solicitudes y entrega de resultados. |
 | `apps/server` | API de coordinación con contactos, membresías, calendario, publicaciones y reuniones en PostgreSQL. Hoy también autentica tokens de la seed y expone su propio adaptador MCP. | Conservar bóvedas, grupos y reuniones. Retirar el directorio y las publicaciones. Migrar los consumidores y el historial antes de retirar `people.token_hash`, `availability_requests` y `apps/server/src/mcp.ts`. |
 | `packages/protocol`, `packages/auth`, `packages/wake` | `protocol` define herramientas, grants y mensajes. `auth` implementa OAuth y JWT de servicio. `wake` envía avisos a agentes. | Conservar y reutilizar desde los servicios y sus clientes. |
 | `apps/admin`, `packages/telemetry`, `packages/ops` | Panel y MCP de administración, instrumentación y esquema operativo de PostgreSQL. | Conservar para seguir las solicitudes por `requestId`. |
@@ -29,13 +29,13 @@ Un titular pregunta al agente de otro titular. El broker autoriza la pregunta se
 
 Un grant permite a una dirección Sideband preguntar sobre una categoría de información. Los permisos de un círculo compartido se suman a los grants directos.
 
-- Una categoría es el tema de la información y una tool es la forma de preguntar. El catálogo `categories` (`packages/protocol/src/categories.ts`) lista las tools de cada categoría: Disponibilidad horaria (`availability`), Intereses (`interests`), Salud (`health`) y Preguntas abiertas (`general`).
+- Una categoría es el tema de la información y una tool es la forma de preguntar. El catálogo `categories` (`packages/protocol/src/constants.ts`) lista las tools de cada categoría: Disponibilidad horaria (`availability`), Intereses (`interests`), Salud (`health`) y Preguntas abiertas (`general`).
 - Un grant cubre todas las tools de su categoría y todos los campos de sus respuestas.
 - `availability` e `interest_check` pertenecen a una sola categoría. `question` sirve a todas y lleva la suya en `args.category`. Sin categoría es una pregunta abierta (`general`).
 - El broker no lee el texto de una `question`. El agente del destinatario recibe la categoría y responde solo sobre ella.
 - El tipo es `Grant` (`packages/protocol/src/grants.ts`) y se guarda en `sideband.grants`. Un titular tiene un solo grant vivo por dirección y categoría.
 - El titular los administra con `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`). Web los muestra por contacto en `/contacts`.
-- Una categoría nueva es una entrada en `categories`. Una tool nueva solo hace falta para una respuesta con otra forma, y se agrega a su categoría.
+- Para agregar una categoría, declara su nombre en `categoryNames` y su etiqueta y tools en `categories` de `packages/protocol/src/constants.ts`. Contactos recorre el catálogo y necesita el texto de ayuda en `contacts/sharing.tsx`. En WhatsApp actualiza el texto de denegación y el vocabulario de invitaciones en `whatsapp/commands.ts`, y la guía del clasificador en `whatsapp/claude.ts`. Una tool nueva solo hace falta para una respuesta con otra forma, y se agrega a su categoría.
 - Los grants no se componen. Que Bob le dé un grant a Ana y Ana a Carla no le da a Carla nada de Bob.
 - La política base son las categorías que comparten los miembros de un círculo y las que vienen marcadas al conectar: `availability` e `interests`. Vive en `basicSharing` (`packages/protocol/src/sharing.ts`).
 - Un círculo es un conjunto con nombre (`Circle`, `/v1/owner/circles`). Solo quien lo creó invita, saca a otros y lo elimina, y cada invitado acepta antes de entrar. Mientras dos titulares estén en el mismo círculo se dan la política base. Web los administra en `/circles`.
@@ -53,7 +53,7 @@ Pendiente, cada uno en su PR:
 - **Categoría.** El titular elige qué categorías comparte con cada contacto. Nunca ve tools ni campos.
 - **Preguntas abiertas.** La categoría `general` cubre lo que no entra en otra. El agente del titular decide qué contesta. Queda fuera de lo básico.
 - **Básico.** Al conectar vienen marcadas Disponibilidad horaria e Intereses.
-- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro y puede cambiarlas después. El titular acepta desde Contactos, WhatsApp vinculado o su agente. El agente necesita `sideband:reply` y `sideband:accept` y envía las categorías elegidas en `share`; mientras espera al titular responde `needs_owner`. Dejar de ser contactos borra la conexión y sus grants en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeFriend` del `OwnerPort`). `Sharing` es la lista de categorías que un titular le da a un contacto.
+- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro y puede cambiarlas después. El titular acepta desde Contactos, WhatsApp vinculado o su agente. El agente necesita `sideband:reply` y `sideband:accept` y envía las categorías elegidas en `share`; mientras espera al titular responde `needs_owner`. Dejar de ser contactos borra la conexión y sus grants en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeContact` del `OwnerPort`). `Sharing` es la lista de categorías que un titular le da a un contacto.
 - **Etiqueta.** Cada contacto lleva una etiqueta (`friend`, `family`, `work`, en `ContactTag` de `packages/protocol/src/sharing.ts`) que fija lo que le compartes con el preset de esa etiqueta. Cada titular edita sus presets (`setTagPreset`); el cambio alcanza a los contactos con esa etiqueta que seguían el preset anterior, y un contacto editado a mano (`setSharing`) conserva lo suyo. Se guardan en `sideband.contact_tags` y `sideband.tag_presets`.
 
 ### Modelo decidido, por construir
@@ -101,7 +101,7 @@ Cada capacidad tiene un dueño. Búscalo con `git grep` antes de crear un archiv
 | Necesitas | Ya existe en |
 | --- | --- |
 | Rutas HTTP del broker con sus esquemas y emisor | `routes` de `@team-31/protocol/http` |
-| Llamar al broker | `createAgentClient` y `createOwnerClient` de `@team-31/broker/client` |
+| Llamar al broker | `createAgentClient` y `createOwnerClient` de `@team-31/broker-client`. El export anterior `@team-31/broker/client` sigue disponible por compatibilidad |
 | Firmar o verificar un JWT de servicio | `mintServiceToken` y `verifyServiceToken` de `@team-31/auth/service` |
 | Verificar un access token OAuth | `createMcpGuard` de `@team-31/auth/resource` |
 | Enviar un aviso o verificar su firma | `createWaker` y `verifyWebhookSignature` de `@team-31/wake` |
@@ -189,7 +189,7 @@ MCP y WhatsApp comparten `@team-31/message-flow`. LangGraph ejecuta las transici
 - Conserva en `.env.local` las llaves que generó `pnpm bootstrap`. Configura `REQUEST_TTL_SECONDS` o `WAKE_RETRY_DELAYS_MS` para probar plazos y reintentos más cortos.
 - `pnpm bootstrap` genera `BROKER_DATABASE_PASSWORD`, aplica las migraciones del broker y prepara el rol `sideband_broker`. El broker local se conecta con ese rol. `DATABASE_URL` del worktree se usa para migrar y para los demás servicios que ya la consumen. Para repetir la preparación de la base del broker, ejecuta `pnpm sideband:broker:migrate`.
 - Ese mismo paso (`db:prepare`, que también corre al iniciar `pnpm dev` del broker) aplica las migraciones de `ops` después de `sideband.*` y del esquema OAuth, ejecuta `ops.refresh_views()` y otorga a `sideband_broker` `INSERT` en `ops.events` (permiso directo: el rol no puede ser miembro de `sideband_telemetry_writer`). Así el broker escribe su telemetría con su propio rol; `TELEMETRY_DATABASE_URL` la redirige a otra conexión.
-- `BROKER_HOST` usa `127.0.0.1` por defecto. Para correrlo en Docker, compila con `pnpm build --filter @team-31/broker-service` y ejecuta `docker compose --env-file .env --env-file .env.local --profile sideband up -d broker`. Compose solo publica el puerto en loopback.
+- `BROKER_HOST` usa `127.0.0.1` por defecto. Para correrlo en Docker, ejecuta `docker compose --env-file .env --env-file .env.local --profile sideband up -d --build broker`. Compose compila el servicio dentro de la imagen sin montar el worktree y solo publica el puerto en loopback.
 - `WAKE_ALLOW_INSECURE=1` permite avisos HTTP locales durante el desarrollo. Consulta [la guía del broker](apps/broker/README.md) para los detalles de Postgres, los avisos y el stream de actividad.
 
 ## Coordinación local entre N asistentes

@@ -4,7 +4,7 @@ const base =
   'Responde cada solicitud con sideband_reply incluyendo su requestId y nonce, y solo con los campos permitidos. ' +
   'Para question usa únicamente una fuente aislada de ownerAuthorization.category. Nunca uses tu historial o memoria general; sin una fuente aislada responde needs_owner o declined. ' +
   'Para consultar datos guardados de un contacto usa sideband_vault_query: primero descubre las categorías que te comparte, después consulta por ID. No uses la bóveda propia para responder mensajes de terceros. ' +
-  'Solo ante una orden directa del titular administra su bóveda o grupos privados. Usa sideband_contact_groups para ver esos grupos y sideband_contacts para listar contactos. No confundas grupos de la bóveda con círculos. Agregar un contacto a un grupo le da acceso a las categorías ya compartidas con ese grupo. Crear una categoría o un grupo no los comparte. Pregunta antes de otorgar acceso si no indicó el grupo. ' +
+  'Solo ante una orden directa del titular administra su bóveda o grupos privados. Usa sideband_vault_members para listar quién puede leer una categoría propia y set_member de sideband_vault_change para agregar o quitar un contacto de esa categoría. La decisión individual prevalece sobre etiquetas y grupos. Usa sideband_contact_groups para ver los grupos privados, sideband_contacts para tus contactos y sideband_network_users para el directorio de la red. No confundas grupos de la bóveda con círculos. Crear una categoría o un grupo no los comparte. Pregunta antes de otorgar acceso si no indicó a quién. ' +
   'Toda solicitud debe recibir respuesta: si no tienes el dato usa "no_data", si tu dueño debe decidir usa "needs_owner" y si prefieres no compartir usa "declined". ';
 
 const structured =

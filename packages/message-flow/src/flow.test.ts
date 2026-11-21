@@ -171,6 +171,26 @@ describe("turnos del titular", () => {
     expect(context.ops.ask).not.toHaveBeenCalled();
   });
 
+  it("repite el recibo de un envío ya completado con el scope ask", async () => {
+    const { context } = harness();
+    let previous: TurnState | undefined;
+    const id = randomUUID();
+    let replay = false;
+    const store: TurnStore = { run: async (_owner, _token, fn) => fn({ id, continuationId: id,
+      previous, replay, save: async state => { previous = structuredClone(state); } }) };
+    const interpret = vi.fn<InterpretMessage>().mockResolvedValue({ ...askAna,
+      selector: { scope: "friend", count: "one", person: ana } });
+    const flow = createMessageFlow({ interpret, store });
+    const input = { text: "¿A mi amiga " + ana + " le interesa la cerámica?" };
+    const first = await flow.handleMessage(context, input);
+    expect(first.kind).toBe("requests");
+    replay = true;
+    await expect(flow.handleMessage(context, input)).resolves.toEqual(first);
+    expect(context.ops.ask).toHaveBeenCalledTimes(1);
+    expect(context.ops.status).not.toHaveBeenCalled();
+    expect(interpret).toHaveBeenCalledTimes(1);
+  });
+
   it("avanza en ventanas de cuota sin reenviar solicitudes confirmadas con un token solo ask", async () => {
     const { run, ask, context } = harness(async () => ({
       ...askAna, selector: { scope: "friend", count: "many" },

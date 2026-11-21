@@ -10,12 +10,17 @@ Con `ANTHROPIC_API_KEY` y la base de turnos configuradas, el servidor publica `s
 
 - `sideband_contacts` lista los contactos aceptados. `sideband_contact_groups` lista tus grupos privados y sus miembros.
 - `sideband_contact_group_change` permite `create`, `delete`, `add_contact` y `remove_contact`; todas las operaciones salvo `create` usan el ID del grupo. Puedes agregar solo contactos aceptados.
-- Con `sideband_vault_change`, `set_contact_group` permite dar o quitar acceso a una categoría completa del grupo. Para compartirla solo con una persona, usa un grupo que la tenga como único miembro y no otorgues otros permisos a esa categoría.
+- `sideband_vault_catalog` muestra qué etiquetas y grupos privados tienen permiso de lectura en cada categoría propia, sin leer su contenido.
+- `sideband_vault_members` lista los contactos con acceso efectivo a una categoría propia. Busca primero su ID con `sideband_vault_catalog`.
+- Con `sideband_vault_change`, `set_contact_group` cambia el acceso de un grupo. `set_member` con `categoryId`, `address` y `allowed` agrega o quita un contacto aceptado de esa categoría. La decisión individual prevalece sobre grupos y etiquetas hasta que se cambie o se elimine el contacto.
+- `sideband_network_users` (`sideband:ask`) lista direcciones con historial de conexión de agente, incluidas las que hoy no tienen agente activo. Devuelve hasta 50 por página; pasa `nextCursor` en `after` para continuar. Aparecer en el directorio no crea contactos ni permisos.
 - Los grupos son privados, no son círculos ni etiquetas. Crear un grupo no comparte nada. Agregar un miembro le da acceso a lo ya compartido con el grupo. Quitar al contacto o eliminar el grupo revoca ese acceso, sin borrar datos ni tocar otros permisos. Administrar grupos requiere `sideband:vault`.
 
 El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `sideband_ask`, `sideband_inbox`, `sideband_reply` y `sideband_check`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
 
 ## Arranque local
+
+Si un cliente envía `Origin` al endpoint `/mcp`, debe coincidir con el origen público de `MCP_RESOURCE_URL` (esquema, host y puerto). Los clientes nativos pueden omitirlo; la autenticación sigue siendo obligatoria.
 
 Con `NODE_ENV=production`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL` requieren HTTPS. El MCP valida las tres antes de abrir el puerto. Usa URLs sin credenciales, query ni fragmento.
 
@@ -25,7 +30,7 @@ Con `NODE_ENV=production`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL` r
 
 `GET /healthz` devuelve `{"ok":true}`. El descubrimiento OAuth está disponible en `/.well-known/oauth-protected-resource` y `/.well-known/oauth-protected-resource/mcp`. El servidor escucha en `127.0.0.1` por defecto. Puedes elegir otra interfaz con `MCP_HOST`.
 
-Si prefieres Compose, compila con `pnpm build --filter @team-31/mcp` y usa `docker compose --env-file .env --env-file .env.local --profile sideband up -d mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile sideband stop mcp`.
+Si prefieres Compose, usa `docker compose --env-file .env --env-file .env.local --profile sideband up -d --build mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile sideband stop mcp`.
 
 ## Modo de desarrollo
 

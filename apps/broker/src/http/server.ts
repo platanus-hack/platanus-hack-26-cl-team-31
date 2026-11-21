@@ -31,8 +31,12 @@ async function parseBody<S extends z.ZodType>(c: HttpContext, schema: S): Promis
 
 async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, { agent, owner, admin }: BrokerCore) {
   switch (route.port) {
+    case "agent.networkUsers": return agent.networkUsers(c.get("mcp"), parseInput(route.query, c.req.query()).after);
     case "agent.connect": return agent.connect(c.get("mcp"));
     case "agent.vaultCatalog": return agent.vaultCatalog(c.get("mcp"));
+    case "agent.contactGroups": return agent.contactGroups(c.get("mcp"));
+    case "agent.changeContactGroup": return agent.changeContactGroup(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.vaultMembers": return agent.vaultMembers(c.get("mcp"), parseInput(route.query, c.req.query()).categoryId);
     case "agent.changeVault": return agent.changeVault(c.get("mcp"), await parseBody(c, route.body));
     case "agent.queryVault": return agent.queryVault(c.get("mcp"), await parseBody(c, route.body));
     case "owner.vault": return owner.vault(c.get("web"));
@@ -72,7 +76,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.pending":
       return { items: await owner.pending(c.get("web")) };
     case "owner.activity":
-      return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query()).limit) };
+      return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query())) };
     case "owner.ask":
       return owner.ask(c.get("web"), decodeAsk(await parseBody(c, route.body)));
     case "owner.channelAsk":
@@ -94,8 +98,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.revokeAgent":
       return owner.revokeAgent(c.get("web"), parseInput(route.params, c.req.param()).agentId);
     case "owner.connect": {
-      const { to, share, tag } = await parseBody(c, route.body);
-      return owner.connect(c.get("web"), to, share, tag);
+      return owner.connect(c.get("web"), await parseBody(c, route.body));
     }
     case "owner.contacts":
       return owner.contacts(c.get("web"));
@@ -123,8 +126,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       const { id, address } = parseInput(route.params, c.req.param());
       return owner.removeFromCircle(c.get("web"), id, address);
     }
-    case "owner.removeFriend":
-      return owner.removeFriend(c.get("web"), parseInput(route.params, c.req.param()).address);
+    case "owner.removeContact":
+      return owner.removeContact(c.get("web"), parseInput(route.params, c.req.param()).address);
     case "admin.rewake":
       return admin.rewake(c.get("admin"), parseInput(route.params, c.req.param()).id, (await parseBody(c, route.body)).reason);
     case "admin.expire":
@@ -154,6 +157,10 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   telemetry?: Telemetry;
 }) {
   const app = new Hono<AuthContext>();
+  app.use("/v1/*", async (c, next) => {
+    c.header("Cache-Control", "no-store");
+    await next();
+  });
   app.use(honoTelemetry(telemetry));
   const auth = {
     mcp: requireServiceIdentity("mcp", publicKeys, telemetry),

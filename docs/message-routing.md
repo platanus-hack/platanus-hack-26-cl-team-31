@@ -19,7 +19,7 @@ type MessageReply =
   | { kind: 'unavailable'; reason: 'unsupported' | 'expired' | 'empty_selection' }
 ```
 
-`RequesterView`, `AgentContacts` y `VaultResult` son contratos existentes. `Choice` contiene una etiqueta autorizada y una referencia local al turno. `PublicProfile` contiene `address`, `displayName` y `headline` opcional. `TurnContext` lo construye el adaptador con la identidad autenticada, las operaciones delegadas, reloj, zona horaria conocida y una referencia de entrega estable si el canal la proporciona. En MCP, el cliente adjunta la continuación al contestar una aclaración o al consultar un envío anterior. En WhatsApp, el adaptador puede recuperar la continuación activa del vínculo para el mensaje de respuesta. Un error de infraestructura usa el mecanismo de errores del canal y conserva su `errorId`. Los tipos internos de LangGraph nunca cruzan esta interfaz. [Contrato del broker](../packages/broker/src/ports.ts) · [Resultados de solicitud](../packages/protocol/src/request.ts)
+`RequesterView`, `AgentContacts` y `VaultResult` son contratos existentes. `Choice` contiene una etiqueta autorizada y una referencia local al turno. `PublicProfile` contiene `address`, `displayName` y `headline` opcional. `TurnContext` lo construye el adaptador con la identidad autenticada, las operaciones delegadas, reloj, zona horaria conocida y una referencia de entrega estable si el canal la proporciona. En MCP, el cliente adjunta la continuación al contestar una aclaración o al consultar un envío anterior. En WhatsApp, el adaptador puede recuperar la continuación activa del vínculo para el mensaje de respuesta. Un error de infraestructura usa el mecanismo de errores del canal y conserva su `errorId`. Los tipos internos de LangGraph nunca cruzan esta interfaz. [Contrato del broker](../packages/broker-client/src/ports.ts) · [Resultados de solicitud](../packages/protocol/src/request.ts)
 
 ## Grafo de un turno
 
@@ -104,7 +104,7 @@ El flujo calcula el ámbito combinando la operación con las palabras del titula
 | «¿A alguien le interesa…?» sin conjunto anterior | Preguntar «¿Entre tus contactos, tus amigos o algún círculo?» antes de elegir a quién consultar. |
 | Persona resuelta, solicitud denegada | Devolver el `RequesterView` firmado del broker. La identidad ya quedó resuelta. |
 
-**Datos del directorio.** MCP y WhatsApp leen la misma proyección del broker. Los contactos incluyen direcciones, etiquetas y nombre visible cuando está registrado. Los círculos aportan IDs estables y sus miembros activos. Se excluyen el titular y las invitaciones pendientes. La búsqueda pública devuelve hasta 25 direcciones y nombres visibles, con la parte local de la dirección como nombre de respaldo. El campo opcional `headline` queda reservado para cuando los titulares puedan publicarlo. [Agenda y perfil](../packages/protocol/src/owner.ts) · [Puerto compartido](../packages/broker/src/ports.ts)
+**Datos del directorio.** MCP y WhatsApp leen la misma proyección del broker. Los contactos incluyen direcciones, etiquetas y nombre visible cuando está registrado. Los círculos aportan IDs estables y sus miembros activos. Se excluyen el titular y las invitaciones pendientes. La búsqueda pública devuelve hasta 25 direcciones y nombres visibles, con la parte local de la dirección como nombre de respaldo. El campo opcional `headline` queda reservado para cuando los titulares puedan publicarlo. [Agenda y perfil](../packages/protocol/src/owner.ts) · [Puerto compartido](../packages/broker-client/src/ports.ts)
 
 ### Ejemplo de dos turnos
 

@@ -1,4 +1,5 @@
 import type { WakeTarget } from "@team-31/protocol";
+import { noticeTarget } from "./kapso";
 import { ownerClient } from "../broker";
 import { getTelemetry } from "../telemetry";
 
@@ -7,7 +8,14 @@ import { getTelemetry } from "../telemetry";
 export async function setChannel(userId: string, target: WakeTarget) {
   try {
     await ownerClient().setChannel({ userId }, "whatsapp", target);
+    return true;
   } catch (error) {
     getTelemetry().error("whatsapp.channel", error, { userId });
+    return false;
   }
+}
+
+export async function registerNoticeChannel(userId: string, linkId: string) {
+  const target = noticeTarget(linkId);
+  return target ? setChannel(userId, target) : false;
 }

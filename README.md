@@ -50,6 +50,21 @@ Before Submitting:
 
 ## ⚠️ Deploying & integrations (Vercel, Render, etc.)
 
+**Despliegue de este equipo.** El código se integra en `main` de este repo.
+Cada push a `main` (incluido un merge desde GitHub) dispara **Sync from hackathon**
+en [`mpenalozag/nexo-render`](https://github.com/mpenalozag/nexo-render/actions/workflows/sync.yml).
+El espejo conserva sus archivos de despliegue, verifica el build y el typecheck
+y publica su propio commit. Render despliega `nexo-team31` al recibir ese commit.
+Para estos dos repos usa este flujo: sus ramas `main` tienen historiales diferentes.
+
+**Configuración inicial:** crea un token de GitHub fine-grained limitado al repo
+`mpenalozag/nexo-render`, con **Actions: Read and write**, y guárdalo como
+`RENDER_MIRROR_ACTIONS_TOKEN` en **Settings → Secrets and variables → Actions**
+del repo **original**. La corrida del original confirma que el espejo recibió
+el disparo; la validación y publicación se ven en las Actions del espejo.
+
+**Para un espejo nuevo con historial idéntico:**
+
 Deploy platforms like **Vercel**, **Render** or **Netlify** can only connect to
 repositories **you own** — they can't be granted access to this organization repo.
 To deploy (or add any integration) while keeping your commits here, mirror your

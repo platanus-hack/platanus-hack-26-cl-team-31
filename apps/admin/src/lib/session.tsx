@@ -20,7 +20,12 @@ const SessionContext = React.createContext<SessionState | null>(null)
 
 export const sessionQueryKey = ["session"] as const
 
+function clearSessionData() {
+  queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "session" })
+}
+
 export async function refreshSession() {
+  clearSessionData()
   await queryClient.resetQueries({ queryKey: sessionQueryKey })
 }
 
@@ -28,7 +33,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [reauthOpen, setReauthOpen] = React.useState(false)
   const query = useQuery({
     queryKey: sessionQueryKey,
-    queryFn: ({ signal }) => api("session", undefined, { signal }),
+    queryFn: async ({ signal }) => {
+      const previous = queryClient.getQueryData<AdminSession>(sessionQueryKey)
+      try {
+        const next = await api("session", undefined, { signal })
+        if (previous && (previous.user.id !== next.user.id || previous.user.role !== next.user.role)) clearSessionData()
+        return next
+      } catch (error) {
+        if (isApiError(error, "unauthorized") || isApiError(error, "forbidden")) clearSessionData()
+        throw error
+      }
+    },
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
     retry: false,
@@ -38,7 +53,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const logout = React.useCallback(async () => {
     await signOut()
-    queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" })
     await refreshSession()
   }, [])
 
@@ -56,9 +70,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   if (query.isPending)
     return <FullScreenMessage loading title="Cargando sesión" />
+  if (isApiError(query.error, "unauthorized")) return <LoginPage />
+  if (isApiError(query.error, "forbidden")) return <LoginPage forbidden />
   if (query.isError && !query.data) {
-    if (isApiError(query.error, "unauthorized")) return <LoginPage />
-    if (isApiError(query.error, "forbidden")) return <LoginPage forbidden />
     return (
       <FullScreenMessage
         title="No se pudo contactar al servidor admin"

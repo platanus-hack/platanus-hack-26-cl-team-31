@@ -30,11 +30,12 @@ services:
 
   broker:
     profiles: ["sideband"]
-    image: node:24-alpine
-    working_dir: /workspace
+    build:
+      context: .
+      target: sideband
+      args:
+        SIDEBAND_PACKAGE: "@team-31/broker-service"
     command: ["node", "apps/broker/dist/index.js"]
-    volumes:
-      - .:/workspace:ro
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgresql://sideband_broker:${BROKER_DATABASE_PASSWORD:-}@postgres:5432/app
@@ -125,11 +126,12 @@ services:
 
   mcp:
     profiles: ["sideband"]
-    image: node:24-alpine
-    working_dir: /workspace
+    build:
+      context: .
+      target: sideband
+      args:
+        SIDEBAND_PACKAGE: "@team-31/mcp"
     command: ["node", "apps/mcp/dist/index.js"]
-    volumes:
-      - .:/workspace:ro
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       MCP_HOST: 0.0.0.0
@@ -151,15 +153,16 @@ services:
       postgres:
         condition: service_healthy
 
-  # Admin de Sideband (SPA + API + MCP admin en un solo puerto). Compila antes con
-  # `pnpm build --filter @team-31/admin...`. Ver apps/admin/README.md.
+  # Admin de Sideband (SPA + API + MCP admin en un solo puerto).
   admin:
     profiles: ["sideband"]
-    image: node:24-alpine
-    working_dir: /workspace/apps/admin
+    build:
+      context: .
+      target: sideband
+      args:
+        SIDEBAND_PACKAGE: "@team-31/admin"
+    working_dir: /app/apps/admin
     command: ["node", "dist/server/server/index.js"]
-    volumes:
-      - .:/workspace:ro
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       ADMIN_HOST: 0.0.0.0

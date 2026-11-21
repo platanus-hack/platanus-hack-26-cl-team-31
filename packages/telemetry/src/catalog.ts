@@ -236,6 +236,10 @@ export const catalog = [
     description: "Intento de aviso a un agente.",
     attrs: { kind: code(), attempt: int(), queueWaitMs: int(), ok: bool(), httpStatus: int(), code: code() },
   }),
+  defineEvent({
+    name: "worker.tick.completed", kind: "lifecycle", description: "La pasada del worker procesó solicitudes o avisos.",
+    attrs: { expired: int(), wakesOk: int(), wakesRetried: int(), wakesFailed: int() },
+  }),
   defineEvent({ name: "wake.exhausted", kind: "wake", level: "warn", description: "Se agotaron los intentos de aviso.", attrs: { kind: code(), attempts: int() } }),
   defineEvent({ name: "wake.lease_recovered", kind: "wake", level: "warn", description: "El worker retomó un aviso cuya concesión venció.", attrs: { attempt: int() } }),
   defineEvent({ name: "wake.callback_verification", kind: "wake", description: "Resultado de la verificación de un callback MCP.", attrs: { ok: bool(), reason: code() } }),

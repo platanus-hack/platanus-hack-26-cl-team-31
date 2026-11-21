@@ -58,35 +58,56 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
 
   it("entrega avisos al vínculo vigente, abre la ventana con cada mensaje y guarda entregas pendientes", async () => {
     const phone = "+56955550199";
+    const timestamp = Math.ceil(Date.now() / 1000) + 2;
     await db.query(`INSERT INTO public."user" (id) VALUES ('carla')`);
     expect(await store.detect((await store.start("carla"))!, phone)).toBe("carla");
     const linkId = (await store.confirm("carla", (await store.state("carla"))!.id!))!;
     const run = vi.fn();
     await store.whileNotified(linkId, run);
-    expect(run).toHaveBeenLastCalledWith({ userId: "carla", phone, windowOpen: false });
+    expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "carla", phone, windowOpen: false }));
+    await store.whileNotified(linkId, async (link) => {
+      const send = vi.fn();
+      expect(await link!.acceptNotice("request-1", "final", send)).toBe(true);
+      expect(await link!.acceptNotice("request-1", "final", send)).toBe(false);
+      expect(await link!.acceptNotice("request-2", "owner", send)).toBe(true);
+      expect(send).not.toHaveBeenCalled();
+    });
     await store.whileLinked(phone, Math.ceil(Date.now() / 1000) + 1, async () => {});
     await store.whileNotified(linkId, run);
-    expect(run).toHaveBeenLastCalledWith({ userId: "carla", phone, windowOpen: true });
+    expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "carla", phone, windowOpen: true }));
 
-    await store.addPending("carla", "request-1");
-    await store.addPending("carla", "request-1");
-    await store.addPending("carla", "request-2");
-    expect(await store.pending("carla")).toEqual(["request-1", "request-2"]);
-    await store.clearPending("carla", "request-1");
-    expect(await store.pending("carla")).toEqual(["request-2"]);
+    expect(await store.pending(phone, timestamp)).toEqual(["request-1", "request-2"]);
+    const deliverPending = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
+    const retry = () => store.deliverPending(phone, timestamp, "request-1", deliverPending);
+    await expect(retry()).rejects.toThrow("offline");
+    await Promise.all([retry(), retry()]);
+    expect(deliverPending).toHaveBeenCalledTimes(2);
+    expect(await store.pending(phone, timestamp)).toEqual(["request-2"]);
 
-    expect(await store.assignLinkId(phone)).toBeUndefined();
+    const send = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
+    const deliver = () => store.whileNotified(linkId, async (link) => {
+      await link!.acceptNotice("request-3", "final", send);
+    });
+    await expect(deliver()).rejects.toThrow("offline");
+    await Promise.all([deliver(), deliver()]);
+    expect(send).toHaveBeenCalledTimes(2);
+
     await db.query(`UPDATE public."user" SET whatsapp_link_id = NULL WHERE id = 'carla'`);
-    const issued = await store.assignLinkId(phone);
-    expect(issued).toEqual({ userId: "carla", linkId: expect.stringMatching(/^[a-f0-9-]{36}$/) });
-    expect(await store.assignLinkId(phone)).toBeUndefined();
-    await store.whileNotified(issued!.linkId, run);
-    expect(run).toHaveBeenLastCalledWith({ userId: "carla", phone, windowOpen: true });
+    const register = vi.fn<(userId: string, linkId: string) => Promise<boolean>>()
+      .mockResolvedValueOnce(false).mockResolvedValue(true);
+    const registerPhone = () => store.registerChannel({ phone, timestamp }, register);
+    await registerPhone();
+    await Promise.all([registerPhone(), registerPhone()]);
+    const issued = register.mock.calls[0]![1];
+    expect(issued).toMatch(/^[a-f0-9-]{36}$/);
+    expect(register.mock.calls).toEqual([["carla", issued], ["carla", issued]]);
+    await store.whileNotified(issued, run);
+    expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "carla", phone, windowOpen: true }));
 
     await store.unlink("carla");
-    await store.whileNotified(issued!.linkId, run);
+    await store.whileNotified(issued, run);
     expect(run).toHaveBeenLastCalledWith(undefined);
-    expect(await store.pending("carla")).toEqual([]);
+    expect(await store.pending(phone, timestamp)).toEqual([]);
   });
 
   it("registra una sola entrega ante reintentos concurrentes", async () => {

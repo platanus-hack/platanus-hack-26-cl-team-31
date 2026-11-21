@@ -64,7 +64,7 @@ export type TurnState =
   | { phase: "read"; plan: ReadPlan }
   | { phase: "clarify"; at: string; intent: Intent; field: Field; choices?: Choice[]; refs?: ReceiptRef[]; circleId?: string; timezone?: string; relativeDays?: number }
   | { phase: "dispatch"; jobs: RoutedAsk[]; refs: ReceiptRef[]; receipts?: Exclude<RequesterView, { decision: "allow" }>[] }
-  | { phase: "requests"; refs: ReceiptRef[] };
+  | { phase: "requests"; refs: ReceiptRef[]; receipts?: Exclude<RequesterView, { decision: "allow" }>[] };
 
 export interface TurnSession {
   id: string; continuationId: string; previous?: TurnState; replay?: boolean;

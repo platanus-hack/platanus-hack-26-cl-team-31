@@ -1689,6 +1689,85 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "sideband.vault_member_rules": {
+      "name": "vault_member_rules",
+      "schema": "sideband",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allowed": {
+          "name": "allowed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "vault_member_rules_owner_id_category_id_vault_categories_owner_id_category_id_fk": {
+          "name": "vault_member_rules_owner_id_category_id_vault_categories_owner_id_category_id_fk",
+          "tableFrom": "vault_member_rules",
+          "tableTo": "vault_categories",
+          "schemaTo": "sideband",
+          "columnsFrom": [
+            "owner_id",
+            "category_id"
+          ],
+          "columnsTo": [
+            "owner_id",
+            "category_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "vault_member_rules_owner_id_address_friends_user_id_address_fk": {
+          "name": "vault_member_rules_owner_id_address_friends_user_id_address_fk",
+          "tableFrom": "vault_member_rules",
+          "tableTo": "friends",
+          "schemaTo": "sideband",
+          "columnsFrom": [
+            "owner_id",
+            "address"
+          ],
+          "columnsTo": [
+            "user_id",
+            "address"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "vault_member_rules_owner_id_category_id_address_pk": {
+          "name": "vault_member_rules_owner_id_category_id_address_pk",
+          "columns": [
+            "owner_id",
+            "category_id",
+            "address"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "sideband.vault_permissions": {
       "name": "vault_permissions",
       "schema": "sideband",

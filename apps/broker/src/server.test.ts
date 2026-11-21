@@ -99,6 +99,47 @@ afterEach(() => {
 });
 
 describe("HTTP interno del broker", () => {
+  it("la bóveda impide almacenar en caché tanto datos privados como rechazos", async () => {
+    const app = createHttpServer({ broker: fixture().broker, publicKeys });
+    const allowed = await request(app, routes.ownerVault, { token: await owner("alice") });
+    const rejected = await request(app, routes.ownerVault);
+    expect([allowed.status, rejected.status]).toEqual([200, 401]);
+    for (const response of [allowed, rejected]) expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("finds an older ping by ID only in its owner's activity", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { broker } = fixture();
+    const app = createHttpServer({ broker, publicKeys });
+    const bruno = { userId: "bruno" };
+    await broker.owner.claimAddress(bruno, bruno.userId);
+    await broker.agent.inbox({ ...bruno, agentId: "bot", scopes: ["sideband:inbox"] });
+    const first = await broker.owner.ping(bruno, "bot");
+    vi.setSystemTime(Date.now() + 1_000);
+    for (let i = 0; i < 101; i++) await broker.owner.ping(bruno, "bot");
+    expect((await broker.owner.activity(bruno, 100)).some((item) => item.requestId === first.requestId)).toBe(false);
+    const path = `/v1/owner/activity?requestId=${first.requestId}`;
+    const activity = (token: string) => call(app, routes.ownerActivity, { token, path });
+    expect((await activity(await owner("bruno"))).items).toMatchObject([{ ...first, status: "awaiting_agent" }]);
+    expect((await activity(await owner("alice"))).items).toEqual([]);
+  });
+
+  it("distinguishes an omitted invitation offer from an explicitly empty one over HTTP", async () => {
+    const { broker } = fixture();
+    const app = createHttpServer({ broker, publicKeys });
+    const token = await owner("alice");
+    for (const localPart of ["alice", "bruno", "carla"]) {
+      await call(app, routes.ownerClaimAddress, { token: await owner(localPart), body: { localPart } });
+    }
+    const preset = await call(app, routes.ownerConnect, { token, body: { to: "bruno@sideband.app", tag: "work" } });
+    const empty = await call(app, routes.ownerConnect, { token, body: { to: "carla@sideband.app", tag: "work", share: [] } });
+    const { outgoing } = await call(app, routes.ownerContacts, { token });
+    expect(outgoing).toEqual(expect.arrayContaining([
+      expect.objectContaining({ requestId: preset.requestId, offer: ["availability"] }),
+      expect.objectContaining({ requestId: empty.requestId, offer: [] }),
+    ]));
+  });
+
   it("comparte por MCP las solicitudes del titular, sin saltarse los permisos", async () => {
     const { broker, waker } = fixture();
     const app = createHttpServer({ broker, publicKeys });
@@ -167,8 +208,8 @@ describe("HTTP interno del broker", () => {
     });
     expect((await contacts(bruno)).contacts[0]?.receives).toEqual(["availability", "general"]);
 
-    const path = routes.ownerRemoveFriend.path.replace(":address", encodeURIComponent("bruno@sideband.app"));
-    await call(app, routes.ownerRemoveFriend, { token: alice, path });
+    const path = routes.ownerRemoveContact.path.replace(":address", encodeURIComponent("bruno@sideband.app"));
+    await call(app, routes.ownerRemoveContact, { token: alice, path });
     expect((await contacts(alice)).contacts).toEqual([]);
     expect((await contacts(bruno)).contacts).toEqual([]);
     expect(await call(app, routes.ownerGrants, { token: alice })).toEqual({ items: [] });
@@ -396,7 +437,7 @@ describe("HTTP interno del broker", () => {
 
   it("cierra con una respuesta firmada al alcanzar un TTL de 2 segundos", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
-    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    const emit = vi.fn();
     const { broker } = fixture(2);
     await broker.owner.claimAddress({ userId: "alice" }, "alice");
     await broker.owner.claimAddress({ userId: "bruno" }, "bruno");
@@ -404,12 +445,12 @@ describe("HTTP interno del broker", () => {
     const token = await agent("alice");
     await broker.owner.setGrant({ userId: "bruno" }, grantToAlice);
     const asked = await call(app, routes.agentAsk, { token, body: question });
-    const stop = startWorker(broker, { error: vi.fn() });
+    const stop = startWorker(broker, { emit, error: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(2_000);
       expect(await call(app, routes.agentStatus, { token, path: `/v1/agent/requests/${asked.requestId}` }))
         .toMatchObject({ final: true, outcome: "expired", signature: expect.any(String) });
-      expect(log).toHaveBeenCalledWith("[broker] Worker", expect.objectContaining({ expired: 1 }));
+      expect(emit).toHaveBeenCalledWith("worker.tick.completed", { attrs: expect.objectContaining({ expired: 1 }) });
     } finally {
       await stop();
     }
@@ -421,7 +462,7 @@ describe("HTTP interno del broker", () => {
     let complete!: (value: typeof report) => void;
     const inflight = new Promise<typeof report>((resolve) => { complete = resolve; });
     const tick = vi.fn().mockReturnValueOnce(inflight).mockResolvedValue(report);
-    const stop = startWorker({ tick }, { error: vi.fn() });
+    const stop = startWorker({ tick }, { emit: vi.fn(), error: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(3_000);
       expect(tick).toHaveBeenCalledTimes(1);

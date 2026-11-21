@@ -89,14 +89,21 @@
     {
       "idx": 12,
       "version": "7",
-      "when": 1795287905100,
-      "tag": "0200_ask_receipts",
+      "when": 1795289788676,
+      "tag": "0012_vault_member_rules",
       "breakpoints": true
     },
     {
       "idx": 13,
       "version": "7",
-      "when": 1795290375056,
+      "when": 1795290375057,
+      "tag": "0200_ask_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795290375058,
       "tag": "0201_message_turns",
       "breakpoints": true
     }

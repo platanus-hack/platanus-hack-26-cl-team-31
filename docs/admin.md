@@ -73,7 +73,7 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 | `ops.v_circles` | `sideband.circles` + `sideband.circle_members` | circle_id, name, owner_user_id, created_at, members, invitations | Sin las direcciones de los miembros |
 | `ops.v_channels` | `sideband.channels` | user_id, name, wake_kind, wake_host, created_at | Solo el host de la URL. Nunca `wake_secret`. `audience = 'origin'` en `ops.v_wake_jobs` marca sus avisos. |
 | `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions, has_phone_number | Sin tokens de sesión. Del teléfono solo se ve si existe, nunca el número. `user.id` es el mismo `user_id` de `sideband.users`. |
-| `ops.v_whatsapp` | Better Auth y esquema `whatsapp` (migración de web antes de ops) | linked_accounts, active_pairings, inbound_receipts, pending_deliveries | Solo recuentos. En Eventos, filtra por `whatsapp.link`, `whatsapp.request`, `whatsapp.send` o `whatsapp.delivery` para seguir el flujo. |
+| `ops.v_whatsapp` | Better Auth y esquema `whatsapp` (migración de web antes de ops) | linked_accounts, active_pairings, inbound_receipts, pending_deliveries, pending_registrations | Solo recuentos. En Eventos, filtra por `whatsapp.link`, `whatsapp.request`, `whatsapp.send` o `whatsapp.delivery` para seguir el flujo. |
 | `ops.v_oauth_clients` | `public."oauthClient"`, `"oauthAccessToken"`, `"oauthRefreshToken"` | client_id, name, user_id, redirect_hosts, created_at, last_token_at, active_tokens | Sin `client_secret` ni tokens. Token activo: sin revocar y sin vencer (access o refresh). |
 | `ops.v_oauth_grants` | mismas tablas OAuth | user_id, client_id, client_name, last_token_at, active_tokens | Clientes que autorizó cada persona (los del registro dinámico no tienen dueño). Alimenta `UserDetail.identity.oauthClients`. |
 | `ops.v_events` | `ops.events` | todas | Ya viene redactada. |
@@ -144,6 +144,7 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | `broker.agent.connected` | lifecycle | kind (tipo de aviso al crearse: `none`). Se emite una vez por conexión, cuando la primera llamada autenticada del agente la crea; `userId` y `agentId` en el sobre. Presencia: el agente entra a la red |
 | `broker.agent.revoked` | lifecycle | by (`owner` \| `admin`). Solo la primera revocación. Presencia: el agente sale de la red |
 | `broker.channel.set` | lifecycle | channel (`whatsapp`), kind (tipo de aviso); nunca la URL ni el secreto |
+| `worker.tick.completed` | lifecycle | expired, wakesOk, wakesRetried, wakesFailed (solo pasadas con actividad) |
 | `wake.attempt` | wake | kind, attempt, queueWaitMs, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
 | `wake.lease_recovered` | wake | attempt |
@@ -423,6 +424,7 @@ En Postgres administrado el usuario de la base no es superusuario. En Postgres 1
 El admin detecta el modo una vez por pool con `pg_has_role(current_user, rol, 'SET')`. Los tres casos se probaron contra un Postgres 17 limpio con usuarios no superusuario.
 
 La ficha del titular incluye `vault`: cantidades de categorías, datos y permisos en `ops.v_vault_summary`. Los eventos `broker.vault.changed` y `broker.vault.queried` registran cambios y consultas sin nombres de categorías, etiquetas de datos ni valores.
+`vault.memberRules` cuenta las decisiones individuales de acceso (permitir o excluir). El cambio se ve en `broker.vault.changed` con `action=set_member`; las lecturas del directorio y de los miembros se observan en `mcp.tool.call` sin devolver direcciones al admin.
 
 La ficha también incluye `vaultContactGroups`: cantidades de grupos privados, membresías y permisos en `ops.v_vault_contact_group_summary`. No expone nombres de grupos, direcciones ni datos de la bóveda. `broker.vault.changed` registra las acciones sobre grupos con el prefijo `contact_group_` y los permisos de categoría con `set_contact_group`.
 

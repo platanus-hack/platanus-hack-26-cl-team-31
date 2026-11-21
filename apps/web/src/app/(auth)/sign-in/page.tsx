@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { getSession } from "@/lib/auth";
-import { getGoogleOptions } from "@/lib/auth-env.mjs";
+import { getAuth, getSession } from "@/lib/auth";
 import { InvalidAuthorizationLink } from "../invalid-authorization-link";
 import { getOAuthRequest } from "@/lib/auth-request";
 import { onboardingFlow } from "@/lib/onboarding-flow";
@@ -49,7 +48,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
           No se pudo completar el inicio de sesión. Intenta de nuevo.
         </p>
       )}
-      {getGoogleOptions() ? (
+      {getAuth().options.socialProviders.google ? (
         <GoogleButton
           callbackURL={flow.signInComplete}
           errorCallbackURL={request ? `/sign-in?${request.signedQuery}` : flow.signIn}

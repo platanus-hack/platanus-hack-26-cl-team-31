@@ -4,7 +4,7 @@ import { getOwnerAccount, getOwnerUser } from "@/lib/auth-owner";
 import { getTelemetry } from "@/lib/telemetry";
 import { whatsappStore } from "@/lib/whatsapp/runtime";
 
-import { card, Stamp, textLink } from "./ui";
+import { card, Stamp, textLink } from "../ui";
 
 async function linkedPhone(userId: string) {
   try {

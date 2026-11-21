@@ -5,11 +5,11 @@ import { WakeKind } from "@team-31/protocol"
 
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Switch } from "@/components/ui/switch"
-import { agentColumns, agentHealth } from "@/components/agent-columns"
+import { agentColumns, agentHealth } from "@/features/agents/agent-columns"
 import { DataTable } from "@/components/data-table"
 import { FilterBar, SelectFilter } from "@/components/filters"
-import { QueryError, Page, PageHeader, Panel } from "@/components/page"
-import { RevokeAgentDialog } from "@/components/revoke-agent-dialog"
+import { Page, PageHeader, QueryPanel } from "@/components/page"
+import { RevokeAgentDialog } from "@/features/agents/revoke-agent-dialog"
 import { ToneBadge } from "@/components/status"
 import { api } from "@/lib/api"
 import { wakeKindLabel } from "@/lib/status"
@@ -64,8 +64,7 @@ export function AgentsPage() {
           </FieldLabel>
         </Field>
       </FilterBar>
-      <QueryError query={query} />
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={columns}
           data={query.data?.items}
@@ -78,7 +77,7 @@ export function AgentsPage() {
               : undefined,
           }}
         />
-      </Panel>
+      </QueryPanel>
       <RevokeAgentDialog agent={revoking} onClose={() => setRevoking(null)} />
     </Page>
   )

@@ -1,13 +1,11 @@
 import Link from "next/link";
 
-import { readActivity } from "../actions";
+import { readActivity } from "./read-activity";
 import { ActivityList } from "../activity-list";
-import { parseActivityPage } from "../labels";
 import { button, Heading } from "../ui";
 
 export default async function ActivityPage({ searchParams }: PageProps<"/activity">) {
-  const page = parseActivityPage((await searchParams).page);
-  const { items, hasNext } = await readActivity(String(page));
+  const { page, items, hasNext } = await readActivity((await searchParams).page);
 
   return (
     <div className="max-w-4xl">

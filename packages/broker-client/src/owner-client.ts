@@ -1,10 +1,13 @@
-import { Owner } from "@team-31/protocol";
+import { Owner, type Address, type ConnectInput, type ContactTag, type Sharing } from "@team-31/protocol";
 import { encodeAsk, routes } from "@team-31/protocol/http";
-import type { OwnerPort } from "../ports.js";
+import type { OwnerPort } from "./ports.js";
 import { createHttpClient, type ClientOptions } from "./http.js";
 
 export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
   const request = createHttpClient(options, Owner);
+
+  const removeContact: OwnerPort["removeContact"] = (owner, contact) =>
+    request(routes.ownerRemoveContact, owner, { params: { address: contact } });
 
   return {
     searchPublicProfiles: async (o, query) => (await request(routes.ownerSearchPublicProfiles, o, { body: { query } })).items,
@@ -19,8 +22,8 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     setGrant: (owner, body) => request(routes.ownerSetGrant, owner, { body }),
     revokeGrant: (owner, id) => request(routes.ownerRevokeGrant, owner, { params: { id } }),
     pending: async (owner) => (await request(routes.ownerPending, owner)).items,
-    activity: async (owner, limit) =>
-      (await request(routes.ownerActivity, owner, { query: { limit } })).items,
+    activity: async (owner, query = {}) =>
+      (await request(routes.ownerActivity, owner, { query: typeof query === "number" ? { limit: query } : query })).items,
     ask: (owner, body, channel) => channel
       ? request(routes.ownerChannelAsk, owner, { params: { name: channel }, body: encodeAsk(body) })
       : request(routes.ownerAsk, owner, { body: encodeAsk(body) }),
@@ -33,7 +36,8 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     setChannel: (owner, name, body) => request(routes.ownerSetChannel, owner, { params: { name }, body }),
     ping: (owner, agentId) => request(routes.ownerPing, owner, { params: { agentId } }),
     revokeAgent: (owner, agentId) => request(routes.ownerRevokeAgent, owner, { params: { agentId } }),
-    connect: (owner, to, share, tag) => request(routes.ownerConnect, owner, { body: { to, share, tag } }),
+    connect: (owner, to: Address | ConnectInput, share?: Sharing, tag?: ContactTag) =>
+      request(routes.ownerConnect, owner, { body: typeof to === "string" ? { to, share, tag } : to }),
     contacts: (owner) => request(routes.ownerContacts, owner),
     setSharing: (owner, address, body) => request(routes.ownerSetSharing, owner, { params: { address }, body }),
     setContactTag: (owner, address, tag) => request(routes.ownerSetContactTag, owner, { params: { address }, body: { tag } }),
@@ -45,6 +49,7 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     inviteToCircle: (owner, id, address) => request(routes.ownerInviteToCircle, owner, { params: { id, address } }),
     joinCircle: (owner, id) => request(routes.ownerJoinCircle, owner, { params: { id } }),
     removeFromCircle: (owner, id, address) => request(routes.ownerRemoveFromCircle, owner, { params: { id, address } }),
-    removeFriend: (owner, address) => request(routes.ownerRemoveFriend, owner, { params: { address } }),
+    removeContact,
+    removeFriend: removeContact,
   };
 }

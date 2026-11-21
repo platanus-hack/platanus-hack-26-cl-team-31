@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { AgentPort } from "@team-31/broker/client";
+import type { AgentPort } from "@team-31/broker-client";
 import type { Principal } from "@team-31/protocol";
 import type { Telemetry } from "@team-31/telemetry";
 import { registerMessage, type HandleMessage } from "./tools/message.js";

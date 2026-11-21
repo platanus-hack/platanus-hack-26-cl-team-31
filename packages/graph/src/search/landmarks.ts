@@ -1,4 +1,4 @@
-import { MinHeap } from "../heap.js";
+import { MinHeap } from "./heap.js";
 import type { NodeId } from "../model.js";
 import { arcWeight, type AdjacencyView } from "../view.js";
 

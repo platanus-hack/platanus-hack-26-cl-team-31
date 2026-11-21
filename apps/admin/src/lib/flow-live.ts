@@ -148,6 +148,7 @@ export function useFlowLive() {
 
       stop = subscribeFlow(after, {
         onOpen: () => {
+          droppedAt = null
           attempt = 0
           setStatus("live")
         },
@@ -181,13 +182,11 @@ export function useFlowLive() {
 
     const timer = setInterval(() => {
       append(feed.drain(Date.now()))
+      if (first || refreshing) return
+      const elapsed = Date.now() - refreshedAt
+      if (elapsed <= UNKNOWN_REFRESH_MS) return
       const unknown = mapper.takeUnknown()
-      const now = Date.now()
-      const stale = now - refreshedAt > REFRESH_MS
-      const missing =
-        (unknown.users.length > 0 || unknown.agents.length > 0) &&
-        now - refreshedAt > UNKNOWN_REFRESH_MS
-      if (!first && (stale || missing)) void refreshDirectory()
+      if (elapsed > REFRESH_MS || unknown.users.length || unknown.agents.length) void refreshDirectory()
     }, TICK_MS)
 
     void connect()

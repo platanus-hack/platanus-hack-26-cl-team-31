@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { verifyServiceToken } from "@team-31/auth/service";
-import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker/client";
+import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-client";
 import { Scope, WAKE_EVENT } from "@team-31/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -28,8 +28,8 @@ function testPort(): AgentPort {
   return {
     connect: vi.fn(),
     searchPublicProfiles: vi.fn(), capabilities: vi.fn(),
-    vaultCatalog: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
-    contactGroups: vi.fn(), changeContactGroup: vi.fn(),
+    vaultCatalog: vi.fn(), vaultMembers: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
+    networkUsers: vi.fn(), contactGroups: vi.fn(), changeContactGroup: vi.fn(),
     ask: vi.fn(),
     inbox: vi.fn(),
     reply: vi.fn(),
@@ -69,6 +69,7 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
     method: "POST",
     headers: {
       Authorization: "Bearer dev:user:agent",
+      Origin: new URL(audience).origin,
       "Content-Type": "application/json",
       Accept: "application/json,text/event-stream",
     },
@@ -104,6 +105,18 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
     expect(result.status).toBe(405);
     expect(result.headers.get("allow")).toBe("POST");
   }
+});
+
+it("rechaza orígenes ajenos y opacos antes de conectar el agente", async () => {
+  const agent = testPort();
+  const origin = await listen(createHttpServer(options, agent));
+  for (const browserOrigin of ["https://other.example.test", "null"]) {
+    const response = await fetch(`${origin}/mcp`, {
+      method: "POST", headers: { Origin: browserOrigin, Authorization: "Bearer dev:user:agent" },
+    });
+    expect(response.status).toBe(403);
+  }
+  expect(agent.connect).not.toHaveBeenCalled();
 });
 
 it("rechaza el inicio del cliente cuando el titular tiene otro agente activo", async () => {
@@ -143,6 +156,8 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     "GET /v1/agent/requests/request-1": final,
     "POST /v1/agent/contact-groups": { groupId },
     "GET /v1/agent/contact-groups": groups,
+    "GET /v1/agent/network/users": { addresses: [pending.to] },
+    [`GET /v1/agent/vault/members?categoryId=${groupId}`]: { members: [pending.to] },
   };
 
   const broker = await listen(createServer(async (req, res) => {
@@ -172,8 +187,8 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
-    ["search_public_profiles", true], ["sideband_contact_groups", true], ["sideband_contact_group_change", undefined],
-    ["sideband_vault_catalog", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
+    ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_contact_groups", true], ["sideband_contact_group_change", undefined],
+    ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
@@ -183,6 +198,8 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     .toEqual(final);
   expect((await ana.callTool({ name: "sideband_contact_group_change", arguments: { change: createGroup } })).structuredContent).toEqual({ groupId });
   expect((await ana.callTool({ name: "sideband_contact_groups" })).structuredContent).toEqual(groups);
+  expect((await ana.callTool({ name: "sideband_network_users" })).structuredContent).toEqual({ addresses: [pending.to] });
+  expect((await ana.callTool({ name: "sideband_vault_members", arguments: { categoryId: groupId } })).structuredContent).toEqual({ members: [pending.to] });
 
   expect(requests).toEqual([
     { path: "POST /v1/agent/ask", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: question },
@@ -191,6 +208,8 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     { path: "GET /v1/agent/requests/request-1", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "POST /v1/agent/contact-groups", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: createGroup },
     { path: "GET /v1/agent/contact-groups", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "GET /v1/agent/network/users", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: `GET /v1/agent/vault/members?categoryId=${groupId}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
   ]);
 });
 

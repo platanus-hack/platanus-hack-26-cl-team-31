@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 
-import { readContacts } from "../actions";
+import { readContacts } from "./actions";
 import { card, Empty, Heading, Stamp } from "../ui";
 import { ContactRow, IncomingInvitation, InviteForm, TagPresetsEditor } from "./contact-forms";
 import { describeSharing } from "./describe";

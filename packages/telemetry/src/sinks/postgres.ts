@@ -49,6 +49,9 @@ function toColumns(batch: TelemetryRecord[]): unknown[][] {
 export function postgresSink(input: string | PostgresSinkOptions): TelemetrySink {
   const options = typeof input === "string" ? { connectionString: input } : input;
   const batchSize = options.batchSize ?? 200;
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
+    throw new RangeError("batchSize debe ser un entero positivo.");
+  }
   const flushIntervalMs = options.flushIntervalMs ?? 500;
   const maxQueue = options.maxQueue ?? 5000;
   const ownsPool = !options.pool;
@@ -62,7 +65,7 @@ export function postgresSink(input: string | PostgresSinkOptions): TelemetrySink
   let timer: NodeJS.Timeout | null = null;
   let chain: Promise<void> = Promise.resolve();
   let scheduled = false;
-  let closed = false;
+  let closing: Promise<void> | undefined;
   let lastReport = 0;
 
   function report(error: unknown, lost: number) {
@@ -104,7 +107,7 @@ export function postgresSink(input: string | PostgresSinkOptions): TelemetrySink
 
   return {
     write(record) {
-      if (closed || queue.length >= maxQueue) {
+      if (closing || queue.length >= maxQueue) {
         stats.dropped += 1;
         return;
       }
@@ -120,11 +123,11 @@ export function postgresSink(input: string | PostgresSinkOptions): TelemetrySink
       }
     },
     flush: () => drain(),
-    async close() {
-      if (closed) return chain;
-      closed = true;
-      await drain();
-      if (ownsPool) await pool.end().catch(() => undefined);
+    close() {
+      closing ??= drain().then(async () => {
+        if (ownsPool) await pool.end().catch((error) => report(error, 0));
+      });
+      return closing;
     },
     stats: () => ({ ...stats, queued: queue.length }),
   };

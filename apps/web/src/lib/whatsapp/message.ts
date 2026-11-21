@@ -1,4 +1,4 @@
-import type { OwnerPort } from "@team-31/broker/client";
+import type { OwnerPort } from "@team-31/broker-client";
 import type { MessageReply, TurnContext } from "@team-31/message-flow";
 import type { createMessageRuntime } from "@team-31/message-flow/runtime";
 import type { Owner, RequesterView } from "@team-31/protocol";

@@ -1,9 +1,9 @@
 // Runs in the owner's process. The only network dependency is their authenticated broker client.
 import {
-  ToolArgs, ToolResultSchemas, toolExecution, WakeNotice, type Category, type InboxItem, type Principal, type RuntimeTool,
+  isSystemSender, ToolArgs, ToolResultSchemas, toolExecution, WakeNotice, type Category, type InboxItem, type Principal, type RuntimeTool,
 } from "@team-31/protocol";
-import type { AgentPort } from "../ports.js";
-import { filterResult } from "../policy/index.js";
+import type { AgentPort } from "./ports.js";
+import { filterResult } from "./filter.js";
 
 type Args<K extends RuntimeTool> = ReturnType<(typeof ToolArgs)[K]["parse"]>;
 type Result<K extends RuntimeTool> = ReturnType<(typeof ToolResultSchemas)[K]["parse"]>;
@@ -49,37 +49,38 @@ export function createOwnerRuntime(
   principal: Principal,
   approved: (ReturnType<typeof localReadTool> | ReturnType<typeof localQuestionSource>)[],
 ) {
-  const active = new Set<string>();
+  const active = new Map<string, Promise<void>>();
+  async function processNotice(requestId: string) {
+    const item = (await agent.inbox(principal)).find(entry => entry.requestId === requestId);
+    if (!item || Date.parse(item.expiresAt) <= Date.now()) return;
+    const binding = approved.find(tool => tool.name === item.tool &&
+      (tool.name !== "question" || tool.category === item.ownerAuthorization.category));
+    const reply = { requestId, nonce: item.nonce };
+    // A grant must cover the required result before the connector may read private data.
+    const hasRequiredFields = Object.entries(ToolResultSchemas[item.tool].shape)
+      .every(([field, schema]) => schema.safeParse(undefined).success || item.allowedFields.includes(field));
+    if (isSystemSender(item.from)) {
+      await agent.reply(principal, { ...reply, outcome: "no_data" });
+      return;
+    }
+    if (!binding || !hasRequiredFields) {
+      await agent.reply(principal, { ...reply, outcome: "declined" });
+      return;
+    }
+    const result = await binding.execute(item.args, {
+      from: item.from, allowedFields: item.allowedFields, ownerAuthorization: item.ownerAuthorization,
+      purpose: item.senderMessage.purpose,
+    });
+    await agent.reply(principal, result === null
+      ? { ...reply, outcome: "no_data" }
+      : { ...reply, outcome: "answered", result });
+  }
   return async function onWake(notice: unknown) {
     const { requestId } = WakeNotice.parse(notice);
-    if (active.has(requestId)) return;
-    active.add(requestId);
-    try {
-      const item = (await agent.inbox(principal)).find(entry => entry.requestId === requestId);
-      if (!item || Date.parse(item.expiresAt) <= Date.now()) return;
-      const binding = approved.find(tool => tool.name === item.tool &&
-        (tool.name !== "question" || tool.category === item.ownerAuthorization.category));
-      const reply = { requestId, nonce: item.nonce };
-      // A grant must cover the required result before the connector may read private data.
-      const hasRequiredFields = Object.entries(ToolResultSchemas[item.tool].shape)
-        .every(([field, schema]) => schema.safeParse(undefined).success || item.allowedFields.includes(field));
-      if (item.from.startsWith("system@")) {
-        await agent.reply(principal, { ...reply, outcome: "no_data" });
-        return;
-      }
-      if (!binding || !hasRequiredFields) {
-        await agent.reply(principal, { ...reply, outcome: "declined" });
-        return;
-      }
-      const result = await binding.execute(item.args, {
-        from: item.from, allowedFields: item.allowedFields, ownerAuthorization: item.ownerAuthorization,
-        purpose: item.senderMessage.purpose,
-      });
-      await agent.reply(principal, result === null
-        ? { ...reply, outcome: "no_data" }
-        : { ...reply, outcome: "answered", result });
-    } finally {
-      active.delete(requestId);
-    }
+    const existing = active.get(requestId);
+    if (existing) return existing;
+    const processing = processNotice(requestId).finally(() => active.delete(requestId));
+    active.set(requestId, processing);
+    return processing;
   };
 }

@@ -1,8 +1,8 @@
-import { BrokerError } from "@team-31/broker/client";
+import { BrokerError } from "@team-31/broker-client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { claimAddress } from "../app/(app)/actions";
+import { claimAddress } from "../app/(app)/onboarding/actions";
 import OnboardingPage from "../app/(app)/onboarding/page";
 import InvitePage from "../app/(auth)/invite/page";
 import CompleteSignIn from "../app/(auth)/sign-in/complete/page";
@@ -21,8 +21,7 @@ vi.mock("next/navigation", () => ({
   redirect: (path: string) => { throw new Error(path); },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/auth", () => ({ getSession: mocks.getSession }));
-vi.mock("@/lib/auth-env.mjs", () => ({ getGoogleOptions: () => ({}) }));
+vi.mock("@/lib/auth", () => ({ getSession: mocks.getSession, getAuth: () => ({ options: { socialProviders: { google: {} } } }) }));
 vi.mock("@/lib/auth-owner", () => ({ getOwnerAddress: mocks.getAddress }));
 vi.mock("@/lib/auth-request", () => ({ getOAuthRequest: mocks.getOAuthRequest }));
 vi.mock("@/lib/broker", () => ({ ownerClient: () => ({ claimAddress: mocks.claimAddress }) }));

@@ -8,8 +8,7 @@ import { DEV_EMAIL, type AdminAuth, type RoleResolver } from "./auth/index.js"
 import type { AuditActor, AuditLog } from "./audit.js"
 import type { BrokerAdminClient } from "./broker.js"
 import { AdminHttpError, statusOf } from "./errors.js"
-import { flowEventNames, isFlowRow, projectFlowRow } from "@team-31/agent-flow/telemetry"
-import { createLiveSlots, liveStream, type LiveOptions } from "./live.js"
+import { createFlowLiveSpec, createLiveSlots, liveStream, type LiveOptions } from "./live.js"
 import type { AdminLimiters } from "./rate-limit.js"
 import type { TokenStore } from "./tokens.js"
 import type { Revealer } from "./types.js"
@@ -96,11 +95,12 @@ export function clientIp(c: Context, trustProxy: boolean): string | null {
 function errorResponse(c: Context, error: unknown, telemetry: Pick<Telemetry, "error" | "emit">) {
   if (error instanceof AdminHttpError) {
     if (error.code === "unauthorized") c.header("WWW-Authenticate", 'Cookie realm="sideband-admin"')
+    if (error.errorId) c.header("X-Error-Id", error.errorId)
     if (error.retryAfter) c.header("Retry-After", String(error.retryAfter))
     if (error.code === "rate_limited") {
       telemetry.emit("http.rate_limited", { attrs: { route: c.req.routePath, bucket: c.req.path.endsWith("/reveal") ? "reveal" : c.req.path.endsWith("/live") ? "live" : "login" } })
     }
-    return c.json(ErrorBody.parse({ error: { code: error.code, message: error.message } }), statusOf[error.code])
+    return c.json(ErrorBody.parse({ error: { code: error.code, message: error.message, errorId: error.errorId } }), statusOf[error.code])
   }
   if (error instanceof AdminQueryError) {
     if (error.code === "timeout") {
@@ -141,28 +141,6 @@ export function createAdminApi(deps: AdminApiDeps) {
     }
   }
 
-  function flowLive(c: Context, principal: AdminPrincipal) {
-    const { after } = parseInput(adminRoutes.flowLive.query, queryInput(c))
-    const known = new Set<string>()
-    return liveStream(c, queries, telemetry, liveSlots, {
-      stream: "flow",
-      principalId: principal.id,
-      hasAccess: liveAccess(c, principal),
-      filters: { names: [...flowEventNames] },
-      after,
-      backlog: false,
-      accept: isFlowRow,
-      project: projectFlowRow,
-      prelude: async (events) => {
-        const ids = [...new Set(events.flatMap((event) => (event.requestId && !known.has(event.requestId) ? [event.requestId] : [])))]
-        const refs = []
-        for (let i = 0; i < ids.length; i += 200) refs.push(...(await queries.requestRefs(ids.slice(i, i + 200))))
-        for (const id of ids) known.add(id)
-        while (known.size > 5_000) known.delete(known.values().next().value as string)
-        return refs.map((ref) => ({ event: "request", data: ref }))
-      },
-    }, deps.live)
-  }
 
   // Sesión de Better Auth. Si getSession renueva la sesión (updateAge), reenvía la cookie.
   async function authenticate(c: Context): Promise<AdminPrincipal> {
@@ -210,7 +188,11 @@ export function createAdminApi(deps: AdminApiDeps) {
     try {
       await run()
     } catch (error) {
-      await audit.record({ ...entry, meta: { ok: false, code: error instanceof AdminHttpError ? error.code : "internal" } })
+      try {
+        await audit.record({ ...entry, meta: { ok: false, code: error instanceof AdminHttpError ? error.code : "internal" } })
+      } catch (auditError) {
+        telemetry.error("admin.action.audit", auditError, { userId: principal.id })
+      }
       throw error
     }
     return { ok: true as const, auditId: await audit.record({ ...entry, meta: { ok: true } }) }
@@ -337,7 +319,10 @@ export function createAdminApi(deps: AdminApiDeps) {
           stream: "events", principalId: principal.id, hasAccess: liveAccess(c, principal), filters, backlog: true,
         }, deps.live)
       }
-      if (name === "flowLive") return flowLive(c, principal)
+      if (name === "flowLive") {
+        const { after } = parseInput(adminRoutes.flowLive.query, queryInput(c))
+        return liveStream(c, queries, telemetry, liveSlots, createFlowLiveSpec(queries, principal.id, liveAccess(c, principal), after), deps.live)
+      }
       return c.json(route.response.parse(await handle(name, c, principal)))
     }))
   }

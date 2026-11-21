@@ -1,5 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { BrokerError } from "@team-31/broker/client";
+import { BrokerError } from "@team-31/broker-client";
 import type { ErrorCode, Principal, Scope } from "@team-31/protocol";
 import type { Telemetry } from "@team-31/telemetry";
 
@@ -49,12 +49,12 @@ export async function runTool(
       return finish("ok", { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result });
     } catch (error) {
       if (error instanceof BrokerError && error.code !== "internal") {
-        return finish(error.code === "forbidden" ? "denied" : "error", toolError(error.code, error.message));
+        return finish(error.code === "forbidden" ? "denied" : "error", toolError(error.code, error.message, error.errorId));
       }
-      const errorId = telemetry.error(`mcp.tool.call ${call.tool}`, error);
-      span.setErrorId(errorId);
-      if (error instanceof BrokerError) return finish("error", toolError(error.code, error.message, errorId), true);
-      return finish("error", toolError("internal", "No se pudo completar la operación.", errorId), true);
+      const localId = telemetry.error(`mcp.tool.call ${call.tool}`, error);
+      span.setErrorId(localId);
+      if (error instanceof BrokerError) return finish("error", toolError(error.code, error.message, error.errorId ?? localId), true);
+      return finish("error", toolError("internal", "No se pudo completar la operación.", localId), true);
     }
   });
 }

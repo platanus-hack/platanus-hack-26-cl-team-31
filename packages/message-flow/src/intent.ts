@@ -4,8 +4,12 @@ import { normalized, selectChoice } from "./recipients.js";
 
 // Only bounded literal references are eligible. A suffix of an address or a name is not a new identity.
 const includesLiteral = (source: string, value: string) => {
+  if (value.includes("@")) {
+    const addresses: readonly string[] = normalized(source).match(/[a-z0-9._+%-]+@[a-z0-9.-]+[a-z0-9]/g) ?? [];
+    return addresses.includes(normalized(value));
+  }
   const key = normalized(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const alphabet = value.includes("@") ? "a-z0-9@._-" : "\\p{L}\\p{N}";
+  const alphabet = "\\p{L}\\p{N}";
   return new RegExp("(?<![" + alphabet + "])" + key + "(?![" + alphabet + "])", "u").test(normalized(source));
 };
 const targetIntent = (draft: Intent) => draft.action === "ask" || draft.action === "vault";

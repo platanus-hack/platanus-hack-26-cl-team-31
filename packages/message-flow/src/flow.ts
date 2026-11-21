@@ -69,6 +69,14 @@ class Turn {
     if (previous?.phase === "dispatch") { this.jobs = previous.jobs; return "dispatch"; }
     if (previous?.phase === "read" && this.session.replay) return this.readPlan(previous.plan);
     if (previous?.phase === "requests" && this.session.replay) {
+      // Retrying an ask requires only its original scope. Private answers retrieved by
+      // a status read are reauthorized; the turn stores only their references.
+      if (previous.receipts) {
+        const known = new Set(previous.receipts.map(item => item.requestId));
+        const confirmed = previous.refs.filter(ref => !known.has(ref.requestId));
+        return this.finish({ kind: "requests", items: previous.receipts, unconfirmedCount: 0,
+          ...(confirmed.length && { confirmed }), continuationId: this.session.continuationId });
+      }
       const views = await Promise.all(previous.refs.map(r => this.context.ops.status(r.requestId)));
       return this.requests(views);
     }
@@ -238,7 +246,8 @@ class Turn {
     }
     if (terminalError && !accepted) throw terminalError;
     if (!pending.size && !refs.size) return this.unavailable("empty_selection");
-    if (!pending.size) await this.session.save({ phase: "requests", refs: [...refs.values()] });
+    if (!pending.size) await this.session.save({ phase: "requests", refs: [...refs.values()],
+      receipts: items.filter(item => item.decision !== "allow") });
     const included = new Set(items.map(v => v.requestId));
     const confirmed = [...refs.values()].filter(ref => !included.has(ref.requestId));
     return this.finish({ kind: "requests", items, ...(confirmed.length && { confirmed }),

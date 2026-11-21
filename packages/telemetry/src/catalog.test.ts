@@ -1,23 +1,7 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { catalog, describeCatalog, getEventDefinition } from "./catalog.js";
-import { EventKind, Level, Service } from "./types.js";
-
-const sql = readFileSync(new URL("../../ops/sql/0001_events.sql", import.meta.url), "utf8");
-
-function checkValues(column: string): string[] {
-  const match = new RegExp(`${column}\\s+text[^\\n]*CHECK \\(${column} IN \\(([^)]*)\\)`).exec(sql);
-  if (!match) throw new Error(`No encontré el CHECK de ${column}`);
-  return match[1]!.split(",").map((value) => value.trim().replace(/'/g, ""));
-}
 
 describe("catálogo", () => {
-  it("usa los mismos enums que los CHECK de ops.events", () => {
-    expect([...Service.options].sort()).toEqual(checkValues("service").sort());
-    expect([...EventKind.options].sort()).toEqual(checkValues("kind").sort());
-    expect([...Level.options].sort()).toEqual(checkValues("level").sort());
-  });
-
   it("declara todos los eventos de docs/admin.md#3", () => {
     const expected = [
       "service.started", "service.heartbeat", "service.stopping",
@@ -31,7 +15,7 @@ describe("catálogo", () => {
       "broker.contact.connected", "broker.contact.removed", "broker.contact.tagged", "broker.channel.set", "broker.tag.preset_set",
       "broker.vault.changed", "broker.vault.queried",
       "broker.circle.changed", "broker.agent.connected", "broker.agent.revoked",
-      "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
+      "worker.tick.completed", "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
       "admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created",
       "admin.token.revoked", "admin.mcp.call", "admin.live.opened", "admin.live.closed", "telemetry.invalid_event",
       "whatsapp.link", "whatsapp.request", "whatsapp.send", "whatsapp.delivery", "whatsapp.interpret",

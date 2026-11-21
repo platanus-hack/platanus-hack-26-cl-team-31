@@ -16,8 +16,8 @@ import {
   SearchInput,
   SelectFilter,
 } from "@/components/filters"
-import { QueryError, Page, PageHeader, Panel } from "@/components/page"
-import { requestColumns } from "@/components/request-columns"
+import { Page, PageHeader, QueryPanel } from "@/components/page"
+import { requestColumns } from "@/features/requests/request-columns"
 import { StatusDot } from "@/components/status"
 import { api } from "@/lib/api"
 import { formatNumber } from "@/lib/format"
@@ -154,8 +154,7 @@ export function RequestsPage() {
             : null}
         </span>
       </FilterBar>
-      <QueryError query={query} />
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={requestColumns}
           data={rows}
@@ -170,7 +169,7 @@ export function RequestsPage() {
           }}
         />
         <LoadMore query={query} />
-      </Panel>
+      </QueryPanel>
     </Page>
   )
 }
