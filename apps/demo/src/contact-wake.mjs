@@ -23,13 +23,13 @@ async function readBody(request) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-async function contactName(id) {
+async function hasContactProfile(id) {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL requerida");
   const db = new pg.Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 3000 });
   await db.connect();
   try {
-    const { rows } = await db.query("SELECT display_name FROM demo_profiles WHERE person_id = $1", [id]);
-    return rows[0]?.display_name;
+    const { rowCount } = await db.query("SELECT 1 FROM demo_profiles WHERE person_id = $1", [id]);
+    return rowCount === 1;
   } finally {
     await db.end();
   }
@@ -46,7 +46,7 @@ function interestFile(root, id, { from, purpose }) {
   return join(directory, id + "-interests.json");
 }
 
-async function answerNotice(root, id, name, notice, principal, traceparent) {
+async function answerNotice(root, id, notice, principal, traceparent) {
   const key = id + "/" + notice.requestId;
   if (active.has(key)) return;
   active.add(key);
@@ -58,7 +58,7 @@ async function answerNotice(root, id, name, notice, principal, traceparent) {
       const onWake = createOwnerRuntime(contactAgent(), principal, [
         localReadTool("interest_check", ({ interest }, context) =>
           demoTelemetry.span("coordination.tool.call", { attrs: { tool: "check_interest" } },
-            () => askContactOwner(name, interest, interestFile(root, id, context), root))),
+            () => askContactOwner(interest, interestFile(root, id, context), root))),
       ]);
       await onWake(notice);
     });
@@ -122,12 +122,11 @@ async function receive(request, id, after, root, span) {
       return finish(400, "invalid_request_id");
     }
 
-    const name = await contactName(id);
-    if (!name) return finish(404, "unknown_contact");
+    if (!await hasContactProfile(id)) return finish(404, "unknown_contact");
     const principal = contactPrincipal(id);
     demoTelemetry.identify({ userId: principal.userId, agentId: principal.agentId, requestId: notice.requestId });
     const traceparent = demoTelemetry.traceparent();
-    after(() => answerNotice(root, id, name, notice, principal, traceparent));
+    after(() => answerNotice(root, id, notice, principal, traceparent));
     return finish(202, "accepted");
   } catch (error) {
     return finish(503, "unavailable", error);
