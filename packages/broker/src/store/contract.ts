@@ -265,6 +265,29 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("promueve a sondeo una conexión ya bloqueada sin perder sus otros campos", async () => {
+      // markPolling escribe desde dentro de la transacción que ya tomó el row lock en ensureAgentConnection
+      // (en Postgres, SELECT … FOR UPDATE). Ningún otro caso del contrato actualiza una fila existente a "polling".
+      const row: AgentConnectionRow = {
+        userId: "carla", agentId: "cli", label: "CLI", wakeTarget: { kind: "none" },
+        verifiedAt: now, lastWakeAt: now, createdAt: now,
+      };
+      const promoted: AgentConnectionRow = { ...row, wakeTarget: { kind: "polling" } };
+      await store.tx(async (tx) => {
+        const locked = await tx.ensureAgentConnection(row);
+        expect(locked).toEqual(row);
+        await tx.upsertAgentConnection({ ...locked, wakeTarget: { kind: "polling" } });
+        // Sólo cambia el canal: etiqueta, fechas y revocación quedan como estaban.
+        expect(await tx.getAgentConnection("carla", "cli")).toEqual(promoted);
+      });
+      await store.tx(async (tx) => {
+        const reread = await tx.getAgentConnection("carla", "cli");
+        expect(reread).toEqual(promoted);
+        // Nadie le escribe: el canal vuelve sin secreto ni ningún otro campo.
+        expect(Object.keys(reread?.wakeTarget ?? {})).toEqual(["kind"]);
+      });
+    });
+
     it("keeps one live grant per grantor, grantee and category, and hides revoked grants", async () => {
       const grant: GrantRow = {
         id: randomUUID(), grantorUserId: "bruno", granteeAddress: fromAddress,
