@@ -31,8 +31,9 @@ export const Intent = z.discriminatedUnion("action", [
   z.object({ action: z.literal("clarify") }),
 ]);
 export type Intent = z.infer<typeof Intent>;
+// `choices` are the category names the holder's contacts share, offered when `expected` is categoryName.
 export type InterpretMessage = (text: string, context: {
-  at: string; timezone?: string; expected?: string; draft?: Intent;
+  at: string; timezone?: string; expected?: string; draft?: Intent; choices?: string[];
 }) => Promise<Intent>;
 
 export type ReceiptRef = Pick<RequesterView, "to" | "requestId">;
@@ -56,6 +57,8 @@ export type MessageReply =
   | { kind: "contacts"; data: AgentContacts }
   | { kind: "profiles"; items: PublicProfile[] }
   | { kind: "vault"; data: VaultResult }
+  // A category read from several contacts. `missing` lists those who share no category with that name.
+  | { kind: "vaults"; categoryName: string; items: { to: string; data: VaultResult }[]; missing: string[] }
   | { kind: "own_vault"; data: VaultCatalog }
   | { kind: "unavailable"; reason: "unsupported" | "expired" | "empty_selection" };
 
@@ -65,6 +68,7 @@ export type Field = "invitationTag" | "intent" | "scope" | "person" | "circle" |
   | keyof z.infer<typeof argumentsDraft>;
 export type ReadPlan = { action: "contacts" } | { action: "profiles"; query: string }
   | { action: "vault"; selector: Selector; circleId?: string; categoryId?: string; empty?: true }
+  | { action: "vaults"; selector: Selector; circleId?: string; categoryName: string; reads: { to: string; categoryId: string }[]; missing: string[] }
   | { action: "own_vault"; categoryId?: string };
 export type TurnState =
   | { phase: "read"; plan: ReadPlan }

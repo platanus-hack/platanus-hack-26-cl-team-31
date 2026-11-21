@@ -33,6 +33,8 @@ export function grounded(intent: Intent, source: string): Intent {
   const text = normalized(source);
   const statedScope = explicitScope(source);
   if (statedScope === "contacts" && intent.action === "contacts") return intent;
+  // A vault read only narrows to the set the holder named, so an unspecified scope takes the stated one.
+  if (statedScope && intent.action === "vault" && intent.selector.scope === "unspecified") intent.selector.scope = statedScope;
   if (statedScope && (!targetIntent(intent) || intent.selector.scope !== statedScope)) return { action: "clarify" };
   if (!targetIntent(intent)) {
     if (intent.action === "status" && ((intent.requestId && !includesLiteral(source, intent.requestId)) ||
@@ -65,10 +67,9 @@ export function grounded(intent: Intent, source: string): Intent {
       } else if (intent.args.share || /\b(compart\w*|shar\w*)\b/.test(text)) return { action: "clarify" };
     }
   }
-  if (intent.action === "vault") {
-    selector.count = "one";
-    if (selector.scope === "address" || selector.scope === "unspecified") selector.scope = "contacts";
-  }
+  // Reading a vault notifies no one and returns only what each contact shares, so «alguien»
+  // reads every contact instead of asking which set.
+  if (intent.action === "vault" && (selector.scope === "address" || selector.scope === "unspecified")) selector.scope = "contacts";
   return intent;
 }
 
@@ -118,6 +119,8 @@ export async function continueIntent(text: string, previous: Pending, interpret:
   }
   if (field === "query" && intent.action === "profiles") { intent.query = value; return keep; }
   if (field === "categoryId" && (intent.action === "vault" || intent.action === "own_vault")) {
+    // Category IDs belong to each contact, so a read from several contacts keeps the chosen name.
+    if (intent.action === "vault" && intent.selector.count === "many") { intent.categoryName = value; return keep; }
     if (option) return { ...keep, categoryId: option };
     intent.categoryName = value;
     return keep;

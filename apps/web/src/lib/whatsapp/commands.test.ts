@@ -127,6 +127,24 @@ it("muestra el catálogo de un contacto con su descripción y marca lo que no se
     "Salud: Alergias y tratamientos. (sin acceso)\nIntereses");
 });
 
+it("escribe una lectura de bóveda de varios contactos con quienes no la comparten al final", async () => {
+  const { broker, report } = fixture();
+  const salud = (entries: { label: string; value: string }[]) => ({ categories: [{ id: "s", name: "Salud", visibility: "private", canRead: true, entries }] });
+  const flow = vi.fn()
+    .mockResolvedValueOnce({ kind: "vaults", categoryName: "Salud", missing: ["carla@sideband.app"], items: [
+      { to: "sofia@sideband.app", data: salud([{ label: "Tipo de sangre", value: "O negativo" }, { label: "Donante", value: "Sí" }]) },
+      { to: "tomas@sideband.app", data: salud([]) },
+    ] })
+    .mockResolvedValueOnce({ kind: "vaults", categoryName: "Salud", missing: ["carla@sideband.app"], items: [] });
+  await expect(runCommand(broker, owner, "¿Alguien tiene sangre O negativo?", report, flow)).resolves.toBe([
+    "sofia@sideband.app · Salud: Tipo de sangre: O negativo; Donante: Sí",
+    "tomas@sideband.app · Salud: aún no guarda datos",
+    "No te comparten «Salud»: carla@sideband.app",
+  ].join("\n"));
+  await expect(runCommand(broker, owner, "¿Alguien tiene sangre O negativo?", report, flow))
+    .resolves.toBe("Ninguno de tus contactos te comparte «Salud».");
+});
+
 it("avisa cuando todavía no hay contactos", async () => {
   const { broker, report } = fixture([]);
   await expect(runCommand(broker, owner, "contactos", report)).resolves.toContain("Aún no tienes contactos");
