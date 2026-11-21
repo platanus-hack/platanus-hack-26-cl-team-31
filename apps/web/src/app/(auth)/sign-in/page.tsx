@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { getSession } from "@/lib/auth";
 import { getGoogleOptions } from "@/lib/auth-env.mjs";
+import { InvalidAuthorizationLink } from "../invalid-authorization-link";
 import { getOAuthRequest } from "@/lib/auth-request";
 import { onboardingFlow } from "@/lib/onboarding-flow";
 import { observeWebRequest, getTelemetry } from "@/lib/telemetry";
@@ -18,14 +19,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
   delete oauthParams.error_description;
   const request = isOAuth ? await getOAuthRequest(oauthParams) : null;
 
-  if (isOAuth && !request) {
-    return (
-      <>
-        <h1 className="text-[22px] leading-tight font-medium tracking-[-0.02em]">El enlace de autorización venció o no es válido</h1>
-        <p className="mt-3 text-muted">Vuelve a iniciar la conexión desde tu agente.</p>
-      </>
-    );
-  }
+  if (isOAuth && !request) return <InvalidAuthorizationLink />;
 
   const flow = onboardingFlow(request ? undefined : params.from);
   const session = !request && (flow.source === "invite"

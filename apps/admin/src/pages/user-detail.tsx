@@ -24,7 +24,7 @@ import { agentColumns } from "@/components/agent-columns"
 import { CopyButton, CopyId } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
 import {
-  ErrorState,
+  QueryError,
   KeyValues,
   Muted,
   Page,
@@ -66,7 +66,7 @@ export function UserDetailPage() {
     return (
       <Page>
         <PageHeader title={<span className="font-mono">{id}</span>} />
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
+        <QueryError query={query} />
       </Page>
     )
   }

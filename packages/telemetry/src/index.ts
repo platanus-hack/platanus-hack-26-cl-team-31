@@ -24,6 +24,7 @@ export { memorySink, type MemorySink } from "./sinks/memory.js";
 export { postgresSink, type PostgresSinkOptions, type Queryable } from "./sinks/postgres.js";
 export {
   createTelemetry,
+  silentTelemetry,
   type SpanFields,
   type SpanHandle,
   type Telemetry,

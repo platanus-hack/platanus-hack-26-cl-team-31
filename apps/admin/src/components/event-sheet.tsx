@@ -11,6 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { eventReferences } from "@/components/event-references"
 import { CopyButton, CopyId } from "@/components/copy-id"
 import { KeyValues, Muted } from "@/components/page"
 import { LevelBadge } from "@/components/status"
@@ -60,56 +61,7 @@ export function EventSheet({
                       </span>
                     ),
                   },
-                  {
-                    label: "Traza",
-                    value: event.traceId ? (
-                      <CopyId
-                        value={event.traceId}
-                        to={`/trazas/${event.traceId}`}
-                        max={16}
-                      />
-                    ) : (
-                      <Muted />
-                    ),
-                  },
-                  {
-                    label: "Span",
-                    value: event.spanId ? (
-                      <CopyId value={event.spanId} max={16} />
-                    ) : (
-                      <Muted />
-                    ),
-                  },
-                  {
-                    label: "Solicitud",
-                    value: event.requestId ? (
-                      <CopyId
-                        value={event.requestId}
-                        to={`/solicitudes/${event.requestId}`}
-                      />
-                    ) : (
-                      <Muted />
-                    ),
-                  },
-                  {
-                    label: "Persona",
-                    value: event.userId ? (
-                      <CopyId
-                        value={event.userId}
-                        to={`/personas/${event.userId}`}
-                      />
-                    ) : (
-                      <Muted />
-                    ),
-                  },
-                  {
-                    label: "Agente",
-                    value: event.agentId ? (
-                      <CopyId value={event.agentId} />
-                    ) : (
-                      <Muted />
-                    ),
-                  },
+                  ...eventReferences(event, { includeSpan: true }),
                   {
                     label: "Error",
                     value: event.errorId ? (

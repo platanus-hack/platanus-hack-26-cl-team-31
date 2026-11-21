@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import type { WakeJobRow } from "@shared/contract"
 
@@ -8,7 +8,7 @@ import { CopyId } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
 import { FilterBar } from "@/components/filters"
 import { RequestHoverCard } from "@/components/hover-cards"
-import { ErrorState, Muted, Page, PageHeader, Panel } from "@/components/page"
+import { QueryError, Muted, Page, PageHeader, Panel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { ToneBadge } from "@/components/status"
 import { api } from "@/lib/api"
@@ -112,7 +112,7 @@ export function WakesPage() {
         { query: { state: state === "all" ? undefined : state } },
         { signal }
       ),
-    placeholderData: (previous) => previous,
+    placeholderData: keepPreviousData,
     refetchInterval: 10_000,
   })
   const failed =
@@ -148,9 +148,7 @@ export function WakesPage() {
           <ToggleGroupItem value="done">Terminados</ToggleGroupItem>
         </ToggleGroup>
       </FilterBar>
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
+      <QueryError query={query} />
       <Panel>
         <DataTable
           columns={columns}

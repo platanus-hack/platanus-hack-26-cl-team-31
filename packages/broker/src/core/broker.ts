@@ -34,7 +34,7 @@ import {
   type ToolResult,
   ContactGroupChange,
 } from "@team-31/protocol";
-import { BrokerError } from "../errors.js";
+import { BrokerError, notFound } from "../errors.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import { sanitizeReply } from "../sanitize/pipeline.js";
 import { SanitizeBlockedError, type SanitizeFlag } from "../sanitize/types.js";
@@ -73,10 +73,6 @@ async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): 
 // In catalog order, so the answer does not depend on how the store sorts grants.
 function categoriesOf(grants: GrantRow[]): Sharing {
   return Category.options.filter((category) => grants.some((grant) => grant.category === category));
-}
-
-function notFound(): BrokerError {
-  return new BrokerError("not_found", "No se encontró el recurso.");
 }
 
 function closed(): BrokerError {

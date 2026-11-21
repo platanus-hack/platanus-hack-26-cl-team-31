@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import type { AgentRow } from "@shared/contract"
 import { WakeKind } from "@team-31/protocol"
 
@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch"
 import { agentColumns, agentHealth } from "@/components/agent-columns"
 import { DataTable } from "@/components/data-table"
 import { FilterBar, SelectFilter } from "@/components/filters"
-import { ErrorState, Page, PageHeader, Panel } from "@/components/page"
+import { QueryError, Page, PageHeader, Panel } from "@/components/page"
 import { RevokeAgentDialog } from "@/components/revoke-agent-dialog"
 import { ToneBadge } from "@/components/status"
 import { api } from "@/lib/api"
@@ -28,7 +28,7 @@ export function AgentsPage() {
         { query: { failing: failing || undefined, kind } },
         { signal }
       ),
-    placeholderData: (previous) => previous,
+    placeholderData: keepPreviousData,
   })
   const columns = React.useMemo(
     () => agentColumns({ onRevoke: isOperator ? setRevoking : undefined }),
@@ -64,9 +64,7 @@ export function AgentsPage() {
           </FieldLabel>
         </Field>
       </FilterBar>
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
+      <QueryError query={query} />
       <Panel>
         <DataTable
           columns={columns}

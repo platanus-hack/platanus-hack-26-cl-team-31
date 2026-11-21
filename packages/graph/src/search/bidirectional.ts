@@ -8,7 +8,7 @@ import {
   type SearchGenerator,
   type SearchOptions,
 } from "../view.js";
-import { buildPath, DEFAULT_BATCH, EMPTY, frontierRequest, recordFetch, visibleArcs } from "./common.js";
+import { buildPath, DEFAULT_BATCH, EMPTY, frontierRequest, parentArcs, recordFetch, visibleArcs } from "./common.js";
 import type { SearchResult } from "./dijkstra.js";
 
 interface Side {
@@ -47,7 +47,7 @@ export function* bidirectional(
 
   if (source === target) {
     stats.stopReason = "target";
-    return { paths: [{ source, target, cost: 0, nodes: [source], arcs: [] }], stats };
+    return { paths: [buildPath(source, target, 0, [])], stats };
   }
 
   const fwd = side(source, false);
@@ -114,18 +114,8 @@ export function* bidirectional(
     if (stats.stopReason === "target") stats.stopReason = "unreachable";
     return { paths: [], stats };
   }
-  const head = buildPath(source, meet, fwd.dist.get(meet) as number, fwd.parent);
+  const head = parentArcs(source, meet, (id) => fwd.parent.get(id)).reverse();
   // La mitad trasera se guardó con aristas orientadas target→meet; se invierten.
-  const tailArcs: Arc[] = [];
-  let cur = meet;
-  while (cur !== target) {
-    const arc = bwd.parent.get(cur) as Arc;
-    tailArcs.push(flip(arc));
-    cur = arc.from;
-  }
-  const arcs = [...head.arcs, ...tailArcs];
-  return {
-    paths: [{ source, target, cost: best, nodes: [source, ...arcs.map((a) => a.to)], arcs }],
-    stats,
-  };
+  const tail = parentArcs(target, meet, (id) => bwd.parent.get(id)).map(flip);
+  return { paths: [buildPath(source, target, best, head.concat(tail))], stats };
 }

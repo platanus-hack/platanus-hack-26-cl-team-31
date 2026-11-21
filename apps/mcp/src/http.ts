@@ -4,9 +4,8 @@ import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpGuard } from "@team-31/auth/resource";
 import type { AgentPort } from "@team-31/broker/client";
 import { Scope, type Principal } from "@team-31/protocol";
-import type { Telemetry } from "@team-31/telemetry";
+import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
 import { createServer } from "./server.js";
-import { silentTelemetry } from "./telemetry.js";
 
 const mcpPath = "/mcp";
 const metadataPath = "/.well-known/oauth-protected-resource";
@@ -28,7 +27,7 @@ function rejectionReason(authorization: string | undefined, status: number): str
 export function createHttpServer(
   options: Parameters<typeof createMcpGuard>[0],
   agent: AgentPort,
-  telemetry: Telemetry = silentTelemetry(),
+  telemetry: Telemetry = silentTelemetry("mcp"),
 ) {
   const guard = createMcpGuard(options);
   const resource = new URL(options.audience);
