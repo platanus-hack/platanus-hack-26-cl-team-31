@@ -3,18 +3,15 @@
 // y valida su salida con los esquemas del contrato antes de devolverla.
 import { performance } from "node:perf_hooks"
 
-import { RequestStatus } from "@team-31/protocol"
+import type { RequestStatus } from "@team-31/protocol"
 import type pg from "pg"
 import type { z } from "zod"
 
 import {
   AgentRow,
   AuditEntry,
-  ErrorGroup,
-  Overview,
   RequestDetail,
   RequestSummary,
-  ServiceHealth,
   SqlResult,
   TelemetryEvent,
   TimelineItem,
@@ -23,11 +20,9 @@ import {
   UserSummary,
   WakeJobRow,
   type AgentFilters,
-  type ErrorFilters,
   type EventFilters,
   type RequestFilters,
   type UserFilters,
-  type Window,
 } from "../../shared/contract.js"
 import {
   AdminQueryError,
@@ -51,6 +46,7 @@ import {
   type Db,
 } from "./db.js"
 import { flowSnapshot, latestEventId, requestRefs } from "./flow.js"
+import { errorGroups, overview, services } from "./overview.js"
 import { checkReadOnlySql, SQL_MAX_ROWS, wrapWithLimit } from "./sql-guard.js"
 
 export {
@@ -63,13 +59,6 @@ export type PgAdminQueriesOptions = { databaseUrl: string }
 
 export interface PgAdminQueries extends AdminQueries {
   close(): Promise<void>
-}
-
-const WINDOWS: Record<Window, string> = {
-  "15m": "15 minutes",
-  "1h": "1 hour",
-  "24h": "24 hours",
-  "7d": "7 days",
 }
 
 const OPEN_STATUSES = ["awaiting_agent", "awaiting_owner"] satisfies RequestStatus[]
@@ -204,18 +193,6 @@ function toUserSummary(row: Row): UserSummary {
   })
 }
 
-function toErrorGroup(row: Row): ErrorGroup {
-  return ErrorGroup.parse({
-    service: row.service,
-    operation: row.operation,
-    type: row.type,
-    count: num(row.count as Numeric),
-    firstAt: iso(row.first_at as Time),
-    lastAt: iso(row.last_at as Time),
-    sampleErrorId: row.sample_error_id,
-  })
-}
-
 // Página por keyset: pide limit + 1 filas para saber si hay más.
 function page<T>(
   rows: Row[],
@@ -261,45 +238,6 @@ function eventId(value: string, field: string): string {
   return value
 }
 
-async function errorGroups(
-  db: Db,
-  filters: z.infer<typeof ErrorFilters>,
-  limit: number
-): Promise<ErrorGroup[]> {
-  const where = new Where()
-  where.and(
-    `bucket >= date_trunc('minute', now() - ${where.value(WINDOWS[filters.window])}::interval)`
-  )
-  if (filters.service) where.and(`service = ${where.value(filters.service)}`)
-  if (filters.operation)
-    where.and(`operation = ${where.value(filters.operation)}`)
-  const { rows } = await db.query(
-    `SELECT service, operation, type, sum(count) AS count, min(first_at) AS first_at, max(last_at) AS last_at,
-            (array_agg(sample_error_id ORDER BY last_at DESC))[1] AS sample_error_id
-     FROM ops.v_errors ${where}
-     GROUP BY service, operation, type
-     ORDER BY count DESC, last_at DESC
-     LIMIT ${limit}`,
-    where.params
-  )
-  return rows.map(toErrorGroup)
-}
-
-async function services(db: Db): Promise<ServiceHealth[]> {
-  const { rows } = await db.query(
-    "SELECT service, instance, version, last_seen_at, state FROM ops.v_service_health ORDER BY service, instance"
-  )
-  return rows.map((row) =>
-    ServiceHealth.parse({
-      service: row.service,
-      instance: row.instance,
-      version: row.version ?? null,
-      lastSeenAt: iso(row.last_seen_at),
-      state: row.state,
-    })
-  )
-}
-
 async function agentsOf(db: Db, where: Where): Promise<AgentRow[]> {
   const { rows } = await db.query(
     `${AGENT_SELECT} ${where} ORDER BY a.created_at DESC, a.user_id, a.agent_id LIMIT ${LIST_LIMIT}`,
@@ -331,112 +269,7 @@ export function createPgAdminQueries({
     readOnly(pool, "sideband_admin_ro", fn)
 
   return {
-    overview: (window) =>
-      ro(async (db) => {
-        const interval = WINDOWS[window]
-        const [
-          health,
-          statuses,
-          tools,
-          timing,
-          open,
-          wakes,
-          counts,
-          top,
-          generated,
-        ] = await inOrder(
-          async () => services(db),
-          async () =>
-            db.query(
-              `SELECT status, count(*) AS n FROM ops.v_requests
-             WHERE created_at >= now() - $1::interval GROUP BY status`,
-              [interval]
-            ),
-          async () =>
-            db.query(
-              `SELECT tool, count(*) AS n FROM ops.v_requests
-             WHERE created_at >= now() - $1::interval GROUP BY tool`,
-              [interval]
-            ),
-          async () =>
-            db.query(
-              `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms) AS p50,
-                    percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95
-             FROM ops.v_requests
-             WHERE created_at >= now() - $1::interval AND duration_ms IS NOT NULL`,
-              [interval]
-            ),
-          // Abiertas y atascadas son estado actual, no dependen de la ventana.
-          async () =>
-            db.query(
-              `SELECT count(*) AS open, count(*) FILTER (WHERE stuck) AS stuck
-             FROM ops.v_requests WHERE status = ANY($1)`,
-              [OPEN_STATUSES]
-            ),
-          async () =>
-            db.query(
-              `SELECT kind,
-                    count(*) FILTER (WHERE state = 'done' AND ok) AS ok,
-                    count(*) FILTER (WHERE state = 'done' AND ok = false) AS failed,
-                    count(*) FILTER (WHERE attempt > 1) AS retried,
-                    percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)
-                      FILTER (WHERE latency_ms IS NOT NULL) AS p95
-             FROM ops.v_wake_jobs
-             WHERE run_at >= now() - $1::interval AND kind IS NOT NULL
-             GROUP BY kind ORDER BY kind`,
-              [interval]
-            ),
-          async () =>
-            db.query(
-              `SELECT count(*) FILTER (WHERE kind = 'error') AS errors,
-                    count(*) FILTER (WHERE name = 'http.rate_limited') AS rate_limited,
-                    (SELECT sum(active_windows) FROM ops.v_quota_windows) AS active_windows,
-                    (SELECT count(*) FROM ops.v_message_turns WHERE phase = 'clarify' AND outcome = 'clarification') AS clarifications
-             FROM ops.v_events
-             WHERE at >= now() - $1::interval AND (kind = 'error' OR name = 'http.rate_limited')`,
-              [interval]
-            ),
-          async () => errorGroups(db, { window }, 5),
-          async () => db.query<{ now: Date }>("SELECT now() AS now")
-        )
-        const byStatus = Object.fromEntries(
-          RequestStatus.options.map((status) => [status, 0])
-        ) as Record<RequestStatus, number>
-        let total = 0
-        for (const row of statuses.rows) {
-          byStatus[row.status as RequestStatus] = num(row.n)
-          total += num(row.n)
-        }
-        return Overview.parse({
-          window,
-          generatedAt: iso(generated.rows[0]!.now),
-          services: health,
-          requests: {
-            total,
-            open: num(open.rows[0]?.open),
-            stuck: num(open.rows[0]?.stuck),
-            byStatus,
-            byTool: Object.fromEntries(
-              tools.rows.map((row) => [row.tool, num(row.n)])
-            ),
-            timeToFinalMs: {
-              p50: numOrNull(timing.rows[0]?.p50),
-              p95: numOrNull(timing.rows[0]?.p95),
-            },
-          },
-          wakes: wakes.rows.map((row) => ({
-            kind: row.kind,
-            ok: num(row.ok),
-            failed: num(row.failed),
-            retried: num(row.retried),
-            p95LatencyMs: numOrNull(row.p95),
-          })),
-          errors: { total: num(counts.rows[0]?.errors), top },
-          rateLimited: num(counts.rows[0]?.rate_limited),
-          awaitingClarifications: num(counts.rows[0]?.clarifications),
-          activeQuotaWindows: num(counts.rows[0]?.active_windows),
-        })
-      }),
+    overview: (window) => ro((db) => overview(db, window, OPEN_STATUSES)),
 
     services: () => ro(services),
 
