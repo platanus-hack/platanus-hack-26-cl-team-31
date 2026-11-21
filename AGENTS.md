@@ -25,6 +25,8 @@ Al terminar con un worktree: `pnpm teardown` (borra sus contenedores/datos y lib
 | MCP Nexo | `MCP_PORT` | `4100 + SLOT` |
 | broker Nexo | `BROKER_PORT` | `4200 + SLOT` |
 | agentes (HTTP local) | `COORDINATION_PORT` | `4310 + SLOT` |
+| admin (SPA, y todo en producción) | `ADMIN_PORT` | `4400 + SLOT` |
+| admin (API + MCP en dev) | `ADMIN_API_PORT` | `4450 + SLOT` |
 | postgres | `POSTGRES_PORT` | `54320 + SLOT`  |
 
 - Secretos/API keys: `.env.local` (gitignored). Declara cada variable nueva en `.env.local.example`.
@@ -77,6 +79,28 @@ Con Claude Code autenticado y las listas privadas en `.agents-local/bob-interest
 - [`e2e/`](e2e/README.md) prueba el stack local con clientes MCP del SDK. La suite se ejecuta cuando se define `E2E_MCP_URL` y usa `BROKER_URL` y `WEB_SERVICE_PRIVATE_KEY` de un worktree de prueba.
 - `E2E_AUTH_MODE` vale `dev` por defecto. Para `oauth`, pasa los access tokens de cuentas de prueba en `E2E_OAUTH_TOKENS`. `E2E_ISOLATION_COUNT` controla cuántas solicitudes simultáneas se envían (80 por defecto).
 - El broker debe ejecutarse en el host para llamar a los receptores falsos, que usan un puerto efímero en loopback. Configura `WAKE_ALLOW_INSECURE=1`, `REQUEST_TTL_SECONDS=20` y `WAKE_RETRY_DELAYS_MS=0,0`.
+
+## 🔭 Todo debe ser monitoreable por el admin (obligatorio)
+
+Nexo se depura en producción con `apps/admin` (panel + MCP de administración). Diseño: [docs/admin.md](docs/admin.md). Cualquier funcionalidad nueva o modificada **en el mismo PR** debe:
+
+1. **Emitir telemetría** con `@team-31/telemetry` (`emit`, `span`, `error`). Cada transición de estado, llamada externa, decisión de permisos o de autenticación y cada error genera un evento. Si el evento no existe, decláralo en `packages/telemetry/src/catalog.ts` con su esquema. Incluye `requestId`, `userId` y `agentId` cuando existan.
+2. **Nunca tragarse un error**: `catch` → `telemetry.error(operación, error)` y devolver el `errorId` (encabezado `X-Error-Id`). Nada de `console.error` suelto.
+3. **Propagar la traza**: toda llamada HTTP interna usa `tracedFetch` (encabezado `traceparent`) y todo servidor Hono usa `honoTelemetry`.
+4. **Exponer su estado al admin**: si agregas o cambias una tabla o una columna, crea o actualiza su vista redactada `ops.v_*` en `packages/ops/sql/` (nueva migración numerada). Si es una entidad nueva, agrega su lectura a `AdminQueries` (`apps/admin/shared/queries.ts`) y, si aplica, su página en el panel y su tool en el MCP admin.
+5. **No filtrar datos**: nunca pongas en eventos, logs ni vistas tokens, encabezados `Authorization`, nonces, secretos de aviso, `args`, `result` ni texto libre de terceros. El payload real solo se ve en `ops.v_request_payloads`, con un motivo y auditoría.
+6. **Servicio nuevo**: emite `service.started` y `service.heartbeat` y expone `GET /healthz`.
+7. **Mutaciones operativas** (reintentar, expirar, revocar…) se exponen en el `AdminPort` del broker, nunca como `UPDATE` directo desde el admin.
+
+En la descripción del PR agrega una línea **«Cómo se ve en el admin:»** con el evento, la vista o la pantalla donde se observa el cambio. Si `@team-31/telemetry` todavía no está en tu rama (issue ADM-01), deja el estado persistido con timestamps y motivo, y agrega `// TODO(admin): <evento>` donde va la llamada.
+
+## Admin y observabilidad
+
+- App en `apps/admin`: SPA React + Vite + shadcn (preset Nova, Radix) en `src/`, servidor Hono (API, auth y MCP admin) en `server/` y contrato compartido en `shared/`. Instrucciones en [apps/admin/AGENTS.md](apps/admin/AGENTS.md).
+- `pnpm dev --filter @team-31/admin` levanta la SPA en `ADMIN_PORT` con proxy de `/api` y `/mcp` hacia `ADMIN_API_PORT`.
+- Esquema `ops` en Postgres (`packages/ops`): `ops.events` (telemetría) y vistas redactadas `ops.v_*`. Migrar: `pnpm --filter @team-31/ops build && pnpm with-env pnpm --filter @team-31/ops migrate`.
+- Variables `ADMIN_*` y `TELEMETRY_*` en `.env.local.example`.
+- UI: usa la skill `shadcn` (`.agents/skills/shadcn`, enlazada en `.claude/skills`) y el MCP `shadcn` de `.mcp.json`. Componentes con `pnpm dlx shadcn@latest add <componente>` desde `apps/admin`.
 
 ## Comandos
 
