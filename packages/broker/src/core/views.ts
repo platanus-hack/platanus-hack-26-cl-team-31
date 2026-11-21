@@ -41,7 +41,7 @@ export function toRequesterView(row: RequestRow): RequesterView {
   }
 }
 
-function senderMessage(row: RequestRow) {
+export function senderMessage(row: RequestRow) {
   return {
     text: row.tool === "question" ? ToolArgs.question.parse(row.args).text : "",
     purpose: row.purpose,

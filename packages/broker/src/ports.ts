@@ -26,6 +26,7 @@ import type {
   Waker,
 } from "@team-31/protocol";
 import type { BrokerTelemetry } from "./core/events.js";
+import type { SanitizeContext } from "./sanitize/types.js";
 import type { Store } from "./store/store.js";
 
 export interface AgentPort {
@@ -112,6 +113,9 @@ export type BrokerDeps = {
   config: { requestTtlSeconds: number; wakeRetryDelaysMs: number[]; addressDomain: string };
   // Lifecycle, policy and permission events (docs/admin.md#3). Optional so the core stays decoupled.
   telemetry?: BrokerTelemetry;
+  // Every agent reply passes through sanitizeReply before it is stored or delivered. These options only
+  // tune it (e.g. an LLM redactor for free text); the deterministic stages always run.
+  sanitize?: Pick<SanitizeContext, "redactor" | "canaries" | "contacts" | "limits">;
 };
 
 export type { BrokerTelemetry } from "./core/events.js";

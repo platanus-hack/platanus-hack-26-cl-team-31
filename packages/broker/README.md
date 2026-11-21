@@ -9,11 +9,10 @@ Núcleo del broker: autenticación, API pública y frontera de salida. Toda resp
 ```ts
 import { sanitizeReply } from "@team-31/broker";
 
-// `decision` es el resultado { kind: "allow" } de evaluate() (src/policy).
 const report = await sanitizeReply(reply.result, {
   tool: "question",
-  allowedFields: decision.allowedFields, // de evaluate()
-  guidance: decision.guidance,
+  allowedFields: row.allowedFields, // campos que permite el grant
+  guidance: row.guidance,
   privateHints: ["Terapia", "Dr. Soto"], // textos privados del dueño (p. ej. títulos de su calendario)
   canaries: ["NEXO-CANARY-91c2"],
   senderMessage: inboxItem.senderMessage, // texto no confiable del solicitante
@@ -34,6 +33,14 @@ Cada etapa es una función pura `(state, ctx) => state` y tiene sus propias prue
 | leak-guard | `leak-guard.ts` | Barrera determinista final. Bloquea pistas privadas (incluso ofuscadas con homoglifos, leetspeak o separadores), canarios, emails, teléfonos, URLs y ecos del `senderMessage` o marcadores de inyección. Un canario o una fuga en un campo obligatorio lanza `SanitizeBlockedError` (`forbidden`), y una fuga en un campo opcional elimina ese campo. |
 
 Al final, `toReport` vuelve a validar el esquema y comprueba que no haya campos fuera de `allowedFields`. Los errores son siempre `BrokerError`, y los mensajes y flags nunca incluyen el texto que se detectó.
+
+### En el broker
+
+`broker.agent.reply` pasa toda respuesta `answered` por `sanitizeReply` antes de guardarla o entregarla, con los `allowedFields` y la `guidance` de la solicitud y el `senderMessage` del solicitante.
+
+- **Bloqueo** (`SanitizeBlockedError`, código `forbidden`): se rechaza igual que una respuesta fuera de esquema. Nada viaja, la solicitud sigue en `awaiting_agent` y el agente puede responder de nuevo. Telemetría: `broker.reply.rejected` con `code: "leak_blocked"` y `flags`.
+- **Aceptada con hallazgos**: se entrega la versión limpia y se emite `broker.reply.sanitized` con los códigos de los hallazgos y los campos del protocolo descartados. Nunca se emite el texto.
+- `BrokerDeps.sanitize` (opcional) configura `redactor`, `canaries`, `contacts` y `limits`. Sin él corren solo las etapas determinísticas.
 
 ### Redactor con Claude (opcional)
 
