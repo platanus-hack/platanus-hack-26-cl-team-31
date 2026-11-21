@@ -288,10 +288,11 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(13);
+    expect(rows).toHaveLength(14);
   });
 
   it("keeps the first active agent and preserves previously revoked history when migrating", async () => {
+    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
     await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
     await isolated.query("DROP TABLE sideband.quota_windows");
@@ -311,6 +312,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   // Rewind the vault and channel tables before replaying older fixtures.
   async function undoVaultAndNotifyOrigin() {
+    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
     await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
     await isolated.query("DROP TABLE sideband.quota_windows");

@@ -79,10 +79,10 @@ function transaction(state: State): StoreTx {
   }
 
   return {
-    async networkAddresses(after, limit) {
+    async networkAddresses(after, limit, q) {
       const connected = new Set([...state.agents.values()].map(agent => agent.userId));
       return [...state.users.values()].flatMap(({ userId, address }) =>
-        address && connected.has(userId) && (!after || address > after) ? [address] : []).sort().slice(0, limit);
+        address && connected.has(userId) && (!after || address > after) && (!q || address.includes(q)) ? [address] : []).sort().slice(0, limit);
     },
     async vaultCatalog(owner) {
       return { categories: (state.vaults.get(owner)?.categories ?? []).map(({ id, name, groups, contactGroups }) =>
