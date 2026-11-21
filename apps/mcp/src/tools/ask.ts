@@ -14,7 +14,7 @@ const inputSchema = AskInput.options[0].extend({
   then: { required: ["tags"] },
 });
 
-export function registerAsk(server: McpServer, principal: Principal, agent: AgentPort, telemetry: ToolTelemetry) {
+export function registerAsk(server: McpServer, principal: Principal, agent: Pick<AgentPort, "ask">, telemetry: ToolTelemetry) {
   server.registerTool("sideband_ask", {
     description: "Pide disponibilidad, coincidencia de interés, una respuesta o conectar. Para connect pregunta al titular qué etiquetas ponerle al contacto si no lo indicó; envía su elección en tags ([] para Sin etiqueta). Una question indica el tema en args.category. Consulta el resultado con sideband_check.",
     inputSchema,
