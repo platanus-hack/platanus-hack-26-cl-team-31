@@ -3,7 +3,7 @@ import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
 import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
-import { ActivityItem, AgentConnection, AgentContacts, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem } from "./owner.js";
+import { ActivityItem, AgentConnection, AgentContacts, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent } from "./owner.js";
 import { Sharing } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
@@ -144,6 +144,10 @@ export const routes = {
     ...noContent,
     iss: "web",
     port: "owner.decide",
+  },
+  ownerAgentDirectory: {
+    method: "GET", path: "/v1/owner/agent-directory",
+    response: z.object({ items: z.array(PublicAgent) }), iss: "web", port: "owner.agentDirectory",
   },
   ownerAgents: {
     method: "GET",

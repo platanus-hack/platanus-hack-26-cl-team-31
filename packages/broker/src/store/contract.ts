@@ -51,6 +51,21 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("lists each active agent with an address and exposes only its public fields", async () => {
+      await store.tx(async (tx) => {
+        const agent = { userId: "alice", agentId: "client-1", label: "Alba", wakeTarget: { kind: "none" }, createdAt: now } as const;
+        await tx.ensureAgentConnection(agent);
+        await tx.ensureAgentConnection({ ...agent, agentId: "client-2", label: "Luna" });
+        await tx.ensureAgentConnection({ ...agent, userId: "bruno" });
+        await tx.ensureAgentConnection({ ...agent, userId: "addressless" });
+        await tx.upsertAgentConnection({ ...agent, agentId: "old", revokedAt: now });
+        expect(await tx.listPublicAgents()).toEqual([
+          { agentId: "client-1", label: "Alba", address: fromAddress }, { agentId: "client-1", label: "Alba", address: toAddress },
+          { agentId: "client-2", label: "Luna", address: fromAddress },
+        ]);
+      });
+    });
+
     it("allows one address per user and one user per address", async () => {
       await expect(store.tx((tx) => tx.createAddress("carla", fromAddress))).rejects.toMatchObject({ code: "conflict" });
       await expect(store.tx((tx) => tx.createAddress("alice", "other@sideband.app"))).rejects.toMatchObject({ code: "conflict" });

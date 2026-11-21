@@ -25,6 +25,10 @@ export const AgentConnection = z.object({
 });
 export type AgentConnection = z.infer<typeof AgentConnection>;
 
+// Web resolves OAuth client names by agentId. Wake details stay in the personal connection list.
+export const PublicAgent = AgentConnection.pick({ agentId: true, label: true }).extend({ address: Address });
+export type PublicAgent = z.infer<typeof PublicAgent>;
+
 export const OwnerPendingItem = z.object({
   requestId: z.string(),
   from: Address,

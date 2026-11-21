@@ -3,6 +3,7 @@ import type {
   Address,
   FinalOutcome,
   RequestStatus,
+  PublicAgent,
   ToolName,
   ToolResult,
   WakeResult,
@@ -169,6 +170,7 @@ export interface StoreTx {
   ensureAgentConnection(row: AgentConnectionRow): Promise<AgentConnectionRow>;
   upsertAgentConnection(row: AgentConnectionRow): Promise<void>;
   // Oldest first, then by agent ID in UTF-8 byte order.
+  listPublicAgents(): Promise<PublicAgent[]>;
   listAgentConnections(userId: string): Promise<AgentConnectionRow[]>;
   getAgentConnection(userId: string, agentId: string, forUpdate?: boolean): Promise<AgentConnectionRow | null>;
 }

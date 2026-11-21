@@ -705,6 +705,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (error) throw error;
       },
 
+      async agentDirectory() {
+        return store.tx((tx) => tx.listPublicAgents());
+      },
+
       async agents(o) {
         return store.tx(async (tx) => (await tx.listAgentConnections(o.userId)).map(toAgentConnection));
       },

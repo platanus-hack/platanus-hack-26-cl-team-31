@@ -166,6 +166,7 @@ async function changeCircle(operation: string, fallback: string, change: (owner:
     return { error: actionError(operation, error, fallback) };
   }
   revalidatePath("/circles");
+  revalidatePath("/agents");
   return {};
 }
 

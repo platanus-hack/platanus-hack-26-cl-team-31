@@ -244,6 +244,12 @@ describe("HTTP interno del broker", () => {
       .toMatchObject({ agentId: "bruno-agent", wakeKind: "mcp_events" });
     expect(waker.verifyCallback).toHaveBeenCalledWith(mcpEvents);
     expect((await call(app, routes.ownerAgents, { token: bruno })).items).toHaveLength(1);
+    await expectError(await request(app, routes.ownerAgentDirectory), 401, "unauthorized");
+    await expectError(await request(app, routes.ownerAgentDirectory, { token: aliceBot }), 401, "unauthorized");
+    expect((await call(app, routes.ownerAgentDirectory, { token: alice })).items).toEqual([
+      { agentId: "alice-agent", label: "alice-agent", address: "alice@sideband.app" },
+      { agentId: "bruno-agent", label: "bruno-agent", address: "bruno@sideband.app" },
+    ]);
 
     const asked = await call(app, routes.agentAsk, { token: aliceBot, body: { ...question, userId: "carla" } });
     expect(asked).toMatchObject({ final: false, waitingFor: "agent" });
