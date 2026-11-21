@@ -3,7 +3,6 @@ import {
   ActivityItem,
   AskInput,
   fieldsOf,
-  fixtureSharingRules,
   fixtureUsers,
   GrantInput,
   ReplyInput,
@@ -137,11 +136,6 @@ describe("wake contracts", () => {
       WakeNotice.safeParse({ requestId: "request-1", event: WAKE_EVENT, text: "Contenido" }).success,
     ).toBe(false);
   });
-});
-
-it("includes Diego in both fixture circles", () => {
-  expect(fixtureSharingRules.circles.amigos).toContain(to);
-  expect(fixtureSharingRules.circles.trabajo).toContain(to);
 });
 
 describe("GrantInput", () => {

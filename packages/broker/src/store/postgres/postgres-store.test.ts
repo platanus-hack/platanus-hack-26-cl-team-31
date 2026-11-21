@@ -93,11 +93,16 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     };
     await createParticipants();
     const broker = createBroker({ ...deps, store });
+    const grant = await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
     const { requestId } = await broker.agent.ask(alice, {
       to: "bruno@nexo.app", tool: "question", args: { text: "¿Disponible?" },
     });
+    const [escalated] = await broker.agent.inbox(bruno);
+    await broker.agent.reply(bruno, { requestId, nonce: escalated!.nonce, outcome: "needs_owner" });
     expect(await broker.agent.status(alice, requestId)).toMatchObject({ final: false, waitingFor: "owner" });
     await broker.owner.decide(bruno, requestId, { kind: "approve_once" });
+    // The approval outlives the grant that let the request in.
+    await broker.owner.revokeGrant(bruno, grant.id);
 
     await store.close();
     store = createPostgresStore({ databaseUrl, secretsKey });

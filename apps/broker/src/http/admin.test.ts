@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { mintServiceToken } from "@team-31/auth/service";
 import { createBroker, createMemoryStore } from "@team-31/broker";
-import { ErrorBody, Scope, SharingRules, type Principal } from "@team-31/protocol";
+import { ErrorBody, Scope, type Principal } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { describe, expect, it } from "vitest";
 import { createHttpServer } from "./server.js";
@@ -37,9 +37,7 @@ async function fixture(keys: Partial<typeof publicKeys> = publicKeys) {
   });
   await broker.owner.claimAddress(alice, "alice");
   await broker.owner.claimAddress(bruno, "bruno");
-  await broker.owner.setRules(bruno, SharingRules.parse({
-    circles: { amigos: ["alice@nexo.app"] }, grants: { amigos: [{ tool: "question", fields: ["answer"] }] },
-  }));
+  await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
   await broker.agent.connectWake(bruno, { kind: "standard_webhook", url: "https://example.com/hook", secret: "whsec_test" });
   const { requestId } = await broker.agent.ask(alice, { to: "bruno@nexo.app", tool: "question", args: { text: "¿Vienes?" } });
   return { broker, requestId, app: createHttpServer({ broker, publicKeys: keys }) };

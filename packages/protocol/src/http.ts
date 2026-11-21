@@ -6,7 +6,6 @@ import { ActivityItem, AgentConnection, OwnerDecision, OwnerPendingItem } from "
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
-import { SharingRules } from "./rules.js";
 import { WakeTarget } from "./wake.js";
 
 const requestParams = z.object({ id: z.string() });
@@ -80,21 +79,6 @@ export const routes = {
     response: z.object({ address: Address }),
     iss: "web",
     port: "owner.claimAddress",
-  },
-  ownerGetRules: {
-    method: "GET",
-    path: "/v1/owner/rules",
-    response: SharingRules,
-    iss: "web",
-    port: "owner.getRules",
-  },
-  ownerSetRules: {
-    method: "PUT",
-    path: "/v1/owner/rules",
-    body: SharingRules,
-    ...noContent,
-    iss: "web",
-    port: "owner.setRules",
   },
   ownerGrants: {
     method: "GET",

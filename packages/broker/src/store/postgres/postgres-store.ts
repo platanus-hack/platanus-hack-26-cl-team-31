@@ -1,5 +1,5 @@
 import {
-  ActivityEvent, Address, FinalOutcome, RequestStatus, SharingRules, ToolArgs, ToolName,
+  ActivityEvent, Address, FinalOutcome, RequestStatus, ToolArgs, ToolName,
   ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
 } from "@team-31/protocol";
 import { and, asc, desc, DrizzleQueryError, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
@@ -10,7 +10,7 @@ import type {
   AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
 import { createWakeCodec } from "./crypto.js";
-import { agentConnections, grants, requestEvents, requests, sharingRules, users, wakeJobs } from "./schema.js";
+import { agentConnections, grants, requestEvents, requests, users, wakeJobs } from "./schema.js";
 
 export type PostgresStoreOptions = {
   databaseUrl: string;
@@ -147,18 +147,6 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         }
         throw error;
       }
-    },
-
-    async getRules(userId) {
-      const [row] = await db.select({ rules: sharingRules.rules }).from(sharingRules).where(eq(sharingRules.userId, userId));
-      return row ? parseStored(SharingRules, row.rules) : null;
-    },
-
-    async putRules(userId, rules) {
-      await ensureUser(userId);
-      await db.insert(sharingRules).values({ userId, rules }).onConflictDoUpdate({
-        target: sharingRules.userId, set: { rules, updatedAt: sql`now()` },
-      });
     },
 
     async putGrant(row) {

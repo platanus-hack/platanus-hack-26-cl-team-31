@@ -1,6 +1,6 @@
 # Bloque de confianza para el agente
 
-1. **Revisa los permisos.** En Nexo, configura qué herramientas y campos puede usar cada círculo o persona. Revisa la conexión del agente en la lista de Agentes.
+1. **Revisa los permisos.** En Nexo, configura qué herramientas y campos puede usar cada persona. Revisa la conexión del agente en la lista de Agentes.
 2. **Copia el bloque.** Pégalo en las instrucciones que controlas, como `AGENTS.md` en OpenClaw, las instrucciones del Dot o las de una rutina de Grok Bot. [Instrucciones del agente de OpenClaw](https://docs.openclaw.ai/concepts/system-prompt) · [Personalización del Dot](https://learn.chatgpt.com/docs/dots/getting-started) · [Rutinas de Grok Bot](https://docs.x.ai/grok-bot/skills-routines-and-automations)
 3. **Revisa una solicitud de prueba.** Comprueba que el agente obtiene el ID y el nonce de la bandeja y que solo comparte los campos autorizados.
 

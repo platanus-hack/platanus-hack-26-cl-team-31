@@ -21,6 +21,8 @@ export const users = nexo.table("users", {
   createdAt: time("created_at").notNull().defaultNow(),
 });
 
+// The broker stopped reading and writing this table when grants replaced sharing rules.
+// It stays in the schema because ops.v_users still joins it.
 export const sharingRules = nexo.table("sharing_rules", {
   userId: text("user_id").primaryKey().references(() => users.userId),
   rules: jsonb("rules").notNull(),

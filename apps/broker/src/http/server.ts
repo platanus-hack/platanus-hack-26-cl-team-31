@@ -47,10 +47,6 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.me(c.get("web"));
     case "owner.claimAddress":
       return { address: await owner.claimAddress(c.get("web"), (await parseBody(c, route.body)).localPart) };
-    case "owner.getRules":
-      return owner.getRules(c.get("web"));
-    case "owner.setRules":
-      return owner.setRules(c.get("web"), await parseBody(c, route.body));
     case "owner.grants":
       return { items: await owner.grants(c.get("web")) };
     case "owner.setGrant":

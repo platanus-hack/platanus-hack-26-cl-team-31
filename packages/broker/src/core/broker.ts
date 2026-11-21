@@ -9,7 +9,6 @@ import {
   LocalPart,
   OwnerDecision,
   ReplyInput,
-  SharingRules,
   WakeTarget,
   WAKE_SUBSCRIPTION_SCOPE,
   type FinalOutcome,
@@ -19,7 +18,7 @@ import {
   type ToolResult,
 } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import { evaluate, filterResult, type Decision } from "../policy/index.js";
+import { filterResult } from "../policy/index.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import type { RequestRow, StoreTx } from "../store/store.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
@@ -30,23 +29,12 @@ import {
 } from "./views.js";
 import { createWorker } from "./worker.js";
 
-const noRules = SharingRules.parse({ circles: {}, grants: {} });
-
-async function authorize(tx: StoreTx, toUserId: string, from: Address, to: Address, tool: ToolName): Promise<Decision> {
-  return evaluate({
-    rules: await tx.getRules(toUserId) ?? noRules, grant: await tx.getGrant(toUserId, from, tool), from, to, tool,
-  });
-}
-
+// A request stays authorized while the recipient's grant to the sender still covers its fields.
 async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
-  if (row.fromUserId === null) return true; // A connection test requested by the owner.
-  const rules = await tx.getRules(toUserId) ?? noRules;
-  if (rules.blocked.includes(row.fromAddress)) return false;
-  if (row.approvedOnce) return true;
+  // A connection test requested by the owner, or a request the owner approved once.
+  if (row.fromUserId === null || row.approvedOnce) return true;
   const grant = await tx.getGrant(toUserId, row.fromAddress, row.tool);
-  const current = evaluate({ rules, grant, from: row.fromAddress, to: row.toAddress, tool: row.tool });
-  return current.kind === "allow" && current.guidance === row.guidance &&
-    row.allowedFields.every(field => current.allowedFields.includes(field));
+  return grant !== null && row.allowedFields.every(field => grant.fields.includes(field));
 }
 
 function notFound(): BrokerError {
@@ -179,13 +167,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const from = (await tx.getUser(p.userId))?.address;
           const owner = await tx.getUserByAddress(to);
           if (!from || !owner || from === to) return { tools: [] };
-          const decisions = await Promise.all(ToolName.options.map(async tool =>
-            ({ tool, decision: await authorize(tx, owner.userId, from, to, tool) })));
-          return { tools: decisions.flatMap(({ tool, decision }) => {
-            if (decision.kind === "public") return [describeTool(tool, Object.keys(decision.result))];
-            if (decision.kind === "allow") return [describeTool(tool, decision.allowedFields)];
-            return [];
-          }) };
+          const grants = await Promise.all(ToolName.options.map(tool => tx.getGrant(owner.userId, from, tool)));
+          return { tools: grants.flatMap(grant => grant ? [describeTool(grant.tool, grant.fields)] : []) };
         });
       },
 
@@ -204,22 +187,13 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           let row = await initialRequest({
             fromUserId: p.userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
           }, now);
-          const decision = recipient
-            ? await authorize(tx, recipient.userId, from, to, tool)
-            : { kind: "deny" as const, reason: "Dirección sin destinatario." };
-          switch (decision.kind) {
-            case "public":
-              row = await finalize(row, "answered", now, decision.result);
-              break;
-            case "allow":
-              row = { ...row, status: "awaiting_agent", allowedFields: decision.allowedFields, rule: decision.rule, guidance: decision.guidance };
-              break;
-            case "ask_owner":
-              row = { ...row, decisionReason: decision.reason };
-              break;
-            case "deny":
-              row = await finalize({ ...row, decisionReason: decision.reason }, "denied", now);
-              break;
+          const grant = recipient && await tx.getGrant(recipient.userId, from, tool);
+          if (grant) {
+            const rule = `Permiso para ${tool}: ${grant.fields.join(", ")}`;
+            row = { ...row, status: "awaiting_agent", allowedFields: grant.fields, rule };
+          } else {
+            const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
+            row = await finalize({ ...row, decisionReason }, "denied", now);
           }
           await recordNew(tx, row, now);
           return toRequesterView(row);
@@ -353,8 +327,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async me(o) {
         return store.tx(async (tx) => {
           const user = await tx.getUser(o.userId);
-          const rules = await tx.getRules(o.userId);
-          return { userId: o.userId, address: user?.address, displayName: user?.displayName ?? rules?.publicProfile?.displayName };
+          return { userId: o.userId, address: user?.address, displayName: user?.displayName };
         });
       },
 
@@ -365,20 +338,6 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         const address = `${localPart}@${config.addressDomain}`;
         await store.tx((tx) => tx.createAddress(o.userId, address));
         return address;
-      },
-
-      async getRules(o) {
-        return store.tx(async (tx) => await tx.getRules(o.userId) ?? structuredClone(noRules));
-      },
-
-      async setRules(o, input) {
-        const parsed = SharingRules.safeParse(input);
-        if (!parsed.success) throw new BrokerError("invalid_input", "Las reglas para compartir no son válidas.");
-        const rules = parsed.data;
-        await store.tx(async tx => {
-          await tx.putRules(o.userId, rules);
-          await cancelUnauthorized(tx, o.userId);
-        });
       },
 
       async grants(o) {

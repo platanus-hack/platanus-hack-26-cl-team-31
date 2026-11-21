@@ -3,7 +3,6 @@ import type {
   Address,
   FinalOutcome,
   RequestStatus,
-  SharingRules,
   ToolName,
   ToolResult,
   WakeResult,
@@ -97,10 +96,6 @@ export interface StoreTx {
   getUserByAddress(address: Address): Promise<UserRow | null>;
   // Creates a user if needed and fails with conflict if either address is occupied.
   createAddress(userId: string, address: Address): Promise<void>;
-
-  getRules(userId: string): Promise<SharingRules | null>;
-  // Creates the address-less user if needed.
-  putRules(userId: string, rules: SharingRules): Promise<void>;
 
   // Creates the address-less grantor if needed. A grantor keeps one live grant per grantee and
   // tool: a second put replaces its fields and returns the stored row.

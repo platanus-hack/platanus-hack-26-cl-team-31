@@ -134,7 +134,7 @@ export const catalog = [
     name: "demo.contact.seeded",
     kind: "lifecycle",
     description: "Preparación de una identidad ficticia para el broker local de Contactos de Ana.",
-    attrs: { action: z.enum(["rules", "address", "wake"]) },
+    attrs: { action: z.enum(["grants", "address", "wake"]) },
   }),
   defineEvent({
     name: "coordination.tool.call",

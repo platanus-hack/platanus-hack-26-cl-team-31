@@ -1,10 +1,8 @@
-import type { SharingRules } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import type { AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob } from "./store.js";
 
 type State = {
   users: Map<string, UserRow>;
-  rules: Map<string, SharingRules>;
   grants: (GrantRow & { revokedAt?: Date })[];
   requests: Map<string, RequestRow>;
   events: RequestEvent[];
@@ -47,13 +45,6 @@ function transaction(state: State): StoreTx {
         throw new BrokerError("conflict", "Esa dirección ya está tomada.");
       }
       state.users.set(userId, { userId, createdAt: new Date(), ...user, address });
-    },
-    async getRules(userId) {
-      return structuredClone(state.rules.get(userId) ?? null);
-    },
-    async putRules(userId, rules) {
-      if (!state.users.has(userId)) state.users.set(userId, { userId, createdAt: new Date() });
-      state.rules.set(userId, structuredClone(rules));
     },
     async putGrant(row) {
       if (!state.users.has(row.grantorUserId)) state.users.set(row.grantorUserId, { userId: row.grantorUserId, createdAt: new Date() });
@@ -159,7 +150,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    users: new Map(), rules: new Map(), grants: [], requests: new Map(),
+    users: new Map(), grants: [], requests: new Map(),
     events: [], wakes: new Map(), agents: new Map(),
   };
   let previous = Promise.resolve();
