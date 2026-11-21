@@ -8,6 +8,17 @@ Track: 🔗 Multiplayer
 
 **Demo local de coordinación.** Corre `pnpm agents:up 3` en una terminal y `pnpm agents:demo 3` en otra. [Instrucciones para dos o más asistentes](apps/mcp/README.md).
 
+### Dashboard con chat
+
+Con Node 24, pnpm 10 y Docker:
+
+1. Ejecuta `pnpm agents:up 3` y deja la API abierta.
+2. En otra terminal, corre `pnpm dev --filter @team-31/web` y abre la URL local que imprima Next.js.
+3. Como Ana, pregunta si Bob está libre a las 18:00. Cambia a Eva y repite la pregunta. El inspector muestra el resumen y permite copiar el JSON que devolvió la API.
+4. Como Ana, pulsa **Proponer fútbol**; como Bob y Carla, pulsa **Responder con mi agenda**. Después pulsa **Aceptar** con las tres identidades. La última aceptación devuelve `confirmed`.
+
+El chat usa comandos guiados, sin un modelo de IA. Las respuestas vienen de la API del worktree y los datos de la agenda son ficticios. El selector de identidades solo funciona en desarrollo local: las credenciales de `.agents-local/` no salen del servidor web.
+
 team-31
 
 - Adolfo Manuel Villalobos Vega ([@adolfovillalobos](https://github.com/adolfovillalobos))

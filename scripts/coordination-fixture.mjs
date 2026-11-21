@@ -1,10 +1,8 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { group, slots, minutes } from "./coordination-scenario.mjs";
 
-// Partido del sábado 28 de noviembre, a las 16:00 o 18:00 en Santiago.
-export const group = "futbol";
-export const slots = ["2026-11-28T19:00:00.000Z", "2026-11-28T21:00:00.000Z"];
-export const minutes = 60;
+export { group, slots, minutes };
 
 const member = { group, canAsk: true, canShare: true };
 const participants = [
