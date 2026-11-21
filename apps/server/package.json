@@ -1,0 +1,22 @@
+{
+  "name": "@team-31/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "test": "pnpm build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.16.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@team-31/typescript-config": "workspace:*",
+    "@types/pg": "^8.15.5",
+    "@types/node": "^24",
+    "typescript": "^5.9.3"
+  }
+}
