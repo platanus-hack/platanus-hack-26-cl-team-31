@@ -12,7 +12,7 @@ function start(env: BrokerEnv, telemetry: BrokerServiceTelemetry) {
     broker, limiter, publicKeys: env.SERVICE_JWT_PUBLIC_KEYS, shutdown: shutdown.signal, telemetry: telemetry.http,
   });
   const server = serve({ fetch: app.fetch, hostname: env.BROKER_HOST, port: env.BROKER_PORT }, ({ address, port }) => {
-    console.info(`[broker] HTTP escuchando en ${address}:${port}`);
+    telemetry.http.emit("service.listening", { attrs: { address, port } });
   });
   const stopWorker = startWorker(broker, telemetry.worker, telemetry.runInWorker);
 
