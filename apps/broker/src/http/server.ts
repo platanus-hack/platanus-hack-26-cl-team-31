@@ -67,6 +67,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.status(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "owner.decide":
       return owner.decide(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
+    case "owner.agentDirectory":
+      return { items: await owner.agentDirectory(c.get("web")) };
     case "owner.agents":
       return { items: await owner.agents(c.get("web")) };
     case "owner.setWake":

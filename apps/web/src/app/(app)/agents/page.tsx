@@ -1,50 +1,33 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
-import { readAgents } from "../actions";
-import { wakeLabels } from "../labels";
-import { card, Empty, Heading, primaryButton, Stamp } from "../ui";
-import { AgentControls } from "./agent-controls";
+import { button, Heading } from "../ui";
+import { AgentDirectory } from "./directory";
+import { MyConnections } from "./my-connections";
 
-export default async function AgentsPage() {
-  const agents = await readAgents();
-
+export default async function AgentsPage({ searchParams }: PageProps<"/agents">) {
+  const { vista, q } = await searchParams;
+  const personal = vista === "conexiones";
+  const tabs = [
+    { href: "/agents", label: "Directorio", active: !personal },
+    { href: "/agents?vista=conexiones", label: "Mis conexiones", active: personal },
+  ];
   return (
     <>
-      <Heading title="Agentes" action={<Link href="/agents/connect" prefetch={false} className={primaryButton}>Conectar con Sideband</Link>}>
-        Revisa tus conexiones y cómo reciben avisos.
+      <Heading title="Agentes" action={<Link href="/agents/connect" prefetch={false} className={button}>Conectar con Sideband</Link>}>
+        {personal ? "Revisa tus conexiones y cómo reciben avisos." : "Encuentra agentes de la red e invita a sus titulares a tus círculos."}
       </Heading>
-      {agents.length === 0 ? <Empty>Aún no tienes agentes conectados.</Empty> : (
-        <div className={`${card} overflow-x-auto`} tabIndex={0} role="region" aria-label="Lista de agentes">
-          <table className="w-full min-w-184 text-left text-sm">
-            <caption className="sr-only">Agentes conectados y desconectados</caption>
-            <thead className="bg-chip-hover text-xs font-medium text-body">
-              <tr>
-                <th scope="col" className="px-4 py-3">Agente</th>
-                <th scope="col" className="px-4 py-3">Tipo de aviso</th>
-                <th scope="col" className="px-4 py-3">Verificación</th>
-                <th scope="col" className="px-4 py-3">Último aviso</th>
-                <th scope="col" className="px-4 py-3">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {agents.map((agent) => (
-                <tr key={agent.agentId} className="align-top">
-                  <th scope="row" className="max-w-56 px-4 py-4 font-medium [overflow-wrap:anywhere]">
-                    {agent.label}
-                    <span className={`mt-1 block text-xs font-medium ${agent.revokedAt ? "text-danger" : "text-accent-ink"}`}>
-                      {agent.revokedAt ? "Desconectado" : "Conectado"}
-                    </span>
-                  </th>
-                  <td className="px-4 py-4">{wakeLabels[agent.wakeKind]}</td>
-                  <td className="px-4 py-4">{agent.verifiedAt ? <Stamp value={agent.verifiedAt} /> : "Pendiente"}</td>
-                  <td className="px-4 py-4">{agent.lastWakeAt ? <Stamp value={agent.lastWakeAt} /> : "Sin avisos"}</td>
-                  <td className="px-4 py-3"><AgentControls agentId={agent.agentId} revoked={Boolean(agent.revokedAt)} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <nav aria-label="Vistas de agentes" className="mb-6 flex gap-5 border-b border-line">
+        {tabs.map(({ href, label, active }) => (
+          <Link key={href} href={href} aria-current={active ? "page" : undefined}
+            className={`border-b-2 pb-3 text-sm font-medium ${active ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}>
+            {label}
+          </Link>
+        ))}
+      </nav>
+      <Suspense key={personal ? "personal" : "directory"} fallback={<p role="status">Cargando agentes…</p>}>
+        {personal ? <MyConnections /> : <AgentDirectory query={typeof q === "string" ? q : ""} />}
+      </Suspense>
     </>
   );
 }

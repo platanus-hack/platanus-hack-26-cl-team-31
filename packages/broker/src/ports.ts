@@ -8,6 +8,7 @@ import type {
   GrantInput,
   Address,
   AgentConnection,
+  PublicAgent,
   AgentContacts,
   AskInput,
   ContactsView,
@@ -51,6 +52,7 @@ export interface OwnerPort {
   ask(o: Owner, input: AskInput): Promise<RequesterView>;
   status(o: Owner, requestId: string): Promise<RequesterView>;
   decide(o: Owner, requestId: string, decision: OwnerDecision): Promise<void>;
+  agentDirectory(o: Owner): Promise<PublicAgent[]>;
   agents(o: Owner): Promise<AgentConnection[]>;
   setWake(o: Owner, agentId: string, target: WakeTarget): Promise<void>;
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;

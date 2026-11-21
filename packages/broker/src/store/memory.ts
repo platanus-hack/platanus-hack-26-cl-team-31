@@ -251,6 +251,12 @@ function transaction(state: State): StoreTx {
     async upsertAgentConnection(row) {
       putAgent(row);
     },
+    async listPublicAgents() {
+      return [...state.agents.values()].flatMap((agent) => {
+        const address = state.users.get(agent.userId)?.address;
+        return address && !agent.revokedAt ? [{ agentId: agent.agentId, label: agent.label, address }] : [];
+      }).sort((a, b) => a.label.localeCompare(b.label) || a.address.localeCompare(b.address));
+    },
     async listAgentConnections(userId) {
       const connections = [...state.agents.values()].filter((row) => row.userId === userId);
       connections.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()

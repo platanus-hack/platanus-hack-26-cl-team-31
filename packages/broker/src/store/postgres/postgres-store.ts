@@ -407,6 +407,13 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       });
     },
 
+    async listPublicAgents() {
+      const rows = await db.select({ agentId: agentConnections.agentId, label: agentConnections.label, address: users.address })
+        .from(agentConnections).innerJoin(users, eq(users.userId, agentConnections.userId))
+        .where(and(isNull(agentConnections.revokedAt), isNotNull(users.address)))
+        .orderBy(asc(agentConnections.label), asc(users.address));
+      return rows.map(({ address, ...agent }) => ({ ...agent, address: parseStored(Address, address) }));
+    },
     async listAgentConnections(userId) {
       const rows = await db.select().from(agentConnections).where(eq(agentConnections.userId, userId))
         .orderBy(asc(agentConnections.createdAt), sql`${agentConnections.agentId} COLLATE "C"`);
