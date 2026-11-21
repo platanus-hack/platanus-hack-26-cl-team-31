@@ -36,10 +36,11 @@ async function headCommit(repo, branch) {
   throw new Error(`No existe ${ref}.`);
 }
 
-async function serviceId(name) {
-  const [item] = await render(`/services?name=${encodeURIComponent(name)}&limit=1`);
-  if (!item?.service?.id) throw new Error(`No existe el servicio ${name}.`);
-  return item.service.id;
+// Render agrega un sufijo (`-xxxx`) a los nombres del Blueprint: se aceptan ambos.
+async function serviceId(services, name) {
+  const matches = services.filter(({ service }) => service.name === name || service.name.startsWith(`${name}-`));
+  if (matches.length !== 1) throw new Error(`Se esperaba un servicio ${name} y hay ${matches.length}.`);
+  return matches[0].service.id;
 }
 
 async function main() {
@@ -48,10 +49,11 @@ async function main() {
   const sha = await headCommit(repo, AUTODEPLOY_BRANCH);
   console.log(`[autodeploy] ${AUTODEPLOY_BRANCH} está en ${sha.slice(0, 7)}.`);
 
+  const services = await render("/services?limit=100");
   let failed = false;
   for (const name of names) {
     try {
-      const id = await serviceId(name);
+      const id = await serviceId(services, name);
       const [latest] = await render(`/services/${id}/deploys?limit=1`);
       const deployed = latest?.deploy?.commit?.id;
       // Un deploy fallido del mismo commit no se reintenta: se corrige con otro merge o a mano.
