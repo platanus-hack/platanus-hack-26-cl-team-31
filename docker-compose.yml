@@ -1,5 +1,15 @@
 # Infra local. Cada worktree levanta su propio stack aislado:
 # COMPOSE_PROJECT_NAME y los puertos vienen del .env generado por `pnpm env:init`.
+# Demo, tests y carga efímeros en Docker: `pnpm docker:demo [N]` / `pnpm docker:test` / `pnpm scale:run <escenario>`.
+x-app: &app
+  build: .
+  image: team31/app:local
+  environment: &app-env
+    DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app
+    TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app_test
+    COORDINATION_PORT: "4310"
+    COORDINATION_API_URL: http://coordination:4310
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -46,21 +56,61 @@ services:
       postgres:
         condition: service_healthy
 
+  # API de coordinación. En el host requiere esquema + seed previos (pnpm agents:up los hace).
   coordination:
-    profiles: ["agents"]
-    image: node:24-alpine
-    working_dir: /workspace
+    <<: *app
+    profiles: ["agents", "demo", "scale"]
     command: ["node", "apps/server/dist/index.js"]
-    volumes:
-      - .:/workspace:ro
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app
-      COORDINATION_PORT: ${COORDINATION_PORT}
+      <<: *app-env
       COORDINATION_HOST: 0.0.0.0
       TELEMETRY_SINK: ${TELEMETRY_SINK:-}
       TELEMETRY_DATABASE_URL: ${TELEMETRY_DATABASE_URL:-}
     ports:
-      - "127.0.0.1:${COORDINATION_PORT}:${COORDINATION_PORT}"
+      - "127.0.0.1:${COORDINATION_PORT:-4310}:4310"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4310/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Demo MCP end-to-end. Usar vía `pnpm docker:demo` (stack aislado: siembra sus propias identidades).
+  demo:
+    <<: *app
+    profiles: ["demo"]
+    entrypoint: ["sh", "infra/docker/demo.sh"]
+    command: ["3"]
+    depends_on:
+      coordination:
+        condition: service_healthy
+
+  # Carga + invariantes (apps/scale). Usar vía `pnpm scale:run <escenario>`: siembra con --reset,
+  # así que sólo debe correr en el stack aislado. Resultados JSON en ./.scale-results (gitignored).
+  scale:
+    <<: *app
+    profiles: ["scale"]
+    entrypoint: ["node", "apps/scale/src/run.mjs", "--reset"]
+    command: ["smoke"]
+    user: "${SCALE_UID:-0}:${SCALE_GID:-0}"
+    environment:
+      <<: *app-env
+      SCALE_RESULTS_DIR: /app/.scale-results
+      SCALE_RUN_ID: ${SCALE_RUN_ID:-}
+    volumes:
+      - ./.scale-results:/app/.scale-results
+    depends_on:
+      coordination:
+        condition: service_healthy
+
+  # Tests del stack de coordinación (server + scale) contra la base app_test. El resto del
+  # monorepo se prueba con `pnpm test` en el host; esta imagen sólo trae lo que sirve.
+  test:
+    <<: *app
+    profiles: ["test"]
+    command: ["pnpm", "turbo", "run", "test", "--continue", "--filter=@team-31/server", "--filter=@team-31/scale"]
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,21 @@
+# Override para corridas efímeras (demo/tests): sin puertos en el host y
+# Postgres en memoria, así no choca con el stack de desarrollo ni con otros worktrees.
+services:
+  postgres:
+    ports: !reset []
+    volumes: !override
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+  coordination:
+    ports: !reset []
+  # Servicios de otros perfiles (nexo, demo-model): no se levantan aquí, pero Compose
+  # valida todo el archivo y sus puertos dependen de variables del .env del worktree.
+  broker:
+    ports: !reset []
+  mcp:
+    ports: !reset []
+  admin:
+    ports: !reset []
+  ollama:
+    ports: !reset []

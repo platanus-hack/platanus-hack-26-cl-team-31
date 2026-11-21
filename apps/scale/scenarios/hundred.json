@@ -1,0 +1,12 @@
+{
+  "description": "100 agentes concurrentes en 10 grupos solapados, mezcla realista.",
+  "seed": "hundred",
+  "agents": 100,
+  "outsiders": 5,
+  "groups": { "count": 10, "perAgent": [1, 3], "skew": 0.5 },
+  "permissions": { "canAsk": 0.8, "canShare": 0.75, "volatile": 0.03 },
+  "calendar": { "days": 5, "slotsPerDay": 8, "slotMinutes": 60, "busy": 0.3 },
+  "interests": { "vocabulary": 40, "perAgent": [0, 4], "public": 0.3 },
+  "meetings": { "participants": [2, 5], "slots": [2, 4], "accept": 0.9 },
+  "run": { "iterations": 60, "concurrency": 100, "thinkMs": [0, 10] }
+}

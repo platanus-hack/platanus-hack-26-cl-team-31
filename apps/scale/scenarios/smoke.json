@@ -1,0 +1,9 @@
+{
+  "description": "Humo rápido: 10 agentes, todas las acciones y sondas, ~segundos.",
+  "seed": "smoke",
+  "agents": 10,
+  "outsiders": 2,
+  "groups": { "count": 3, "perAgent": [1, 2] },
+  "permissions": { "canAsk": 0.8, "canShare": 0.8, "volatile": 0.1 },
+  "run": { "iterations": 40, "thinkMs": [0, 5] }
+}

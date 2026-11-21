@@ -14,3 +14,4 @@ coverage/
 .agents-local/
 
 .desloppify/
+.scale-results/

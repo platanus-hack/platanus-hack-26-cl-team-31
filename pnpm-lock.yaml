@@ -283,6 +283,28 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  apps/scale:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.32.2
+        version: 1.32.2(zod@4.6.7)
+      pg:
+        specifier: ^8.16.3
+        version: 8.23.1
+    devDependencies:
+      '@team-31/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
+      '@types/node':
+        specifier: ^24
+        version: 24.19.2
+      '@types/pg':
+        specifier: ^8.15.5
+        version: 8.23.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   apps/server:
     dependencies:
       '@modelcontextprotocol/sdk':
