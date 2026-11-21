@@ -1,0 +1,6 @@
+{
+  "name": "@team-31/typescript-config",
+  "version": "0.0.0",
+  "private": true,
+  "files": ["*.json"]
+}
