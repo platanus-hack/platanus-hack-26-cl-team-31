@@ -728,6 +728,9 @@ export function createPgAdminQueries({
             )
         )
         return UserDetail.parse({
+          vault: await viewExists(db, "ops.v_vault_summary")
+            ? (await db.query("SELECT categories::int, entries::int, permissions::int FROM ops.v_vault_summary WHERE user_id = $1", [userId])).rows[0]
+              ?? { categories: 0, entries: 0, permissions: 0 } : undefined,
           summary: toUserSummary(row),
           identity: {
             email: identity?.rows[0]?.email ?? null,

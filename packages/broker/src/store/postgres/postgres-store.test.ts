@@ -245,11 +245,12 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(8);
+    expect(rows).toHaveLength(9);
   });
 
-  // Removes what 0006_notify_origin adds, so a test can replay the migrations after an older one.
-  async function undoNotifyOrigin() {
+  // Rewind the vault and channel tables before replaying older fixtures.
+  async function undoVaultAndNotifyOrigin() {
+    await isolated.query("DROP TABLE sideband.vault_permissions, sideband.vault_entries, sideband.vault_categories");
     await isolated.query("DROP TABLE sideband.channels");
     await isolated.query("ALTER TABLE sideband.requests DROP COLUMN origin_channel");
     await isolated.query("ALTER TABLE sideband.wake_jobs DROP COLUMN audience");
@@ -267,7 +268,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       tool: "connect", args: { share: { availability: "slots", interests: false, questions: true } },
     });
     // Restore the grants table and the migration journal from before categories.
-    await undoNotifyOrigin();
+    await undoVaultAndNotifyOrigin();
     await isolated.query("DROP INDEX sideband.grants_live_idx");
     await isolated.query(`ALTER TABLE sideband.grants DROP COLUMN category, ADD COLUMN tool text NOT NULL,
       ADD COLUMN fields text[] NOT NULL, ADD COLUMN friend_default boolean DEFAULT false NOT NULL`);
@@ -307,7 +308,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       await tx.appendEvent({ requestId: notApproved.id, at: now, kind: "permission", status: "awaiting_owner" });
     });
     // Restore the legacy schema and migration journal while keeping the fixture rows.
-    await undoNotifyOrigin();
+    await undoVaultAndNotifyOrigin();
     await isolated.query("ALTER TABLE sideband.requests DROP COLUMN approved_once");
     await isolated.query("DROP TABLE sideband.contact_tags, sideband.tag_presets");
     await isolated.query("DROP TABLE sideband.circle_members, sideband.circles");

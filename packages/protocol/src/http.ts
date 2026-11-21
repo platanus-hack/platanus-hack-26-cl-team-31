@@ -9,6 +9,7 @@ import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
 import { ChannelName, WakeTarget } from "./wake.js";
+import { OwnerVault, VaultCatalog, VaultQuery, VaultResult, VaultChange, VaultReceipt } from "./vault.js";
 
 const requestParams = z.object({ id: z.string() });
 const agentParams = z.object({ agentId: z.string() });
@@ -18,6 +19,11 @@ const noContent = { status: 204, response: z.undefined() } as const;
 const circleMemberParams = z.object({ id: z.string(), address: Address });
 
 export const routes = {
+  ownerVault: { method: "GET", path: "/v1/owner/vault", response: OwnerVault, iss: "web", port: "owner.vault" },
+  ownerChangeVault: { method: "POST", path: "/v1/owner/vault", body: VaultChange, response: VaultReceipt, iss: "web", port: "owner.changeVault" },
+  agentVaultCatalog: { method: "GET", path: "/v1/agent/vault", response: VaultCatalog, iss: "mcp", port: "agent.vaultCatalog" },
+  agentChangeVault: { method: "POST", path: "/v1/agent/vault", body: VaultChange, response: VaultReceipt, iss: "mcp", port: "agent.changeVault" },
+  agentQueryVault: { method: "POST", path: "/v1/agent/vault/query", body: VaultQuery, response: VaultResult, iss: "mcp", port: "agent.queryVault" },
   agentCapabilities: {
     method: "GET", path: "/v1/agent/capabilities", query: z.object({ to: Address }),
     response: z.object({ tools: z.array(Capability) }), iss: "mcp", port: "agent.capabilities",

@@ -51,6 +51,25 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("filters vault entries by the owner's current tag and accepted contact before reading", async () => {
+      const id = randomUUID();
+      await store.tx(async tx => {
+        await tx.changeVault("bruno", id, { action: "create", name: "Necesidades" });
+        await tx.changeVault("bruno", id, { action: "put_entry", categoryId: id, label: "Sábado", value: "Taladro" });
+        await tx.changeVault("bruno", id, { action: "set_group", categoryId: id, group: "family", allowed: true });
+        await tx.setContactTag("bruno", fromAddress, "family");
+        expect(await tx.sharedVault(fromAddress, toAddress, id)).toEqual({ categories: [] });
+        await tx.addFriend("bruno", fromAddress);
+        expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [{ id, name: "Necesidades" }] });
+        expect((await tx.sharedVault(fromAddress, toAddress, id)).categories[0]?.entries).toEqual([{ label: "Sábado", value: "Taladro" }]);
+        expect(await tx.changeVault("alice", id, { action: "delete", categoryId: id })).toBe(false);
+        await tx.setContactTag("bruno", fromAddress, "work");
+        expect(await tx.sharedVault(fromAddress, toAddress, id)).toEqual({ categories: [] });
+        await tx.changeVault("bruno", id, { action: "delete", categoryId: id });
+        expect(await tx.ownerVault("bruno")).toEqual({ categories: [] });
+      });
+    });
+
     it("lists each active agent with an address and exposes only its public fields", async () => {
       await store.tx(async (tx) => {
         const agent = { userId: "alice", agentId: "client-1", label: "Alba", wakeTarget: { kind: "none" }, createdAt: now } as const;

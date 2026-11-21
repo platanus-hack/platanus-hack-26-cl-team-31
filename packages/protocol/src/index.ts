@@ -10,3 +10,4 @@ export * from "./request.js";
 export * from "./sharing.js";
 export * from "./tools.js";
 export * from "./wake.js";
+export * from "./vault.js";

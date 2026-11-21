@@ -1,10 +1,11 @@
-import type { Address, ContactTag, Sharing } from "@team-31/protocol";
+import type { Address, ContactTag, Sharing, OwnerVault } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import type {
   AgentConnectionRow, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "./store.js";
 
 type State = {
+  vaults: Map<string, OwnerVault>;
   users: Map<string, UserRow>;
   grants: (GrantRow & { revokedAt?: Date })[];
   friends: Map<string, Set<Address>>;
@@ -64,6 +65,37 @@ function transaction(state: State): StoreTx {
   }
 
   return {
+    async ownerVault(owner) { return structuredClone(state.vaults.get(owner) ?? { categories: [] }); },
+    async changeVault(owner, id, change) {
+      const vault = state.vaults.get(owner) ?? { categories: [] };
+      if (change.action === "create") {
+        vault.categories.push({ id, name: change.name, entries: [], groups: [] });
+        state.vaults.set(owner, vault);
+        return true;
+      }
+      const c = vault.categories.find((item) => item.id === id);
+      if (!c) return false;
+      switch (change.action) {
+        case "rename": c.name = change.name; break;
+        case "delete": vault.categories = vault.categories.filter(item => item !== c); break;
+        case "set_group":
+          c.groups = c.groups.filter(group => group !== change.group);
+          if (change.allowed) c.groups.push(change.group);
+          break;
+        case "put_entry":
+          c.entries = [...c.entries.filter(e => e.label !== change.label), { label: change.label, value: change.value }];
+          break;
+        case "delete_entry": c.entries = c.entries.filter(e => e.label !== change.label); break;
+      }
+      return true;
+    },
+    async sharedVault(reader, to, id) {
+      const owner = findUserByAddress(to)?.userId;
+      const group = owner && state.contactTags.get(owner)?.get(reader);
+      if (!owner || !group || !state.friends.get(owner)?.has(reader)) return { categories: [] };
+      return { categories: (state.vaults.get(owner)?.categories ?? []).filter(c => (!id || id === c.id) && c.groups.includes(group))
+        .map(c => ({ id: c.id, name: c.name, ...(id ? { entries: structuredClone(c.entries) } : {}) })) };
+    },
     async getUser(userId) {
       return structuredClone(state.users.get(userId) ?? null);
     },
@@ -279,7 +311,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    users: new Map(), grants: [], friends: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
+    vaults: new Map(), users: new Map(), grants: [], friends: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
     events: [], wakes: new Map(), agents: new Map(), channels: new Map(),
   };
   let previous = Promise.resolve();
