@@ -2,7 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import {
   ActivityItem,
   basicSharing,
-  contactTags,
+  defaultTags,
   InboxItem,
   RequesterView,
   WAKE_EVENT,
@@ -93,21 +93,44 @@ it("solo el titular concede lectura individual; rechazar no crea ni modifica cat
   await expect(broker.owner.decide(bruno, pending.requestId, grant)).rejects.toMatchObject({ code: "conflict" });
 });
 
-it("mantiene privado el grupo de la invitación y activa su permiso solo al aceptar", async () => {
+it("mantiene privada la etiqueta de la invitación y activa su permiso solo al aceptar", async () => {
   const p: Principal = { ...alice, scopes: [...alice.scopes, "sideband:vault"] };
-  const { groupId } = await broker.agent.changeContactGroup(p, { action: "create", name: "Isapres" });
+  const { tagId } = await broker.agent.changeTag(p, { action: "create", name: "Isapres" });
   const { categoryId } = await broker.owner.changeVault(alice, { action: "create", name: "Plan de salud" });
-  await broker.owner.changeVault(alice, { action: "set_contact_group", categoryId, groupId, allowed: true });
-  const input = { to: availability.to, tool: "connect", args: {}, groupId } as const;
+  await broker.owner.changeVault(alice, { action: "set_tag", categoryId, tagId, allowed: true });
+  const input: AskInput = { to: availability.to, tool: "connect", args: {}, tags: [tagId] };
   await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "forbidden" });
   const invitation = await broker.agent.ask(p, input);
-  expect(await broker.owner.contactGroups(alice)).toMatchObject({
-    groups: [{ id: groupId, members: [] }], categories: [{ id: categoryId, contactGroups: [{ id: groupId }] }],
-  });
+  expect((await broker.owner.tags(alice)).tags.find(tag => tag.id === tagId)).toMatchObject({ categories: [], members: [] });
+  expect((await broker.owner.vault(alice)).categories).toMatchObject([{ id: categoryId, tags: [tagId] }]);
   expect(await broker.agent.vaultMembers(p, categoryId)).toEqual({ members: [] });
-  expect(JSON.stringify(await broker.agent.inbox(bruno))).not.toContain(groupId);
+  expect(JSON.stringify(await broker.agent.inbox(bruno))).not.toContain(tagId);
   await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
   expect(await broker.agent.vaultMembers(p, categoryId)).toEqual({ members: [availability.to] });
+  expect((await broker.agent.tags(p)).tags.find(tag => tag.id === tagId)?.members).toEqual([availability.to]);
+});
+
+it("une las categorías de las etiquetas y solo recalcula a los contactos que las siguen", async () => {
+  const invitation = await broker.owner.connect(alice, { to: availability.to, tags: ["work"] });
+  await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
+  const gives = async () => (await broker.owner.contacts(alice)).contacts[0]?.gives;
+  expect(await gives()).toEqual(["availability"]);
+  const deporte = await broker.owner.createTag(alice, { name: "Deporte", color: "sky", categories: ["interests"] });
+  await expect(broker.owner.createTag(alice, { name: "deporte" })).rejects.toMatchObject({ code: "conflict" });
+  await broker.owner.setContactTags(alice, availability.to, ["work", deporte.id]);
+  expect(await gives()).toEqual(["availability", "interests"]);
+  await broker.owner.updateTag(alice, deporte.id, { categories: ["interests", "health"] });
+  expect(await gives()).toEqual(["availability", "interests", "health"]);
+  await broker.owner.deleteTag(alice, "work");
+  expect(await gives()).toEqual(["interests", "health"]);
+  expect((await broker.owner.contacts(alice)).contacts[0]?.tags).toEqual([deporte.id]);
+  await broker.owner.setSharing(alice, availability.to, ["general"]);
+  await broker.owner.updateTag(alice, deporte.id, { categories: [] });
+  expect(await gives()).toEqual(["general"]);
+  const p: Principal = { ...alice, scopes: [...alice.scopes, "sideband:vault"] };
+  await broker.agent.changeTag(p, { action: "remove_contact", tagId: deporte.id, address: availability.to });
+  expect(await gives()).toEqual(["general"]);
+  expect((await broker.owner.contacts(alice)).tags.map(tag => tag.id)).toEqual(["friend", "family", deporte.id]);
 });
 
 it("reclama solo avisos que puede iniciar y entrega los restantes en el próximo tick", async () => {
@@ -130,18 +153,18 @@ it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de
   const { categoryId } = await broker.agent.changeVault(p, { action: "create", name: "Deseos" });
   const put = { action: "put_entry", categoryId, label: "Regalo", value: "Cafetera" } as const;
   await broker.agent.changeVault(p, put);
-  expect((await broker.owner.vault(bruno)).categories[0]).toMatchObject({ groups: [], entries: [{ label: "Regalo", value: "Cafetera" }] });
+  expect((await broker.owner.vault(bruno)).categories[0]).toMatchObject({ tags: [], entries: [{ label: "Regalo", value: "Cafetera" }] });
   for (const [recipient, tag] of [[alice, "friend"], [carla, "family"]] as const) {
-    const invite = await broker.owner.connect(bruno, `${recipient.userId}@sideband.app`, [], tag);
+    const invite = await broker.owner.connect(bruno, { to: `${recipient.userId}@sideband.app`, share: [], tags: [tag] });
     await broker.owner.answerInvitation(recipient, invite.requestId, { accept: true, share: [] });
-    await broker.owner.changeVault(bruno, { action: "set_group", categoryId, group: tag, allowed: true });
+    await broker.owner.changeVault(bruno, { action: "set_tag", categoryId, tagId: tag, allowed: true });
   }
   const query = { categoryId, to: "bruno@sideband.app" };
   expect((await broker.agent.queryVault(alice, query)).categories[0]?.entries).toHaveLength(1);
   expect((await broker.owner.queryVault(alice, query)).categories[0]?.entries).toEqual([{ label: "Regalo", value: "Cafetera" }]);
   expect(await broker.owner.queryVault({ userId: "sin-vínculo" }, query)).toEqual({ categories: [] });
   await broker.agent.changeVault(p, { ...put, value: "Molino" });
-  await broker.owner.changeVault(bruno, { action: "set_group", categoryId, group: "friend", allowed: false });
+  await broker.owner.changeVault(bruno, { action: "set_tag", categoryId, tagId: "friend", allowed: false });
   expect(await broker.agent.queryVault(alice, query)).toEqual({ categories: [] });
   expect(await broker.owner.queryVault(alice, query)).toEqual({ categories: [] });
   expect((await broker.agent.queryVault(carla, query)).categories[0]?.entries).toEqual([{ label: "Regalo", value: "Molino" }]);
@@ -173,12 +196,12 @@ it("comprueba contacto y etiqueta antes de crear una solicitud, incluso cuando e
   const requireRelation = { kind: "contact", tag: "friend" } as const;
   const input = { ...availability, requireRelation, idempotencyKey: "friend-test" };
   await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
-  const invitation = await broker.owner.connect(alice, availability.to, [], "work");
+  const invitation = await broker.owner.connect(alice, { to: availability.to, share: [], tags: ["work"] });
   await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true, share: ["availability"] });
   await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
-  await broker.owner.setContactTag(alice, availability.to, "friend");
+  await broker.owner.setContactTags(alice, availability.to, ["work", "friend"]);
   await expect(broker.agent.ask(alice, input)).resolves.toMatchObject({ decision: "pending" });
-  await broker.owner.setContactTag(alice, availability.to, "family");
+  await broker.owner.setContactTags(alice, availability.to, ["family"]);
   await expect(broker.agent.ask(alice, { ...input, idempotencyKey: "another" })).rejects.toMatchObject({ code: "not_found" });
   await broker.owner.removeFriend(alice, availability.to);
   await expect(broker.agent.ask(alice, {
@@ -749,13 +772,13 @@ describe("solicitudes de conexión", () => {
 
   it("preserves the original tag and sharing offer across conflicting invitation retries", async () => {
     const to = "bruno@sideband.app";
-    const first = await broker.owner.connect(carla, { to, share: [], tag: "work" });
-    expect((await broker.owner.connect(carla, { to, share: [], tag: "work" })).requestId).toBe(first.requestId);
-    expect((await broker.owner.connect(carla, { to, tag: "work" })).requestId).toBe(first.requestId);
+    const first = await broker.owner.connect(carla, { to, share: [], tags: ["work"] });
+    expect((await broker.owner.connect(carla, { to, share: [], tags: ["work"] })).requestId).toBe(first.requestId);
+    expect((await broker.owner.connect(carla, { to, tags: ["work"] })).requestId).toBe(first.requestId);
     await expect(broker.owner.connect(carla, { to, share: ["availability"] })).rejects.toMatchObject({ code: "conflict" });
-    await expect(broker.owner.connect(carla, { to, tag: "family" })).rejects.toMatchObject({ code: "conflict" });
+    await expect(broker.owner.connect(carla, { to, tags: ["family"] })).rejects.toMatchObject({ code: "conflict" });
     await broker.owner.answerInvitation(bruno, first.requestId, { accept: true, share: [] });
-    expect((await broker.owner.contacts(carla)).contacts).toMatchObject([{ address: to, gives: [], tag: "work" }]);
+    expect((await broker.owner.contacts(carla)).contacts).toMatchObject([{ address: to, gives: [], tags: ["work"] }]);
     await broker.owner.removeContact(carla, to);
     const grant = await broker.owner.setGrant(carla, { grantee: to, category: "general" });
     await broker.owner.removeContact(carla, to);
@@ -776,13 +799,13 @@ describe("solicitudes de conexión", () => {
     await broker.owner.answerInvitation(bruno, request.requestId, { accept: true, share });
     await expectFinal(carla, request.requestId, "allow", "answered", { accepted: true });
     expect(await broker.owner.contacts(bruno)).toEqual({
-      contacts: [{ address: "carla@sideband.app", gives: share, receives: basicSharing }],
-      presets: { friend: contactTags.friend.sharing, family: contactTags.family.sharing, work: contactTags.work.sharing },
+      contacts: [{ address: "carla@sideband.app", tags: [], gives: share, receives: basicSharing }],
+      tags: defaultTags.map(tag => ({ ...tag, categories: [...tag.categories] })),
       incoming: [],
       outgoing: [],
     });
     expect((await broker.owner.contacts(carla)).contacts).toEqual([
-      { address: "bruno@sideband.app", gives: basicSharing, receives: share },
+      { address: "bruno@sideband.app", tags: [], gives: basicSharing, receives: share },
     ]);
     expect(await broker.agent.ask(carla, availability)).toMatchObject({ final: false, waitingFor: "agent" });
     expect(await broker.agent.ask(carla, { to: "bruno@sideband.app", tool: "interest_check", args: { interest: "cerámica" } }))
@@ -802,7 +825,7 @@ describe("solicitudes de conexión", () => {
     await expect(broker.agent.reply({ ...carla, scopes: agent.scopes }, reply)).rejects.toMatchObject({ code: "not_found" });
     await broker.agent.reply(agent, reply);
     expect((await broker.owner.contacts(bruno)).contacts).toEqual([
-      { address: "carla@sideband.app", gives: ["health"], receives: basicSharing },
+      { address: "carla@sideband.app", tags: [], gives: ["health"], receives: basicSharing },
     ]);
     await expectFinal(carla, request.requestId, "allow", "answered", { accepted: true });
     await expect(broker.agent.reply(agent, reply)).rejects.toMatchObject({ code: "conflict" });
@@ -827,49 +850,51 @@ describe("solicitudes de conexión", () => {
 
   it("repetir la invitación devuelve la abierta y la invitación cruzada del titular conecta a ambos", async () => {
     const offer: Sharing = ["interests"];
-    const first = await broker.owner.connect(carla, "bruno@sideband.app", offer);
-    expect((await broker.owner.connect(carla, "bruno@sideband.app")).requestId).toBe(first.requestId);
+    const first = await broker.owner.connect(carla, { to: "bruno@sideband.app", share: offer });
+    expect((await broker.owner.connect(carla, { to: "bruno@sideband.app" })).requestId).toBe(first.requestId);
     expect((await broker.owner.contacts(carla)).outgoing).toEqual([
       expect.objectContaining({ requestId: first.requestId, address: "bruno@sideband.app", offer }),
     ]);
     await expect(broker.agent.ask(bruno, { ...connect, to: "carla@sideband.app" }))
       .rejects.toMatchObject({ code: "invalid_input" });
 
-    const crossed = await broker.owner.connect(bruno, "carla@sideband.app");
+    const crossed = await broker.owner.connect(bruno, { to: "carla@sideband.app" });
     expect(crossed).toMatchObject({ final: true, result: { accepted: true } });
     await expectFinal(carla, first.requestId, "allow", "answered", { accepted: true });
     expect((await broker.owner.contacts(bruno)).contacts).toEqual([
-      { address: "carla@sideband.app", gives: basicSharing, receives: offer },
+      { address: "carla@sideband.app", tags: [], gives: basicSharing, receives: offer },
     ]);
-    await expect(broker.owner.connect(carla, "bruno@sideband.app")).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(broker.owner.connect(carla, { to: "bruno@sideband.app" })).rejects.toMatchObject({ code: "invalid_input" });
   });
 
   it("las etiquetas ponen lo que se comparte y el contacto editado a mano conserva lo suyo", async () => {
-    const first = await broker.owner.connect(carla, "bruno@sideband.app", undefined, "work");
-    expect((await broker.owner.contacts(carla)).outgoing[0]?.offer).toEqual(contactTags.work.sharing);
-    await broker.owner.answerInvitation(bruno, first.requestId, { accept: true, tag: "family" });
+    const tagSharing = (id: string) => [...defaultTags.find(tag => tag.id === id)!.categories];
+    const first = await broker.owner.connect(carla, { to: "bruno@sideband.app", tags: ["work"] });
+    expect((await broker.owner.contacts(carla)).outgoing[0]?.offer).toEqual(tagSharing("work"));
+    await broker.owner.answerInvitation(bruno, first.requestId, { accept: true, tags: ["family"] });
     expect((await broker.owner.contacts(bruno)).contacts).toEqual([
-      { address: "carla@sideband.app", tag: "family", gives: contactTags.family.sharing, receives: contactTags.work.sharing },
+      { address: "carla@sideband.app", tags: ["family"], gives: tagSharing("family"), receives: tagSharing("work") },
     ]);
-    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tag: "work", gives: ["availability"] });
-    expect((await broker.agent.contacts(carla)).contacts[0]).toMatchObject({ tag: "work" });
+    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tags: ["work"], gives: ["availability"] });
+    expect((await broker.agent.contacts(carla)).contacts[0]).toMatchObject({ tags: ["work"] });
 
-    await broker.owner.setTagPreset(carla, "work", ["availability", "interests"]);
+    await broker.owner.updateTag(carla, "work", { categories: ["availability", "interests"] });
     expect((await broker.owner.contacts(carla)).contacts[0]?.gives).toEqual(["availability", "interests"]);
-    expect((await broker.owner.contacts(carla)).presets.work).toEqual(["availability", "interests"]);
+    expect((await broker.owner.contacts(carla)).tags.find(tag => tag.id === "work")?.categories).toEqual(["availability", "interests"]);
 
     await broker.owner.setSharing(carla, "bruno@sideband.app", ["general"]);
-    await broker.owner.setTagPreset(carla, "work", ["availability"]);
+    await broker.owner.updateTag(carla, "work", { categories: ["availability"] });
     expect((await broker.owner.contacts(carla)).contacts[0]?.gives).toEqual(["general"]);
 
-    await broker.owner.setContactTag(carla, "bruno@sideband.app", "friend");
-    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tag: "friend", gives: contactTags.friend.sharing });
-    await expect(broker.owner.setContactTag(carla, "diego@sideband.app", "friend")).rejects.toMatchObject({ code: "not_found" });
+    await broker.owner.setContactTags(carla, "bruno@sideband.app", ["friend"]);
+    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tags: ["friend"], gives: tagSharing("friend") });
+    await expect(broker.owner.setContactTags(carla, "diego@sideband.app", ["friend"])).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.owner.setContactTags(carla, "bruno@sideband.app", ["inexistente"])).rejects.toMatchObject({ code: "not_found" });
 
     await broker.owner.removeContact(carla, "bruno@sideband.app");
-    const again = await broker.owner.connect(carla, "bruno@sideband.app");
+    const again = await broker.owner.connect(carla, { to: "bruno@sideband.app" });
     await broker.owner.answerInvitation(bruno, again.requestId, { accept: true });
-    expect((await broker.owner.contacts(carla)).contacts[0]).not.toHaveProperty("tag");
+    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tags: [] });
   });
 
   it("el agente lista los contactos y los círculos aceptados de su titular", async () => {
@@ -881,7 +906,7 @@ describe("solicitudes de conexión", () => {
     await broker.owner.joinCircle(carla, circle.id);
 
     expect(await broker.agent.contacts(carla)).toEqual({
-      contacts: [{ address: "bruno@sideband.app", theyShare: [], youShare: basicSharing }],
+      contacts: [{ address: "bruno@sideband.app", tags: [], theyShare: [], youShare: basicSharing }],
       circles: [{ id: circle.id, name: "Fútbol", members: ["alice@sideband.app"] }],
     });
     expect((await broker.agent.contacts(bruno)).circles).toEqual([]);
@@ -895,7 +920,7 @@ describe("solicitudes de conexión", () => {
     await broker.owner.setSharing(bruno, "carla@sideband.app", []);
     expect(await broker.agent.status(carla, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
     expect((await broker.owner.contacts(carla)).contacts).toEqual([
-      { address: "bruno@sideband.app", gives: basicSharing, receives: [] },
+      { address: "bruno@sideband.app", tags: [], gives: basicSharing, receives: [] },
     ]);
     await expect(broker.owner.setSharing(bruno, "diego@sideband.app", basicSharing)).rejects.toMatchObject({ code: "not_found" });
   });
@@ -922,7 +947,7 @@ describe("solicitudes de conexión", () => {
   });
 
   it("rechaza conectar consigo mismo", async () => {
-    await expect(broker.owner.connect(carla, "carla@sideband.app")).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(broker.owner.connect(carla, { to: "carla@sideband.app" })).rejects.toMatchObject({ code: "invalid_input" });
   });
 });
 
@@ -1027,7 +1052,7 @@ describe("círculos", () => {
 
   it("conserva el acceso del círculo al quitar un contacto y revoca sus permisos directos", async () => {
     await circleOf(bruno, carla);
-    const invitation = await broker.owner.connect(carla, brunoAddress);
+    const invitation = await broker.owner.connect(carla, { to: brunoAddress });
     await broker.owner.answerInvitation(bruno, invitation.requestId, {
       accept: true, share: ["general"],
     });

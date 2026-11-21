@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { Address } from "./address.js";
 import { FinalOutcome, RequestStatus, SenderMessage, withToolArgs } from "./request.js";
-import { ContactTag, Sharing, TagPresets } from "./sharing.js";
+import { Sharing, Tag, TagId, TagIds } from "./sharing.js";
 import { ToolName, ToolResult } from "./tools.js";
 import { WakeKind } from "./wake.js";
 
 const datetime = z.iso.datetime({ offset: true });
 
-export const ConnectInput = z.object({ to: Address, share: Sharing.optional(), tag: ContactTag.optional() });
+export const ConnectInput = z.object({ to: Address, share: Sharing.optional(), tags: TagIds.optional() });
 export type ConnectInput = z.infer<typeof ConnectInput>;
 
 export const OwnerDecision = z.discriminatedUnion("kind", [
@@ -76,7 +76,7 @@ export type ActivityItem = z.infer<typeof ActivityItem>;
 export const Contact = z.object({
   address: Address,
   displayName: z.string().optional(),
-  tag: ContactTag.optional(),
+  tags: z.array(TagId),
   gives: Sharing,
   receives: Sharing,
 });
@@ -92,7 +92,7 @@ export type Invitation = z.infer<typeof Invitation>;
 
 export const ContactsView = z.object({
   contacts: z.array(Contact),
-  presets: TagPresets,
+  tags: z.array(Tag),
   incoming: z.array(Invitation),
   outgoing: z.array(Invitation),
 });
@@ -103,7 +103,7 @@ export type PublicProfile = z.infer<typeof PublicProfile>;
 export const ProfileSearch = z.object({ query: z.string().trim().min(2).max(100).refine(value => !value.includes("\0")) });
 
 export const AgentContacts = z.object({
-  contacts: z.array(z.object({ address: Address, displayName: z.string().optional(), tag: ContactTag.optional(), theyShare: Sharing, youShare: Sharing })),
+  contacts: z.array(z.object({ address: Address, displayName: z.string().optional(), tags: z.array(TagId), theyShare: Sharing, youShare: Sharing })),
   circles: z.array(z.object({
     id: z.string().optional(), name: z.string(), members: z.array(Address),
     memberNames: z.record(Address, z.string()).optional(),
@@ -114,6 +114,6 @@ export type AgentContacts = z.infer<typeof AgentContacts>;
 export const InvitationAnswer = z.object({
   accept: z.boolean(),
   share: Sharing.optional(),
-  tag: ContactTag.optional(),
+  tags: TagIds.optional(),
 });
 export type InvitationAnswer = z.infer<typeof InvitationAnswer>;

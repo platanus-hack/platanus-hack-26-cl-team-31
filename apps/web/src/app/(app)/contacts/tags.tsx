@@ -1,56 +1,78 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { contactTagNames, contactTags, type ContactTag } from "@team-31/protocol/constants";
+import type { Tag } from "@team-31/protocol";
+import { tagColors, type TagColor } from "@team-31/protocol/constants";
 
-const tagStyles: Record<ContactTag, { badge: string; dot: string; active: string }> = {
-  friend: { badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300", dot: "bg-emerald-400", active: "bg-emerald-500/25 text-emerald-200" },
-  family: { badge: "border-amber-400/30 bg-amber-400/10 text-amber-300", dot: "bg-amber-400", active: "bg-amber-500/25 text-amber-200" },
-  work: { badge: "border-violet-400/30 bg-violet-400/10 text-violet-300", dot: "bg-violet-400", active: "bg-violet-500/25 text-violet-200" },
+export const tagStyles: Record<TagColor, { badge: string; dot: string; active: string }> = {
+  emerald: { badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300", dot: "bg-emerald-400", active: "bg-emerald-500/25 text-emerald-200" },
+  amber: { badge: "border-amber-400/30 bg-amber-400/10 text-amber-300", dot: "bg-amber-400", active: "bg-amber-500/25 text-amber-200" },
+  violet: { badge: "border-violet-400/30 bg-violet-400/10 text-violet-300", dot: "bg-violet-400", active: "bg-violet-500/25 text-violet-200" },
+  sky: { badge: "border-sky-400/30 bg-sky-400/10 text-sky-300", dot: "bg-sky-400", active: "bg-sky-500/25 text-sky-200" },
+  rose: { badge: "border-rose-400/30 bg-rose-400/10 text-rose-300", dot: "bg-rose-400", active: "bg-rose-500/25 text-rose-200" },
+  slate: { badge: "border-slate-400/30 bg-slate-400/10 text-slate-300", dot: "bg-slate-400", active: "bg-slate-500/25 text-slate-200" },
+};
+
+const colorLabels: Record<TagColor, string> = {
+  emerald: "Verde", amber: "Ámbar", violet: "Violeta", sky: "Celeste", rose: "Rosa", slate: "Gris",
 };
 
 const emptyBadge = "border-line bg-chip text-muted";
 
-export function TagPicker({ value, onChange, name }: { value?: ContactTag; onChange: (tag: ContactTag) => void; name?: string }) {
+function toggle(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
+}
+
+export function TagPicker({ tags, value, onChange, name }: {
+  tags: Tag[]; value: string[]; onChange: (ids: string[]) => void; name?: string;
+}) {
   const label = useId();
   return (
     <div>
-      <p id={label} className="sr-only">Etiqueta</p>
-      <div role="radiogroup" aria-labelledby={label} className="grid grid-cols-3 gap-1 rounded-lg bg-stage p-1">
-        {contactTagNames.map((tag) => {
-          const active = value === tag;
+      <p id={label} className="sr-only">Etiquetas</p>
+      <div role="group" aria-labelledby={label} className="flex flex-wrap gap-1 rounded-lg bg-stage p-1">
+        {tags.map((tag) => {
+          const active = value.includes(tag.id);
           return (
-            <button key={tag} type="button" role="radio" aria-checked={active} onClick={() => onChange(tag)}
-              className={`inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-md px-2 text-sm font-medium transition ${active ? `${tagStyles[tag].active} shadow-sm` : "text-muted hover:text-ink"}`}>
-              <span aria-hidden="true" className={`size-2 rounded-full ${tagStyles[tag].dot}`} />
-              {contactTags[tag].label}
+            <button key={tag.id} type="button" role="checkbox" aria-checked={active} onClick={() => onChange(toggle(value, tag.id))}
+              className={`inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition ${active ? `${tagStyles[tag.color].active} shadow-sm` : "text-muted hover:text-ink"}`}>
+              <span aria-hidden="true" className={`size-2 rounded-full ${tagStyles[tag.color].dot}`} />
+              {tag.name}
             </button>
           );
         })}
       </div>
-      {name && value && <input type="hidden" name={name} value={value} />}
+      {name && value.map((id) => <input key={id} type="hidden" name={name} value={id} />)}
     </div>
   );
 }
 
-export function TagBadge({ tag }: { tag?: ContactTag }) {
+export function TagBadge({ tag }: { tag?: Tag }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${tag ? tagStyles[tag].badge : emptyBadge}`}>
-      {tag && <span aria-hidden="true" className={`size-1.5 rounded-full ${tagStyles[tag].dot}`} />}
-      {tag ? contactTags[tag].label : "Sin etiqueta"}
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${tag ? tagStyles[tag.color].badge : emptyBadge}`}>
+      {tag && <span aria-hidden="true" className={`size-1.5 rounded-full ${tagStyles[tag.color].dot}`} />}
+      {tag ? tag.name : "Sin etiqueta"}
     </span>
   );
 }
 
-export function TagMenu({ value, custom, disabled, onChange }: {
-  value?: ContactTag;
+export function TagChips({ tags, value }: { tags: Tag[]; value: string[] }) {
+  const chosen = tags.filter((tag) => value.includes(tag.id));
+  if (!chosen.length) return <TagBadge />;
+  return <>{chosen.map((tag) => <TagBadge key={tag.id} tag={tag} />)}</>;
+}
+
+export function TagMenu({ tags, value, custom, disabled, onChange }: {
+  tags: Tag[];
+  value: string[];
   custom?: boolean;
   disabled?: boolean;
-  onChange: (tag: ContactTag) => void;
+  onChange: (ids: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const menu = useId();
+  const chosen = tags.filter((tag) => value.includes(tag.id));
 
   useEffect(() => {
     if (!open) return;
@@ -68,42 +90,55 @@ export function TagMenu({ value, custom, disabled, onChange }: {
     };
   }, [open]);
 
-  function pick(tag: ContactTag) {
-    setOpen(false);
-    onChange(tag);
-  }
-
   return (
     <div ref={root} className="relative">
       <button type="button" disabled={disabled} aria-haspopup="menu" aria-expanded={open} aria-controls={menu}
-        aria-label={`Etiqueta: ${value ? contactTags[value].label : "sin etiqueta"}. Cambiar`}
+        aria-label={`Etiquetas: ${chosen.map((tag) => tag.name).join(", ") || "sin etiqueta"}. Cambiar`}
         onClick={() => setOpen(!open)}
-        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium transition hover:brightness-125 disabled:cursor-wait disabled:opacity-60 ${value ? tagStyles[value].badge : emptyBadge}`}>
-        {value && <span aria-hidden="true" className={`size-1.5 rounded-full ${tagStyles[value].dot}`} />}
-        {value ? contactTags[value].label : "Sin etiqueta"}
-        {custom && <span className="opacity-70">· personalizado</span>}
-        <span aria-hidden="true" className="opacity-70">▾</span>
+        className="inline-flex cursor-pointer flex-wrap items-center gap-1.5 transition hover:brightness-125 disabled:cursor-wait disabled:opacity-60">
+        <TagChips tags={tags} value={value} />
+        {custom && <span className="text-xs text-muted">· personalizado</span>}
+        <span aria-hidden="true" className="text-xs text-muted">▾</span>
       </button>
       {open && (
-        <div id={menu} role="menu" className="raised absolute left-0 z-20 mt-1.5 w-52 rounded-lg border border-line bg-raised p-1 shadow-lg">
-          {contactTagNames.map((tag) => {
-            const active = tag === value;
+        <div id={menu} role="menu" className="raised absolute left-0 z-20 mt-1.5 w-56 rounded-lg border border-line bg-raised p-1 shadow-lg">
+          {tags.map((tag) => {
+            const active = value.includes(tag.id);
             return (
-              <button key={tag} type="button" role="menuitemradio" aria-checked={active && !custom} onClick={() => pick(tag)}
+              <button key={tag.id} type="button" role="menuitemcheckbox" aria-checked={active} onClick={() => onChange(toggle(value, tag.id))}
                 className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-ink transition hover:bg-chip-hover">
-                <span aria-hidden="true" className={`size-2 rounded-full ${tagStyles[tag].dot}`} />
-                <span className="flex-1">{contactTags[tag].label}</span>
-                {active && <span aria-hidden="true" className="text-muted">{custom ? "·" : "✓"}</span>}
+                <span aria-hidden="true" className={`size-2 rounded-full ${tagStyles[tag.color].dot}`} />
+                <span className="flex-1">{tag.name}</span>
+                {active && <span aria-hidden="true" className="text-muted">✓</span>}
               </button>
             );
           })}
-          {custom && value && (
+          {custom && (
             <p className="border-t border-line px-2.5 pt-2 pb-1 text-xs text-muted">
-              Personalizado. Elige {contactTags[value].label} para volver a su preset.
+              Personalizado. Al cambiar sus etiquetas vuelve a compartir lo que indican sus etiquetas.
             </p>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+export function ColorPicker({ value, onChange, name }: { value: TagColor; onChange: (color: TagColor) => void; name?: string }) {
+  const label = useId();
+  return (
+    <div>
+      <span id={label} className="sr-only">Color</span>
+      <div role="radiogroup" aria-labelledby={label} className="flex items-center gap-1.5">
+        {tagColors.map((color) => (
+          <button key={color} type="button" role="radio" aria-checked={value === color} aria-label={colorLabels[color]}
+            onClick={() => onChange(color)}
+            className={`size-6 cursor-pointer rounded-full border-2 p-0.5 transition ${value === color ? "border-ink" : "border-transparent"}`}>
+            <span aria-hidden="true" className={`block size-full rounded-full ${tagStyles[color].dot}`} />
+          </button>
+        ))}
+      </div>
+      {name && <input type="hidden" name={name} value={value} />}
     </div>
   );
 }

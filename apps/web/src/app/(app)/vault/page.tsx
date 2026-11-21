@@ -1,4 +1,3 @@
-import { contactTagNames, contactTags } from "@team-31/protocol/constants";
 import { ownerClient } from "@/lib/broker";
 import { readAsOwner } from "../owner";
 import { button, card, Heading, input, secondaryText } from "../ui";
@@ -11,7 +10,7 @@ function Action({ action, id }: { action: string; id?: string }) {
 const row = "flex flex-wrap items-center gap-2";
 const field = `${input} max-w-xs`;
 export default async function VaultPage() {
-  const { data: { categories } } = await readAsOwner(o => ownerClient().vault(o));
+  const { data: [{ categories }, { tags }] } = await readAsOwner(o => Promise.all([ownerClient().vault(o), ownerClient().tags(o)]));
   return <div className="max-w-3xl space-y-5">
     <Heading title="Mi bóveda">Guarda lo que necesitas, tus deseos u otros datos. Cada categoría empieza privada.</Heading>
     <form action={changeVault} className={row}>
@@ -26,12 +25,11 @@ export default async function VaultPage() {
           <li key={address} className="break-all">{address}</li>)}</ul>
           : <p className={secondaryText}>{c.members ? "Nadie tiene acceso." : "Lista no disponible."}</p>}
       </div>
-      <p className={secondaryText}>Grupos privados con acceso: {c.contactGroups?.map(g => g.name).join(", ") || "Ninguno"}.</p>
-      <p className={secondaryText}>Etiquetas con acceso: {c.groups.map(g => contactTags[g].label).join(", ") || "Ninguna"}.</p>
-      <div className={row}>{contactTagNames.map(group => <form key={group} action={changeVault}>
-        <Action action="set_group" id={c.id} /><input type="hidden" name="group" value={group} />
-        <input type="hidden" name="allowed" value={String(!c.groups.includes(group))} />
-        <button className={button}>{c.groups.includes(group) ? "Quitar acceso" : "Dar acceso"}: {contactTags[group].label}</button>
+      <p className={secondaryText}>Etiquetas con acceso: {tags.filter(t => c.tags.includes(t.id)).map(t => t.name).join(", ") || "Ninguna"}.</p>
+      <div className={row}>{tags.map(tag => <form key={tag.id} action={changeVault}>
+        <Action action="set_tag" id={c.id} /><input type="hidden" name="tagId" value={tag.id} />
+        <input type="hidden" name="allowed" value={String(!c.tags.includes(tag.id))} />
+        <button className={button}>{c.tags.includes(tag.id) ? "Quitar acceso" : "Dar acceso"}: {tag.name}</button>
       </form>)}</div>
       <dl>{c.entries.map(e => <div key={e.label} className={`${row} py-1`}>
         <dt className="font-medium">{e.label}:</dt><dd className="whitespace-pre-wrap break-words">{String(e.value)}</dd>

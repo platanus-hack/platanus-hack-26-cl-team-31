@@ -4,12 +4,12 @@ import { AdminActionInput } from "./admin.js";
 import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
 import { ActivityItem, AgentConnection, AgentContacts, ContactsView, ConnectInput, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent, ProfileSearch, PublicProfile } from "./owner.js";
-import { ContactTag, Sharing } from "./sharing.js";
+import { Sharing, Tag, TagId, TagIds, TagInput, TagUpdate } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, type AskArguments, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
 import { ChannelName, WakeTarget } from "./wake.js";
-import { ContactGroupChange, ContactGroupReceipt, ContactGroups, OwnerVault, VaultCatalog, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult, VaultChange, VaultReceipt } from "./vault.js";
+import { TagChange, TagReceipt, TagsView, OwnerVault, VaultCatalog, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult, VaultChange, VaultReceipt } from "./vault.js";
 
 // A pre-routing broker accepts an unwrapped AskInput and would strip unfamiliar optional
 // fields. The envelope makes old replicas reject conditional sends before any side effect.
@@ -39,9 +39,14 @@ export const routes = {
   agentNetworkUsers: { method: "GET", path: "/v1/agent/network/users", query: z.strictObject({ after: Address.optional(), q: z.string().trim().min(1).max(128).toLowerCase().optional() }),
     response: z.object({ addresses: z.array(Address), nextCursor: Address.optional() }), iss: "mcp", port: "agent.networkUsers" },
   agentConnect: { method: "POST", path: "/v1/agent/connection", ...noContent, iss: "mcp", port: "agent.connect" },
-  agentContactGroups: { method: "GET", path: "/v1/agent/contact-groups", response: ContactGroups, iss: "mcp", port: "agent.contactGroups" },
-  ownerContactGroups: { method: "GET", path: "/v1/owner/contact-groups", response: ContactGroups.extend(VaultCatalog.shape), iss: "web", port: "owner.contactGroups" },
-  agentChangeContactGroup: { method: "POST", path: "/v1/agent/contact-groups", body: ContactGroupChange, response: ContactGroupReceipt, iss: "mcp", port: "agent.changeContactGroup" },
+  agentTags: { method: "GET", path: "/v1/agent/tags", response: TagsView, iss: "mcp", port: "agent.tags" },
+  agentChangeTag: { method: "POST", path: "/v1/agent/tags", body: TagChange, response: TagReceipt, iss: "mcp", port: "agent.changeTag" },
+  ownerTags: { method: "GET", path: "/v1/owner/tags", response: TagsView, iss: "web", port: "owner.tags" },
+  ownerCreateTag: { method: "POST", path: "/v1/owner/tags", body: TagInput, response: Tag, iss: "web", port: "owner.createTag" },
+  ownerUpdateTag: {
+    method: "PATCH", path: "/v1/owner/tags/:id", params: z.object({ id: TagId }), body: TagUpdate, response: Tag, iss: "web", port: "owner.updateTag",
+  },
+  ownerDeleteTag: { method: "DELETE", path: "/v1/owner/tags/:id", params: z.object({ id: TagId }), ...noContent, iss: "web", port: "owner.deleteTag" },
   ownerVault: { method: "GET", path: "/v1/owner/vault", response: OwnerVault, iss: "web", port: "owner.vault" },
   ownerChangeVault: { method: "POST", path: "/v1/owner/vault", body: VaultChange, response: VaultReceipt, iss: "web", port: "owner.changeVault" },
   agentVaultCatalog: { method: "GET", path: "/v1/agent/vault", response: VaultCatalog, iss: "mcp", port: "agent.vaultCatalog" },
@@ -254,23 +259,14 @@ export const routes = {
     iss: "web",
     port: "owner.setSharing",
   },
-  ownerSetContactTag: {
+  ownerSetContactTags: {
     method: "PUT",
-    path: "/v1/owner/connections/:address/tag",
+    path: "/v1/owner/connections/:address/tags",
     params: z.object({ address: Address }),
-    body: z.object({ tag: ContactTag }),
+    body: z.object({ tags: TagIds }),
     ...noContent,
     iss: "web",
-    port: "owner.setContactTag",
-  },
-  ownerSetTagPreset: {
-    method: "PUT",
-    path: "/v1/owner/tags/:tag",
-    params: z.object({ tag: ContactTag }),
-    body: Sharing,
-    ...noContent,
-    iss: "web",
-    port: "owner.setTagPreset",
+    port: "owner.setContactTags",
   },
   ownerAnswerInvitation: {
     method: "POST",

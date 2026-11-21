@@ -1,32 +1,29 @@
 import { z } from "zod";
 import { Address } from "./address.js";
-import { ContactTag } from "./sharing.js";
+import { Tag, TagColor, TagId, TagName } from "./sharing.js";
 
 const name = z.string().trim().min(1).max(80);
 const categoryId = z.uuid();
 const value = z.union([z.string().trim().min(1).max(2000), z.number(), z.boolean()]);
 export const VaultEntry = z.object({ label: name, value });
 export const VaultCategory = z.object({ id: categoryId, name });
-const groupId = z.uuid();
-const categorySharing = VaultCategory.extend({
-  groups: z.array(ContactTag),
-  contactGroups: z.array(z.object({ id: groupId, name })),
-});
+const categorySharing = VaultCategory.extend({ tags: z.array(TagId) });
 export const VaultCatalog = z.object({ categories: z.array(categorySharing) });
 export type VaultCatalog = z.infer<typeof VaultCatalog>;
 export const VaultMembersQuery = z.strictObject({ categoryId });
 export const VaultMembers = z.object({ members: z.array(Address) });
-export const ContactGroups = z.object({ groups: z.array(z.object({ id: groupId, name, members: z.array(Address) })) });
-export type ContactGroups = z.infer<typeof ContactGroups>;
-export const ContactGroupChange = z.discriminatedUnion("action", [
-  z.strictObject({ action: z.literal("create"), name }),
-  z.strictObject({ action: z.literal("delete"), groupId }),
-  z.strictObject({ action: z.literal("add_contact"), groupId, address: Address }),
-  z.strictObject({ action: z.literal("remove_contact"), groupId, address: Address }),
+export const TagsView = z.object({ tags: z.array(Tag.extend({ members: z.array(Address) })) });
+export type TagsView = z.infer<typeof TagsView>;
+export const TagChange = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("create"), name: TagName, color: TagColor.optional() }),
+  z.strictObject({ action: z.literal("update"), tagId: TagId, name: TagName.optional(), color: TagColor.optional() }),
+  z.strictObject({ action: z.literal("delete"), tagId: TagId }),
+  z.strictObject({ action: z.literal("add_contact"), tagId: TagId, address: Address }),
+  z.strictObject({ action: z.literal("remove_contact"), tagId: TagId, address: Address }),
 ]);
-export type ContactGroupChange = z.infer<typeof ContactGroupChange>;
-export const ContactGroupReceipt = z.object({ groupId });
-export const OwnerVault = z.object({ categories: z.array(categorySharing.partial({ contactGroups: true }).extend({
+export type TagChange = z.infer<typeof TagChange>;
+export const TagReceipt = z.object({ tagId: TagId });
+export const OwnerVault = z.object({ categories: z.array(categorySharing.extend({
   entries: z.array(VaultEntry),
   members: VaultMembers.shape.members.optional(),
 })) });
@@ -42,8 +39,7 @@ export const VaultChange = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("delete"), categoryId }),
   z.strictObject({ action: z.literal("put_entry"), categoryId, ...VaultEntry.shape }),
   z.strictObject({ action: z.literal("delete_entry"), categoryId, label: name }),
-  z.strictObject({ action: z.literal("set_group"), categoryId, group: ContactTag, allowed: z.boolean() }),
-  z.strictObject({ action: z.literal("set_contact_group"), categoryId, groupId, allowed: z.boolean() }),
+  z.strictObject({ action: z.literal("set_tag"), categoryId, tagId: TagId, allowed: z.boolean() }),
   z.strictObject({ action: z.literal("set_member"), categoryId, address: Address, allowed: z.boolean() }),
 ]);
 export type VaultChange = z.infer<typeof VaultChange>;

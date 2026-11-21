@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Address } from "./address.js";
 import { Category } from "./categories.js";
 import { ToolArgs, ToolName, ToolResultSchemas } from "./tools.js";
-import { ContactTag, Sharing } from "./sharing.js";
+import { Sharing, TagId, TagIds } from "./sharing.js";
 
 export function withToolArgs<Shape extends z.ZodRawShape>(shape: Shape) {
   return z.discriminatedUnion("tool", [
@@ -16,7 +16,7 @@ export function withToolArgs<Shape extends z.ZodRawShape>(shape: Shape) {
 }
 
 export const RequiredRelation = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("contact"), tag: ContactTag.optional() }),
+  z.strictObject({ kind: z.literal("contact"), tag: TagId.optional() }),
   z.strictObject({ kind: z.literal("circle"), circleId: z.uuid() }),
 ]);
 export type RequiredRelation = z.infer<typeof RequiredRelation>;
@@ -29,7 +29,7 @@ const askVariants = withToolArgs({
 // Private sender metadata, deliberately outside the arguments delivered to the recipient.
 export const AskInput = z.discriminatedUnion("tool", [
   askVariants[0], askVariants[1], askVariants[2], askVariants[3],
-  askVariants[4].extend({ groupId: z.uuid().nullable().optional() }),
+  askVariants[4].extend({ tags: TagIds.optional() }),
   askVariants[5],
 ]);
 export type AskInput = z.infer<typeof AskInput>;

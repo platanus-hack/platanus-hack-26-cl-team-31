@@ -29,7 +29,7 @@ function testPort(): AgentPort {
     connect: vi.fn(),
     searchPublicProfiles: vi.fn(), capabilities: vi.fn(),
     vaultCatalog: vi.fn(), vaultMembers: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
-    networkUsers: vi.fn(), contactGroups: vi.fn(), changeContactGroup: vi.fn(),
+    networkUsers: vi.fn(), tags: vi.fn(), changeTag: vi.fn(),
     ask: vi.fn(),
     inbox: vi.fn(),
     reply: vi.fn(),
@@ -145,19 +145,19 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const answer = { requestId: inbox.requestId, nonce: inbox.nonce, outcome: "answered", result: { answer: "Sí" } };
   const receipt = { requestId: inbox.requestId, status: "answered", deliveredFields: ["answer"], droppedFields: [] };
   const final = { ...request, final: true, decision: "allow", outcome: "answered", result: answer.result, signature: "firma" };
-  const groupId = "11111111-1111-4111-8111-111111111111";
-  const createGroup = { action: "create", name: "Instituciones" };
-  const groups = { groups: [{ id: groupId, name: createGroup.name, members: [] }] };
+  const tagId = "11111111-1111-4111-8111-111111111111";
+  const createTag = { action: "create", name: "Instituciones" };
+  const tags = { tags: [{ id: tagId, name: createTag.name, color: "slate", categories: [], members: [] }] };
   const requests: unknown[] = [];
   const replies: Record<string, unknown> = {
     "POST /v1/agent/ask": pending,
     "GET /v1/agent/inbox": { items: [inbox] },
     "POST /v1/agent/reply": receipt,
     "GET /v1/agent/requests/request-1": final,
-    "POST /v1/agent/contact-groups": { groupId },
-    "GET /v1/agent/contact-groups": groups,
+    "POST /v1/agent/tags": { tagId },
+    "GET /v1/agent/tags": tags,
     "GET /v1/agent/network/users": { addresses: [pending.to] },
-    [`GET /v1/agent/vault/members?categoryId=${groupId}`]: { members: [pending.to] },
+    [`GET /v1/agent/vault/members?categoryId=${tagId}`]: { members: [pending.to] },
   };
 
   const broker = await listen(createServer(async (req, res) => {
@@ -187,15 +187,15 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
-    ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_contact_groups", true], ["sideband_contact_group_change", undefined],
+    ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_tags", true], ["sideband_tag_change", undefined],
     ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
     ["sideband_vault_request_access", undefined],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
   expect(tools[0]?.inputSchema).toMatchObject({
-    properties: { groupId: { anyOf: [{ type: "string", format: "uuid" }, { type: "null" }] } },
+    properties: { tags: { type: "array" } },
     if: { properties: { tool: { const: "connect" } } },
-    then: { required: ["groupId"] },
+    then: { required: ["tags"] },
   });
   expect((await ana.callTool({ name: "sideband_ask", arguments: { to: pending.to, tool: "connect", args: {} } })).isError).toBe(true);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
@@ -203,20 +203,20 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   expect((await bob.callTool({ name: "sideband_reply", arguments: answer })).structuredContent).toEqual(receipt);
   expect((await ana.callTool({ name: "sideband_check", arguments: { requestId: inbox.requestId } })).structuredContent)
     .toEqual(final);
-  expect((await ana.callTool({ name: "sideband_contact_group_change", arguments: { change: createGroup } })).structuredContent).toEqual({ groupId });
-  expect((await ana.callTool({ name: "sideband_contact_groups" })).structuredContent).toEqual(groups);
+  expect((await ana.callTool({ name: "sideband_tag_change", arguments: { change: createTag } })).structuredContent).toEqual({ tagId });
+  expect((await ana.callTool({ name: "sideband_tags" })).structuredContent).toEqual(tags);
   expect((await ana.callTool({ name: "sideband_network_users" })).structuredContent).toEqual({ addresses: [pending.to] });
-  expect((await ana.callTool({ name: "sideband_vault_members", arguments: { categoryId: groupId } })).structuredContent).toEqual({ members: [pending.to] });
+  expect((await ana.callTool({ name: "sideband_vault_members", arguments: { categoryId: tagId } })).structuredContent).toEqual({ members: [pending.to] });
 
   expect(requests).toEqual([
     { path: "POST /v1/agent/ask", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: question },
     { path: "GET /v1/agent/inbox", userId: "bob", agentId: "bob-bot", scopes: Scope.options, body: undefined },
     { path: "POST /v1/agent/reply", userId: "bob", agentId: "bob-bot", scopes: Scope.options, body: answer },
     { path: "GET /v1/agent/requests/request-1", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
-    { path: "POST /v1/agent/contact-groups", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: createGroup },
-    { path: "GET /v1/agent/contact-groups", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "POST /v1/agent/tags", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: createTag },
+    { path: "GET /v1/agent/tags", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "GET /v1/agent/network/users", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
-    { path: `GET /v1/agent/vault/members?categoryId=${groupId}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: `GET /v1/agent/vault/members?categoryId=${tagId}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
   ]);
 });
 

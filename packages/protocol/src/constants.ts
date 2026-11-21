@@ -21,11 +21,16 @@ export const categories: Record<Category, { label: string; tools: readonly ToolN
   general: { label: "Preguntas abiertas", tools: ["question"] },
 };
 
-export const contactTagNames = ["friend", "family", "work"] as const;
-export type ContactTag = (typeof contactTagNames)[number];
+export const tagColors = ["emerald", "amber", "violet", "sky", "rose", "slate"] as const;
+export type TagColor = (typeof tagColors)[number];
 
-export const contactTags: Record<ContactTag, { label: string; sharing: Category[] }> = {
-  friend: { label: "Amigo", sharing: ["availability", "interests"] },
-  family: { label: "Familia", sharing: ["availability", "interests", "health", "general"] },
-  work: { label: "Trabajo", sharing: ["availability"] },
-};
+export const defaultTags: readonly { id: string; name: string; color: TagColor; categories: readonly Category[] }[] = [
+  { id: "friend", name: "Amigo", color: "emerald", categories: ["availability", "interests"] },
+  { id: "family", name: "Familia", color: "amber", categories: ["availability", "interests", "health", "general"] },
+  { id: "work", name: "Trabajo", color: "violet", categories: ["availability"] },
+];
+
+export function tagSharing(tags: readonly { id: string; categories: readonly Category[] }[], ids: readonly string[]): Category[] {
+  const chosen = tags.filter((tag) => ids.includes(tag.id));
+  return categoryNames.filter((category) => chosen.some((tag) => tag.categories.includes(category)));
+}

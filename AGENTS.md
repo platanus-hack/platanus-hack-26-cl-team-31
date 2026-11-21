@@ -54,7 +54,10 @@ Pendiente, cada uno en su PR:
 - **Preguntas abiertas.** La categoría `general` cubre lo que no entra en otra. El agente del titular decide qué contesta. Queda fuera de lo básico.
 - **Básico.** Al conectar vienen marcadas Disponibilidad horaria e Intereses.
 - **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro y puede cambiarlas después. El titular acepta desde Contactos, WhatsApp vinculado o su agente. El agente necesita `sideband:reply` y `sideband:accept` y envía las categorías elegidas en `share`; mientras espera al titular responde `needs_owner`. Dejar de ser contactos borra la conexión y sus grants en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeContact` del `OwnerPort`). `Sharing` es la lista de categorías que un titular le da a un contacto.
-- **Etiqueta.** Cada contacto lleva una etiqueta (`friend`, `family`, `work`, en `ContactTag` de `packages/protocol/src/sharing.ts`) que fija lo que le compartes con el preset de esa etiqueta. Cada titular edita sus presets (`setTagPreset`); el cambio alcanza a los contactos con esa etiqueta que seguían el preset anterior, y un contacto editado a mano (`setSharing`) conserva lo suyo. Se guardan en `sideband.contact_tags` y `sideband.tag_presets`.
+- **Etiqueta.** Cada titular tiene sus etiquetas (`Tag` en `packages/protocol/src/sharing.ts`): nombre único sin distinguir mayúsculas, color de una paleta fija y las categorías que comparte. Parte con Amigo, Familia y Trabajo (IDs `friend`, `family`, `work`, en `defaultTags`) y puede crear, renombrar, recolorear, cambiar categorías y borrar cualquiera (`tags`, `createTag`, `updateTag`, `deleteTag` del `OwnerPort`).
+- **Etiquetas de un contacto.** Un contacto lleva cero o más etiquetas (`setContactTags`). Ponerlas o quitarlas le aplica la unión de sus categorías. Un contacto «sigue sus etiquetas» si comparte justo esa unión: al cambiar las categorías de una etiqueta o borrarla, solo esos contactos se recalculan, y un contacto editado a mano (`setSharing`) conserva lo suyo. Al invitar y al aceptar se eligen etiquetas (`tags`); sin `share`, se ofrece su unión.
+- **Bóveda por etiqueta.** Una categoría de la bóveda se lee por las etiquetas permitidas (`set_tag`); la decisión individual (`set_member`) prevalece. Borrar una etiqueta la quita de contactos y permisos.
+- **Agente y etiquetas.** El agente lista y organiza etiquetas (`sideband_tags`, `sideband_tag_change`, scope `sideband:vault`) pero nunca cambia lo que el titular comparte: no elige categorías y sus cambios no tocan grants. Se guardan en `sideband.tags` y `sideband.contact_tags`; telemetría `broker.tag.changed` y `broker.contact.tagged`.
 
 ### Modelo decidido, por construir
 
@@ -76,6 +79,7 @@ Usa un término por concepto, en el código y en los textos.
 | Categoría | `Category`, `categories` | Tema de la información sobre el que responde un agente. Lista las tools que lo consultan. |
 | Política base | `basicSharing` | Categorías que se dan los miembros de un círculo y que vienen marcadas al conectar. |
 | Contacto | `contacts`, tool `connect` | Titular con el que otro aceptó conectarse. Ambos eligen qué categorías se dan como grants. |
+| Etiqueta | `Tag`, `TagId` | Marca de un titular para sus contactos, con nombre, color y categorías. Un contacto puede llevar varias. «Grupo privado» en textos anteriores. |
 | Círculo | `Circle` | Conjunto de titulares con un creador. Sus miembros se dan la política base mientras estén dentro. «Grupo» en textos anteriores. |
 | Perfil | por construir | Nombre y frase de presentación de un titular, visibles para los demás usuarios. |
 | Aviso | `WakeTarget`, `WakeNotice` | Notificación al agente del destinatario de que tiene una solicitud. |
