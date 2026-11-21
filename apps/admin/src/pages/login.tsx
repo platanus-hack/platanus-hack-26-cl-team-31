@@ -1,4 +1,5 @@
 import { LogOutIcon, ShieldAlertIcon } from "lucide-react"
+import { toast } from "sonner"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -73,7 +74,7 @@ export function LoginPage({ forbidden }: { forbidden?: boolean }) {
             <Button
               size="lg"
               variant="outline"
-              onClick={() => void switchAccount()}
+              onClick={() => void switchAccount().catch(() => toast.error("No se pudo cerrar la sesión."))}
             >
               <LogOutIcon data-icon="inline-start" />
               Usar otra cuenta

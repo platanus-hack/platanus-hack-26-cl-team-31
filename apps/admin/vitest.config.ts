@@ -1,4 +1,5 @@
 import { defineConfig, mergeConfig } from "vitest/config"
+import app from "./vite.config.ts"
 import shared from "../../vitest.shared.ts"
 
 // Pruebas del servidor admin. Las que usan Postgres crean cada una su base desechable
@@ -6,8 +7,9 @@ import shared from "../../vitest.shared.ts"
 export default mergeConfig(
   shared,
   defineConfig({
+    resolve: { alias: app.resolve?.alias },
     test: {
-      include: ["server/**/*.test.ts", "shared/**/*.test.ts"],
+      include: ["server/**/*.test.ts", "shared/**/*.test.ts", "src/**/*.test.ts"],
       environment: "node",
     },
   }),

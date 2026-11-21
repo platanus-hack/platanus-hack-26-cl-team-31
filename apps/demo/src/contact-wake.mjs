@@ -72,13 +72,6 @@ async function answerNotice(root, id, notice, principal, traceparent) {
 }
 
 export async function handleContactWake(request, id, after, root) {
-  const port = process.env.WEB_PORT;
-  const host = request.headers.get("host");
-  if (process.env.NODE_ENV !== "development" || !port ||
-      (host !== "127.0.0.1:" + port && host !== "localhost:" + port) || !LocalPart.safeParse(id).success) {
-    return new Response(null, { status: 404 });
-  }
-
   return demoTelemetry.span("http.request", {
     traceparent: request.headers.get("traceparent"),
     attrs: { method: "POST", route: "/api/demo/contact-wake/:id" },
@@ -98,6 +91,13 @@ async function receive(request, id, after, root, span) {
       headers.set("X-Error-Id", errorId);
     }
     return new Response(null, { status, headers });
+  }
+
+  const port = process.env.WEB_PORT;
+  const host = request.headers.get("host");
+  if (process.env.NODE_ENV !== "development" || !port ||
+      (host !== "127.0.0.1:" + port && host !== "localhost:" + port) || !LocalPart.safeParse(id).success) {
+    return finish(404, "route_unavailable");
   }
 
   try {

@@ -9,9 +9,12 @@ import {
   TelemetryEvent,
   type AdminRouteName,
 } from "@shared/contract"
-import type { z } from "zod"
+import { z } from "zod"
 
 type Routes = typeof adminRoutes
+type JsonRouteName = {
+  [N in AdminRouteName]: Routes[N] extends { contentType: "text/event-stream" } ? never : N
+}[AdminRouteName]
 type Route<N extends AdminRouteName> = Routes[N]
 
 type ParamsPart<N extends AdminRouteName> =
@@ -126,7 +129,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   )
 }
 
-export async function api<N extends AdminRouteName>(
+export async function api<N extends JsonRouteName>(
   name: N,
   ...args: ApiArgs<N>
 ): Promise<ApiOutput<N>> {
@@ -163,23 +166,35 @@ export async function api<N extends AdminRouteName>(
     throw new ApiError("network", "No se pudo contactar al servidor admin.", 0)
   }
   if (!response.ok) throw await toApiError(response)
-  return parseResponse(name, await response.json())
+  return parseResponse(name, await readJson(name, response), response)
+}
+
+function invalidResponse(name: string, response?: Response) {
+  return new ApiError(
+    "invalid_response",
+    `La respuesta de ${name} no cumple el contrato.`,
+    response?.status ?? 200,
+    response?.headers.get("X-Error-Id") ?? undefined
+  )
+}
+
+async function readJson(name: string, response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch (error) {
+    if (error instanceof SyntaxError) throw invalidResponse(name, response)
+    throw error
+  }
 }
 
 function parseResponse<N extends AdminRouteName>(
   name: N,
-  data: unknown
+  data: unknown,
+  response?: Response
 ): ApiOutput<N> {
   const schema = adminRoutes[name].response as z.ZodType
   const parsed = schema.safeParse(data)
-  if (!parsed.success) {
-    console.warn(`[admin] respuesta inválida en ${name}`, parsed.error.issues)
-    throw new ApiError(
-      "invalid_response",
-      `La respuesta de ${name} no cumple el contrato.`,
-      200
-    )
-  }
+  if (!parsed.success) throw invalidResponse(name, response)
   return parsed.data as ApiOutput<N>
 }
 
@@ -198,26 +213,24 @@ export async function signInWithGoogle(callbackURL = "/"): Promise<void> {
     body: JSON.stringify({ provider: "google", callbackURL }),
   })
   if (!response.ok) throw await toApiError(response)
-  const data = (await response.json().catch(() => ({}))) as { url?: string }
-  if (data.url) window.location.assign(data.url)
+  const redirect = z.object({ url: z.url({ protocol: /^https$/ }) })
+    .safeParse(await readJson("sign-in/social", response))
+  if (!redirect.success) throw invalidResponse("sign-in/social", response)
+  window.location.assign(redirect.data.url)
 }
 
 // true si el servidor tiene dev auth (ADMIN_DEV_AUTH=1): GET responde {enabled:true}; si no, 404.
 export async function probeDevLogin(): Promise<boolean> {
   if (isMock) return true
-  try {
-    const response = await fetch("/api/admin/dev-login", {
-      method: "GET",
-      credentials: "include",
-    })
-    if (!response.ok) return false
-    const data = (await response.json().catch(() => null)) as {
-      enabled?: boolean
-    } | null
-    return data?.enabled === true
-  } catch {
-    return false
-  }
+  const response = await fetch("/api/admin/dev-login", {
+    method: "GET",
+    credentials: "include",
+  })
+  if (response.status === 404) return false
+  if (!response.ok) throw await toApiError(response)
+  const probe = z.object({ enabled: z.boolean() }).safeParse(await readJson("dev-login", response))
+  if (!probe.success) throw invalidResponse("dev-login", response)
+  return probe.data.enabled
 }
 
 export async function devLogin(): Promise<void> {
@@ -241,12 +254,13 @@ export async function signOut(): Promise<void> {
     await mockSignOut()
     return
   }
-  await fetch("/api/auth/sign-out", {
+  const response = await fetch("/api/auth/sign-out", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: "{}",
   })
+  if (!response.ok) throw await toApiError(response)
 }
 
 // ---------- En vivo (SSE) ----------
