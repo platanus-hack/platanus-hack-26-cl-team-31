@@ -401,24 +401,9 @@ Conflictos esperables: `pnpm-lock.yaml`. Al rebasar, toma la versión de `main` 
 
 - Conecta los stubs reales, servicio en compose y en Railway, usuarios de Postgres con los roles de la sección 2.2, `ADMIN_URL` público en un subdominio propio (nunca el mismo origen que web), redirect de Google y una prueba de humo del panel y del MCP en producción.
 
-## 10. Producción (Render)
+## 10. Roles con Postgres administrado
 
-El admin se despliega como `team-31-admin` en el Blueprint `render.yaml`: un solo proceso sirve la SPA, la API y `/mcp` en el puerto 10000, con `GET /healthz`.
-
-| Paso | Dónde | Detalle |
-| --- | --- | --- |
-| 1 | Render → Blueprint | Sincroniza `render.yaml` para crear `team-31-admin`. |
-| 2 | Render → `team-31-admin` → Environment | `ADMIN_URL` = URL pública del servicio (`https://team-31-admin.onrender.com` o el dominio propio, nunca el mismo origen que web). `ADMIN_OPERATORS` y `ADMIN_VIEWERS` (correos separados por coma). `BROKER_URL` = URL del broker. |
-| 3 | Llaves | `node infra/gen-keys.ts` en local genera `ADMIN_SERVICE_PRIVATE_KEY`. Pega la privada en el admin y agrega su pública como `admin` dentro de `SERVICE_JWT_PUBLIC_KEYS` del broker (sin ella, `/v1/admin/*` responde 401). |
-| 4 | Google Cloud | Cliente OAuth web con redirect `$ADMIN_URL/api/auth/callback/google`. Carga `ADMIN_GOOGLE_CLIENT_ID` y `ADMIN_GOOGLE_CLIENT_SECRET`. |
-| 5 | Deploy | Despliega el broker primero (su `preDeployCommand` aplica `sideband.*` y `ops`) y después el admin (`admin:auth:migrate` + `ops migrate`, que vuelve a aplicar vistas y permisos). |
-| 6 | Verificación | `GET $ADMIN_URL/healthz`, login con Google, Resumen con los servicios en `up`, y un token `sba_` probado con `claude mcp add --transport http sideband-admin "$ADMIN_URL/mcp" --header "Authorization: Bearer sba_..."`. |
-
-Telemetría: `TELEMETRY_SINK=postgres` está en el grupo compartido. Web, broker, coordinación y admin escriben con su `DATABASE_URL`, y el MCP, que no tiene base propia, con `TELEMETRY_DATABASE_URL`. Antes de este cambio el `preDeploy` del broker no aplicaba `ops`, así que `ops.events` no existía en producción y los eventos se perdían.
-
-### Roles con Postgres administrado
-
-En Render el usuario de la base no es superusuario. En Postgres 16+ quien crea un rol con `CREATEROLE` recibe solo `ADMIN OPTION`, sin `SET`, así que no podría hacer `SET ROLE sideband_admin_ro`. La migración `0008_role_membership.sql` otorga al usuario de migración la membresía `WITH SET TRUE, INHERIT FALSE`. Si no se puede, el admin cae en **modo degradado**:
+En Postgres administrado el usuario de la base no es superusuario. En Postgres 16+ quien crea un rol con `CREATEROLE` recibe solo `ADMIN OPTION`, sin `SET`, así que no podría hacer `SET ROLE sideband_admin_ro`. La migración `0008_role_membership.sql` otorga al usuario de migración la membresía `WITH SET TRUE, INHERIT FALSE`. Si no se puede, el admin cae en **modo degradado**:
 
 | Situación del usuario de la base | Resultado | Lecturas del panel y MCP | Reveal | `sql()` / `admin_sql` |
 | --- | --- | --- | --- | --- |
@@ -428,4 +413,3 @@ En Render el usuario de la base no es superusuario. En Postgres 16+ quien crea u
 
 El admin detecta el modo una vez por pool con `pg_has_role(current_user, rol, 'SET')`. Los tres casos se probaron contra un Postgres 17 limpio con usuarios no superusuario.
 
-Pendiente de decidir: `.github/workflows/cd.yml` todavía dispara deploy hooks por servicio, pero el PR #71 propone quitarlos. Si se mantienen, agrega `@team-31/admin...` a `verify` y el hook `RENDER_DEPLOY_HOOK_ADMIN` al matrix.

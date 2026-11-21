@@ -12,7 +12,6 @@ Sideband conecta a tu asistente con los agentes de tus contactos. Cada titular d
 
 **Demo local de coordinación.** La API de `apps/server` guarda grupos, disponibilidad y encuentros para la demo de fútbol. Corre `pnpm agents:up 3` en una terminal y `pnpm agents:demo 3` en otra. [Instrucciones para dos o más asistentes](apps/mcp/README.md).
 
-**MCP remoto.** [Despliega Nexo en Render](docs/render.md) y conecta el cliente MCP de tu agente. No necesitas Ollama ni una clave de un proveedor de modelos.
 
 ### Dashboard con chat
 

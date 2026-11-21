@@ -6,10 +6,10 @@ El número de WhatsApp personal se vincula a la misma cuenta que autoriza el MCP
 
 1. En Kapso conecta el número de Sideband o usa el [sandbox](https://docs.kapso.ai/docs/how-to/whatsapp/use-sandbox-for-testing). En sandbox agrega y activa cada teléfono de prueba con el código de **Kapso** antes de vincularlo a Sideband.
 2. En el entorno de **web**, configura `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID` (ID de la configuración del número), `KAPSO_WHATSAPP_NUMBER` (el número del chat con prefijo internacional y `+`) y `KAPSO_WEBHOOK_SECRET`. No compartas las llaves de servicio del MCP con Kapso. Para que las respuestas lleguen solas, configura también `WHATSAPP_NOTICE_SECRET` (`whsec_` y 32 bytes en base64; `pnpm bootstrap` lo genera en local). El broker debe poder llamar a `BETTER_AUTH_URL`: en local con `WAKE_ALLOW_INSECURE=1`.
-3. Aplica `pnpm sideband:auth:migrate` y después las [migraciones de ops](admin.md). En Render, el predeploy de web aplica la migración de auth y WhatsApp; si habilitas el canal, despliega también el broker actualizado.
+3. Aplica `pnpm sideband:auth:migrate` y después las [migraciones de ops](admin.md).
 4. Crea un webhook **del número**, no de proyecto, para `whatsapp.message.received` (formato v2, sin buffering) en `https://<origen-web>/api/kapso/webhook`. Usa el mismo secreto que en web. Para desarrollo, Kapso necesita un túnel HTTPS al puerto web del worktree. Configura únicamente este receptor para responder a esos mensajes; no necesitas crear un agente o workflow adicional en Kapso.
 
-En despliegues con un rol web separado (`nexo_web_runtime`), provisiona el rol antes de `auth:migrate` o vuelve a ejecutar la migración después de crearlo. En el servicio que recibe el webhook, un `POST /api/kapso/webhook` sin firma debe responder `401` si Kapso quedó habilitado. Si responde `404`, verifica que el despliegue incluya la ruta y que el proceso web esté recibiendo las cuatro variables `KAPSO_*` con el formato indicado.
+En el servicio que recibe el webhook, un `POST /api/kapso/webhook` sin firma debe responder `401` si Kapso quedó habilitado. Si responde `404`, verifica que el despliegue incluya la ruta y que el proceso web esté recibiendo las cuatro variables `KAPSO_*` con el formato indicado.
 
 ## Validar la respuesta localmente sin WhatsApp
 
@@ -26,7 +26,7 @@ La prueba crea dos cuentas locales, concede el permiso de pregunta y ejecuta el 
 
 ## Probar con dos cuentas
 
-Para habilitar texto libre, configura `ANTHROPIC_API_KEY` en el **proceso web**. Si el servicio de Render arranca Next con un launcher que filtra las variables, agrega `ANTHROPIC_API_KEY` a la lista que pasa al proceso web. No hace falta volver a vincular los números. Sin la clave funcionan los comandos `Pregunta a …` y `estado`. Las consultas por texto libre envían el mensaje original a Claude; el número vinculado, la agenda de contactos y las respuestas del broker no se envían como contexto al modelo.
+Para habilitar texto libre, configura `ANTHROPIC_API_KEY` en el **proceso web**. No hace falta volver a vincular los números. Sin la clave funcionan los comandos `Pregunta a …` y `estado`. Las consultas por texto libre envían el mensaje original a Claude; el número vinculado, la agenda de contactos y las respuestas del broker no se envían como contexto al modelo.
 
 1. Con sesión iniciada, abre **Agentes → Conectar con Sideband → WhatsApp**. Genera y envía el código de **Sideband**. Vuelve a la web y confirma que el número detectado sea el tuyo.
 2. Escribe `Pregunta a carla@sideband.app si puede jugar el sábado` (usa la dirección real del destinatario). Verifica el ID en **Actividad** y en `sideband_check` desde el MCP autorizado por la misma cuenta.
