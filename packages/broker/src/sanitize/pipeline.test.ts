@@ -5,9 +5,9 @@ import { canonicalize } from "./canonicalize.js";
 import { parse } from "./parse.js";
 import { defaultStages, sanitizeReply } from "./pipeline.js";
 import { policy } from "./policy.js";
-import { REDACTED, createFakeRedactor, type Redactor } from "./redact.js";
+import { REDACTED, createFakeRedactor } from "./redact.js";
 import { ctxFor } from "./test-helpers.js";
-import { SanitizeBlockedError, type Stage } from "./types.js";
+import { SanitizeBlockedError, type Redactor, type Stage } from "./types.js";
 
 describe("sanitizeReply", () => {
   it("produces a ReplyReceipt-compatible report", async () => {

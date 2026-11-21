@@ -4,14 +4,7 @@ export { inspectText, leakGuard } from "./leak-guard.js";
 export { parse } from "./parse.js";
 export { defaultStages, runStages, sanitizeReply, toReport } from "./pipeline.js";
 export { policy } from "./policy.js";
-export {
-  REDACTED,
-  createFakeRedactor,
-  identityRedactor,
-  redact,
-  type RedactInput,
-  type Redactor,
-} from "./redact.js";
+export { REDACTED, createFakeRedactor, identityRedactor, redact } from "./redact.js";
 export {
   canonicalDate,
   canonicalDateTime,
@@ -26,6 +19,8 @@ export {
   type ContactPolicy,
   type FlagCode,
   type Limits,
+  type RedactInput,
+  type Redactor,
   type SanitizeContext,
   type SanitizeFlag,
   type SanitizeReport,
