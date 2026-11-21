@@ -1,4 +1,4 @@
-# App Nexo
+# App Sideband
 
 ## Inicio local
 
@@ -18,4 +18,4 @@ Abre `${BETTER_AUTH_URL}/sign-in`. Después de iniciar sesión directamente con 
 
 ## OAuth para agentes
 
-La metadata se publica en `/.well-known/oauth-authorization-server` y en `/.well-known/oauth-authorization-server/api/auth` para los clientes que la solicitan desde el issuer. Incluye los endpoints de autorización, token, registro dinámico de clientes y JWKS. Inicia la conexión desde tu cliente OAuth para solicitar consentimiento con los permisos de Nexo.
+La metadata se publica en `/.well-known/oauth-authorization-server` y en `/.well-known/oauth-authorization-server/api/auth` para los clientes que la solicitan desde el issuer. Incluye los endpoints de autorización, token, registro dinámico de clientes y JWKS. Inicia la conexión desde tu cliente OAuth para solicitar consentimiento con los permisos de Sideband.

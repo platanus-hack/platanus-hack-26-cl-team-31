@@ -5,10 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore } from "../index.js";
 import { deriveNonce } from "./crypto.js";
 
-const scopes: Principal["scopes"] = ["nexo:ask", "nexo:inbox", "nexo:reply", "nexo:status"];
+const scopes: Principal["scopes"] = ["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status"];
 const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes };
 const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes };
-const operator: AdminActor = { adminId: "admin-1", email: "ops@nexo.app" };
+const operator: AdminActor = { adminId: "admin-1", email: "ops@sideband.app" };
 const secretText = "texto privado de la pregunta";
 const webhook: WakeTarget = { kind: "standard_webhook", url: "https://example.com/callback", secret: "whsec_demo" };
 const nonceKey = new Uint8Array(32).fill(7);
@@ -29,16 +29,16 @@ beforeEach(async () => {
     clock: { now: () => now },
     signingKey: privateKey,
     nonceKey,
-    config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 10, 20], addressDomain: "nexo.app" },
+    config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 10, 20], addressDomain: "sideband.app" },
     telemetry: createTelemetry({ service: "broker", sink, heartbeatMs: 0, lifecycle: false }),
   });
   await broker.owner.claimAddress(alice, "alice");
   await broker.owner.claimAddress(bruno, "bruno");
-  await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
+  await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
   sink.clear();
 });
 
-const ask = () => broker.agent.ask(alice, { to: "bruno@nexo.app", tool: "question", args: { text: secretText } });
+const ask = () => broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: secretText } });
 const names = () => sink.records.map((record) => record.name);
 
 describe("telemetría del core del broker", () => {
@@ -55,7 +55,7 @@ describe("telemetría del core del broker", () => {
   });
 
   it("una denegación inmediata se registra como creada y cerrada", async () => {
-    const view = await broker.agent.ask(alice, { to: "nadie@nexo.app", tool: "question", args: { text: secretText } });
+    const view = await broker.agent.ask(alice, { to: "nadie@sideband.app", tool: "question", args: { text: secretText } });
     expect(sink.find("broker.policy.evaluated")[0]?.attrs).toEqual({ tool: "question", decision: "deny", rule: "no_recipient" });
     expect(sink.find("broker.request.closed")).toEqual([
       expect.objectContaining({ requestId: view.requestId, attrs: { outcome: "denied", escalated: false } }),
@@ -120,10 +120,10 @@ describe("telemetría del core del broker", () => {
   });
 
   it("registra un permiso faltante con su operación", async () => {
-    const askOnly: Principal = { ...alice, scopes: ["nexo:ask"] };
+    const askOnly: Principal = { ...alice, scopes: ["sideband:ask"] };
     await expect(broker.agent.connectWake(askOnly, webhook)).rejects.toMatchObject({ code: "forbidden" });
     expect(sink.find("auth.scope.denied")).toEqual([expect.objectContaining({
-      userId: "alice", agentId: "alice-bot", attrs: { scope: "nexo:inbox", operation: "agent.connectWake" },
+      userId: "alice", agentId: "alice-bot", attrs: { scope: "sideband:inbox", operation: "agent.connectWake" },
     })]);
   });
 
@@ -131,7 +131,7 @@ describe("telemetría del core del broker", () => {
     const view = await ask();
     const [grant] = await broker.owner.grants(bruno);
     await broker.owner.revokeGrant(bruno, grant!.id);
-    const created = await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "availability", fields: ["available"] });
+    const created = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "availability", fields: ["available"] });
 
     expect(sink.find("broker.grant.revoked")).toEqual([
       expect.objectContaining({ userId: "bruno", attrs: { grantId: grant!.id } }),
@@ -143,12 +143,12 @@ describe("telemetría del core del broker", () => {
       requestId: view.requestId, attrs: { from: "awaiting_agent", to: "denied", by: "owner" },
     })]);
     const grantEvents = JSON.stringify([...sink.find("broker.grant.set"), ...sink.find("broker.grant.revoked")]);
-    expect(grantEvents).not.toContain("alice@nexo.app");
+    expect(grantEvents).not.toContain("alice@sideband.app");
   });
 
   it("una solicitud sin permiso queda denegada con su código", async () => {
     await broker.owner.claimAddress({ userId: "carla" }, "carla");
-    await broker.agent.ask(alice, { to: "carla@nexo.app", tool: "question", args: { text: secretText } });
+    await broker.agent.ask(alice, { to: "carla@sideband.app", tool: "question", args: { text: secretText } });
     expect(sink.find("broker.policy.evaluated").at(-1)?.attrs).toEqual({ tool: "question", decision: "deny", rule: "no_grant" });
   });
 });

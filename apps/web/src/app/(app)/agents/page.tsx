@@ -10,7 +10,7 @@ export default async function AgentsPage() {
 
   return (
     <>
-      <Heading title="Agentes" action={<Link href="/agents/connect" prefetch={false} className={primaryButton}>Conectar con Nexo</Link>}>
+      <Heading title="Agentes" action={<Link href="/agents/connect" prefetch={false} className={primaryButton}>Conectar con Sideband</Link>}>
         Revisa tus conexiones y cómo reciben avisos.
       </Heading>
       {agents.length === 0 ? <Empty>Aún no tienes agentes conectados.</Empty> : (

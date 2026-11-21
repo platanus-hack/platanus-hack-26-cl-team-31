@@ -7,7 +7,7 @@ import { createPgTokenStore, hashToken } from "./tokens.js"
 
 const DAY = 86_400_000
 
-describe.skipIf(!TEST_DATABASE_URL)("tokens nxa_ (Postgres)", () => {
+describe.skipIf(!TEST_DATABASE_URL)("tokens sba_ (Postgres)", () => {
   let pool: pg.Pool
 
   beforeAll(async () => {
@@ -19,11 +19,11 @@ describe.skipIf(!TEST_DATABASE_URL)("tokens nxa_ (Postgres)", () => {
     await pool?.end()
   })
 
-  it("crea un token nxa_ de 32 bytes, guarda solo sha256 y lo autentica", async () => {
+  it("crea un token sba_ de 32 bytes, guarda solo sha256 y lo autentica", async () => {
     const tokens = createPgTokenStore(pool)
     const { token, meta } = await tokens.create({ name: "claude local", ttlDays: 7, scopes: ["admin:read", "admin:sql"] }, "op@test.cl")
 
-    expect(token).toMatch(/^nxa_[A-Za-z0-9_-]{43}$/)
+    expect(token).toMatch(/^sba_[A-Za-z0-9_-]{43}$/)
     expect(meta.prefix).toBe(token.slice(0, 12))
     expect(new Date(meta.expiresAt).getTime() - new Date(meta.createdAt).getTime()).toBe(7 * DAY)
     const { rows } = await pool.query("SELECT token_hash FROM admin.tokens WHERE id = $1", [meta.id])
@@ -59,7 +59,7 @@ describe.skipIf(!TEST_DATABASE_URL)("tokens nxa_ (Postgres)", () => {
     clock += DAY + 1
     await expect(tokens.authenticate(expiring.token)).resolves.toBeNull()
 
-    await expect(tokens.authenticate("nxa_desconocido")).resolves.toBeNull()
+    await expect(tokens.authenticate("sba_desconocido")).resolves.toBeNull()
     await expect(tokens.authenticate(expiring.token.slice(4))).resolves.toBeNull()
   })
 

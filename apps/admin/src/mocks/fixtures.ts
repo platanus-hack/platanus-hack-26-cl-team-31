@@ -77,56 +77,56 @@ type Person = {
 export const people: Person[] = [
   {
     userId: "usr_simon",
-    address: "simon@nexo.app",
+    address: "simon@sideband.app",
     displayName: "Simón Pérez",
     email: "simon@gmail.com",
     createdAgo: 9 * 24 * HOUR,
   },
   {
     userId: "usr_diego",
-    address: "diego@nexo.app",
+    address: "diego@sideband.app",
     displayName: "Diego Rojas",
     email: "diego.rojas@gmail.com",
     createdAgo: 8 * 24 * HOUR,
   },
   {
     userId: "usr_adolfo",
-    address: "adolfo@nexo.app",
+    address: "adolfo@sideband.app",
     displayName: "Adolfo Vidal",
     email: "adolfo@platan.us",
     createdAgo: 8 * 24 * HOUR,
   },
   {
     userId: "usr_ana",
-    address: "ana@nexo.app",
+    address: "ana@sideband.app",
     displayName: "Ana Muñoz",
     email: "ana.munoz@gmail.com",
     createdAgo: 6 * 24 * HOUR,
   },
   {
     userId: "usr_bob",
-    address: "bob@nexo.app",
+    address: "bob@sideband.app",
     displayName: "Bob Salinas",
     email: "bob@salinas.cl",
     createdAgo: 5 * 24 * HOUR,
   },
   {
     userId: "usr_carla",
-    address: "carla@nexo.app",
+    address: "carla@sideband.app",
     displayName: "Carla Fuentes",
     email: "carla.f@gmail.com",
     createdAgo: 3 * 24 * HOUR,
   },
   {
     userId: "usr_tomas",
-    address: "tomas@nexo.app",
+    address: "tomas@sideband.app",
     displayName: "Tomás Lagos",
     email: "tlagos@uc.cl",
     createdAgo: 2 * 24 * HOUR,
   },
   {
     userId: "usr_eva",
-    address: "eva@nexo.app",
+    address: "eva@sideband.app",
     displayName: null,
     email: "eva@example.org",
     createdAgo: 20 * HOUR,
@@ -149,7 +149,7 @@ const agentSeeds: AgentSeed[] = [
     agentId: "agt_claude_code",
     label: "Claude Code (MacBook)",
     wakeKind: "mcp_events",
-    wakeHost: "nexo-relay.simon.dev",
+    wakeHost: "relay.sideband.example",
   },
   {
     userId: "usr_simon",
@@ -639,8 +639,8 @@ function buildRequests(): RequestRecord[] {
   }
   // La solicitud de la traza de ejemplo: availability de Simón a Diego, contestada.
   const special = buildRequest(TRACE_REQUEST_ID, "answered", 7 * MIN, {})
-  special.summary.fromAddress = "simon@nexo.app"
-  special.summary.toAddress = "ana@nexo.app"
+  special.summary.fromAddress = "simon@sideband.app"
+  special.summary.toAddress = "ana@sideband.app"
   special.summary.tool = "availability"
   special.summary.targetAgentId = "agt_claude"
   special.summary.answeredByAgentId = "agt_claude"
@@ -875,7 +875,7 @@ export function buildFeaturedTrace(): Trace {
         id: "b2e1d3c4f5a6b704",
         parent: "b2e1d3c4f5a6b701",
         service: "broker",
-        name: "pg insert nexo.requests",
+        name: "pg insert sideband.requests",
         offset: 35,
         duration: 31,
         attrs: {},
@@ -1267,7 +1267,7 @@ export function rulesFor(address: string) {
       ],
     },
     people: {},
-    blocked: address === "carla@nexo.app" ? ["eva@nexo.app"] : [],
+    blocked: address === "carla@sideband.app" ? ["eva@sideband.app"] : [],
     defaultForUnknown: "ask_owner",
   }
 }
@@ -1439,7 +1439,7 @@ export const tokens: AdminToken[] = [
   {
     id: "tok_claude",
     name: "Claude Code · simon",
-    prefix: "nxa_k3P9xQ2m",
+    prefix: "sba_k3P9xQ2m",
     scopes: ["admin:read", "admin:sql"],
     createdBy: "simon@platan.us",
     createdAt: iso(2 * 24 * HOUR),
@@ -1450,7 +1450,7 @@ export const tokens: AdminToken[] = [
   {
     id: "tok_codex",
     name: "Codex · adolfo",
-    prefix: "nxa_Vb71LmZa",
+    prefix: "sba_Vb71LmZa",
     scopes: ["admin:read"],
     createdBy: "adolfo@platan.us",
     createdAt: iso(70 * MIN),
@@ -1461,7 +1461,7 @@ export const tokens: AdminToken[] = [
   {
     id: "tok_old",
     name: "Prueba MCP",
-    prefix: "nxa_0aQe4RtY",
+    prefix: "sba_0aQe4RtY",
     scopes: ["admin:read"],
     createdBy: "simon@platan.us",
     createdAt: iso(4 * 24 * HOUR),

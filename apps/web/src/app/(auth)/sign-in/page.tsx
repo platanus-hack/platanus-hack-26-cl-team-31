@@ -44,7 +44,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
 
   return (
     <>
-      <h1 className="text-[28px] leading-[1.15] font-medium tracking-[-0.025em]">Entrar a Nexo</h1>
+      <h1 className="text-[28px] leading-[1.15] font-medium tracking-[-0.025em]">Entrar a Sideband</h1>
       <p className="mt-3 text-muted">
         {request
           ? "Inicia sesión con tu cuenta de Google para revisar los permisos del agente."

@@ -28,9 +28,9 @@ const settings = z
     ADMIN_SERVE_SPA: flag,
     ADMIN_URL: z.url({ protocol: /^https?$/ }).transform((value) => new URL(value).origin),
     DATABASE_URL: z.preprocess(optional, postgresUrl.optional()),
-    // Producción: rol con el esquema admin y nexo_admin_reveal. Si falta, DATABASE_URL.
+    // Producción: rol con el esquema admin y sideband_admin_reveal. Si falta, DATABASE_URL.
     ADMIN_DATABASE_URL: z.preprocess(optional, postgresUrl.optional()),
-    // Producción: rol miembro de nexo_admin_ro. Si falta, ADMIN_DATABASE_URL.
+    // Producción: rol miembro de sideband_admin_ro. Si falta, ADMIN_DATABASE_URL.
     ADMIN_DATABASE_URL_RO: z.preprocess(optional, postgresUrl.optional()),
     ADMIN_AUTH_SECRET: z.preprocess(optional, z.string().min(32).optional()),
     BETTER_AUTH_SECRET: z.preprocess(optional, z.string().optional()),
@@ -70,7 +70,7 @@ const settings = z
       databaseUrl,
       readOnlyDatabaseUrl: env.ADMIN_DATABASE_URL_RO ?? databaseUrl,
       // Fuera de producción se deriva de BETTER_AUTH_SECRET para no exigir otra llave local.
-      authSecret: env.ADMIN_AUTH_SECRET ?? createHash("sha256").update(`nexo-admin:${env.BETTER_AUTH_SECRET}`).digest("base64url"),
+      authSecret: env.ADMIN_AUTH_SECRET ?? createHash("sha256").update(`sideband-admin:${env.BETTER_AUTH_SECRET}`).digest("base64url"),
       google: env.ADMIN_GOOGLE_CLIENT_ID && env.ADMIN_GOOGLE_CLIENT_SECRET
         ? { clientId: env.ADMIN_GOOGLE_CLIENT_ID, clientSecret: env.ADMIN_GOOGLE_CLIENT_SECRET }
         : undefined,

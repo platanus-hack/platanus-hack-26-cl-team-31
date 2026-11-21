@@ -7,8 +7,8 @@ import { Navigation } from "./nav";
 import { getAddress } from "./owner";
 
 export const metadata: Metadata = {
-  title: "Nexo",
-  description: "Gestiona tus solicitudes, reglas y agentes en Nexo.",
+  title: "Sideband",
+  description: "Gestiona tus solicitudes, reglas y agentes en Sideband.",
 };
 
 async function Workspace({ children }: { children: ReactNode }) {
@@ -18,7 +18,7 @@ async function Workspace({ children }: { children: ReactNode }) {
     <>
       <header className="sticky top-0 z-20 border-b border-line bg-canvas/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1056px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-          <Link href="/" aria-label="Nexo, inicio" className="mr-2 rounded-full"><Brand /></Link>
+          <Link href="/" aria-label="Sideband, inicio" className="mr-2 rounded-full"><Brand /></Link>
           {address && (
             <>
               <Navigation />

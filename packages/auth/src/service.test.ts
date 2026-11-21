@@ -35,7 +35,7 @@ describe("JWT de servicio", () => {
 
   beforeAll(async () => {
     mcpToken = await mintServiceToken({
-      iss: "mcp", sub, azp, scopes: ["nexo:inbox"], privateKey: await exportJWK(mcp.privateKey),
+      iss: "mcp", sub, azp, scopes: ["sideband:inbox"], privateKey: await exportJWK(mcp.privateKey),
     });
     webToken = await mintServiceToken({ iss: "web", sub, privateKey: await exportJWK(web.privateKey) });
   });
@@ -43,11 +43,11 @@ describe("JWT de servicio", () => {
   it("firma y verifica la identidad de agente con una vigencia de 60 segundos", async () => {
     const claims = decodeJwt(mcpToken);
     expect(decodeProtectedHeader(mcpToken).alg).toBe("EdDSA");
-    expect(claims).toMatchObject({ iss: "mcp", aud: "broker", sub, azp, scope: "nexo:inbox" });
+    expect(claims).toMatchObject({ iss: "mcp", aud: "broker", sub, azp, scope: "sideband:inbox" });
     expect(claims.exp! - claims.iat!).toBe(60);
     expect(claims.jti).toMatch(/^[0-9a-f-]{36}$/);
     await expect(verifyServiceToken(mcpToken, { publicKeys, expectedIss: "mcp" })).resolves.toEqual({
-      userId: sub, agentId: azp, scopes: ["nexo:inbox"],
+      userId: sub, agentId: azp, scopes: ["sideband:inbox"],
     });
   });
 
@@ -70,7 +70,7 @@ describe("JWT de servicio", () => {
     { test: "con otra audiencia", aud: "web", lifetime: 60, agent: azp, claim: "aud" },
   ])("rechaza un JWT $test", async ({ aud, lifetime, agent, claim }) => {
     const now = Math.floor(Date.now() / 1000);
-    const token = await new SignJWT({ azp: agent, scope: "nexo:inbox" })
+    const token = await new SignJWT({ azp: agent, scope: "sideband:inbox" })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer("mcp")
       .setAudience(aud)
@@ -84,7 +84,7 @@ describe("JWT de servicio", () => {
   });
 
   it("rechaza un JWT de MCP sin azp", async () => {
-    const token = await new SignJWT({ scope: "nexo:inbox" })
+    const token = await new SignJWT({ scope: "sideband:inbox" })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer("mcp")
       .setAudience("broker")
@@ -98,7 +98,7 @@ describe("JWT de servicio", () => {
   });
 
   describe("emisor admin", () => {
-    const email = "ops@nexo.app";
+    const email = "ops@sideband.app";
     const mintAdmin = async (options: { sub?: string; email?: string } = {}) => mintServiceToken({
       iss: "admin", sub: options.sub ?? "admin-1", email: options.email ?? email, privateKey: await exportJWK(admin.privateKey),
     });

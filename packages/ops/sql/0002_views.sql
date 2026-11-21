@@ -1,14 +1,14 @@
 -- Vistas redactadas ops.v_*: la interfaz pública de lectura del admin (docs/admin.md#22-vistas-adm-02).
 --
--- Las tablas siguen siendo privadas de cada módulo (nexo.* del broker, Better Auth, coordinación).
+-- Las tablas siguen siendo privadas de cada módulo (sideband.* del broker, Better Auth, coordinación).
 -- Estas vistas nunca exponen args, result, purpose, firmas, nonces, secretos de aviso ni tokens.
--- La única excepción es ops.v_request_payloads, que solo puede leer nexo_admin_reveal (0003).
+-- La única excepción es ops.v_request_payloads, que solo puede leer sideband_admin_reveal (0003).
 --
 -- Todas se crean dentro de ops.refresh_views(), que solo crea las vistas cuyas tablas de origen
 -- existen (to_regclass). Así la migración no falla si ops migra antes que el broker, Better Auth
 -- o la coordinación. Después de crear esas tablas, el dueño del esquema vuelve a ejecutar
 -- `SELECT ops.refresh_views();` (es idempotente y reaplica los permisos de 0003).
--- La bitácora admin.audit (ADM-04) no tiene vista: nexo_admin_ro la lee directo (0003).
+-- La bitácora admin.audit (ADM-04) no tiene vista: sideband_admin_ro la lee directo (0003).
 --
 -- Las vistas usan los privilegios de su dueño: los roles del admin no necesitan acceso a las tablas.
 
@@ -67,9 +67,9 @@ BEGIN
   $v$;
   created := array_append(created, 'v_errors');
 
-  -- ---------- Broker (nexo.*) ----------
+  -- ---------- Broker (sideband.*) ----------
 
-  IF to_regclass('nexo.requests') IS NOT NULL AND to_regclass('nexo.wake_jobs') IS NOT NULL THEN
+  IF to_regclass('sideband.requests') IS NOT NULL AND to_regclass('sideband.wake_jobs') IS NOT NULL THEN
     -- Sin args, result, purpose, firmas ni nonce: solo las llaves de args y result.
     EXECUTE $v$
       CREATE OR REPLACE VIEW ops.v_requests AS
@@ -92,37 +92,37 @@ BEGIN
              (r.status IN ('awaiting_agent', 'awaiting_owner') AND r.expires_at < now()) AS stuck,
              coalesce(w.wake_attempts, 0)::integer AS wake_attempts,
              w.last_wake_ok
-      FROM nexo.requests r
+      FROM sideband.requests r
       LEFT JOIN LATERAL (
         SELECT sum(CASE WHEN j.state = 'done' THEN j.attempt ELSE j.attempt - 1 END) AS wake_attempts,
                (array_agg((j.last_result->>'ok')::boolean ORDER BY j.run_at DESC, j.id DESC)
                   FILTER (WHERE j.last_result IS NOT NULL))[1] AS last_wake_ok
-        FROM nexo.wake_jobs j
+        FROM sideband.wake_jobs j
         WHERE j.request_id = r.id
       ) w ON true
     $v$;
     created := array_append(created, 'v_requests');
 
-    -- Payload real. SOLO nexo_admin_reveal (0003). Se usa únicamente en POST /requests/:id/reveal.
+    -- Payload real. SOLO sideband_admin_reveal (0003). Se usa únicamente en POST /requests/:id/reveal.
     EXECUTE $v$
       CREATE OR REPLACE VIEW ops.v_request_payloads AS
-      SELECT id, args, purpose, result FROM nexo.requests
+      SELECT id, args, purpose, result FROM sideband.requests
     $v$;
     created := array_append(created, 'v_request_payloads');
   END IF;
 
-  IF to_regclass('nexo.request_events') IS NOT NULL THEN
+  IF to_regclass('sideband.request_events') IS NOT NULL THEN
     -- detail se reduce a status y code.
     EXECUTE $v$
       CREATE OR REPLACE VIEW ops.v_request_events AS
       SELECT request_id, id, at, kind, detail->>'status' AS status, detail->>'code' AS code
-      FROM nexo.request_events
+      FROM sideband.request_events
     $v$;
     created := array_append(created, 'v_request_events');
   END IF;
 
-  IF to_regclass('nexo.wake_jobs') IS NOT NULL AND to_regclass('nexo.requests') IS NOT NULL
-     AND to_regclass('nexo.agent_connections') IS NOT NULL THEN
+  IF to_regclass('sideband.wake_jobs') IS NOT NULL AND to_regclass('sideband.requests') IS NOT NULL
+     AND to_regclass('sideband.agent_connections') IS NOT NULL THEN
     -- Sin cuerpo de respuesta. code es un código corto: el detalle del adaptador solo se
     -- acepta si es un identificador ([a-z_]), nunca texto libre.
     EXECUTE $v$
@@ -143,15 +143,15 @@ BEGIN
                   THEN (j.last_result->>'ms')::numeric END AS latency_ms,
              r.to_user_id AS user_id,
              r.target_agent_id AS agent_id
-      FROM nexo.wake_jobs j
-      JOIN nexo.requests r ON r.id = j.request_id
-      LEFT JOIN nexo.agent_connections c
+      FROM sideband.wake_jobs j
+      JOIN sideband.requests r ON r.id = j.request_id
+      LEFT JOIN sideband.agent_connections c
         ON c.user_id = r.to_user_id AND c.agent_id = r.target_agent_id
     $v$;
     created := array_append(created, 'v_wake_jobs');
   END IF;
 
-  IF to_regclass('nexo.agent_connections') IS NOT NULL THEN
+  IF to_regclass('sideband.agent_connections') IS NOT NULL THEN
     -- Solo el host de la URL de aviso. Nunca wake_secret ni la URL completa.
     EXECUTE format($v$
       CREATE OR REPLACE VIEW ops.v_agent_connections AS
@@ -160,17 +160,17 @@ BEGIN
                coalesce(wake_public->>'baseUrl', wake_public->>'url', wake_public->>'callbackUrl')
                FROM %L)) AS wake_host,
              verified_at, last_wake_at, revoked_at, created_at
-      FROM nexo.agent_connections
+      FROM sideband.agent_connections
     $v$, host_pattern);
     created := array_append(created, 'v_agent_connections');
   END IF;
 
-  IF to_regclass('nexo.users') IS NOT NULL AND to_regclass('nexo.sharing_rules') IS NOT NULL THEN
+  IF to_regclass('sideband.users') IS NOT NULL AND to_regclass('sideband.sharing_rules') IS NOT NULL THEN
     EXECUTE $v$
       CREATE OR REPLACE VIEW ops.v_users AS
       SELECT u.user_id, u.address, u.display_name, u.created_at, s.rules
-      FROM nexo.users u
-      LEFT JOIN nexo.sharing_rules s ON s.user_id = u.user_id
+      FROM sideband.users u
+      LEFT JOIN sideband.sharing_rules s ON s.user_id = u.user_id
     $v$;
     created := array_append(created, 'v_users');
   END IF;

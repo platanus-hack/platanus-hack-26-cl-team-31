@@ -25,11 +25,11 @@ it("expone solamente la agenda de Ana y rechaza otra dirección antes de pedirle
   const agent = { ask: vi.fn() };
   const session = createContactQueries(contacts, { agent });
   expect(session.listContacts()).toEqual([
-    { name: "Bob", address: "demo-bob@nexo.app" },
-    { name: "Jane", address: "demo-jane@nexo.app" },
-    { name: "Luz", address: "demo-luz@nexo.app" },
+    { name: "Bob", address: "demo-bob@sideband.app" },
+    { name: "Jane", address: "demo-jane@sideband.app" },
+    { name: "Luz", address: "demo-luz@sideband.app" },
   ]);
-  await expect(session.ask("demo-eva@nexo.app", "interest_check", { interest: "cerámica" })).rejects.toThrow(/agenda/);
+  await expect(session.ask("demo-eva@sideband.app", "interest_check", { interest: "cerámica" })).rejects.toThrow(/agenda/);
   expect(agent.ask).not.toHaveBeenCalled();
 });
 
@@ -43,7 +43,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)("comparte solicitudes entre sesiones, 
   for (const file of ["01-core.sql", "04-demo-profiles.sql"]) {
     await db.query(await readFile(new URL("../../server/sql/" + file, import.meta.url), "utf8"));
   }
-  const root = await mkdtemp(join(tmpdir(), "nexo-contact-test-"));
+  const root = await mkdtemp(join(tmpdir(), "sideband-contact-test-"));
   cleanup.defer(() => rm(root, { recursive: true, force: true }));
   const fixtureId = randomUUID();
   const local = join(root, ".agents-local");
@@ -92,7 +92,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)("comparte solicitudes entre sesiones, 
     { id: "bob", requestId: regular.requestId }, { id: "bob", requestId: overridden.requestId },
     { id: "jane", requestId: other.requestId },
   ]));
-  const deniedJobs = await db.query("SELECT request_id FROM nexo.wake_jobs WHERE request_id = ANY($1)", [[privateQuestion.requestId, blocked.requestId]]);
+  const deniedJobs = await db.query("SELECT request_id FROM sideband.wake_jobs WHERE request_id = ANY($1)", [[privateQuestion.requestId, blocked.requestId]]);
   expect(deniedJobs.rows).toEqual([]);
 
   await stop();

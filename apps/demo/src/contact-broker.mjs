@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { mintServiceToken } from "@team-31/auth/service";
 import { createAgentClient, createOwnerClient } from "@team-31/broker/client";
-import { LocalPart } from "@team-31/protocol";
+import { ADDRESS_DOMAIN, LocalPart } from "@team-31/protocol";
 import { consoleSink, createTelemetry, tracedFetch } from "@team-31/telemetry";
 
 // stdout belongs to the MCP stdio transport.
@@ -22,12 +22,12 @@ export function localBrokerUrl() {
 }
 
 export function contactAddress(id) {
-  return LocalPart.parse("demo-" + LocalPart.parse(id)) + "@nexo.app";
+  return LocalPart.parse("demo-" + LocalPart.parse(id)) + "@" + ADDRESS_DOMAIN;
 }
 
 export function contactPrincipal(id) {
   const userId = "demo-contact-" + LocalPart.parse(id);
-  return { userId, agentId: userId + "-bot", scopes: ["nexo:inbox", "nexo:reply"] };
+  return { userId, agentId: userId + "-bot", scopes: ["sideband:inbox", "sideband:reply"] };
 }
 
 export function contactWakeUrl(id) {
@@ -39,7 +39,7 @@ export function contactWakeUrl(id) {
 export function contactWakeSecret(id) {
   const key = Buffer.from(process.env.WAKE_SECRETS_KEY ?? "", "base64");
   if (key.length !== 32) throw new Error("Revisa WAKE_SECRETS_KEY con pnpm bootstrap.");
-  const mac = createHmac("sha256", key).update("nexo/demo/contact-wake/v1/" + LocalPart.parse(id));
+  const mac = createHmac("sha256", key).update("sideband/demo/contact-wake/v1/" + LocalPart.parse(id));
   return "whsec_" + mac.digest("base64");
 }
 
@@ -60,7 +60,7 @@ export function contactOwner() {
 }
 
 export function createContactQueries(contacts, { agent = contactAgent(), fixtureId } = {}) {
-  const ana = { ...contactPrincipal("ana"), scopes: ["nexo:ask", "nexo:status"] };
+  const ana = { ...contactPrincipal("ana"), scopes: ["sideband:ask", "sideband:status"] };
   const directory = new Map(contacts.map(contact => [contactAddress(contact.id), contact]));
   return {
     listContacts() {
@@ -97,7 +97,7 @@ export function createContactQueries(contacts, { agent = contactAgent(), fixture
   };
 }
 
-// Claude needs the user's login and model proxy. Keep Nexo's signing keys in trusted processes.
+// Claude needs the user's login and model proxy. Keep Sideband's signing keys in trusted processes.
 export function claudeEnv() {
   return Object.fromEntries(Object.entries(process.env).filter(([name]) =>
     /^(ANTHROPIC_|CLAUDE_|CLAUDECODE|LC_)/.test(name) ||

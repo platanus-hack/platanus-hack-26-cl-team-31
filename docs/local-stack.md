@@ -1,15 +1,17 @@
-# Stack local de Nexo
+# Stack local de Sideband
 
 Usa Node 24, pnpm 10 y Docker. Cada worktree tiene Postgres, puertos y llaves locales. `pnpm env:init` genera `.env` con las URLs según el slot. `pnpm bootstrap` genera las llaves faltantes en `.env.local`, levanta Postgres y aplica el esquema de autenticación. Conserva `.env.local` junto al volumen del worktree para que el broker pueda seguir descifrando las configuraciones de aviso guardadas.
 
 ## Arranque
+
+Sideband se instala sobre una base vacía. Si el worktree tiene datos de la versión anterior y son desechables, `pnpm infra:reset` elimina sus volúmenes locales antes del arranque.
 
 ```sh
 pnpm bootstrap
 pnpm dev
 ```
 
-`pnpm bootstrap` prepara el esquema `nexo` y el rol `nexo_broker`, que usa una contraseña local generada. El broker escucha en loopback. Postgres, web y MCP usan sus puertos asignados al worktree.
+`pnpm bootstrap` prepara el esquema `sideband` y el rol `sideband_broker`, que usa una contraseña local generada. El broker escucha en loopback. Postgres, web y MCP usan sus puertos asignados al worktree.
 
 El MCP remoto de `apps/mcp` envía solicitudes al broker. En `/demo`, Contactos de Ana usa el broker a través del paquete `@team-31/demo`. La demo de fútbol usa la API local de `apps/server` y Ollama. `pnpm agents:up` prepara los grupos y la disponibilidad de esa demo e inicia la API en `COORDINATION_PORT`.
 

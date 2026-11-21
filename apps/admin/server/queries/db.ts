@@ -5,7 +5,7 @@ import pg from "pg"
 
 import { AdminQueryError } from "../../shared/queries.js"
 
-export type ReadRole = "nexo_admin_ro" | "nexo_admin_reveal"
+export type ReadRole = "sideband_admin_ro" | "sideband_admin_reveal"
 export type Db = pg.PoolClient
 
 export const STATEMENT_TIMEOUT = "3s"

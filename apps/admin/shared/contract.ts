@@ -40,13 +40,15 @@ export const AdminSession = z.object({
 })
 export type AdminSession = z.infer<typeof AdminSession>
 
+export const ADMIN_TOKEN_PREFIX = "sba_"
+
 export const AdminTokenScope = z.enum(["admin:read", "admin:sql"])
 export type AdminTokenScope = z.infer<typeof AdminTokenScope>
 
 export const AdminToken = z.object({
   id: z.string(),
   name: z.string(),
-  // Primeros 12 caracteres del token (nxa_ + 8), para reconocerlo. Nunca el token completo.
+  // Primeros 12 caracteres del token (sba_ + 8), para reconocerlo. Nunca el token completo.
   prefix: z.string(),
   scopes: z.array(AdminTokenScope),
   createdBy: z.email(),
@@ -64,7 +66,7 @@ export const CreateAdminToken = z.object({
 })
 export const CreatedAdminToken = z.object({
   // Se muestra una sola vez. El servidor guarda solo sha256(token).
-  token: z.string().startsWith("nxa_"),
+  token: z.string().startsWith(ADMIN_TOKEN_PREFIX),
   meta: AdminToken,
 })
 
@@ -376,7 +378,7 @@ export type SqlResult = z.infer<typeof SqlResult>
 
 // ---------- Tabla de rutas ----------
 // role: rol mínimo. fresh: exige sesión fresca. Las rutas /api/admin/* aceptan solo
-// sesión de navegador; los tokens nxa_ solo sirven en /mcp.
+// sesión de navegador; los tokens sba_ solo sirven en /mcp.
 
 const page = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), nextCursor: z.string().nullable() })
 const idParams = z.object({ id: z.string() })

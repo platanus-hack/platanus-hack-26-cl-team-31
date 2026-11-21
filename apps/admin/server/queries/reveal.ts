@@ -1,5 +1,5 @@
 // Lectura del payload real de una solicitud (args, purpose, result). Es la ÚNICA lectura que
-// usa nexo_admin_reveal, el único rol con SELECT en ops.v_request_payloads.
+// usa sideband_admin_reveal, el único rol con SELECT en ops.v_request_payloads.
 //
 // La usa el servidor admin (ADM-04) en POST /api/admin/requests/:id/reveal, después de verificar
 // rol operator, sesión fresca, Origin y motivo, y de escribir la auditoría. Este módulo no
@@ -26,7 +26,7 @@ export function createPgRevealer({
   const pool = createPool(databaseUrl)
   return {
     reveal: (requestId) =>
-      readOnly(pool, "nexo_admin_reveal", async (db) => {
+      readOnly(pool, "sideband_admin_reveal", async (db) => {
         const { rows } = await db.query<RevealedPayload>(
           "SELECT args, purpose, result FROM ops.v_request_payloads WHERE id = $1",
           [requestId]

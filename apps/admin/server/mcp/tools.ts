@@ -41,7 +41,7 @@ const found = <T>(value: T | null, missing: string, summarize: (v: T) => string)
 function registerOverviewTools(queries: AdminQueries, tool: RegisterTool) {
   tool({
     name: "admin_overview",
-    title: "Resumen de Nexo",
+    title: "Resumen de Sideband",
     description: "Empieza aquí: salud de servicios, solicitudes por estado, atascadas, p50/p95 hasta el estado final, avisos por adaptador, errores principales y rate limits en la ventana.",
     input: z.object({
       window: Window.default("1h").describe("Ventana de tiempo: 15m, 1h, 24h o 7d. Por defecto 1h."),
@@ -74,7 +74,7 @@ function registerRequestTools(queries: AdminQueries, tool: RegisterTool) {
     input: z.object({
       status: RequestFilters.shape.status.describe("Estados a incluir (awaiting_agent, awaiting_owner, answered, no_data, declined, denied, expired, delivery_failed)."),
       tool: RequestFilters.shape.tool.describe("Herramienta: profile, availability, question, interest_check o connect."),
-      address: RequestFilters.shape.address.describe("Dirección Nexo que coincide con origen o destino."),
+      address: RequestFilters.shape.address.describe("Dirección Sideband que coincide con origen o destino."),
       q: RequestFilters.shape.q.describe("Prefijo del request id."),
       stuck: z.boolean().optional().describe("true para ver solo las abiertas con plazo vencido."),
       since: RequestFilters.shape.since.describe("Desde (ISO 8601 con zona)."),
@@ -179,7 +179,7 @@ function registerUserTools(queries: AdminQueries, tool: RegisterTool) {
   tool({
     name: "admin_search_users",
     title: "Buscar personas",
-    description: "Busca personas por dirección Nexo, nombre o id. Pagina con cursor.",
+    description: "Busca personas por dirección Sideband, nombre o id. Pagina con cursor.",
     input: z.object({
       q: UserFilters.shape.q.describe("Texto a buscar en dirección, nombre o id."),
       cursor: UserFilters.shape.cursor.describe("nextCursor de la página anterior."),
@@ -195,8 +195,8 @@ function registerUserTools(queries: AdminQueries, tool: RegisterTool) {
   tool({
     name: "admin_get_user",
     title: "Detalle de persona",
-    description: "Persona por user id o dirección Nexo: identidad, clientes OAuth, reglas, agentes y solicitudes recientes.",
-    input: z.object({ id_or_address: id("User id o dirección Nexo.") }),
+    description: "Persona por user id o dirección Sideband: identidad, clientes OAuth, reglas, agentes y solicitudes recientes.",
+    input: z.object({ id_or_address: id("User id o dirección Sideband.") }),
     output: adminRoutes.user.response,
     target: (args) => args.id_or_address,
     run: async ({ id_or_address }) =>

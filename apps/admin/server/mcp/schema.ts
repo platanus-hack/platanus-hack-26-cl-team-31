@@ -1,6 +1,6 @@
 // Contenido del recurso admin://schema: vistas ops.v_* con sus columnas y el catálogo de
 // eventos de telemetría. Las columnas salen de information_schema a través de
-// AdminQueries.sql (que corre con el rol nexo_admin_ro, así que solo ve lo que el rol puede
+// AdminQueries.sql (que corre con el rol sideband_admin_ro, así que solo ve lo que el rol puede
 // leer). Si esa consulta falla, se usa la lista estática de docs/admin.md (sección 2.2).
 import { describeCatalog, type Telemetry } from "@team-31/telemetry"
 import type { AdminQueries } from "../../shared/queries.js"
@@ -20,7 +20,7 @@ export const COLUMNS_SQL =
   "select table_name, column_name, data_type from information_schema.columns " +
   "where table_schema='ops' and table_name like 'v\\_%' order by 1, ordinal_position"
 
-// Vista que solo puede leer el rol nexo_admin_reveal (humanos, con motivo y auditoría).
+// Vista que solo puede leer el rol sideband_admin_reveal (humanos, con motivo y auditoría).
 // Nunca se anuncia a los agentes.
 const HIDDEN_VIEWS = new Set(["v_request_payloads"])
 

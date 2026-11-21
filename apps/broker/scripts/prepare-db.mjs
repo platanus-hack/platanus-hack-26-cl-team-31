@@ -3,13 +3,13 @@ import { applyOpsMigrations } from "@team-31/ops";
 import { createTelemetry, postgresSink } from "@team-31/telemetry";
 import pg from "pg";
 
-const runtimeRole = "nexo_broker";
+const runtimeRole = "sideband_broker";
 const { DATABASE_URL, BROKER_DATABASE_PASSWORD, POSTGRES_PORT, NODE_ENV } = process.env;
 const printUrl = process.argv[2] === "--print-url";
 const missingPassword = "Ejecuta pnpm bootstrap para preparar la contraseña local del broker.";
 
 // The runtime role writes its own telemetry to ops.events. A direct grant (not membership in
-// nexo_telemetry_writer) keeps the role NOINHERIT and without memberships, as the broker requires.
+// sideband_telemetry_writer) keeps the role NOINHERIT and without memberships, as the broker requires.
 async function grantTelemetry(databaseUrl) {
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
@@ -32,7 +32,7 @@ async function prepare() {
   if (!/^[0-9a-f]{64}$/.test(BROKER_DATABASE_PASSWORD ?? "")) throw new Error(missingPassword);
 
   await applyPostgresMigrations({ databaseUrl: DATABASE_URL, runtimeRole, runtimePassword: BROKER_DATABASE_PASSWORD });
-  // ops goes after nexo.* and Better Auth (bootstrap order) so ops.refresh_views() finds their tables.
+  // ops goes after sideband.* and Better Auth (bootstrap order) so ops.refresh_views() finds their tables.
   await applyOpsMigrations({ databaseUrl: DATABASE_URL });
   await grantTelemetry(DATABASE_URL);
   url.username = runtimeRole;

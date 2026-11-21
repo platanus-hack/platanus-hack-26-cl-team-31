@@ -47,7 +47,7 @@ async function main() {
   const [command, mode, ...extra] = process.argv.slice(2);
   assert(["init", "stack", "seed", "run", "reset"].includes(command) &&
     (mode === undefined || (mode === "--present" && command === "run")) && !extra.length,
-  "Uso: pnpm with-env node scripts/demo/nexo.mjs {init|stack|seed|run [--present]|reset}");
+  "Uso: pnpm with-env node scripts/demo/sideband.mjs {init|stack|seed|run [--present]|reset}");
 
   const fixture = await readState();
   if (command === "reset" && !fixture) {

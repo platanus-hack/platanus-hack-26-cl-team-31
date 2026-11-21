@@ -11,9 +11,9 @@ export default async function InvitePage() {
   });
   return (
     <>
-      <h1 className="text-[28px] leading-[1.15] font-medium tracking-[-0.025em]">Te invitaron a Nexo</h1>
+      <h1 className="text-[28px] leading-[1.15] font-medium tracking-[-0.025em]">Te invitaron a Sideband</h1>
       <p className="mt-3 text-muted">
-        Crea tu dirección Nexo y conecta tu agente para recibir solicitudes. Tú decides qué puede compartir en tu nombre.
+        Crea tu dirección Sideband y conecta tu agente para recibir solicitudes. Tú decides qué puede compartir en tu nombre.
       </p>
       <Link href={onboardingFlow("invite").signIn} prefetch={false} className={`${primaryButton} mt-7 w-full`}>
         Continuar

@@ -65,7 +65,7 @@ async function calendarReceiver() {
         }
       }
       const { message, deliver, agentId } = JSON.parse(body);
-      assert(/^[0-9a-f-]{36}$/.test(requestId) && message.startsWith(`Tienes una solicitud nueva en Nexo (${requestId}). Usa nexo_inbox`));
+      assert(/^[0-9a-f-]{36}$/.test(requestId) && message.startsWith(`Tienes una solicitud nueva en Sideband (${requestId}). Usa sideband_inbox`));
       assert.equal(deliver, false);
       assert.equal(agentId, "main");
       notices.add(requestId);
@@ -124,8 +124,8 @@ export async function rehearse(fixtures, { run, actors }, present) {
       clients.push(await oauthAgent(fixtures, { run, name, session }));
     }
     const [openclaw, secondary, dot, grok, claude] = clients;
-    await tool(openclaw, "nexo_inbox", {});
-    await tool(secondary, "nexo_inbox", {});
+    await tool(openclaw, "sideband_inbox", {});
+    await tool(secondary, "sideband_inbox", {});
     receiver = await calendarReceiver();
     await owner.setWake(destination, openclaw.agentId, receiver.target);
 
@@ -153,14 +153,14 @@ export async function rehearse(fixtures, { run, actors }, present) {
     };
 
     const args = { date: nextMonday(), start: "11:00", durationMinutes: 30, timezone: "America/Santiago" };
-    const ask = (actor) => tool(actor, "nexo_ask", { to: destination.address, tool: "availability", args });
-    const check = (actor, requestId) => tool(actor, "nexo_check", { requestId });
+    const ask = (actor) => tool(actor, "sideband_ask", { to: destination.address, tool: "availability", args });
+    const check = (actor, requestId) => tool(actor, "sideband_check", { requestId });
 
     async function replyFromCalendar(actor, requestId, expectedFields) {
       await waitFor("aviso HTTP al OpenClaw local", () => receiver.notices.has(requestId));
       await waitFor("aviso registrado en Actividad", async () => (await owner.activity(destination))
         .find((item) => item.requestId === requestId)?.events.some((event) => event.kind === "wake"));
-      const { items } = await tool(openclaw, "nexo_inbox", {});
+      const { items } = await tool(openclaw, "sideband_inbox", {});
       const item = items.find((item) => item.requestId === requestId);
       assert(item && item.tool === "availability");
       assert.deepEqual(item.args, args);
@@ -170,7 +170,7 @@ export async function rehearse(fixtures, { run, actors }, present) {
       const calendar = { occupied: ["11:00"], freeSlots: ["12:00-12:30", "15:00-15:30"] };
       const availability = { available: !calendar.occupied.includes(item.args.start), freeSlots: calendar.freeSlots };
       const result = Object.fromEntries(item.allowedFields.map((field) => [field, availability[field]]));
-      await tool(openclaw, "nexo_reply", { requestId, nonce: item.nonce, outcome: "answered", result });
+      await tool(openclaw, "sideband_reply", { requestId, nonce: item.nonce, outcome: "answered", result });
 
       const final = await check(actor, requestId);
       assertFinal(final, "allow");
@@ -213,10 +213,10 @@ export async function rehearse(fixtures, { run, actors }, present) {
     await step(`5. Simon desconecta el OpenClaw secundario (${secondary.agentId}).`, async () => {
       const mode = await interact("En Agentes, localiza ese identificador y pulsa «Desconectar» y «Confirmar desconexión». Escribe api si la app falla.");
       if (!present || mode === "api") await owner.revokeAgent(destination, secondary.agentId);
-      const denied = await secondary.client.callTool({ name: "nexo_inbox", arguments: {} }, undefined, { timeout: 10_000 });
+      const denied = await secondary.client.callTool({ name: "sideband_inbox", arguments: {} }, undefined, { timeout: 10_000 });
       assert.equal(denied.isError, true);
       assert.equal(denied.structuredContent?.error?.code, "not_found");
-      console.log("   nexo_inbox con el mismo acceso OAuth devuelve not_found.");
+      console.log("   sideband_inbox con el mismo acceso OAuth devuelve not_found.");
     });
 
     await step("6. Apagamos el receptor OpenClaw local y Dot pregunta de nuevo.", async () => {

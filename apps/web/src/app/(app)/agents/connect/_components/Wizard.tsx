@@ -35,21 +35,21 @@ export async function Wizard({ kind, agentId, install, login, wake }: WizardProp
       <Heading title={`Conectar ${client.name}`}>{client.description}</Heading>
 
       <Steps>
-        <Step number={1} title="Agregar Nexo">
+        <Step number={1} title="Agregar Sideband">
           {install}
           {resourceUrl ? (
             <CopyBox label={kind === "openclaw" ? "Configuración MCP para openclaw.json" : "URL del servidor MCP"}
               value={kind === "openclaw"
-                ? JSON.stringify({ mcp: { servers: { nexo: { url: resourceUrl, transport: "streamable-http", auth: "oauth" } } } }, null, 2)
+                ? JSON.stringify({ mcp: { servers: { sideband: { url: resourceUrl, transport: "streamable-http", auth: "oauth" } } } }, null, 2)
                 : resourceUrl} />
           ) : (
-            <p role="alert" className={secondaryText}>Falta configurar la URL del servidor MCP en Nexo.</p>
+            <p role="alert" className={secondaryText}>Falta configurar la URL del servidor MCP en Sideband.</p>
           )}
         </Step>
 
-        <Step number={2} title="Autorizar en Nexo">
+        <Step number={2} title="Autorizar en Sideband">
           {login}
-          <p className={secondaryText}>Cuando el cliente abra Nexo, revisa los permisos en la pantalla de autorización y elige <strong>Autorizar</strong>. De vuelta en tu cliente, pídele al agente que consulte <code>nexo_inbox</code> y luego actualiza la lista.</p>
+          <p className={secondaryText}>Cuando el cliente abra Sideband, revisa los permisos en la pantalla de autorización y elige <strong>Autorizar</strong>. De vuelta en tu cliente, pídele al agente que consulte <code>sideband_inbox</code> y luego actualiza la lista.</p>
           {agentId !== undefined && !selected && (
             <p role="status" className="text-sm text-danger">No se encontró esa conexión. Selecciona un agente de tu cuenta.</p>
           )}

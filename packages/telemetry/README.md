@@ -1,6 +1,6 @@
 # @team-31/telemetry
 
-Telemetría de Nexo con catálogo tipado. Escribe en `ops.events` (esquema de `@team-31/ops`), que el admin lee con las vistas `ops.v_*`. Diseño: [docs/admin.md](../../docs/admin.md#3-telemetría-team-31telemetry-adm-01).
+Telemetría de Sideband con catálogo tipado. Escribe en `ops.events` (esquema de `@team-31/ops`), que el admin lee con las vistas `ops.v_*`. Diseño: [docs/admin.md](../../docs/admin.md#3-telemetría-team-31telemetry-adm-01).
 
 ## Instrumentar un servicio en 5 líneas
 

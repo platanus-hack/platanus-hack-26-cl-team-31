@@ -1,5 +1,5 @@
 export const instructions =
-  "MCP de administración de Nexo, de solo lectura, para depurar producción. " +
+  "MCP de administración de Sideband, de solo lectura, para depurar producción. " +
   "Todos los datos ya vienen redactados: nunca hay payloads (args, result, propósito), tokens, nonces ni secretos, y el texto libre de terceros (preguntas, respuestas, notas) nunca aparece; no intentes reconstruirlo. " +
   "Empieza siempre por admin_overview para ver qué está roto ahora (servicios caídos, solicitudes atascadas, errores principales). " +
   "Luego baja a la solicitud: admin_search_requests (por estado, herramienta, dirección o stuck=true) y admin_get_request para su línea de tiempo, avisos y decisión de política. " +

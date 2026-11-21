@@ -42,9 +42,9 @@ export function LoginPage({ forbidden }: { forbidden?: boolean }) {
         <CardHeader className="gap-4">
           <BrandMark className="size-9" />
           <div className="flex flex-col gap-1">
-            <CardTitle className="text-lg">Nexo Admin</CardTitle>
+            <CardTitle className="text-lg">Sideband Admin</CardTitle>
             <CardDescription>
-              Observabilidad y operación de Nexo en producción.
+              Observabilidad y operación de Sideband en producción.
             </CardDescription>
           </div>
         </CardHeader>

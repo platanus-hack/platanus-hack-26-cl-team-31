@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 export async function* watchInbox(call, { intervalMs = 10000, signal } = {}) {
   let previous = new Set();
   while (!signal?.aborted) {
-    const { solicitudes } = await call("nexo_inbox");
+    const { solicitudes } = await call("sideband_inbox");
     const current = new Set(solicitudes.map(({ request_id }) => request_id));
     for (const requestId of current) {
       if (!previous.has(requestId)) yield { requestId };

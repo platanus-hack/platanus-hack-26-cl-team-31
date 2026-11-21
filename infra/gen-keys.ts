@@ -97,27 +97,27 @@ function replaceSettings(text: string): string {
 function writeKeys() {
   if (additions.size === 0 && replacements.size === 0) {
     chmodSync(envPath, 0o600);
-    console.log("Llaves locales de Nexo listas.");
+    console.log("Llaves locales de Sideband listas.");
     return;
   }
   const base = replaceSettings(previous).trimEnd();
-  const temporary = mkdtempSync(join(dirname(envPath), ".nexo-keys-"));
+  const temporary = mkdtempSync(join(dirname(envPath), ".sideband-keys-"));
   const entries = Array.from(additions, ([name, value]) => `${name}='${value}'`).join("\n");
   try {
     const output = join(temporary, "env");
-    const content = entries ? `${base}\n\n# Llaves locales de Nexo.\n${entries}\n` : `${base}\n`;
+    const content = entries ? `${base}\n\n# Llaves locales de Sideband.\n${entries}\n` : `${base}\n`;
     writeFileSync(output, content, { mode: 0o600 });
     renameSync(output, envPath);
   } finally {
     rmSync(temporary, { force: true, recursive: true });
   }
-  console.log("Llaves locales de Nexo generadas en .env.local.");
+  console.log("Llaves locales de Sideband generadas en .env.local.");
 }
 
 try {
   prepareKeys();
   writeKeys();
 } catch (error) {
-  console.error(error instanceof Error ? error.message : "No se pudieron preparar las llaves locales de Nexo.");
+  console.error(error instanceof Error ? error.message : "No se pudieron preparar las llaves locales de Sideband.");
   process.exitCode = 1;
 }

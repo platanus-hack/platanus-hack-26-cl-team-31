@@ -20,12 +20,12 @@ type Request = {
   body?: unknown;
 };
 
-const principal: Principal = { userId: "alice", agentId: "agent-alice", scopes: ["nexo:ask"] };
+const principal: Principal = { userId: "alice", agentId: "agent-alice", scopes: ["sideband:ask"] };
 const owner: Owner = { userId: "alice" };
 const expiresAt = "2026-11-21T18:00:00Z";
 const requestId = "request/one?detail#here %✓";
 const encodedId = "request%2Fone%3Fdetail%23here%20%25%E2%9C%93";
-const askInput = { to: "bob@nexo.app", tool: "question", args: { text: "¿Puedes ayudar?" } } as const;
+const askInput = { to: "bob@sideband.app", tool: "question", args: { text: "¿Puedes ayudar?" } } as const;
 const requesterView = {
   requestId,
   to: askInput.to,
@@ -39,7 +39,7 @@ const replyInput = { requestId, nonce: "nonce", outcome: "no_data" } as const;
 const receipt = { requestId, status: "no_data", deliveredFields: [], droppedFields: [] };
 const target = { kind: "none" } as const;
 const connection = { agentId: "agent-alice", label: "Dot", createdAt: expiresAt, wakeKind: "none" };
-const ownerInfo = { userId: owner.userId, address: "alice@nexo.app", displayName: "Alice" };
+const ownerInfo = { userId: owner.userId, address: "alice@sideband.app", displayName: "Alice" };
 
 let stopServer: (() => Promise<void>) | undefined;
 
@@ -111,7 +111,7 @@ it("implements the agent port over the contracted HTTP routes", async () => {
     allowedFields: ["answer"],
     ownerAuthorization: { rule: "amigos", guidance: "", verifiedBy: "broker" },
     senderMessage: { text: askInput.args.text, trusted: false },
-    howToReply: "Responde con nexo_reply.",
+    howToReply: "Responde con sideband_reply.",
   };
   const replies = [requesterView, { items: [inboxItem] }, receipt, requesterView, connection];
   const { agent, requests, getAgentToken } = await broker((response, count) => {

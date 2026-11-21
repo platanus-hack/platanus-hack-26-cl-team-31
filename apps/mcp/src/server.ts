@@ -10,7 +10,7 @@ import { registerReply } from "./tools/reply.js";
 import { registerCheck } from "./tools/check.js";
 
 export function createServer(principal: Principal, agentPort: AgentPort, telemetry: Telemetry): McpServer {
-  const server = new McpServer({ name: "nexo", version: "0.1.0" }, { instructions });
+  const server = new McpServer({ name: "sideband", version: "0.1.0" }, { instructions });
   registerAsk(server, principal, agentPort, telemetry);
   registerInbox(server, principal, agentPort, telemetry);
   registerReply(server, principal, agentPort, telemetry);

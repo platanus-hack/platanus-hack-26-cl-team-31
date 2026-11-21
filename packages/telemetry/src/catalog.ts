@@ -1,4 +1,4 @@
-// Catálogo de eventos de Nexo (docs/admin.md#3). Cada evento se declara una vez con su
+// Catálogo de eventos de Sideband (docs/admin.md#3). Cada evento se declara una vez con su
 // tipo (kind), su nivel por defecto y los atributos permitidos.
 //
 // Reglas para agregar un evento:
@@ -95,7 +95,7 @@ export const catalog = [
     attrs: { action: z.enum(["started", "detected", "invalid_code", "confirmed", "unlinked"]) },
   }),
   defineEvent({
-    name: "whatsapp.request", kind: "tool", description: "Solicitud de Nexo creada o consultada por WhatsApp.",
+    name: "whatsapp.request", kind: "tool", description: "Solicitud de Sideband creada o consultada por WhatsApp.",
     attrs: { action: z.enum(["ask", "status"]), decision: code(), tool: code() },
   }),
   defineEvent({
@@ -105,7 +105,7 @@ export const catalog = [
   defineEvent({
     name: "web.invite.progress",
     kind: "lifecycle",
-    description: "Paso observado en el alta por invitación de Nexo.",
+    description: "Paso observado en el alta por invitación de Sideband.",
     attrs: { step: z.enum(["opened", "sign_in", "claim_address", "address_claimed", "connect"]) },
   }),
   defineEvent({
@@ -118,7 +118,7 @@ export const catalog = [
   defineEvent({
     name: "mcp.tool.call",
     kind: "tool",
-    description: "Llamada a una tool del MCP de Nexo.",
+    description: "Llamada a una tool del MCP de Sideband.",
     attrs: { tool: code(), outcome: z.enum(["ok", "error", "denied"]) },
   }),
   defineEvent({
@@ -213,8 +213,8 @@ export const catalog = [
   defineEvent({ name: "admin.logout", kind: "admin", description: "Cierre de sesión en el admin.", attrs: adminAttrs }),
   defineEvent({ name: "admin.reveal", kind: "admin", level: "warn", description: "Un operator reveló un payload.", attrs: adminAttrs }),
   defineEvent({ name: "admin.action", kind: "admin", level: "warn", description: "Acción de operador en el broker.", attrs: adminAttrs }),
-  defineEvent({ name: "admin.token.created", kind: "admin", description: "Token nxa_ creado.", attrs: adminAttrs }),
-  defineEvent({ name: "admin.token.revoked", kind: "admin", description: "Token nxa_ revocado.", attrs: adminAttrs }),
+  defineEvent({ name: "admin.token.created", kind: "admin", description: "Token sba_ creado.", attrs: adminAttrs }),
+  defineEvent({ name: "admin.token.revoked", kind: "admin", description: "Token sba_ revocado.", attrs: adminAttrs }),
   defineEvent({ name: "admin.mcp.call", kind: "admin", description: "Llamada al MCP de administración.", attrs: adminAttrs }),
 
   defineEvent({

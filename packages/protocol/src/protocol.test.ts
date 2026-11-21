@@ -48,7 +48,7 @@ describe("AskInput", () => {
   });
 
   it("rejects uppercase addresses", () => {
-    expect(AskInput.safeParse({ to: "Diego@nexo.app", tool: "profile", args: {} }).success).toBe(
+    expect(AskInput.safeParse({ to: "Diego@sideband.app", tool: "profile", args: {} }).success).toBe(
       false,
     );
   });
@@ -56,7 +56,7 @@ describe("AskInput", () => {
   it.each([
     { date: "2026-02-30" },
     { start: "24:00" },
-    { timezone: "Nexo/Santiago" },
+    { timezone: "Sideband/Santiago" },
     { timezone: "+01:00" },
   ])("rejects an invalid availability argument %j", (overrides) => {
     expect(ToolArgs.availability.safeParse({ ...availability, ...overrides }).success).toBe(false);
@@ -142,7 +142,7 @@ describe("wake contracts", () => {
 });
 
 describe("GrantInput", () => {
-  const grant = { grantee: "ana@nexo.app", tool: "interest_check", fields: ["matches"] };
+  const grant = { grantee: "ana@sideband.app", tool: "interest_check", fields: ["matches"] };
 
   it("accepts fields that the tool returns", () => {
     expect(GrantInput.parse(grant)).toEqual(grant);

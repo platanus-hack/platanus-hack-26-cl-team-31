@@ -8,7 +8,7 @@ import { verify } from "./standard-webhooks.js";
 
 const notice = { requestId: "req_123", event: WAKE_EVENT, args: { text: "Una pregunta privada" } } as const;
 const secret = "whsec_AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
-const instruction = 'Tienes una solicitud nueva en Nexo (req_123). Usa nexo_inbox para leerla y respóndela con nexo_reply usando su requestId y nonce. Siempre debes responder: si no tienes la información usa outcome "no_data", si necesitas que tu dueño decida usa "needs_owner" y si prefieres no compartir usa "declined". Comparte solo los campos permitidos.';
+const instruction = 'Tienes una solicitud nueva en Sideband (req_123). Usa sideband_inbox para leerla y respóndela con sideband_reply usando su requestId y nonce. Siempre debes responder: si no tienes la información usa outcome "no_data", si necesitas que tu dueño decida usa "needs_owner" y si prefieres no compartir usa "declined". Comparte solo los campos permitidos.';
 const fixedTime = new Date("2026-01-01T00:00:00.000Z");
 const waker = createWaker({ allowInsecure: true });
 const servers: Server[] = [];
@@ -96,7 +96,7 @@ describe("wake", () => {
     }, notice);
     expect(result).toMatchObject({ ok: true, status: 200, retryable: false, ms: expect.any(Number) });
     const request = expectRequest(captured, "/gateway/hooks/agent", {
-      message: instruction, name: "Nexo", agentId: "casa", deliver: false, timeoutSeconds: 180,
+      message: instruction, name: "Sideband", agentId: "casa", deliver: false, timeoutSeconds: 180,
     }, { authorization: `Bearer ${token}`, "idempotency-key": notice.requestId, host: `localhost:${port}` });
     expect(request.body).not.toContain(token);
   });

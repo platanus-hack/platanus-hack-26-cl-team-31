@@ -2,11 +2,11 @@
 -- en producción cada usuario de conexión es miembro de uno de ellos (ADM-08).
 --
 -- | Rol                   | Permisos                                                              |
--- | nexo_telemetry_writer | INSERT en ops.events y uso de su secuencia.                           |
--- | nexo_admin_ro         | USAGE en ops y SELECT en todas las ops.v_* excepto v_request_payloads. |
--- | nexo_admin_reveal     | SELECT en ops.v_request_payloads.                                     |
+-- | sideband_telemetry_writer | INSERT en ops.events y uso de su secuencia.                           |
+-- | sideband_admin_ro         | USAGE en ops y SELECT en todas las ops.v_* excepto v_request_payloads. |
+-- | sideband_admin_reveal     | SELECT en ops.v_request_payloads.                                     |
 --
--- Además, si existe la bitácora del servidor admin (admin.audit, ADM-04), nexo_admin_ro recibe
+-- Además, si existe la bitácora del servidor admin (admin.audit, ADM-04), sideband_admin_ro recibe
 -- USAGE en el esquema admin y SELECT solo en admin.audit (AdminQueries.audit). ADM-04 otorga lo
 -- mismo al crear la tabla si el rol ya existe: cualquiera que corra después deja el permiso.
 --
@@ -16,7 +16,7 @@ DO $$
 DECLARE
   role_name text;
 BEGIN
-  FOREACH role_name IN ARRAY ARRAY['nexo_telemetry_writer', 'nexo_admin_ro', 'nexo_admin_reveal'] LOOP
+  FOREACH role_name IN ARRAY ARRAY['sideband_telemetry_writer', 'sideband_admin_ro', 'sideband_admin_reveal'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
       BEGIN
         EXECUTE format('CREATE ROLE %I NOLOGIN', role_name);
@@ -43,33 +43,33 @@ DECLARE
 BEGIN
   -- Sin los roles (modo degradado) no hay permisos que aplicar.
   IF (SELECT count(*) FROM pg_roles
-      WHERE rolname IN ('nexo_telemetry_writer', 'nexo_admin_ro', 'nexo_admin_reveal')) < 3 THEN
+      WHERE rolname IN ('sideband_telemetry_writer', 'sideband_admin_ro', 'sideband_admin_reveal')) < 3 THEN
     RETURN;
   END IF;
 
-  REVOKE ALL ON ALL TABLES IN SCHEMA ops FROM nexo_telemetry_writer, nexo_admin_ro, nexo_admin_reveal;
-  REVOKE ALL ON ALL SEQUENCES IN SCHEMA ops FROM nexo_telemetry_writer, nexo_admin_ro, nexo_admin_reveal;
-  REVOKE ALL ON ALL FUNCTIONS IN SCHEMA ops FROM nexo_telemetry_writer, nexo_admin_ro, nexo_admin_reveal;
+  REVOKE ALL ON ALL TABLES IN SCHEMA ops FROM sideband_telemetry_writer, sideband_admin_ro, sideband_admin_reveal;
+  REVOKE ALL ON ALL SEQUENCES IN SCHEMA ops FROM sideband_telemetry_writer, sideband_admin_ro, sideband_admin_reveal;
+  REVOKE ALL ON ALL FUNCTIONS IN SCHEMA ops FROM sideband_telemetry_writer, sideband_admin_ro, sideband_admin_reveal;
 
-  GRANT USAGE ON SCHEMA ops TO nexo_telemetry_writer, nexo_admin_ro, nexo_admin_reveal;
+  GRANT USAGE ON SCHEMA ops TO sideband_telemetry_writer, sideband_admin_ro, sideband_admin_reveal;
 
-  GRANT INSERT ON ops.events TO nexo_telemetry_writer;
-  GRANT USAGE ON SEQUENCE ops.events_id_seq TO nexo_telemetry_writer;
+  GRANT INSERT ON ops.events TO sideband_telemetry_writer;
+  GRANT USAGE ON SEQUENCE ops.events_id_seq TO sideband_telemetry_writer;
 
   FOR view_name IN
     SELECT c.relname FROM pg_class c
     WHERE c.relnamespace = 'ops'::regnamespace AND c.relkind = 'v' AND c.relname LIKE 'v\_%'
   LOOP
     IF view_name = 'v_request_payloads' THEN
-      EXECUTE format('GRANT SELECT ON ops.%I TO nexo_admin_reveal', view_name);
+      EXECUTE format('GRANT SELECT ON ops.%I TO sideband_admin_reveal', view_name);
     ELSE
-      EXECUTE format('GRANT SELECT ON ops.%I TO nexo_admin_ro', view_name);
+      EXECUTE format('GRANT SELECT ON ops.%I TO sideband_admin_ro', view_name);
     END IF;
   END LOOP;
 
   IF to_regclass('admin.audit') IS NOT NULL THEN
-    GRANT USAGE ON SCHEMA admin TO nexo_admin_ro;
-    GRANT SELECT ON admin.audit TO nexo_admin_ro;
+    GRANT USAGE ON SCHEMA admin TO sideband_admin_ro;
+    GRANT SELECT ON admin.audit TO sideband_admin_ro;
   END IF;
 END
 $fn$;

@@ -121,7 +121,7 @@ export function UsersPage() {
     <Page>
       <PageHeader
         title="Personas"
-        description="Usuarios de Nexo con su dirección, agentes conectados y actividad reciente."
+        description="Usuarios de Sideband con su dirección, agentes conectados y actividad reciente."
       />
       <FilterBar>
         <SearchInput

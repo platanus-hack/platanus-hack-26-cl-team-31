@@ -10,7 +10,7 @@ import { ConsentButtons } from "./consent-buttons";
 
 const scopeDescriptions: Readonly<Record<string, string>> = {
   ...SCOPES,
-  openid: "Identificar tu cuenta en Nexo",
+  openid: "Identificar tu cuenta en Sideband",
   profile: "Ver tu nombre y foto de perfil",
   email: "Ver tu correo electrónico",
   offline_access: "Mantener la conexión cuando no estás en línea",
@@ -45,7 +45,7 @@ export default async function ConsentPage({ searchParams }: PageProps<"/consent"
         Autorizar a {client.client_name?.trim() || "Agente sin nombre"}
       </h1>
       <p className="mt-3 text-muted [overflow-wrap:anywhere]">
-        {address ?? "Tu cuenta aún no tiene una dirección Nexo."}
+        {address ?? "Tu cuenta aún no tiene una dirección Sideband."}
       </p>
       <h2 className="mt-7 text-sm font-medium">Permisos solicitados</h2>
       <ul className="mt-2 list-disc space-y-2 rounded-xl stage py-4 pl-9 pr-4 text-sm text-ink">
@@ -54,7 +54,7 @@ export default async function ConsentPage({ searchParams }: PageProps<"/consent"
         ))}
       </ul>
       <p className="mt-5 text-sm leading-relaxed text-muted">
-        Este agente va a poder responder solicitudes según las reglas que tú configuras en la App Nexo. Lo puedes desconectar cuando quieras.
+        Este agente va a poder responder solicitudes según las reglas que tú configuras en la App Sideband. Lo puedes desconectar cuando quieras.
       </p>
       <ConsentButtons />
     </>

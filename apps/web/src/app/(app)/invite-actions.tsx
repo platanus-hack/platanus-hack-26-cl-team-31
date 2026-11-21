@@ -28,7 +28,7 @@ export function InviteActions({ url }: { url: string }) {
   }
 
   async function invite() {
-    const invitation = { title: "Invitación a Nexo", url };
+    const invitation = { title: "Invitación a Sideband", url };
     setFeedback("idle");
     setPending(true);
 
@@ -51,7 +51,7 @@ export function InviteActions({ url }: { url: string }) {
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={primaryButton} disabled={pending} onClick={invite}>Invitar a Nexo</button>
+        <button type="button" className={primaryButton} disabled={pending} onClick={invite}>Invitar a Sideband</button>
         <button type="button" className={button} disabled={pending} onClick={copyLink}>Copiar enlace</button>
       </div>
       {feedback === "copied" && <Feedback message="Enlace copiado." />}

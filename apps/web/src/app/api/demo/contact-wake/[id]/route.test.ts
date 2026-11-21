@@ -8,11 +8,11 @@ vi.mock("next/server", () => ({ after: vi.fn() }));
 
 const masterKey = randomBytes(32);
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
-const notice = { event: "nexo.request.created", requestId: randomUUID() };
+const notice = { event: "sideband.request.created", requestId: randomUUID() };
 
 function signedRequest({ id = "bob", body = JSON.stringify(notice), eventId = "evt_" + notice.requestId,
   timestamp = Math.floor(Date.now() / 1000), host = "127.0.0.1:3002" } = {}) {
-  const key = createHmac("sha256", masterKey).update("nexo/demo/contact-wake/v1/" + id).digest();
+  const key = createHmac("sha256", masterKey).update("sideband/demo/contact-wake/v1/" + id).digest();
   const signature = createHmac("sha256", key).update(eventId + "." + timestamp + "." + body).digest("base64");
   return new Request("http://" + host + "/api/demo/contact-wake/" + id, {
     method: "POST", body, headers: {

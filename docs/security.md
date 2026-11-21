@@ -1,4 +1,4 @@
-# Revisión de seguridad de Nexo (NX-18)
+# Revisión de seguridad de Sideband (NX-18)
 
 Revisión del código y del stack local con Node 24, pnpm 10, Postgres 17 e identidades ficticias. Las comprobaciones HTTP usaron loopback. NX-15 pasó sus seis escenarios con credenciales de desarrollo y nuevamente con OAuth local por código de autorización, PKCE y consentimiento. [Guía del stack local](local-stack.md) · [Suite E2E](../e2e/README.md)
 
@@ -6,7 +6,7 @@ Revisión del código y del stack local con Node 24, pnpm 10, Postgres 17 e iden
 
 - **OK en loopback.** Web publicó el documento de descubrimiento y MCP y broker respondieron `200` en `/healthz`. MCP devolvió `401` con `WWW-Authenticate` en un POST sin credenciales. Los clientes de MCP y broker envían los tokens por `Authorization`, y el proxy del Cable también lo hace para su conexión al broker. En el flujo local se comprobó que las URLs de los servicios y del receptor no llevaban credenciales. Los logs capturados no contenían las credenciales de prueba, el secreto del webhook ni el texto de la pregunta. La prueba HTTP del broker también verifica que el error interno no publica datos privados. [Entrada MCP](../apps/mcp/src/http.ts) · [Cliente del broker](../packages/broker/src/client/http.ts) · [Proxy del Cable](../apps/web/src/app/(app)/cable/stream/route.ts) · [Pruebas HTTP](../apps/broker/src/server.test.ts)
 - **Hallazgo local.** Next.js anuncia una dirección de red con `pnpm dev` y su comando de arranque no restringe el listener a loopback. Los servicios de MCP y broker sí usan loopback por defecto en el host. [Arranque web](../apps/web/package.json) · [#30](https://github.com/platanus-hack/platanus-hack-26-cl-team-31/issues/30)
-- **HTTPS de avisos verificado.** Solo el modo de desarrollo permite HTTP a `localhost` o `127.0.0.1`. La configuración de producción rechaza la excepción. TLS de entrada y HTTPS de OAuth/MCP para publicación quedan fuera de la validación local. MCP acepta URLs `http:` en la configuración de origen, emisor y JWKS, así que el preflight actual no acredita HTTPS público. [Transporte de avisos](../packages/wake/src/safe-fetch.ts) · [Configuración del broker](../apps/broker/src/env.ts) · [Configuración del MCP](../apps/mcp/src/nexo.ts)
+- **HTTPS de avisos verificado.** Solo el modo de desarrollo permite HTTP a `localhost` o `127.0.0.1`. La configuración de producción rechaza la excepción. TLS de entrada y HTTPS de OAuth/MCP para publicación quedan fuera de la validación local. MCP acepta URLs `http:` en la configuración de origen, emisor y JWKS, así que el preflight actual no acredita HTTPS público. [Transporte de avisos](../packages/wake/src/safe-fetch.ts) · [Configuración del broker](../apps/broker/src/env.ts) · [Configuración del MCP](../apps/mcp/src/sideband.ts)
 
 ## 2. Identidad
 
@@ -15,7 +15,7 @@ Revisión del código y del stack local con Node 24, pnpm 10, Postgres 17 e iden
 
 ## 3. Autorización
 
-- **OK para consultas y respuestas.** `/v1/agent/capabilities` y `/v1/agent/ask` exigen `nexo:ask`, `/v1/agent/inbox` exige `nexo:inbox`, `/v1/agent/reply` exige `nexo:reply` y `/v1/agent/requests/:id` exige `nexo:status`. Una respuesta o consulta de estado ajena devuelve `not_found`. Las pruebas del núcleo, del HTTP interno y de aislamiento E2E cubren los límites entre identidades. [Rutas](../packages/protocol/src/http.ts) · [Núcleo](../packages/broker/src/core/broker.ts) · [Aislamiento E2E](../e2e/src/isolation.test.ts)
+- **OK para consultas y respuestas.** `/v1/agent/capabilities` y `/v1/agent/ask` exigen `sideband:ask`, `/v1/agent/inbox` exige `sideband:inbox`, `/v1/agent/reply` exige `sideband:reply` y `/v1/agent/requests/:id` exige `sideband:status`. Una respuesta o consulta de estado ajena devuelve `not_found`. Las pruebas del núcleo, del HTTP interno y de aislamiento E2E cubren los límites entre identidades. [Rutas](../packages/protocol/src/http.ts) · [Núcleo](../packages/broker/src/core/broker.ts) · [Aislamiento E2E](../e2e/src/isolation.test.ts)
 - **Hallazgo en suscripciones.** `POST /v1/agent/wake` y `DELETE /v1/agent/wake/:subscriptionId` verifican emisor, identidad y conexión, pero el código no exige un scope para modificar la suscripción. Los métodos MCP `events/subscribe` y `events/unsubscribe` tampoco lo exigen. La baja sí está limitada a la suscripción de la conexión. [Núcleo](../packages/broker/src/core/broker.ts) · [Métodos MCP](../apps/mcp/src/events.ts) · [#29](https://github.com/platanus-hack/platanus-hack-26-cl-team-31/issues/29)
 
 ## 4. Integridad
@@ -24,7 +24,7 @@ Revisión del código y del stack local con Node 24, pnpm 10, Postgres 17 e iden
 
 ## 5. Contenido
 
-- **OK en el contrato local.** El receptor de loopback recibió un aviso Standard Webhook con solo `event` y `requestId`. NX-15 también verifica que los adaptadores de OpenClaw, Grok Bot y MCP Events omiten el texto y el propósito usando receptores simulados. En `nexo_inbox`, el broker adjunta `senderMessage.trusted: false` y las instrucciones MCP mandan tratar ese contenido como datos de terceros. [Contrato E2E](../e2e/src/contract.test.ts) · [Vista de bandeja](../packages/broker/src/core/views.ts) · [Bloque de confianza](agents/trust-snippet.md)
+- **OK en el contrato local.** El receptor de loopback recibió un aviso Standard Webhook con solo `event` y `requestId`. NX-15 también verifica que los adaptadores de OpenClaw, Grok Bot y MCP Events omiten el texto y el propósito usando receptores simulados. En `sideband_inbox`, el broker adjunta `senderMessage.trusted: false` y las instrucciones MCP mandan tratar ese contenido como datos de terceros. [Contrato E2E](../e2e/src/contract.test.ts) · [Vista de bandeja](../packages/broker/src/core/views.ts) · [Bloque de confianza](agents/trust-snippet.md)
 - **Comportamiento del agente real sin verificar.** La revisión local comprueba la etiqueta, la separación de datos y el texto de las instrucciones. La respuesta de OpenClaw a instrucciones no confiables requiere un agente real con el bloque de confianza configurado y queda fuera del alcance local.
 
 ## 6. Seguridad de avisos
@@ -35,7 +35,7 @@ Revisión del código y del stack local con Node 24, pnpm 10, Postgres 17 e iden
 ## 7. Operación
 
 - **OK en una instancia.** El broker devuelve `429 rate_limited` y `Retry-After` al usuario que supera la cuota. La prueba HTTP cubre `ask` y verifica el aislamiento por usuario. La misma implementación limita `reply` y las demás rutas protegidas, con pruebas directas de sus cuotas. El contador vive en la memoria del broker. [Límites](../apps/broker/src/http/rate-limit.ts) · [Pruebas HTTP](../apps/broker/src/server.test.ts)
-- **Hallazgo en la bitácora local.** La prueba Postgres ejecutó `UPDATE`, `DELETE` y `TRUNCATE` con el rol local y el trigger devolvió `55000`. Sin embargo, el stack da al broker el rol `postgres`. Una consulta de catálogo confirmó que el rol es superusuario y conserva el privilegio `UPDATE` sobre `nexo.request_events`, aunque el trigger bloquee las operaciones normales. La prueba del rol runtime separado confirma permisos de lectura e inserción y ausencia de permisos de mutación. Falta usar ese esquema de privilegios en el stack local. [Compose](../docker-compose.yml) · [Migración de la bitácora](../packages/broker/drizzle/0000_store.sql) · [Pruebas Postgres](../packages/broker/src/store/postgres/postgres-store.test.ts) · [#28](https://github.com/platanus-hack/platanus-hack-26-cl-team-31/issues/28)
+- **Hallazgo en la bitácora local.** La prueba Postgres ejecutó `UPDATE`, `DELETE` y `TRUNCATE` con el rol local y el trigger devolvió `55000`. Sin embargo, el stack da al broker el rol `postgres`. Una consulta de catálogo confirmó que el rol es superusuario y conserva el privilegio `UPDATE` sobre `sideband.request_events`, aunque el trigger bloquee las operaciones normales. La prueba del rol runtime separado confirma permisos de lectura e inserción y ausencia de permisos de mutación. Falta usar ese esquema de privilegios en el stack local. [Compose](../docker-compose.yml) · [Migración de la bitácora](../packages/broker/drizzle/0000_store.sql) · [Pruebas Postgres](../packages/broker/src/store/postgres/postgres-store.test.ts) · [#28](https://github.com/platanus-hack/platanus-hack-26-cl-team-31/issues/28)
 
 ## Validación del repositorio
 

@@ -43,7 +43,7 @@ export function reportContactError(error) {
 export async function runContactSession(question, { root = cliRoot, bobFile, janeFile, signal } = {}) {
   const [contacts] = await Promise.all([loadContacts(), checkSeed()]);
   const toolScript = join(root, "apps/demo/src/ana-runtime-tools.mjs");
-  const dir = await mkdtemp(join(tmpdir(), "nexo-ana-"));
+  const dir = await mkdtemp(join(tmpdir(), "sideband-ana-"));
   const receipt = join(dir, "broker-responses.jsonl");
   const overrides = Object.entries({ bob: bobFile, jane: janeFile }).filter(([, path]) => path);
   const fixtureId = overrides.length ? randomUUID() : undefined;

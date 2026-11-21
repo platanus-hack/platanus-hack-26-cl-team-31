@@ -54,12 +54,12 @@ export async function POST(request: Request) {
             const userId = code ? await store.detect(code.toLowerCase(), message.phone) : undefined;
             telemetry.emit("whatsapp.link", { userId, attrs: { action: userId ? "detected" : "invalid_code" } });
             await send(userId
-              ? "Número detectado. Vuelve a Nexo para confirmar el vínculo."
-              : "Código usado, incorrecto o vencido. Genera otro desde Nexo.", userId);
+              ? "Número detectado. Vuelve a Sideband para confirmar el vínculo."
+              : "Código usado, incorrecto o vencido. Genera otro desde Sideband.", userId);
             return;
           }
           await store.whileLinked(message.phone, message.timestamp, async (userId) => {
-            if (!userId) return send(`Vincula tu WhatsApp desde Nexo: ${kapso.connectUrl}`);
+            if (!userId) return send(`Vincula tu WhatsApp desde Sideband: ${kapso.connectUrl}`);
             await telemetry.context({ userId }, async () => {
               let requestId: string | undefined;
               let answer: string;

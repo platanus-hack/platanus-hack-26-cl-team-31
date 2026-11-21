@@ -1,13 +1,14 @@
 // Servidor falso para VITE_ADMIN_MOCK=1. Implementa cada ruta de `adminRoutes` sobre las
 // fixtures, con latencia simulada y las mismas reglas de rol, frescura y motivo que el real.
 // La respuesta pasa por el mismo esquema zod que una respuesta real (ver lib/api.ts).
-import type {
-  AdminRouteName,
-  AdminSession,
-  AdminToken,
-  Overview,
-  RequestSummary,
-  Window,
+import {
+  ADMIN_TOKEN_PREFIX,
+  type AdminRouteName,
+  type AdminSession,
+  type AdminToken,
+  type Overview,
+  type RequestSummary,
+  type Window,
 } from "@shared/contract"
 import { RequestStatus } from "@team-31/protocol"
 
@@ -36,7 +37,7 @@ export type MockState = {
   role: "viewer" | "operator"
   fresh: boolean
 }
-const STORAGE_KEY = "nexo-admin-mock"
+const STORAGE_KEY = "sideband-admin-mock"
 const defaults: MockState = { loggedIn: true, role: "operator", fresh: true }
 
 export function readMockState(): MockState {
@@ -66,8 +67,8 @@ function session(state: MockState): AdminSession {
   return {
     user: {
       id: "adm_dev",
-      email: "dev@nexo.local",
-      name: "Dev Nexo",
+      email: "dev@sideband.local",
+      name: "Dev Sideband",
       image: null,
       role: state.role,
     },
@@ -534,13 +535,13 @@ export async function mockApi(
             b % 64
           ]
       ).join("")
-      const token = `nxa_${secret}`
+      const token = `${ADMIN_TOKEN_PREFIX}${secret}`
       const meta: AdminToken = {
         id: `tok_${hex(8)}`,
         name: body.name,
         prefix: token.slice(0, 12),
         scopes: body.scopes ?? ["admin:read"],
-        createdBy: "dev@nexo.local",
+        createdBy: "dev@sideband.local",
         createdAt: new Date().toISOString(),
         expiresAt: new Date(
           Date.now() + (body.ttlDays ?? 7) * 86_400_000

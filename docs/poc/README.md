@@ -1,4 +1,4 @@
-# POC de Nexo
+# POC de Sideband
 
 Referencia local del ciclo de solicitudes anterior al diseño del monorepo. Usa usuarios ficticios en `example.test`, estado en memoria y credenciales generadas para cada ejecución. El servidor prueba el flujo por MCP en un puerto de loopback asignado por el sistema. El watcher produce avisos con el ID de la solicitud para que el código que lo llama decida qué hacer.
 

@@ -19,7 +19,7 @@ function deferred<T>() {
 }
 
 describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
-  const databaseName = "nexo_test_" + randomUUID().replaceAll("-", "");
+  const databaseName = "sideband_test_" + randomUUID().replaceAll("-", "");
   let admin: pg.Pool | undefined;
   let isolated: pg.Pool;
   let databaseUrl: string;
@@ -40,7 +40,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
   });
 
   beforeEach(async () => {
-    await isolated.query("DROP SCHEMA IF EXISTS nexo CASCADE");
+    await isolated.query("DROP SCHEMA IF EXISTS sideband CASCADE");
     await applyPostgresMigrations({ databaseUrl });
     store = createPostgresStore({ databaseUrl, secretsKey });
   });
@@ -60,7 +60,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
   async function makeRequest(overrides: Partial<RequestRow> = {}) {
     const row: RequestRow = {
       id: randomUUID(), fromUserId: "alice", toUserId: "bruno",
-      fromAddress: "alice@nexo.app", toAddress: "bruno@nexo.app",
+      fromAddress: "alice@sideband.app", toAddress: "bruno@sideband.app",
       tool: "question", args: { text: "Hola" }, status: "awaiting_agent", allowedFields: ["answer"],
       guidance: "", rule: "test", escalated: false, envelopeSignature: "envelope",
       createdAt: now, expiresAt: now, version: 0, ...overrides,
@@ -71,15 +71,15 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   async function createParticipants() {
     await store.tx(async (tx) => {
-      await tx.createAddress("alice", "alice@nexo.app");
-      await tx.createAddress("bruno", "bruno@nexo.app");
-      await tx.createAddress("carla", "carla@nexo.app");
+      await tx.createAddress("alice", "alice@sideband.app");
+      await tx.createAddress("bruno", "bruno@sideband.app");
+      await tx.createAddress("carla", "carla@sideband.app");
     });
   }
 
   it("delivers an agent reply after the owner approves once and the Store reopens", async () => {
-    const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes: ["nexo:ask", "nexo:status"] };
-    const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["nexo:inbox", "nexo:reply"] };
+    const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes: ["sideband:ask", "sideband:status"] };
+    const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["sideband:inbox", "sideband:reply"] };
     const { privateKey } = generateKeyPairSync("ed25519");
     const deps: Omit<BrokerDeps, "store"> = {
       clock: { now: () => now },
@@ -89,13 +89,13 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
         async verifyCallback() { return { ok: true }; },
         async wake() { return { ok: true, retryable: false, ms: 1 }; },
       },
-      config: { addressDomain: "nexo.app", requestTtlSeconds: 900, wakeRetryDelaysMs: [0] },
+      config: { addressDomain: "sideband.app", requestTtlSeconds: 900, wakeRetryDelaysMs: [0] },
     };
     await createParticipants();
     const broker = createBroker({ ...deps, store });
-    const grant = await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
+    const grant = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
     const { requestId } = await broker.agent.ask(alice, {
-      to: "bruno@nexo.app", tool: "question", args: { text: "¿Disponible?" },
+      to: "bruno@sideband.app", tool: "question", args: { text: "¿Disponible?" },
     });
     const [escalated] = await broker.agent.inbox(bruno);
     await broker.agent.reply(bruno, { requestId, nonce: escalated!.nonce, outcome: "needs_owner" });
@@ -120,26 +120,26 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   it("filters lists on the participant ID as well as the claimed address", async () => {
     await createParticipants();
-    const authorized = await makeRequest({ toAddress: "carla@nexo.app", toUserId: "carla" });
-    const unmatched = await makeRequest({ toAddress: "carla@nexo.app" });
-    const noRecipient = await makeRequest({ toAddress: "carla@nexo.app", toUserId: null, status: "awaiting_owner" });
+    const authorized = await makeRequest({ toAddress: "carla@sideband.app", toUserId: "carla" });
+    const unmatched = await makeRequest({ toAddress: "carla@sideband.app" });
+    const noRecipient = await makeRequest({ toAddress: "carla@sideband.app", toUserId: null, status: "awaiting_owner" });
     await store.tx(async (tx) => {
       expect(await tx.getRequest(unmatched.id, { toUserId: "carla" })).toBeNull();
       expect(await tx.getRequest(unmatched.id, { fromUserId: "alice", toUserId: "carla" })).toBeNull();
       expect(await tx.getRequest(noRecipient.id, { toUserId: "carla" })).toBeNull();
-      expect((await tx.listInbox("carla@nexo.app")).map(({ id }) => id)).toEqual([authorized.id]);
-      expect(await tx.listOwnerPending("carla@nexo.app")).toEqual([]);
-      expect((await tx.listActivity("carla@nexo.app", 10)).map(({ id }) => id)).toEqual([authorized.id]);
+      expect((await tx.listInbox("carla@sideband.app")).map(({ id }) => id)).toEqual([authorized.id]);
+      expect(await tx.listOwnerPending("carla@sideband.app")).toEqual([]);
+      expect((await tx.listActivity("carla@sideband.app", 10)).map(({ id }) => id)).toEqual([authorized.id]);
     });
   });
 
   it("leaves the transaction usable after a handled address conflict", async () => {
     await createParticipants();
     await store.tx(async (tx) => {
-      await expect(tx.createAddress("diego", "alice@nexo.app")).rejects.toMatchObject({ code: "conflict" });
-      await tx.createAddress("diego", "diego@nexo.app");
+      await expect(tx.createAddress("diego", "alice@sideband.app")).rejects.toMatchObject({ code: "conflict" });
+      await tx.createAddress("diego", "diego@sideband.app");
     });
-    expect(await store.tx((tx) => tx.getUserByAddress("diego@nexo.app"))).toMatchObject({ userId: "diego" });
+    expect(await store.tx((tx) => tx.getUserByAddress("diego@sideband.app"))).toMatchObject({ userId: "diego" });
   });
 
   it("distinguishes clearing an optional field from leaving it out of a CAS patch", async () => {
@@ -205,7 +205,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       }
     });
     const { rows } = await isolated.query<{ wake_kind: string; wake_public: object; wake_secret: Buffer | null }>(
-      "SELECT wake_kind, wake_public, wake_secret FROM nexo.agent_connections",
+      "SELECT wake_kind, wake_public, wake_secret FROM sideband.agent_connections",
     );
 
     expect(rows).toHaveLength(targets.length);
@@ -235,7 +235,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   it("serializes migration runs and preserves already stored data", async () => {
     // Exercise migration under contention on a fresh schema, then retry after writing data.
-    await isolated.query("DROP SCHEMA nexo CASCADE");
+    await isolated.query("DROP SCHEMA sideband CASCADE");
     await Promise.all([
       applyPostgresMigrations({ databaseUrl }),
       applyPostgresMigrations({ databaseUrl }),
@@ -244,7 +244,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     const row = await makeRequest();
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
-    const { rows } = await isolated.query("SELECT id FROM nexo.__drizzle_migrations");
+    const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
     expect(rows).toHaveLength(5);
   });
 
@@ -263,11 +263,11 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       await tx.appendEvent({ requestId: notApproved.id, at: now, kind: "permission", status: "awaiting_owner" });
     });
     // Restore the legacy schema and migration journal while keeping the fixture rows.
-    await isolated.query("ALTER TABLE nexo.requests DROP COLUMN approved_once");
-    await isolated.query("DROP TABLE nexo.circle_members, nexo.circles");
-    await isolated.query("DROP TABLE nexo.friends");
-    await isolated.query("DROP TABLE nexo.grants");
-    await isolated.query("DELETE FROM nexo.__drizzle_migrations WHERE id > 1");
+    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN approved_once");
+    await isolated.query("DROP TABLE sideband.circle_members, sideband.circles");
+    await isolated.query("DROP TABLE sideband.friends");
+    await isolated.query("DROP TABLE sideband.grants");
+    await isolated.query("DELETE FROM sideband.__drizzle_migrations WHERE id > 1");
 
     await applyPostgresMigrations({ databaseUrl });
 
@@ -282,19 +282,19 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
   });
 
   it("rolls back a migration that fails partway through its DDL", async () => {
-    await isolated.query("DROP SCHEMA nexo CASCADE");
-    await isolated.query("CREATE SCHEMA nexo");
-    await isolated.query("CREATE TABLE nexo.users (existing_column int)");
+    await isolated.query("DROP SCHEMA sideband CASCADE");
+    await isolated.query("CREATE SCHEMA sideband");
+    await isolated.query("CREATE TABLE sideband.users (existing_column int)");
 
     await expect(applyPostgresMigrations({ databaseUrl })).rejects.toThrow();
     const { rows: [rolledBack] } = await isolated.query(
-      "SELECT to_regclass('nexo.agent_connections') AS agent_connections",
+      "SELECT to_regclass('sideband.agent_connections') AS agent_connections",
     );
     expect(rolledBack?.agent_connections).toBeNull();
-    const { rows } = await isolated.query("SELECT id FROM nexo.__drizzle_migrations");
+    const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
     expect(rows).toHaveLength(0);
 
-    await isolated.query("DROP TABLE nexo.users");
+    await isolated.query("DROP TABLE sideband.users");
     await applyPostgresMigrations({ databaseUrl });
     await createParticipants();
   });
@@ -304,9 +304,9 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     const row = await makeRequest();
     await store.tx((tx) => tx.appendEvent({ requestId: row.id, at: now, kind: "received" }));
     for (const command of [
-      "UPDATE nexo.request_events SET kind = 'delivery'",
-      "DELETE FROM nexo.request_events",
-      "TRUNCATE nexo.request_events",
+      "UPDATE sideband.request_events SET kind = 'delivery'",
+      "DELETE FROM sideband.request_events",
+      "TRUNCATE sideband.request_events",
     ]) {
       await expect(isolated.query(command)).rejects.toMatchObject({ code: "55000" });
     }
@@ -314,7 +314,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
   });
 
   it("grants a separate runtime role only the privileges needed by the Store", async () => {
-    const runtimeRole = "nexo_test_" + randomUUID().replaceAll("-", "");
+    const runtimeRole = "sideband_test_" + randomUUID().replaceAll("-", "");
     const runtimePassword = randomBytes(32).toString("hex");
     try {
       await applyPostgresMigrations({ databaseUrl, runtimeRole, runtimePassword });
@@ -330,7 +330,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           await tx.appendEvent({ requestId: row.id, at: now, kind: "received" });
           expect(await tx.listEvents([row.id])).toMatchObject([{ kind: "received" }]);
           expect(await tx.updateRequest(row.id, { guidance: "updated by runtime" }, row.version)).toBe(true);
-          const friend = "alice@nexo.app";
+          const friend = "alice@sideband.app";
           const grant = {
             id: randomUUID(), grantorUserId: "bruno", granteeAddress: friend,
             tool: "availability" as const, fields: ["available"], createdAt: now,
@@ -348,7 +348,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
         await runtime.close();
       }
       const { rows: [privileges] } = await isolated.query(
-        "SELECT has_table_privilege($1, 'nexo.request_events', 'UPDATE, DELETE, TRUNCATE') AS can_mutate",
+        "SELECT has_table_privilege($1, 'sideband.request_events', 'UPDATE, DELETE, TRUNCATE') AS can_mutate",
         [runtimeRole],
       );
       expect(privileges?.can_mutate).toBe(false);

@@ -10,7 +10,7 @@ const run = promisify(execFile);
 // The wake receiver calls this binding only after finding the authorized request in the contact's inbox.
 export async function askContactOwner(name, interest, source, root) {
   const toolScript = join(root, "apps/demo/src/contact-interest-tool.mjs");
-  const dir = await mkdtemp(join(tmpdir(), "nexo-contact-"));
+  const dir = await mkdtemp(join(tmpdir(), "sideband-contact-"));
   const receipt = join(dir, "observation.json");
   try {
     const config = { mcpServers: { owner: { command: process.execPath, args: [toolScript, source, interest, receipt] } } };

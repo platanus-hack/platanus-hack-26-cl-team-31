@@ -1,7 +1,7 @@
 import { BrokerError, type OwnerPort } from "@team-31/broker/client";
 import { AskInput, type Owner, type RequesterView } from "@team-31/protocol";
 
-export const askExample = "Pregunta a carla@nexo.app si puede jugar el sábado";
+export const askExample = "Pregunta a carla@sideband.app si puede jugar el sábado";
 const askHelp = `Prueba: «${askExample}» o escribe «estado» para revisar tu última solicitud enviada.`;
 
 function summarize(view: RequesterView): string {
@@ -43,7 +43,7 @@ export async function runCommand(
   const match = /^(?:\/pregunta\s+|preg[uú]nta(?:le)?\s+a\s+)(\S+?)(?::\s*|\s+)(\S[\s\S]*)$/i.exec(text);
   if (!match) return askHelp;
   const input = AskInput.safeParse({ to: match[1].toLowerCase(), tool: "question", args: { text: match[2] } });
-  if (!input.success) return `Incluye una dirección Nexo y una pregunta de hasta 1000 caracteres. ${askHelp}`;
+  if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
   const view = await broker.ask(owner, input.data);
   onResult("ask", view);
   return summarize(view);

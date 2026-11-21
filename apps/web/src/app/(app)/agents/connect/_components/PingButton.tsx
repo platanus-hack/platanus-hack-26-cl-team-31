@@ -10,7 +10,7 @@ import { CopyBox } from "./CopyBox";
 
 const descriptions: Record<RequestStatus, string> = {
   awaiting_agent: "Prueba enviada. Esperando al agente.",
-  awaiting_owner: "El agente pidió tu decisión. Revisa las solicitudes de Nexo.",
+  awaiting_owner: "El agente pidió tu decisión. Revisa las solicitudes de Sideband.",
   answered: "La prueba se cerró sin una respuesta final del agente. Vuelve a probar.",
   no_data: "La prueba se cerró sin confirmar la respuesta del agente. Vuelve a probar.",
   delivery_failed: "El aviso falló. Revisa la configuración del aviso y vuelve a probar.",
@@ -92,7 +92,7 @@ export function PingButton({ agentId, kind, address }: { agentId: string; kind: 
       </div>
       {verified && !sending && (
         <>
-          <CopyBox label="Dirección Nexo" value={address} copyLabel="Copiar mi dirección Nexo" />
+          <CopyBox label="Dirección Sideband" value={address} copyLabel="Copiar mi dirección Sideband" />
           <p className={secondaryText}>Comparte tu dirección para que puedan enviarte solicitudes.</p>
         </>
       )}

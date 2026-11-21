@@ -1,4 +1,4 @@
-# Pruebas de punta a punta de Nexo
+# Pruebas de punta a punta de Sideband
 
 La suite llama al MCP remoto por Streamable HTTP con el SDK oficial. Prepara direcciones, reglas y conexiones por el puerto de dueño del broker. Comprueba el ciclo de las solicitudes, el aislamiento entre usuarios, los bloqueos, el cierre por el worker y los avisos de OpenClaw, Grok Bot, MCP Events y Standard Webhooks. Los receptores locales validan las firmas y rechazan cualquier contenido ajeno al aviso.
 
@@ -20,7 +20,7 @@ pnpm with-env sh -c 'E2E_MCP_URL="$MCP_RESOURCE_URL" E2E_AUTH_MODE=dev pnpm --fi
 
 ## Modo OAuth
 
-Inicia MCP con `MCP_DEV_AUTH=0`. Obtén access tokens Bearer de cuentas de prueba mediante el proveedor OAuth local. Cada token necesita la audiencia de `MCP_RESOURCE_URL`, los permisos `nexo:ask`, `nexo:inbox`, `nexo:reply` y `nexo:status` y un usuario distinto. Usa cuentas con una dirección reservada para pruebas que empiece con `e2e-` o cuentas sin dirección. La suite puede asignarles una dirección y actualizar sus reglas de prueba.
+Inicia MCP con `MCP_DEV_AUTH=0`. Obtén access tokens Bearer de cuentas de prueba mediante el proveedor OAuth local. Cada token necesita la audiencia de `MCP_RESOURCE_URL`, los permisos `sideband:ask`, `sideband:inbox`, `sideband:reply` y `sideband:status` y un usuario distinto. Usa cuentas con una dirección reservada para pruebas que empiece con `e2e-` o cuentas sin dirección. La suite puede asignarles una dirección y actualizar sus reglas de prueba.
 
 Guarda los tokens como JSON, entre comillas simples, en `.env.local`. Reemplaza cada marcador del ejemplo por un token real de prueba.
 

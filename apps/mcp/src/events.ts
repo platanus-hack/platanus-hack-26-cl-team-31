@@ -8,7 +8,7 @@ import type { ToolTelemetry } from "./tools/result.js";
 
 const eventDefinition = {
   name: WAKE_EVENT,
-  description: "Llegó una solicitud a tu bandeja. Con su requestId, busca la solicitud en nexo_inbox y respóndela con nexo_reply.",
+  description: "Llegó una solicitud a tu bandeja. Con su requestId, busca la solicitud en sideband_inbox y respóndela con sideband_reply.",
   delivery: ["webhook"],
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   payloadSchema: {

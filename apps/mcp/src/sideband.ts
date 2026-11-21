@@ -18,7 +18,7 @@ function readEnv<T extends z.ZodType>(name: string, schema: T): z.output<T> {
   return parsed.data;
 }
 
-export async function startNexo(stdio: boolean, devAuth: boolean) {
+export async function startSideband(stdio: boolean, devAuth: boolean) {
   if (stdio && !devAuth) throw new Error("El modo stdio requiere MCP_DEV_AUTH=1.");
 
   const baseUrl = readEnv("BROKER_URL", httpUrl);
@@ -34,12 +34,12 @@ export async function startNexo(stdio: boolean, devAuth: boolean) {
 
   if (stdio) {
     const principal = {
-      userId: readEnv("NEXO_DEV_USER_ID", id),
-      agentId: readEnv("NEXO_DEV_AGENT_ID", id),
+      userId: readEnv("SIDEBAND_DEV_USER_ID", id),
+      agentId: readEnv("SIDEBAND_DEV_AGENT_ID", id),
       scopes: [...Scope.options],
     };
     await createServer(principal, agent, telemetry).connect(new StdioServerTransport());
-    console.error("[nexo-mcp] Listo en stdio.");
+    console.error("[sideband-mcp] Listo en stdio.");
     return;
   }
 
@@ -64,5 +64,5 @@ export async function startNexo(stdio: boolean, devAuth: boolean) {
     await telemetry.shutdown();
     throw error;
   }
-  console.error(`[nexo-mcp] Listo en puerto ${port}.`);
+  console.error(`[sideband-mcp] Listo en puerto ${port}.`);
 }

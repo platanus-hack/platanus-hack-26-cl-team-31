@@ -106,8 +106,8 @@ describe("servidor OAuth de Better Auth con Postgres", () => {
   });
 
   it.each([
-    { label: "por GET y con los permisos Nexo por defecto", method: "GET", scope: undefined },
-    { label: "por POST y con los permisos Nexo por defecto", method: "POST", scope: undefined },
+    { label: "por GET y con los permisos Sideband por defecto", method: "GET", scope: undefined },
+    { label: "por POST y con los permisos Sideband por defecto", method: "POST", scope: undefined },
     { label: "con acceso sin conexión", method: "GET", scope: [...Scope.options, "offline_access"].join(" ") },
   ])("emite un access token verificable $label", async ({ method, scope }) => {
     const register = await fetch(`${issuer}/oauth2/register`, {

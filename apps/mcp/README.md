@@ -1,6 +1,6 @@
-# MCP de Nexo
+# MCP de Sideband
 
-El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `nexo_ask`, `nexo_inbox`, `nexo_reply` y `nexo_check`. El evento `nexo.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `nexo:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
+El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `sideband_ask`, `sideband_inbox`, `sideband_reply` y `sideband_check`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
 
 ## Arranque local
 
@@ -10,11 +10,11 @@ El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OA
 
 `GET /healthz` devuelve `{"ok":true}`. El descubrimiento OAuth está disponible en `/.well-known/oauth-protected-resource` y `/.well-known/oauth-protected-resource/mcp`. El servidor escucha en `127.0.0.1` por defecto. Puedes elegir otra interfaz con `MCP_HOST`.
 
-Si prefieres Compose, compila con `pnpm build --filter @team-31/mcp` y usa `docker compose --env-file .env --env-file .env.local --profile nexo up -d mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile nexo stop mcp`.
+Si prefieres Compose, compila con `pnpm build --filter @team-31/mcp` y usa `docker compose --env-file .env --env-file .env.local --profile sideband up -d mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile sideband stop mcp`.
 
 ## Modo de desarrollo
 
-`MCP_DEV_AUTH=1` habilita `Authorization: Bearer dev:<userId>:<agentId>` con los cuatro scopes de Nexo. Para usar stdio en desarrollo, añade `NEXO_DEV_USER_ID` y `NEXO_DEV_AGENT_ID` a `.env.local`, compila con `pnpm build --filter @team-31/mcp` y ejecuta `pnpm with-env pnpm --filter @team-31/mcp start --stdio`. La conexión al broker conserva el JWT de servicio. `MCP_DEV_AUTH=1` aborta el arranque con `NODE_ENV=production`.
+`MCP_DEV_AUTH=1` habilita `Authorization: Bearer dev:<userId>:<agentId>` con los cuatro scopes de Sideband. Para usar stdio en desarrollo, añade `SIDEBAND_DEV_USER_ID` y `SIDEBAND_DEV_AGENT_ID` a `.env.local`, compila con `pnpm build --filter @team-31/mcp` y ejecuta `pnpm with-env pnpm --filter @team-31/mcp start --stdio`. La conexión al broker conserva el JWT de servicio. `MCP_DEV_AUTH=1` aborta el arranque con `NODE_ENV=production`.
 
 ## Coordinar asistentes en local
 
@@ -91,12 +91,12 @@ Para cambiar un dato, edita la lista JSON `.agents-local/<id>-interests.json` de
 El MCP de Ana ofrece `list_contacts` para descubrir nombres y direcciones, `ask_contact` para consultar una dirección y `await_contact` para recoger el resultado por ID. Por ejemplo:
 
 ```json
-{"contact":"demo-jane@nexo.app","query":{"interest":"cerámica"}}
+{"contact":"demo-jane@sideband.app","query":{"interest":"cerámica"}}
 ```
 
 Las preguntas abiertas usan `query: {"text":"…"}`. El broker verifica el permiso del destinatario para la operación. Cuando autoriza un interés, envía un webhook firmado al agente de ese contacto. Su herramienta `check_interest` compara el tema con su archivo y entrega sólo `matches`. El broker valida la respuesta y la CLI muestra la dirección y el resultado de cada solicitud.
 
-Las identidades ficticias usan direcciones `demo-<id>@nexo.app`. La preparación inicial importa los lectores de cada perfil como grants de Nexo. Volver a ejecutar la seed conserva las decisiones posteriores del titular. PostgreSQL guarda reglas, solicitudes y avisos entre sesiones. Puedes correlacionar el ID de **Ver datos** con la actividad del broker.
+Las identidades ficticias usan direcciones `demo-<id>@sideband.app`. La preparación inicial importa los lectores de cada perfil como grants de Sideband. Volver a ejecutar la seed conserva las decisiones posteriores del titular. PostgreSQL guarda reglas, solicitudes y avisos entre sesiones. Puedes correlacionar el ID de **Ver datos** con la actividad del broker.
 
 ### Herramientas
 
@@ -112,4 +112,4 @@ Las identidades ficticias usan direcciones `demo-<id>@nexo.app`. La preparación
 
 Puedes escribir los nombres de participantes como `Bob` o `bob`. Sólo se entrega la proyección de disponibilidad. La agenda ficticia y los hashes de las credenciales se guardan en la base del worktree. Volver a correr el seed conserva permisos revocados y salidas del grupo.
 
-Los clientes generados por `agents:seed` usan el adaptador stdio `apps/server/dist/mcp.js` con su `AGENT_TOKEN` y `COORDINATION_API_URL`. El binario de `apps/mcp` sólo sirve Nexo.
+Los clientes generados por `agents:seed` usan el adaptador stdio `apps/server/dist/mcp.js` con su `AGENT_TOKEN` y `COORDINATION_API_URL`. El binario de `apps/mcp` sólo sirve Sideband.

@@ -3,7 +3,7 @@
 --   SELECT ops.prune_events(make_interval(days => TELEMETRY_RETENTION_DAYS));
 -- Borra por lotes para no tomar candados largos sobre ops.events. Exige al menos una hora de
 -- retención para que un intervalo mal escrito no vacíe la tabla.
--- No se otorga a ningún rol del admin (nexo_admin_ro es de solo lectura): la ejecuta el dueño
+-- No se otorga a ningún rol del admin (sideband_admin_ro es de solo lectura): la ejecuta el dueño
 -- del esquema o un usuario al que ADM-08 le otorgue EXECUTE explícitamente.
 CREATE OR REPLACE FUNCTION ops.prune_events(retention interval) RETURNS bigint
 LANGUAGE plpgsql

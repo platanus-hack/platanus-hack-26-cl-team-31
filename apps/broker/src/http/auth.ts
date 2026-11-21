@@ -27,7 +27,7 @@ export function requireServiceIdentity<I extends keyof ServiceKeys>(
     try {
       const identity = await verifyServiceToken(token, { publicKeys, expectedIss });
       c.set(expectedIss, identity);
-      // user_id in ops.events is always a Nexo user: the admin operator stays out of it.
+      // user_id in ops.events is always a Sideband user: the admin operator stays out of it.
       if ("userId" in identity) {
         telemetry.identify({ userId: identity.userId, ...("agentId" in identity ? { agentId: identity.agentId } : {}) });
       }

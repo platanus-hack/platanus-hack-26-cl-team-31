@@ -47,9 +47,9 @@ describe("roles", () => {
     const roleOf = createRoleResolver(allowListFromEnv(source), { devAuth: false })
     expect(roleOf("op@test.cl")).toBe("operator")
     expect(roleOf("W@test.cl")).toBe("viewer")
-    expect(roleOf("dev@nexo.local")).toBeNull()
+    expect(roleOf("dev@sideband.local")).toBeNull()
     source.ADMIN_VIEWERS = "v@test.cl"
     expect(roleOf("w@test.cl")).toBeNull()
-    expect(createRoleResolver(allowListFromEnv(source), { devAuth: true })("dev@nexo.local")).toBe("operator")
+    expect(createRoleResolver(allowListFromEnv(source), { devAuth: true })("dev@sideband.local")).toBe("operator")
   })
 })

@@ -106,7 +106,7 @@ export function UserDetailPage() {
           <CardHeader>
             <CardTitle>Identidad</CardTitle>
             <CardDescription className="text-xs">
-              Cuenta de Nexo y sesiones de Better Auth (sin tokens).
+              Cuenta de Sideband y sesiones de Better Auth (sin tokens).
             </CardDescription>
           </CardHeader>
           <CardContent>

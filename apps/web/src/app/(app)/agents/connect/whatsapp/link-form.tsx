@@ -17,7 +17,7 @@ export function LinkForm({ number, linked, pending }: {
     <form action={action} className="space-y-4">
       {linked ? <>
         <p>Vinculado a <strong>{linked}</strong>.</p>
-        <p className={secondaryText}>Desde ese número puedes enviar solicitudes y ver sus respuestas usando tu cuenta de Nexo.</p>
+        <p className={secondaryText}>Desde ese número puedes enviar solicitudes y ver sus respuestas usando tu cuenta de Sideband.</p>
         <div className="flex flex-wrap gap-3">
           {chat && <a href={chat} target="_blank" rel="noreferrer" className={primaryButton}>Abrir chat</a>}
           <button name="action" value="unlink" className={button} disabled={busy}>Desvincular</button>

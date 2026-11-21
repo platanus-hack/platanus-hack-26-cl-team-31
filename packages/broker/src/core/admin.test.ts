@@ -8,9 +8,9 @@ import { applyPostgresMigrations, createPostgresStore, type PostgresStore } from
 import type { Store } from "../store/store.js";
 import { verifyJson } from "./crypto.js";
 
-const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes: ["nexo:ask", "nexo:inbox", "nexo:reply", "nexo:status"] };
-const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["nexo:ask", "nexo:inbox", "nexo:reply", "nexo:status"] };
-const operator: AdminActor = { adminId: "admin-1", email: "ops@nexo.app" };
+const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes: ["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status"] };
+const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status"] };
+const operator: AdminActor = { adminId: "admin-1", email: "ops@sideband.app" };
 const reason = "La solicitud quedó atascada durante la demo";
 const webhook: WakeTarget = { kind: "standard_webhook", url: "https://example.com/callback", secret: "whsec_demo" };
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -22,7 +22,7 @@ function memory(): StoreFactory {
 }
 
 function postgres(testDatabaseUrl: string): StoreFactory & { setup(): Promise<void>; teardown(): Promise<void> } {
-  const databaseName = "nexo_admin_test_" + randomUUID().replaceAll("-", "");
+  const databaseName = "sideband_admin_test_" + randomUUID().replaceAll("-", "");
   let admin: pg.Pool | undefined;
   let isolated: pg.Pool | undefined;
   let databaseUrl = "";
@@ -38,7 +38,7 @@ function postgres(testDatabaseUrl: string): StoreFactory & { setup(): Promise<vo
       isolated = new pg.Pool({ connectionString: databaseUrl });
     },
     async make() {
-      await isolated!.query("DROP SCHEMA IF EXISTS nexo CASCADE");
+      await isolated!.query("DROP SCHEMA IF EXISTS sideband CASCADE");
       await applyPostgresMigrations({ databaseUrl });
       store = createPostgresStore({ databaseUrl, secretsKey: Buffer.alloc(32, 42).toString("base64") });
       return store;
@@ -78,12 +78,12 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
         clock: { now: () => now },
         signingKey: privateKey,
         nonceKey: new Uint8Array(32).fill(4),
-        config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 10_000, 30_000], addressDomain: "nexo.app" },
+        config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 10_000, 30_000], addressDomain: "sideband.app" },
       };
       broker = createBroker(deps);
       await broker.owner.claimAddress(alice, "alice");
       await broker.owner.claimAddress(bruno, "bruno");
-      await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
+      await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
       await broker.agent.connectWake(bruno, webhook);
     });
 
@@ -94,7 +94,7 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
     }
 
     async function askAgent() {
-      const view = await broker.agent.ask(alice, { to: "bruno@nexo.app", tool: "question", args: { text: "¿Vienes?" } });
+      const view = await broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes?" } });
       expect(view).toMatchObject({ final: false, waitingFor: "agent" });
       return view.requestId;
     }
@@ -209,7 +209,7 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
         const before = await row(requestId);
         await expect(broker.admin.rewake(operator, requestId, "corto")).rejects.toMatchObject({ code: "invalid_input" });
         await expect(broker.admin.rewake(operator, requestId, "x".repeat(501))).rejects.toMatchObject({ code: "invalid_input" });
-        await expect(broker.admin.rewake({ adminId: "", email: "ops@nexo.app" }, requestId, reason))
+        await expect(broker.admin.rewake({ adminId: "", email: "ops@sideband.app" }, requestId, reason))
           .rejects.toMatchObject({ code: "unauthorized" });
         expect(await row(requestId)).toEqual(before);
       });

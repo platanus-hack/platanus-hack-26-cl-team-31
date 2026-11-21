@@ -1,7 +1,7 @@
 function required(name) {
   const value = process.env[name];
   if (!value?.trim()) {
-    throw new Error(`Falta configurar ${name} para la autenticación de Nexo.`);
+    throw new Error(`Falta configurar ${name} para la autenticación de Sideband.`);
   }
   return value;
 }

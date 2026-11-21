@@ -20,6 +20,7 @@ function authConfig({ databaseUrl, baseUrl, secret, google, mcpResource }: AuthO
   const identityScopes = ["openid", "profile", "email", "offline_access"];
 
   return {
+    appName: "Sideband",
     database: new Pool({ connectionString: databaseUrl }),
     baseURL: baseUrl,
     basePath: "/api/auth",

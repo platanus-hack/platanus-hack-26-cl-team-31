@@ -4,7 +4,7 @@ import { Suspense, type ReactNode } from "react";
 import { Brand } from "../(app)/brand";
 
 export const metadata: Metadata = {
-  title: "Nexo",
+  title: "Sideband",
   description: "Conecta tus agentes y decide qué pueden compartir.",
 };
 

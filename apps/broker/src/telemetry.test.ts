@@ -35,12 +35,12 @@ beforeEach(async () => {
     clock: { now: () => new Date() },
     signingKey: signing.privateKey,
     nonceKey: new Uint8Array(32),
-    config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 0, 0], addressDomain: "nexo.app" },
+    config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 0, 0], addressDomain: "sideband.app" },
     telemetry: telemetry.shared,
   });
   await broker.owner.claimAddress({ userId: "alice" }, "alice");
   await broker.owner.claimAddress({ userId: "bruno" }, "bruno");
-  await broker.owner.setGrant({ userId: "bruno" }, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
+  await broker.owner.setGrant({ userId: "bruno" }, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
   sink.clear();
 });
 
@@ -48,7 +48,7 @@ function ask(app: ReturnType<typeof createHttpServer>, headers: Record<string, s
   return app.request("/v1/agent/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({ to: "bruno@nexo.app", tool: "question", args: { text: secretText } }),
+    body: JSON.stringify({ to: "bruno@sideband.app", tool: "question", args: { text: secretText } }),
   });
 }
 

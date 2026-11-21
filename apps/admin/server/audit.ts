@@ -56,7 +56,7 @@ export function createPgAuditLog(pool: pg.Pool, telemetry: Pick<Telemetry, "emit
   }
 }
 
-const LOCK = "hashtext('nexo:admin:migrations')"
+const LOCK = "hashtext('sideband:admin:migrations')"
 
 // Esquema y tablas propias del servidor admin. Idempotente y serializada con un candado
 // consultivo para que varias instancias (o suites de prueba) puedan correrla a la vez.
@@ -97,9 +97,9 @@ export async function migrateAdminTables(pool: pg.Pool): Promise<void> {
       -- AdminQueries.audit() (ADM-02) lee la bitácora con el rol de solo lectura.
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nexo_admin_ro') THEN
-          GRANT USAGE ON SCHEMA admin TO nexo_admin_ro;
-          GRANT SELECT ON admin.audit TO nexo_admin_ro;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sideband_admin_ro') THEN
+          GRANT USAGE ON SCHEMA admin TO sideband_admin_ro;
+          GRANT SELECT ON admin.audit TO sideband_admin_ro;
         END IF;
       END $$;
     `)
