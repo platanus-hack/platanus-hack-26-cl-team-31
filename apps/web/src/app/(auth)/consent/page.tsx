@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { getAuth, getSession } from "@/lib/auth";
 import { getOwnerAddress } from "@/lib/auth-owner";
+import { InvalidAuthorizationLink } from "../invalid-authorization-link";
 import { getOAuthRequest } from "@/lib/auth-request";
 
 import { ConsentButtons } from "./consent-buttons";
@@ -18,14 +19,7 @@ const scopeDescriptions: Readonly<Record<string, string>> = {
 
 export default async function ConsentPage({ searchParams }: PageProps<"/consent">) {
   const request = await getOAuthRequest(await searchParams);
-  if (!request) {
-    return (
-      <>
-        <h1 className="text-[22px] leading-tight font-medium tracking-[-0.02em]">El enlace de autorización venció o no es válido</h1>
-        <p className="mt-3 text-muted">Vuelve a iniciar la conexión desde tu agente.</p>
-      </>
-    );
-  }
+  if (!request) return <InvalidAuthorizationLink />;
 
   const session = await getSession();
   if (!session) redirect(`/sign-in?${request.signedQuery}`);

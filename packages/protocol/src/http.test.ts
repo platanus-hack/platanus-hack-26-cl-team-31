@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { httpStatusOf } from "./errors.js";
-import { routes } from "./http.js";
+import { decodeAsk, encodeAsk, routes } from "./http.js";
+import { AskInput } from "./request.js";
 
 it.each(Object.values(routes))("$method $path has a schema and the designated issuer", (route) => {
   expect(route.response.safeParse).toBeTypeOf("function");
@@ -41,4 +42,16 @@ it("matches the HTTP error status contract", () => {
   expect(httpStatusOf("expired")).toBe(410);
   expect(httpStatusOf("rate_limited")).toBe(429);
   expect(httpStatusOf("internal")).toBe(500);
+});
+
+
+it("preserves plain asks and requires a capable server to decode a conditional send", () => {
+  const ask = AskInput.parse({ tool: "interest_check", to: "ana@sideband.app", args: { interest: "cerámica" } });
+  expect(encodeAsk(ask)).toEqual(ask);
+  const checked = { ...ask, idempotencyKey: "stable-message-123", requireRelation: { kind: "contact" as const, tag: "friend" as const } };
+  for (const route of [routes.agentAsk, routes.ownerAsk, routes.ownerChannelAsk]) {
+    const body = route.body.parse(encodeAsk(checked));
+    expect(AskInput.safeParse(body).success).toBe(false);
+    expect(decodeAsk(body)).toEqual(checked);
+  }
 });

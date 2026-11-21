@@ -61,6 +61,7 @@ const overview: Overview = {
   wakes: [{ kind: "standard_webhook", ok: 97, failed: 3, retried: 2, p95LatencyMs: 450 }],
   errors: { total: 3, top: [errorGroup] },
   rateLimited: 0,
+  activeQuotaWindows: 0,
 }
 
 const requestSummary: RequestSummary = {
@@ -174,7 +175,7 @@ function setup(queries: AdminQueries = fakeQueries()) {
   const sink = memorySink()
   const telemetry = createTelemetry({ service: "admin", sink, lifecycle: false })
   app.use(honoTelemetry(telemetry))
-  mountAdminMcp(app, deps, telemetry)
+  mountAdminMcp(app, deps, telemetry, "http://admin.test")
   return { app, deps, queries, sink }
 }
 
@@ -363,6 +364,13 @@ describe("tools", () => {
 })
 
 describe("autenticación y límites", () => {
+  it("rechaza un origen ajeno antes de consultar tokens y exige autenticación en el propio", async () => {
+    const { app, deps } = setup()
+    const response = await rpc(app, { Origin: "https://otro.test", Authorization: "Bearer sba_read" })
+    expect(response.status).toBe(403)
+    expect(deps.authenticate).not.toHaveBeenCalled()
+    expect((await rpc(app, { Origin: "http://admin.test" })).status).toBe(401)
+  })
   it("sin token responde 401 con WWW-Authenticate: Bearer", async () => {
     const { app, deps } = setup()
     const response = await rpc(app, {})

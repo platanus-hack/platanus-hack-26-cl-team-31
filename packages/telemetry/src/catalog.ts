@@ -92,6 +92,12 @@ export const catalog = [
     attrs: { scope: code(), operation: code() },
   }),
 
+  defineEvent({ name: "message.interpret", kind: "http", description: "Interpretación estructurada del turno con Anthropic.", attrs: {} }),
+  defineEvent({ name: "message.interpreted", kind: "tool", description: "Intención del turno.", attrs: { action: code() } }),
+  defineEvent({ name: "message.recipients.resolved", kind: "tool", description: "Selección autorizada de destinatarios.", attrs: { scope: code(), count: int() } }),
+  defineEvent({ name: "message.turn.saved", kind: "lifecycle", description: "Estado durable del turno.", attrs: { phase: code() } }),
+  defineEvent({ name: "message.turn.completed", kind: "lifecycle", description: "Resultado del turno.", attrs: { outcome: code() } }),
+  defineEvent({ name: "broker.profiles.searched", kind: "tool", description: "Búsqueda autenticada en perfiles públicos.", attrs: { count: int() } }),
   defineEvent({
     name: "whatsapp.link", kind: "auth", description: "Estado del vínculo de WhatsApp, sin números ni códigos.",
     attrs: { action: z.enum(["started", "detected", "invalid_code", "confirmed", "unlinked"]) },
@@ -131,6 +137,16 @@ export const catalog = [
     kind: "tool",
     description: "Llamada a una tool del MCP de Sideband.",
     attrs: { tool: code(), outcome: z.enum(["ok", "error", "denied"]) },
+  }),
+  defineEvent({
+    name: "broker.ask.receipt", kind: "lifecycle",
+    description: "Creación, repetición o conflicto de un envío idempotente.",
+    attrs: { action: z.enum(["created", "replayed", "conflict"]) },
+  }),
+  defineEvent({
+    name: "broker.ask.relation_checked", kind: "policy",
+    description: "Comprobación de la relación solicitada por el titular antes de enviar.",
+    attrs: { kind: z.enum(["contact", "circle"]), matches: bool() },
   }),
   defineEvent({
     name: "broker.policy.evaluated",
@@ -218,7 +234,11 @@ export const catalog = [
     name: "wake.attempt",
     kind: "wake",
     description: "Intento de aviso a un agente.",
-    attrs: { kind: code(), attempt: int(), ok: bool(), httpStatus: int(), code: code() },
+    attrs: { kind: code(), attempt: int(), queueWaitMs: int(), ok: bool(), httpStatus: int(), code: code() },
+  }),
+  defineEvent({
+    name: "worker.tick.completed", kind: "lifecycle", description: "La pasada del worker procesó solicitudes o avisos.",
+    attrs: { expired: int(), wakesOk: int(), wakesRetried: int(), wakesFailed: int() },
   }),
   defineEvent({ name: "wake.exhausted", kind: "wake", level: "warn", description: "Se agotaron los intentos de aviso.", attrs: { kind: code(), attempts: int() } }),
   defineEvent({ name: "wake.lease_recovered", kind: "wake", level: "warn", description: "El worker retomó un aviso cuya concesión venció.", attrs: { attempt: int() } }),

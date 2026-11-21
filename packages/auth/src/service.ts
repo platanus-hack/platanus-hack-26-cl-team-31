@@ -18,16 +18,18 @@ type MintOptions = { sub: string; privateKey: JWK } & (
 const ALGORITHM = "EdDSA";
 const AUDIENCE = "broker";
 const TTL = 60;
-const servicePrivateJwk = z.object({
+const coordinate = z.base64url().length(43); // 32 bytes without padding
+const ed25519Key = z.object({
   kty: z.literal("OKP"),
   crv: z.literal("Ed25519"),
-  x: z.base64url().length(43),
-  d: z.base64url().length(43),
+  x: coordinate,
 });
+export const ed25519PrivateKey = ed25519Key.extend({ d: coordinate });
+export const ed25519PublicKey = ed25519Key.extend({ d: z.never().optional() });
 
 export function parseServicePrivateKey(value: string | undefined, issuer: ServiceIssuer): JWK {
   try {
-    return servicePrivateJwk.parse(JSON.parse(value ?? ""));
+    return ed25519PrivateKey.parse(JSON.parse(value ?? ""));
   } catch {
     // JSON and schema errors can include parts of the configured key.
     throw new Error(`${issuer.toUpperCase()}_SERVICE_PRIVATE_KEY debe contener una JWK privada Ed25519.`);

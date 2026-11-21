@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createServer, type Server } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker/client";
+import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-client";
 import { WAKE_EVENT } from "@team-31/protocol";
 import { createTelemetry, memorySink, tracedFetch, type MemorySink, type Telemetry } from "@team-31/telemetry";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -57,8 +57,9 @@ async function connect(url: string, token: string) {
 
 function port(overrides: Partial<AgentPort> = {}): AgentPort {
   return {
-    capabilities: vi.fn(), ask: vi.fn(), inbox: vi.fn(), reply: vi.fn(), status: vi.fn(), contacts: vi.fn(),
-    vaultCatalog: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
+    searchPublicProfiles: vi.fn(), capabilities: vi.fn(), ask: vi.fn(), inbox: vi.fn(), reply: vi.fn(), status: vi.fn(), contacts: vi.fn(),
+    connect: vi.fn(), vaultCatalog: vi.fn(), vaultMembers: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
+    networkUsers: vi.fn(), contactGroups: vi.fn(), changeContactGroup: vi.fn(),
     connectWake: vi.fn(), disconnectWake: vi.fn(), ...overrides,
   };
 }
@@ -68,6 +69,10 @@ describe("telemetría del MCP", () => {
     const { privateKey } = generateKeyPairSync("ed25519");
     const headers: Record<string, string | undefined>[] = [];
     const broker = await listen(createServer((req, res) => {
+      if (req.url === "/v1/agent/connection") {
+        res.writeHead(204).end();
+        return;
+      }
       headers.push({ traceparent: String(req.headers.traceparent ?? "") });
       req.resume();
       res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
@@ -104,7 +109,7 @@ describe("telemetría del MCP", () => {
   it("registra tokens rechazados, permisos faltantes y errores sin mensajes", async () => {
     const agent = port({
       inbox: vi.fn().mockRejectedValue(new Error("detalle privado de la red")),
-      status: vi.fn().mockRejectedValue(new BrokerError("not_found", "No se encontró la solicitud.")),
+      status: vi.fn().mockRejectedValue(new BrokerError("not_found", "No se encontró la solicitud.", { errorId: "err_upstream" })),
     });
     const origin = await listen(createHttpServer(options, agent, telemetry));
     const response = await fetch(`${origin}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -113,8 +118,10 @@ describe("telemetría del MCP", () => {
     expect(sink.find("auth.token.rejected")[0]?.attrs).toEqual({ issuer, reason: "missing_token" });
 
     const client = await connect(`${origin}/mcp`, "dev:ana:ana-bot");
-    expect((await client.callTool({ name: "sideband_inbox" })).isError).toBe(true);
-    expect((await client.callTool({ name: "sideband_check", arguments: { requestId: "missing" } })).isError).toBe(true);
+    const inbox = await client.callTool({ name: "sideband_inbox" });
+    expect(inbox.isError).toBe(true);
+    const missing = await client.callTool({ name: "sideband_check", arguments: { requestId: "missing" } });
+    expect(missing).toMatchObject({ isError: true, structuredContent: { error: { code: "not_found", errorId: "err_upstream" } } });
 
     const calls = sink.find("mcp.tool.call");
     expect(calls.map((call) => [call.attrs.tool, call.attrs.outcome, call.status])).toEqual([
@@ -124,6 +131,7 @@ describe("telemetría del MCP", () => {
     const [error] = sink.find("error");
     expect(error).toMatchObject({ userId: "ana", attrs: { operation: "mcp.tool.call sideband_inbox", type: "Error" } });
     expect(calls[0]?.errorId).toBe(error?.errorId);
+    expect(inbox.structuredContent).toMatchObject({ error: { errorId: error?.errorId } });
     expect(calls[1]?.requestId).toBe("missing");
     expect(JSON.stringify(sink.records)).not.toContain("detalle privado");
   });
@@ -156,11 +164,11 @@ describe("telemetría del MCP", () => {
     expect(JSON.stringify(sink.records)).not.toContain(params.delivery.secret);
   });
 
-  it("en stdio nunca escribe telemetría en stdout", () => {
+  it.each(["console", "postgres", "desconocido"])("en stdio el modo %s sin BD nunca escribe en stdout", (mode) => {
     const stdout = vi.spyOn(process.stdout, "write");
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
-      const own = createTelemetry({ service: "mcp", sink: mcpSink(true, { TELEMETRY_SINK: "console" }), heartbeatMs: 0 });
+      const own = createTelemetry({ service: "mcp", sink: mcpSink(true, { TELEMETRY_SINK: mode }), heartbeatMs: 0 });
       own.emit("mcp.tool.call", { attrs: { tool: "sideband_ask", outcome: "ok" } });
       expect(stdout).not.toHaveBeenCalled();
       expect(stderr).toHaveBeenCalled();

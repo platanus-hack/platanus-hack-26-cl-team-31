@@ -15,10 +15,12 @@ import {
   type WakeTarget,
   type Waker,
 } from "@team-31/protocol";
+import { createTelemetry, memorySink } from "@team-31/telemetry";
+import { createWaker } from "@team-31/wake";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
-import { createOwnerRuntime, localReadTool } from "../client/runtime.js";
 import type { Store } from "../store/store.js";
+import { createOwnerRuntime, localQuestionSource, localReadTool } from "@team-31/broker-client";
 import { deriveNonce, verifyJson } from "./crypto.js";
 
 const principals: Record<"alice" | "bruno" | "carla", Principal> = {
@@ -67,6 +69,62 @@ function advance(ms: number): void {
   now = new Date(now.getTime() + ms);
 }
 
+it("solo el titular concede lectura individual; rechazar no crea ni modifica categorías", async () => {
+  const input = { to: availability.to, tool: "vault_access", args: { categoryName: "Plan de salud" } } as const;
+  expect(await broker.agent.ask(alice, input)).toMatchObject({ decision: "deny" });
+  const invite = await broker.agent.ask(alice, { to: availability.to, tool: "connect", args: {} });
+  await broker.owner.answerInvitation(bruno, invite.requestId, { accept: true });
+  const declined = await broker.agent.ask(alice, input);
+  expect(declined).toMatchObject({ waitingFor: "owner" });
+  expect(await broker.agent.inbox(bruno, true)).toEqual([]);
+  await broker.owner.decide(bruno, declined.requestId, { kind: "deny" });
+  expect(await broker.owner.vault(bruno)).toEqual({ categories: [] });
+  const pending = await broker.agent.ask(alice, input);
+  const grant = { kind: "grant_vault_read" } as const;
+  await expect(broker.owner.decide(alice, pending.requestId, grant)).rejects.toMatchObject({ code: "not_found" });
+  await expect(broker.owner.decide(bruno, pending.requestId, { kind: "approve_once" })).rejects.toMatchObject({ code: "invalid_input" });
+  expect(await broker.agent.queryVault(alice, { to: input.to })).toEqual({ categories: [] });
+  await broker.owner.decide(bruno, pending.requestId, grant);
+  const { categories: visible } = await broker.agent.queryVault(alice, { to: input.to });
+  expect(visible).toEqual([{ id: expect.any(String), name: input.args.categoryName }]);
+  const existing = await broker.agent.ask(alice, input);
+  await broker.owner.decide(bruno, existing.requestId, grant);
+  expect((await broker.agent.queryVault(alice, { to: input.to })).categories).toEqual(visible);
+  expect(await broker.agent.queryVault(carla, { to: input.to })).toEqual({ categories: [] });
+  await expect(broker.owner.decide(bruno, pending.requestId, grant)).rejects.toMatchObject({ code: "conflict" });
+});
+
+it("mantiene privado el grupo de la invitación y activa su permiso solo al aceptar", async () => {
+  const p: Principal = { ...alice, scopes: [...alice.scopes, "sideband:vault"] };
+  const { groupId } = await broker.agent.changeContactGroup(p, { action: "create", name: "Isapres" });
+  const { categoryId } = await broker.owner.changeVault(alice, { action: "create", name: "Plan de salud" });
+  await broker.owner.changeVault(alice, { action: "set_contact_group", categoryId, groupId, allowed: true });
+  const input = { to: availability.to, tool: "connect", args: {}, groupId } as const;
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "forbidden" });
+  const invitation = await broker.agent.ask(p, input);
+  expect(await broker.owner.contactGroups(alice)).toMatchObject({
+    groups: [{ id: groupId, members: [] }], categories: [{ id: categoryId, contactGroups: [{ id: groupId }] }],
+  });
+  expect(await broker.agent.vaultMembers(p, categoryId)).toEqual({ members: [] });
+  expect(JSON.stringify(await broker.agent.inbox(bruno))).not.toContain(groupId);
+  await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
+  expect(await broker.agent.vaultMembers(p, categoryId)).toEqual({ members: [availability.to] });
+});
+
+it("reclama solo avisos que puede iniciar y entrega los restantes en el próximo tick", async () => {
+  await broker.agent.connectWake(bruno, webhook);
+  for (let i = 0; i < 10; i++) await askAvailability();
+  let resolve!: () => void;
+  const promise = new Promise<void>(done => { resolve = done; });
+  wake.mockImplementation(async () => { await promise; return { ok: true, retryable: false, ms: 1 }; });
+  const first = broker.tick(now);
+  try {
+    await vi.waitFor(() => expect(wake).toHaveBeenCalledTimes(8));
+  } finally { resolve(); }
+  expect(await first).toMatchObject({ wakesOk: 8 });
+  expect(await broker.tick(now)).toMatchObject({ wakesOk: 2 });
+});
+
 it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de otro grupo", async () => {
   const p: Principal = { ...bruno, scopes: ["sideband:vault"] };
   await expect(broker.agent.changeVault(bruno, { action: "create", name: "Deseos" })).rejects.toMatchObject({ code: "forbidden" });
@@ -81,12 +139,76 @@ it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de
   }
   const query = { categoryId, to: "bruno@sideband.app" };
   expect((await broker.agent.queryVault(alice, query)).categories[0]?.entries).toHaveLength(1);
+  expect((await broker.owner.queryVault(alice, query)).categories[0]?.entries).toEqual([{ label: "Regalo", value: "Cafetera" }]);
+  expect(await broker.owner.queryVault({ userId: "sin-vínculo" }, query)).toEqual({ categories: [] });
   await broker.agent.changeVault(p, { ...put, value: "Molino" });
   await broker.owner.changeVault(bruno, { action: "set_group", categoryId, group: "friend", allowed: false });
   expect(await broker.agent.queryVault(alice, query)).toEqual({ categories: [] });
+  expect(await broker.owner.queryVault(alice, query)).toEqual({ categories: [] });
   expect((await broker.agent.queryVault(carla, query)).categories[0]?.entries).toEqual([{ label: "Regalo", value: "Molino" }]);
   await broker.agent.changeVault(p, { action: "delete_entry", categoryId, label: put.label });
   expect((await broker.agent.queryVault(carla, query)).categories[0]?.entries).toEqual([]);
+});
+
+it("recupera el recibo inicial después de una respuesta y aísla claves por titular, agente, canal y destinatario", async () => {
+  const input = { ...availability, idempotencyKey: "turno.17" };
+  const [first, ...copies] = await Promise.all(Array.from({ length: 8 }, () => broker.agent.ask(alice, input)));
+  expect(copies.every(view => view.requestId === first!.requestId)).toBe(true);
+  const [incoming] = await broker.agent.inbox(bruno);
+  await broker.agent.reply(bruno, { requestId: incoming!.requestId, nonce: incoming!.nonce,
+    outcome: "answered", result: { available: true } });
+  const askOnly = { ...alice, scopes: ["sideband:ask" as const] };
+  expect(await broker.agent.ask(askOnly, input)).toEqual(first);
+  await expect(broker.agent.ask(alice, { ...input, purpose: "Otro envío" })).rejects.toMatchObject({ code: "conflict" });
+
+  const separate = await Promise.all([
+    broker.owner.ask(alice, input),
+    broker.owner.ask(alice, input, "whatsapp"),
+    broker.agent.ask(carla, input),
+    broker.agent.ask(alice, { ...input, to: "carla@sideband.app" }),
+  ]);
+  expect(new Set([first, ...separate].map(view => view!.requestId)).size).toBe(5);
+});
+
+it("comprueba contacto y etiqueta antes de crear una solicitud, incluso cuando existe un grant directo", async () => {
+  const requireRelation = { kind: "contact", tag: "friend" } as const;
+  const input = { ...availability, requireRelation, idempotencyKey: "friend-test" };
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
+  const invitation = await broker.owner.connect(alice, availability.to, [], "work");
+  await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true, share: ["availability"] });
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
+  await broker.owner.setContactTag(alice, availability.to, "friend");
+  await expect(broker.agent.ask(alice, input)).resolves.toMatchObject({ decision: "pending" });
+  await broker.owner.setContactTag(alice, availability.to, "family");
+  await expect(broker.agent.ask(alice, { ...input, idempotencyKey: "another" })).rejects.toMatchObject({ code: "not_found" });
+  await broker.owner.removeFriend(alice, availability.to);
+  await expect(broker.agent.ask(alice, {
+    ...availability, requireRelation: { kind: "contact" },
+  })).rejects.toMatchObject({ code: "not_found" });
+});
+
+it("exige que ambos hayan aceptado el círculo indicado aunque sigan compartiendo otros permisos", async () => {
+  const circle = await broker.owner.createCircle(alice, "Fútbol");
+  const input = { ...availability, requireRelation: { kind: "circle", circleId: circle.id } as const };
+  await broker.owner.inviteToCircle(alice, circle.id, availability.to);
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
+  expect(await broker.agent.inbox(bruno)).toEqual([]);
+  await broker.owner.joinCircle(bruno, circle.id);
+  await expect(broker.agent.ask(alice, input)).resolves.toMatchObject({ decision: "pending" });
+  await expect(broker.agent.ask(carla, input)).rejects.toMatchObject({ code: "not_found" });
+  await broker.owner.removeFromCircle(bruno, circle.id, availability.to);
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
+});
+
+it("la búsqueda pública exige el scope de pregunta y una consulta válida", async () => {
+  const profile = [{ address: "bruno@sideband.app", displayName: "bruno" }];
+  await expect(broker.agent.searchPublicProfiles(alice, " BRUNO ")).resolves.toEqual(profile);
+  await expect(broker.owner.searchPublicProfiles(alice, "BRUNO@SIDEBAND.APP")).resolves.toEqual(profile);
+  await expect(broker.agent.searchPublicProfiles({ ...alice, scopes: ["sideband:status"] }, "bruno"))
+    .rejects.toMatchObject({ code: "forbidden" });
+  for (const query of [" ", "a", "abc\0def", "a".repeat(101)]) {
+    await expect(broker.owner.searchPublicProfiles(alice, query)).rejects.toMatchObject({ code: "invalid_input" });
+  }
 });
 
 async function askAvailability() {
@@ -294,6 +416,20 @@ describe("aislamiento y concurrencia", () => {
 });
 
 describe("cierre y avisos", () => {
+  it("atiende avisos entre lotes de solicitudes vencidas", async () => {
+    for (let i = 0; i < 101; i++) {
+      await askAvailability();
+      await broker.tick(now);
+    }
+    advance(900_000);
+    await broker.agent.inbox(bruno);
+    await broker.owner.setWake(bruno, bruno.agentId, webhook);
+    const live = await askAvailability();
+    expect(await broker.tick(now)).toMatchObject({ expired: 100, wakesOk: 1 });
+    expect(wake.mock.calls.map(([, notice]) => notice.requestId)).toContain(live.requestId);
+    expect((await broker.tick(now)).expired).toBe(1);
+  });
+
   it("vence solicitudes de agente y dueño en el plazo exacto", async () => {
     const agent = await askAvailability();
     const owner = await askAndEscalate();
@@ -332,7 +468,7 @@ describe("cierre y avisos", () => {
     expect(wake.mock.calls).toEqual([1, 2, 3].map((attempt) => [
       webhook,
       { requestId: view.requestId, event: WAKE_EVENT },
-      { attempt, final: attempt === 3, userId: bruno.userId, agentId: bruno.agentId },
+      { attempt, queueWaitMs: 0, final: attempt === 3, userId: bruno.userId, agentId: bruno.agentId },
     ]));
     expect((await broker.owner.agents(bruno))[0]).toMatchObject({ lastWakeAt: now.toISOString(), wakeKind: "standard_webhook" });
     expect(JSON.stringify(await broker.owner.activity(bruno))).not.toContain("diagnóstico sensible");
@@ -350,6 +486,36 @@ describe("cierre y avisos", () => {
     expect((await broker.tick(now)).wakesFailed).toBe(1);
     expect(wake).toHaveBeenCalledTimes(1);
     await expectFinal(alice, second.requestId, "unanswered", "delivery_failed");
+  });
+
+  it("espera a los avisos en curso antes de propagar el error de otro aviso", async () => {
+    await broker.agent.connectWake(bruno, webhook);
+    const failed = await askAvailability();
+    await askAvailability();
+    const tx = deps.store.tx.bind(deps.store);
+    vi.spyOn(deps.store, "tx").mockImplementation((run) => tx((store) => run({
+      ...store,
+      getRequest(id, ...args) {
+        if (id === failed.requestId) throw new Error("Error de lectura");
+        return store.getRequest(id, ...args);
+      },
+    })));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    wake.mockImplementationOnce(async () => {
+      await pending;
+      return { ok: true, retryable: false, ms: 1 };
+    });
+    const settled = vi.fn();
+    const ticking = broker.tick(now).catch(settled);
+    try {
+      await vi.waitFor(() => expect(wake).toHaveBeenCalledOnce());
+      expect(settled).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await ticking;
+    }
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ message: "Error de lectura" }));
   });
 
   it("preserva una respuesta que llega mientras dos trabajadores compiten por el aviso", async () => {
@@ -390,15 +556,16 @@ describe("cierre y avisos", () => {
 describe("conexiones y prueba de aviso", () => {
   it("registra perezosamente, conserva revocación y verifica solo el agente seleccionado", async () => {
     const another = { ...bruno, agentId: "other-bot" };
-    await Promise.all([broker.agent.inbox(bruno), broker.agent.inbox(another)]);
-    expect(await broker.owner.agents(bruno)).toHaveLength(2);
+    await broker.agent.connect(bruno);
+    await expect(broker.agent.connect(another)).rejects.toMatchObject({ code: "conflict" });
+    expect(await broker.owner.agents(bruno)).toHaveLength(1);
     await broker.owner.setWake(bruno, bruno.agentId, webhook);
     const ping = await broker.owner.ping(bruno, bruno.agentId);
-    expect(await broker.agent.inbox(another)).toEqual([]);
+    await expect(broker.agent.inbox(another)).rejects.toMatchObject({ code: "conflict" });
     const item = await inboxItem(bruno, ping.requestId);
     expect(item).toMatchObject({ from: "system@sideband.app", tool: "question", senderMessage: { trusted: false } });
     await expect(broker.agent.reply(another, { ...item, nonce: deriveNonce(nonceKey, ping.requestId), outcome: "no_data" }))
-      .rejects.toMatchObject({ code: "not_found" });
+      .rejects.toMatchObject({ code: "conflict" });
     await broker.tick(now);
     expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: ping.requestId, event: WAKE_EVENT }, expect.objectContaining({ attempt: 1, final: false, userId: bruno.userId }));
     await broker.agent.reply(bruno, { ...item, outcome: "no_data" });
@@ -410,6 +577,7 @@ describe("conexiones y prueba de aviso", () => {
     const pending = await askAvailability();
     const pendingItem = await inboxItem(bruno, pending.requestId);
     await broker.owner.revokeAgent(bruno, bruno.agentId);
+    await broker.agent.connect(another);
     await expect(broker.agent.reply(bruno, { ...pendingItem, outcome: "no_data" })).rejects.toMatchObject({ code: "not_found" });
     await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "not_found" });
     await expect(broker.agent.connectWake(bruno, { kind: "none" })).rejects.toMatchObject({ code: "not_found" });
@@ -465,12 +633,12 @@ describe("conexiones y prueba de aviso", () => {
   });
 
   it("una segunda respuesta a la misma solicitud recibe conflict", async () => {
-    const other: Principal = { ...bruno, agentId: "bruno-cli" };
+    // Un titular ya no puede tener dos conexiones vivas (índice agent_connections_one_active),
+    // así que la segunda respuesta realista es la misma conexión reintentando o repitiendo.
     const view = await askAvailability();
-    const first = await inboxItem(bruno, view.requestId);
-    const second = InboxItem.parse((await broker.agent.inbox(other)).find((item) => item.requestId === view.requestId));
-    await broker.agent.reply(bruno, { ...first, outcome: "no_data" });
-    await expect(broker.agent.reply(other, { ...second, outcome: "declined" })).rejects.toMatchObject({ code: "conflict" });
+    const item = await inboxItem(bruno, view.requestId);
+    await broker.agent.reply(bruno, { ...item, outcome: "no_data" });
+    await expect(broker.agent.reply(bruno, { ...item, outcome: "declined" })).rejects.toMatchObject({ code: "conflict" });
     const events = await deps.store.tx((tx) => tx.listEvents([view.requestId]));
     expect(events.filter(({ kind }) => kind === "delivery")).toHaveLength(1);
   });
@@ -501,16 +669,6 @@ describe("conexiones y prueba de aviso", () => {
     const job = await deps.store.tx((tx) => tx.getWakeForUpdate(libre.requestId, 0));
     expect(job?.lastResult).toMatchObject({ ok: false });
     expect(job?.lastResult?.detail).toBeUndefined();
-  });
-
-  it("prefiere el canal push cuando el titular también tiene un CLI sondeando", async () => {
-    // "ana-cli" gana cualquiera de los criterios de orden anteriores: sólo el de sondeo lo manda al final.
-    await broker.agent.connectWake({ ...bruno, agentId: "ana-cli" }, { kind: "polling" });
-    await broker.agent.connectWake(bruno, webhook);
-    const view = await askAvailability();
-    expect((await broker.tick(now)).wakesOk).toBe(1);
-    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: view.requestId, event: WAKE_EVENT },
-      expect.objectContaining({ attempt: 1, userId: bruno.userId, agentId: bruno.agentId }));
   });
 
   it("ignora una conexión de sondeo revocada", async () => {
@@ -588,6 +746,24 @@ describe("ejecución en el runtime del titular", () => {
     expect(await broker.agent.ask(alice, availability)).toMatchObject({ final: false, waitingFor: "agent" });
   });
 
+  it("una pregunta solo lee respuestas preparadas en la fuente autorizada", async () => {
+    await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "interests" });
+    const interests = vi.fn(async () => new Map([["¿Qué te gusta?", "Cerámica"]]));
+    const health = vi.fn(async () => new Map([["¿Alguna alergia?", "Dato privado"]]));
+    const run = createOwnerRuntime(broker.agent, bruno, [
+      localQuestionSource("health", health), localQuestionSource("interests", interests),
+    ]);
+    for (const [text, outcome] of [["¿Alguna alergia?", "no_data"], ["¿Qué te gusta?", "answered"]] as const) {
+      const request = await broker.agent.ask(alice, { to: availability.to, tool: "question", args: { text, category: "interests" } });
+      await run(notice(request.requestId));
+      const view = await broker.agent.status(alice, request.requestId);
+      expect(view).toMatchObject({ outcome, ...(outcome === "answered" && { result: { answer: "Cerámica" } }) });
+      expect(JSON.stringify(view)).not.toContain("Dato privado");
+    }
+    expect(interests).toHaveBeenCalledWith("alice@sideband.app");
+    expect(health).not.toHaveBeenCalled();
+  });
+
   it("ofrece los permisos del titular junto con la invitación a conectar", async () => {
     const { tools } = await broker.agent.capabilities(alice, availability.to);
     expect(tools).toMatchObject([
@@ -631,6 +807,18 @@ describe("ejecución en el runtime del titular", () => {
     expect(await broker.agent.status(alice, request.requestId)).toMatchObject({ decision: "deny" });
   });
 
+  it("shares a failed wake with overlapping callers and retries the next delivery", async () => {
+    const request = await askAvailability();
+    const read = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ available: true });
+    const onWake = createOwnerRuntime(broker.agent, bruno, [localReadTool("availability", read)]);
+    const wake = notice(request.requestId);
+    const settled = await Promise.allSettled([onWake(wake), onWake(wake)]);
+    expect(settled).toMatchObject([{ status: "rejected", reason: { message: "offline" } }, { status: "rejected", reason: { message: "offline" } }]);
+    expect(read).toHaveBeenCalledOnce();
+    await onWake(wake);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it("filtra la salida antes de enviarla al broker y procesa un aviso repetido una sola vez", async () => {
     const request = await askAvailability();
     const reply = vi.fn(broker.agent.reply);
@@ -655,6 +843,21 @@ describe("solicitudes de conexión", () => {
     const item = await inboxItem(bruno, request.requestId);
     return { request, item };
   }
+
+  it("preserves the original tag and sharing offer across conflicting invitation retries", async () => {
+    const to = "bruno@sideband.app";
+    const first = await broker.owner.connect(carla, { to, share: [], tag: "work" });
+    expect((await broker.owner.connect(carla, { to, share: [], tag: "work" })).requestId).toBe(first.requestId);
+    expect((await broker.owner.connect(carla, { to, tag: "work" })).requestId).toBe(first.requestId);
+    await expect(broker.owner.connect(carla, { to, share: ["availability"] })).rejects.toMatchObject({ code: "conflict" });
+    await expect(broker.owner.connect(carla, { to, tag: "family" })).rejects.toMatchObject({ code: "conflict" });
+    await broker.owner.answerInvitation(bruno, first.requestId, { accept: true, share: [] });
+    expect((await broker.owner.contacts(carla)).contacts).toMatchObject([{ address: to, gives: [], tag: "work" }]);
+    await broker.owner.removeContact(carla, to);
+    const grant = await broker.owner.setGrant(carla, { grantee: to, category: "general" });
+    await broker.owner.removeContact(carla, to);
+    expect(await broker.owner.grants(carla)).toContainEqual(grant);
+  });
 
   it("sin elección explícita el agente no acepta; el titular aún puede aceptar desde Contactos", async () => {
     const { request, item } = await invite();
@@ -693,7 +896,7 @@ describe("solicitudes de conexión", () => {
       result: { accepted: true }, share: ["health"] as Sharing };
     await expect(broker.agent.reply(bruno, reply)).rejects.toMatchObject({ code: "forbidden" });
     const agent: Principal = { ...bruno, scopes: [...bruno.scopes, "sideband:accept"] };
-    await expect(broker.agent.reply({ ...agent, userId: carla.userId }, reply)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.agent.reply({ ...carla, scopes: agent.scopes }, reply)).rejects.toMatchObject({ code: "not_found" });
     await broker.agent.reply(agent, reply);
     expect((await broker.owner.contacts(bruno)).contacts).toEqual([
       { address: "carla@sideband.app", gives: ["health"], receives: basicSharing },
@@ -760,7 +963,7 @@ describe("solicitudes de conexión", () => {
     expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tag: "friend", gives: contactTags.friend.sharing });
     await expect(broker.owner.setContactTag(carla, "diego@sideband.app", "friend")).rejects.toMatchObject({ code: "not_found" });
 
-    await broker.owner.removeFriend(carla, "bruno@sideband.app");
+    await broker.owner.removeContact(carla, "bruno@sideband.app");
     const again = await broker.owner.connect(carla, "bruno@sideband.app");
     await broker.owner.answerInvitation(bruno, again.requestId, { accept: true });
     expect((await broker.owner.contacts(carla)).contacts[0]).not.toHaveProperty("tag");
@@ -776,7 +979,7 @@ describe("solicitudes de conexión", () => {
 
     expect(await broker.agent.contacts(carla)).toEqual({
       contacts: [{ address: "bruno@sideband.app", theyShare: [], youShare: basicSharing }],
-      circles: [{ name: "Fútbol", members: ["alice@sideband.app"] }],
+      circles: [{ id: circle.id, name: "Fútbol", members: ["alice@sideband.app"] }],
     });
     expect((await broker.agent.contacts(bruno)).circles).toEqual([]);
     await expect(broker.agent.contacts({ ...carla, scopes: ["sideband:inbox"] })).rejects.toMatchObject({ code: "forbidden" });
@@ -799,7 +1002,7 @@ describe("solicitudes de conexión", () => {
     await broker.owner.answerInvitation(bruno, request.requestId, { accept: true });
     const pending = await broker.agent.ask(carla, availability);
 
-    await broker.owner.removeFriend(bruno, "carla@sideband.app");
+    await broker.owner.removeContact(bruno, "carla@sideband.app");
     expect(await friends(bruno)).toEqual([]);
     expect(await friends(carla)).toEqual([]);
     expect(await broker.owner.grants(bruno)).toEqual([aliceGrant]);
@@ -932,7 +1135,7 @@ describe("círculos", () => {
     });
     expect(directRequest).toMatchObject({ final: false, waitingFor: "agent" });
 
-    await broker.owner.removeFriend(bruno, carlaAddress);
+    await broker.owner.removeContact(bruno, carlaAddress);
     expect((await broker.owner.contacts(bruno)).contacts).toEqual([]);
     expect(await inboxItem(bruno, circleRequest.requestId)).toMatchObject({ allowedFields: ["available", "freeSlots"] });
     expect(await broker.agent.status(carla, directRequest.requestId)).toMatchObject({ final: true, decision: "deny" });
@@ -1028,6 +1231,27 @@ describe("avisos al canal de origen", () => {
     // Nadie lee ese canal: el intento queda omitido, no entregado.
     expect(await deps.store.tx((tx) => tx.getWakeForUpdate(view.requestId, 1)))
       .toMatchObject({ audience: "origin", lastResult: { ok: false, detail: "skipped" } });
+  });
+
+  it.each(["recovered", "attempted", "threw"] as const)("reports one exhausted origin notice (%s)", async (mode) => {
+    const sink = memorySink();
+    const telemetry = createTelemetry({ service: "worker", sink, lifecycle: false });
+    // An insecure callback is rejected locally by the real adapter.
+    await broker.owner.setChannel(alice, "whatsapp", { ...channelHook, url: "http://127.0.0.1/notice" });
+    const view = await broker.owner.ask(alice, question, "whatsapp");
+    await broker.tick(now);
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, view.requestId), outcome: "answered", result: { answer: "Sí" } });
+    const waker = mode === "attempted" ? createWaker({ allowInsecure: false, telemetry }) : deps.waker;
+    broker = createBroker({ ...deps, waker, telemetry, config: { ...deps.config, wakeRetryDelaysMs: [0] } });
+    if (mode === "recovered") {
+      const lease = new Date(now.getTime() + 60_000);
+      const jobs = await deps.store.tx((tx) => tx.claimDueWakes(now, lease, 1));
+      expect(jobs).toMatchObject([{ audience: "origin", attempt: 1 }]);
+      advance(60_000);
+    }
+    if (mode === "threw") wake.mockRejectedValueOnce(new Error("adapter unavailable"));
+    await broker.tick(now);
+    expect(sink.find("wake.exhausted")).toMatchObject([{ requestId: view.requestId, attrs: { attempts: 1 } }]);
   });
 
   it("rechaza un canal o un aviso inválido", async () => {

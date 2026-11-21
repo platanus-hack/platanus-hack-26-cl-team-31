@@ -1,4 +1,4 @@
-import type { OwnerPort } from "@team-31/broker/client";
+import type { OwnerPort } from "@team-31/broker-client";
 import type { ActivityEvent, ActivityItem, RequestStatus } from "@team-31/protocol";
 import { describe, expect, it, vi } from "vitest";
 
@@ -36,6 +36,7 @@ describe("readPingStatus", () => {
     activity.mockResolvedValue([ping(status, [{ kind: "response", status, at }])]);
 
     expect(await readPingStatus("ping-1")).toEqual({ status, verified: true });
+    expect(activity).toHaveBeenCalledWith({ userId: "ana" }, { requestId: "ping-1" });
   });
 
   it("does not verify a test that the owner answered after escalation", async () => {

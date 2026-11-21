@@ -36,62 +36,92 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
     const run = vi.fn();
     const now = Math.ceil(Date.now() / 1000) + 2;
     await store.whileLinked(phone, now, run);
-    expect(run).toHaveBeenLastCalledWith(undefined);
+    expect(run).toHaveBeenLastCalledWith(undefined, undefined);
     expect(await store.confirm("bob", candidate.id!)).toBeUndefined();
     expect(await store.confirm("ana", candidate.id!)).toMatch(/^[a-f0-9-]{36}$/);
     expect(await store.confirm("ana", candidate.id!)).toBeUndefined();
     expect((await store.state("ana"))?.linked).toBe(phone);
     await store.whileLinked(phone, now - 10, run);
-    expect(run).toHaveBeenLastCalledWith(undefined);
+    expect(run).toHaveBeenLastCalledWith(undefined, undefined);
     await store.whileLinked(phone, now, run);
-    expect(run).toHaveBeenLastCalledWith("ana");
+    expect(run).toHaveBeenLastCalledWith("ana", expect.any(String));
 
     expect(await store.detect((await store.start("bob"))!, phone)).toBe("bob");
     await expect(store.confirm("bob", (await store.state("bob"))!.id!)).rejects.toMatchObject({ code: "23505" });
     expect((await store.state("bob"))!.linked).toBeNull();
     await store.unlink("ana");
     await store.whileLinked(phone, now, run);
-    expect(run).toHaveBeenLastCalledWith(undefined);
+    expect(run).toHaveBeenLastCalledWith(undefined, undefined);
     await db.query(`UPDATE whatsapp.pairing SET expires_at = now() - interval '1 minute' WHERE user_id = 'bob'`);
     expect(await store.state("bob")).toMatchObject({ linked: null, id: null });
   });
 
   it("entrega avisos al vínculo vigente, abre la ventana con cada mensaje y guarda entregas pendientes", async () => {
     const phone = "+56955550199";
+    const timestamp = Math.ceil(Date.now() / 1000) + 2;
     await db.query(`INSERT INTO public."user" (id) VALUES ('carla')`);
     expect(await store.detect((await store.start("carla"))!, phone)).toBe("carla");
     const linkId = (await store.confirm("carla", (await store.state("carla"))!.id!))!;
     const run = vi.fn();
     await store.whileNotified(linkId, run);
-    expect(run).toHaveBeenLastCalledWith({ userId: "carla", phone, windowOpen: false });
+    expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "carla", phone, windowOpen: false }));
+    await store.whileNotified(linkId, async (link) => {
+      const send = vi.fn();
+      expect(await link!.acceptNotice("request-1", "final", send)).toBe(true);
+      expect(await link!.acceptNotice("request-1", "final", send)).toBe(false);
+      expect(await link!.acceptNotice("request-2", "owner", send)).toBe(true);
+      expect(send).not.toHaveBeenCalled();
+    });
     await store.whileLinked(phone, Math.ceil(Date.now() / 1000) + 1, async () => {});
     await store.whileNotified(linkId, run);
-    expect(run).toHaveBeenLastCalledWith({ userId: "carla", phone, windowOpen: true });
+    expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "carla", phone, windowOpen: true }));
 
-    await store.addPending("carla", "request-1");
-    await store.addPending("carla", "request-1");
-    await store.addPending("carla", "request-2");
-    expect(await store.pending("carla")).toEqual(["request-1", "request-2"]);
-    await store.clearPending("carla", "request-1");
-    expect(await store.pending("carla")).toEqual(["request-2"]);
+    expect(await store.pending(phone, timestamp)).toEqual(["request-1", "request-2"]);
+    const deliverPending = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
+    const retry = () => store.deliverPending(phone, timestamp, "request-1", deliverPending);
+    await expect(retry()).rejects.toThrow("offline");
+    await Promise.all([retry(), retry()]);
+    expect(deliverPending).toHaveBeenCalledTimes(2);
+    expect(await store.pending(phone, timestamp)).toEqual(["request-2"]);
 
-    expect(await store.assignLinkId(phone)).toBeUndefined();
+    const send = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
+    const deliver = () => store.whileNotified(linkId, async (link) => {
+      await link!.acceptNotice("request-3", "final", send);
+    });
+    await expect(deliver()).rejects.toThrow("offline");
+    await Promise.all([deliver(), deliver()]);
+    expect(send).toHaveBeenCalledTimes(2);
+
     await db.query(`UPDATE public."user" SET whatsapp_link_id = NULL WHERE id = 'carla'`);
-    const issued = await store.assignLinkId(phone);
-    expect(issued).toEqual({ userId: "carla", linkId: expect.stringMatching(/^[a-f0-9-]{36}$/) });
-    expect(await store.assignLinkId(phone)).toBeUndefined();
-    await store.whileNotified(issued!.linkId, run);
-    expect(run).toHaveBeenLastCalledWith({ userId: "carla", phone, windowOpen: true });
+    const register = vi.fn<(userId: string, linkId: string) => Promise<boolean>>()
+      .mockResolvedValueOnce(false).mockResolvedValue(true);
+    const registerPhone = () => store.registerChannel({ phone, timestamp }, register);
+    await registerPhone();
+    await Promise.all([registerPhone(), registerPhone()]);
+    const issued = register.mock.calls[0]![1];
+    expect(issued).toMatch(/^[a-f0-9-]{36}$/);
+    expect(register.mock.calls).toEqual([["carla", issued], ["carla", issued]]);
+    await store.whileNotified(issued, run);
+    expect(run).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "carla", phone, windowOpen: true }));
 
     await store.unlink("carla");
-    await store.whileNotified(issued!.linkId, run);
+    await store.whileNotified(issued, run);
     expect(run).toHaveBeenLastCalledWith(undefined);
-    expect(await store.pending("carla")).toEqual([]);
+    expect(await store.pending(phone, timestamp)).toEqual([]);
   });
 
   it("registra una sola entrega ante reintentos concurrentes", async () => {
     expect((await Promise.all([store.claim("123", "wamid.1"), store.claim("123", "wamid.1")])).sort())
       .toEqual([false, true]);
+  });
+
+  it("confirma el recibo del turno solo después de entregar y serializa copias del mismo evento", async () => {
+    const delivery = { numberId: "wa", messageId: "turn-retry" };
+    const dispatch = vi.fn().mockRejectedValueOnce(new Error("falló la entrega")).mockResolvedValue(undefined);
+    const run = () => store.whileLinked("+56955550222", Math.ceil(Date.now() / 1000), dispatch, delivery);
+    await expect(run()).rejects.toThrow("falló la entrega");
+    await Promise.all([run(), run()]);
+    expect(dispatch).toHaveBeenCalledTimes(2);
   });
 
   it("al repetir la migración habilita las operaciones necesarias para el rol web de Render", async () => {

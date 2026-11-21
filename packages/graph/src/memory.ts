@@ -164,7 +164,7 @@ export class MemoryGraphIndex implements FullGraphView {
 
   path(source: NodeId, target: NodeId, opts: PathOptions = {}): SearchResult {
     const lm = opts.landmarks ?? this.landmarkTable;
-    return runSync(pathSearch(this, source, target, { ...opts, landmarks: lm, landmarksStale: lm ? this.isStale(lm) : undefined }));
+    return runSync(pathSearch(this, source, target, { ...opts, landmarks: lm, landmarksStale: opts.landmarksStale || (lm && this.isStale(lm)) }));
   }
 
   /** Construye (y recuerda) la tabla de landmarks para ALT. */

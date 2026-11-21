@@ -5,21 +5,22 @@ import { ADDRESS_DOMAIN } from "@team-31/protocol";
 import { createWaker } from "@team-31/wake";
 import type { BrokerEnv } from "./env.js";
 import type { BrokerServiceTelemetry } from "./telemetry.js";
+import { createMemoryRateLimiter, createSharedRateLimiter } from "./http/rate-limit.js";
 
 function openStore(env: BrokerEnv) {
   if (!env.DATABASE_URL) {
     console.warn("[broker] DATABASE_URL ausente. Se usa un store en memoria y los datos se pierden al reiniciar.");
-    return { store: createMemoryStore(), close: () => Promise.resolve() };
+    return { store: createMemoryStore(), limiter: createMemoryRateLimiter(), close: () => Promise.resolve() };
   }
   if (!env.WAKE_SECRETS_KEY) throw new Error("Se requiere WAKE_SECRETS_KEY con DATABASE_URL.");
   const store = createPostgresStore({ databaseUrl: env.DATABASE_URL, secretsKey: env.WAKE_SECRETS_KEY });
-  return { store, close: () => store.close() };
+  return { store, limiter: createSharedRateLimiter(store), close: () => store.close() };
 }
 
 export function composeBroker(env: BrokerEnv, telemetry?: Pick<BrokerServiceTelemetry, "shared">) {
   const signingKey = createPrivateKey({ key: env.BROKER_SIGNING_KEY, format: "jwk" });
   const waker = createWaker({ allowInsecure: env.WAKE_ALLOW_INSECURE, telemetry: telemetry?.shared });
-  const { store, close } = openStore(env);
+  const { store, limiter, close } = openStore(env);
   const broker = createBroker({
     store,
     waker,
@@ -34,5 +35,5 @@ export function composeBroker(env: BrokerEnv, telemetry?: Pick<BrokerServiceTele
     },
     ...(telemetry ? { telemetry: telemetry.shared } : {}),
   });
-  return { broker, close };
+  return { broker, limiter, close };
 }

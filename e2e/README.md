@@ -4,6 +4,10 @@ La suite llama al MCP remoto por Streamable HTTP con el SDK oficial. Prepara dir
 
 ## Preparar el stack local
 
+La regresión de revocación en `src/trace.test.ts` levanta MCP y broker en puertos efímeros y crea una base aislada desde `TEST_DATABASE_URL`. No necesita `E2E_MCP_URL` ni un modelo. Es obligatoria en CI: verifica que una respuesta pendiente y otra ya guardada no se entreguen tras la revocación.
+
+La prueba de `sideband_message` en ese mismo archivo invoca al SDK de Anthropic contra un servidor HTTP local con credenciales ficticias. Comprueba que dos amigas homónimas produzcan una aclaración, que un contacto de trabajo quede fuera y que otra réplica pueda reanudar el turno con un único envío.
+
 1. Ejecuta `pnpm bootstrap` desde un worktree de prueba con Node 24 y pnpm 10. Prepara Postgres, las llaves en `.env.local` y el esquema de auth. La suite usa `BROKER_URL` y `WEB_SERVICE_PRIVATE_KEY` para preparar sus datos.
 2. Inicia el stack como indica la [guía local](../docs/local-stack.md), con `WAKE_ALLOW_INSECURE=1`, `REQUEST_TTL_SECONDS=20` y `WAKE_RETRY_DELAYS_MS=0,0`. El broker corre en el host y los receptores falsos usan un puerto efímero de loopback. Para OAuth se usa la app web local.
 3. Usa el worktree de prueba para guardar las direcciones y solicitudes creadas por la suite. Las URL de MCP y del broker deben apuntar al loopback.

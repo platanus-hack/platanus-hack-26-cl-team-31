@@ -1,8 +1,29 @@
 # MCP de Sideband
 
+## Mensajes del titular
+
+Con `ANTHROPIC_API_KEY` y la base de turnos configuradas, el servidor publica `sideband_message`. La herramienta recibe el texto original del titular y devuelve datos, recibos o una aclaración. Al contestar una aclaración o preguntar por una solicitud previa, el cliente adjunta el `continuationId` recibido. Los clientes que reintentan entregas pasan un UUID propio como `messageId` y reutilizan el mismo UUID en cada intento del mismo mensaje. Un mensaje nuevo recibe un UUID nuevo. Las continuaciones se vinculan al titular, al agente y a sus scopes. El broker evalúa las solicitudes con la identidad delegada.
+
+`search_public_profiles({ query })` busca personas por nombre o dirección dentro del directorio público. Las consultas sobre un amigo o un círculo se resuelven dentro de las relaciones del titular. [Diseño del flujo](../../docs/message-routing.md)
+
+## Grupos privados de la bóveda
+
+- `sideband_contacts` lista los contactos aceptados. `sideband_contact_groups` lista tus grupos privados y sus miembros.
+- `sideband_contact_group_change` permite `create`, `delete`, `add_contact` y `remove_contact`; todas las operaciones salvo `create` usan el ID del grupo. Puedes agregar solo contactos aceptados.
+- `sideband_vault_catalog` muestra qué etiquetas y grupos privados tienen permiso de lectura en cada categoría propia, sin leer su contenido.
+- `sideband_vault_members` lista los contactos con acceso efectivo a una categoría propia. Busca primero su ID con `sideband_vault_catalog`.
+- Con `sideband_vault_change`, `set_contact_group` cambia el acceso de un grupo. `set_member` con `categoryId`, `address` y `allowed` agrega o quita un contacto aceptado de esa categoría. La decisión individual prevalece sobre grupos y etiquetas hasta que se cambie o se elimine el contacto.
+- `sideband_vault_request_access` recibe `to` y `categoryName`. El contacto ve la solicitud en Inicio: al conceder lectura se reutiliza la categoría o se crea vacía y se agrega un permiso individual. Rechazar o dejarla vencer no cambia la bóveda. El solicitante consulta el resultado con `sideband_check`.
+- `sideband_network_users` (`sideband:ask`) lista direcciones con historial de conexión de agente, incluidas las que hoy no tienen agente activo. Devuelve hasta 50 por página; pasa `nextCursor` en `after` para continuar. Aparecer en el directorio no crea contactos ni permisos.
+- Para buscar, envía `q` con parte de la dirección y conserva ese filtro al paginar. Antes de invitar, pregunta al titular qué grupo quiere usar e indica qué categorías comparte. En `sideband_ask` con `tool: "connect"` incluye `groupId` fuera de `args`: el ID elegido (requiere `sideband:vault`) o `null` para «Sin grupo». El grupo es privado y la incorporación solo ocurre si se acepta la invitación y el grupo todavía existe.
+- Si tu cliente no muestra `groupId`, vuelve a consultar `tools/list` en una conexión nueva al mismo endpoint MCP. Busca `sideband_ask.inputSchema.properties.groupId`: si falta también allí, comprueba la versión desplegada; si aparece, actualiza el catálogo de herramientas del cliente.
+- Los grupos son privados, no son círculos ni etiquetas. Crear un grupo no comparte nada. Agregar un miembro le da acceso a lo ya compartido con el grupo. Quitar al contacto o eliminar el grupo revoca ese acceso, sin borrar datos ni tocar otros permisos. Administrar grupos requiere `sideband:vault`.
+
 El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `sideband_ask`, `sideband_inbox`, `sideband_reply` y `sideband_check`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
 
 ## Arranque local
+
+Si un cliente envía `Origin` al endpoint `/mcp`, debe coincidir con el origen público de `MCP_RESOURCE_URL` (esquema, host y puerto). Los clientes nativos pueden omitirlo; la autenticación sigue siendo obligatoria.
 
 Con `NODE_ENV=production`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL` requieren HTTPS. El MCP valida las tres antes de abrir el puerto. Usa URLs sin credenciales, query ni fragmento.
 
@@ -12,7 +33,7 @@ Con `NODE_ENV=production`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL` r
 
 `GET /healthz` devuelve `{"ok":true}`. El descubrimiento OAuth está disponible en `/.well-known/oauth-protected-resource` y `/.well-known/oauth-protected-resource/mcp`. El servidor escucha en `127.0.0.1` por defecto. Puedes elegir otra interfaz con `MCP_HOST`.
 
-Si prefieres Compose, compila con `pnpm build --filter @team-31/mcp` y usa `docker compose --env-file .env --env-file .env.local --profile sideband up -d mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile sideband stop mcp`.
+Si prefieres Compose, usa `docker compose --env-file .env --env-file .env.local --profile sideband up -d --build mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile sideband stop mcp`.
 
 ## Modo de desarrollo
 
@@ -98,7 +119,7 @@ El MCP de Ana ofrece `list_contacts` para descubrir nombres y direcciones, `ask_
 
 Las preguntas abiertas usan `query: {"text":"…"}`. El broker verifica el permiso del destinatario para la operación. Cuando autoriza un interés, envía un webhook firmado al agente de ese contacto. Su herramienta `check_interest` compara el tema con su archivo y entrega sólo `matches`. El broker valida la respuesta y la CLI muestra la dirección y el resultado de cada solicitud.
 
-Las identidades ficticias usan direcciones `demo-<id>@sideband.app`. La preparación inicial importa los lectores de cada perfil como grants de Sideband. Volver a ejecutar la seed conserva las decisiones posteriores del titular. PostgreSQL guarda reglas, solicitudes y avisos entre sesiones. Puedes correlacionar el ID de **Ver datos** con la actividad del broker.
+Las identidades ficticias usan direcciones `demo-<id>@sideband.app`. La preparación inicial importa los lectores de cada perfil como grants de Sideband. Volver a ejecutar la seed conserva las decisiones posteriores del titular. PostgreSQL guarda reglas, solicitudes y avisos entre sesiones. En la demo, `await_contact` solo lee solicitudes creadas por `ask_contact` en la misma sesión MCP. Puedes correlacionar el ID de **Ver datos** con la actividad del broker.
 
 ### Herramientas
 

@@ -6,6 +6,7 @@ export const toolLabels = {
   question: "Pregunta",
   interest_check: "Interés",
   connect: "Conexión",
+  vault_access: "Acceso a la bóveda",
 } satisfies Record<ToolName, string>;
 
 export const statusLabels = {
@@ -57,12 +58,4 @@ const dateTime = new Intl.DateTimeFormat("es-CL", {
 
 export function formatTime(value: string) {
   return dateTime.format(new Date(value));
-}
-
-export const activityPageSize = 20;
-
-export function parseActivityPage(input: unknown) {
-  if (typeof input !== "string" || !/^[1-9][0-9]*$/.test(input)) return 1;
-  const value = Number(input);
-  return Number.isSafeInteger(value * activityPageSize + 1) ? value : 1;
 }

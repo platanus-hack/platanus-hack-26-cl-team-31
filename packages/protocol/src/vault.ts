@@ -7,9 +7,28 @@ const categoryId = z.uuid();
 const value = z.union([z.string().trim().min(1).max(2000), z.number(), z.boolean()]);
 export const VaultEntry = z.object({ label: name, value });
 export const VaultCategory = z.object({ id: categoryId, name });
-export const VaultCatalog = z.object({ categories: z.array(VaultCategory) });
-export const OwnerVault = z.object({ categories: z.array(VaultCategory.extend({
-  groups: z.array(ContactTag), entries: z.array(VaultEntry),
+const groupId = z.uuid();
+const categorySharing = VaultCategory.extend({
+  groups: z.array(ContactTag),
+  contactGroups: z.array(z.object({ id: groupId, name })),
+});
+export const VaultCatalog = z.object({ categories: z.array(categorySharing) });
+export type VaultCatalog = z.infer<typeof VaultCatalog>;
+export const VaultMembersQuery = z.strictObject({ categoryId });
+export const VaultMembers = z.object({ members: z.array(Address) });
+export const ContactGroups = z.object({ groups: z.array(z.object({ id: groupId, name, members: z.array(Address) })) });
+export type ContactGroups = z.infer<typeof ContactGroups>;
+export const ContactGroupChange = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("create"), name }),
+  z.strictObject({ action: z.literal("delete"), groupId }),
+  z.strictObject({ action: z.literal("add_contact"), groupId, address: Address }),
+  z.strictObject({ action: z.literal("remove_contact"), groupId, address: Address }),
+]);
+export type ContactGroupChange = z.infer<typeof ContactGroupChange>;
+export const ContactGroupReceipt = z.object({ groupId });
+export const OwnerVault = z.object({ categories: z.array(categorySharing.partial({ contactGroups: true }).extend({
+  entries: z.array(VaultEntry),
+  members: VaultMembers.shape.members.optional(),
 })) });
 export type OwnerVault = z.infer<typeof OwnerVault>;
 export const VaultQuery = z.strictObject({ to: Address, categoryId: categoryId.optional() });
@@ -24,6 +43,9 @@ export const VaultChange = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("put_entry"), categoryId, ...VaultEntry.shape }),
   z.strictObject({ action: z.literal("delete_entry"), categoryId, label: name }),
   z.strictObject({ action: z.literal("set_group"), categoryId, group: ContactTag, allowed: z.boolean() }),
+  z.strictObject({ action: z.literal("set_contact_group"), categoryId, groupId, allowed: z.boolean() }),
+  z.strictObject({ action: z.literal("set_member"), categoryId, address: Address, allowed: z.boolean() }),
 ]);
 export type VaultChange = z.infer<typeof VaultChange>;
 export const VaultReceipt = z.object({ categoryId });
+export type VaultReceipt = z.infer<typeof VaultReceipt>;

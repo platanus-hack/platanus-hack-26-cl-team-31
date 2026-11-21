@@ -205,6 +205,7 @@ function overview(window: Window): Overview {
       top: [...visibleErrors].sort((a, b) => b.count - a.count).slice(0, 5),
     },
     rateLimited: Math.round(3 * scale),
+    activeQuotaWindows: Math.round(10 * scale),
   }
 }
 

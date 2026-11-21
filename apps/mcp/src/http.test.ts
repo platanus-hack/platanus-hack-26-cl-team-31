@@ -4,10 +4,11 @@ import { createServer, type Server } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { verifyServiceToken } from "@team-31/auth/service";
-import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker/client";
+import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-client";
 import { Scope, WAKE_EVENT } from "@team-31/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { HandleMessage } from "./tools/message.js";
 import { createHttpServer } from "./http.js";
 import { createServiceTokenMinter } from "./service-token.js";
 
@@ -25,8 +26,10 @@ async function listen(server: Server) {
 
 function testPort(): AgentPort {
   return {
-    capabilities: vi.fn(),
-    vaultCatalog: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
+    connect: vi.fn(),
+    searchPublicProfiles: vi.fn(), capabilities: vi.fn(),
+    vaultCatalog: vi.fn(), vaultMembers: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
+    networkUsers: vi.fn(), contactGroups: vi.fn(), changeContactGroup: vi.fn(),
     ask: vi.fn(),
     inbox: vi.fn(),
     reply: vi.fn(),
@@ -66,6 +69,7 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
     method: "POST",
     headers: {
       Authorization: "Bearer dev:user:agent",
+      Origin: new URL(audience).origin,
       "Content-Type": "application/json",
       Accept: "application/json,text/event-stream",
     },
@@ -74,6 +78,7 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
       params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } },
     }),
   });
+  expect(initialize.headers.get("cache-control")).toBe("no-store");
   expect(await initialize.json()).toMatchObject({ result: { capabilities: { events: {} } } });
 
   const response = await fetch(`${origin}/mcp`, {
@@ -82,6 +87,7 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
   });
   expect(response.status).toBe(401);
+  expect(response.headers.get("cache-control")).toBe("no-store");
   expect(response.headers.get("www-authenticate")).toContain(
     `resource_metadata="https://mcp.example.test${metadataPath}/mcp"`,
   );
@@ -99,6 +105,26 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
     expect(result.status).toBe(405);
     expect(result.headers.get("allow")).toBe("POST");
   }
+});
+
+it("rechaza orígenes ajenos y opacos antes de conectar el agente", async () => {
+  const agent = testPort();
+  const origin = await listen(createHttpServer(options, agent));
+  for (const browserOrigin of ["https://other.example.test", "null"]) {
+    const response = await fetch(`${origin}/mcp`, {
+      method: "POST", headers: { Origin: browserOrigin, Authorization: "Bearer dev:user:agent" },
+    });
+    expect(response.status).toBe(403);
+  }
+  expect(agent.connect).not.toHaveBeenCalled();
+});
+
+it("rechaza el inicio del cliente cuando el titular tiene otro agente activo", async () => {
+  const agent = testPort();
+  vi.mocked(agent.connect).mockRejectedValue(new BrokerError("conflict", "Ya tienes un agente conectado."));
+  const origin = await listen(createHttpServer(options, agent));
+  await expect(connect(`${origin}/mcp`, "dev:ana:otro")).rejects.toThrow(/Ya tienes un agente conectado/);
+  expect(agent.connect).toHaveBeenCalledWith(expect.objectContaining({ userId: "ana", agentId: "otro" }));
 });
 
 it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de cada conexión al broker", async () => {
@@ -119,12 +145,19 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const answer = { requestId: inbox.requestId, nonce: inbox.nonce, outcome: "answered", result: { answer: "Sí" } };
   const receipt = { requestId: inbox.requestId, status: "answered", deliveredFields: ["answer"], droppedFields: [] };
   const final = { ...request, final: true, decision: "allow", outcome: "answered", result: answer.result, signature: "firma" };
+  const groupId = "11111111-1111-4111-8111-111111111111";
+  const createGroup = { action: "create", name: "Instituciones" };
+  const groups = { groups: [{ id: groupId, name: createGroup.name, members: [] }] };
   const requests: unknown[] = [];
   const replies: Record<string, unknown> = {
     "POST /v1/agent/ask": pending,
     "GET /v1/agent/inbox": { items: [inbox] },
     "POST /v1/agent/reply": receipt,
     "GET /v1/agent/requests/request-1": final,
+    "POST /v1/agent/contact-groups": { groupId },
+    "GET /v1/agent/contact-groups": groups,
+    "GET /v1/agent/network/users": { addresses: [pending.to] },
+    [`GET /v1/agent/vault/members?categoryId=${groupId}`]: { members: [pending.to] },
   };
 
   const broker = await listen(createServer(async (req, res) => {
@@ -138,6 +171,10 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     }
 
     const path = `${req.method} ${req.url}`;
+    if (path === "POST /v1/agent/connection") {
+      res.writeHead(204).end();
+      return;
+    }
     let body = "";
     for await (const chunk of req) body += chunk;
     requests.push({ path, ...identity, body: body ? JSON.parse(body) : undefined });
@@ -150,20 +187,36 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
-    ["sideband_vault_catalog", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
+    ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_contact_groups", true], ["sideband_contact_group_change", undefined],
+    ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
+    ["sideband_vault_request_access", undefined],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
+  expect(tools[0]?.inputSchema).toMatchObject({
+    properties: { groupId: { anyOf: [{ type: "string", format: "uuid" }, { type: "null" }] } },
+    if: { properties: { tool: { const: "connect" } } },
+    then: { required: ["groupId"] },
+  });
+  expect((await ana.callTool({ name: "sideband_ask", arguments: { to: pending.to, tool: "connect", args: {} } })).isError).toBe(true);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
   expect((await bob.callTool({ name: "sideband_inbox" })).structuredContent).toEqual({ items: [inbox] });
   expect((await bob.callTool({ name: "sideband_reply", arguments: answer })).structuredContent).toEqual(receipt);
   expect((await ana.callTool({ name: "sideband_check", arguments: { requestId: inbox.requestId } })).structuredContent)
     .toEqual(final);
+  expect((await ana.callTool({ name: "sideband_contact_group_change", arguments: { change: createGroup } })).structuredContent).toEqual({ groupId });
+  expect((await ana.callTool({ name: "sideband_contact_groups" })).structuredContent).toEqual(groups);
+  expect((await ana.callTool({ name: "sideband_network_users" })).structuredContent).toEqual({ addresses: [pending.to] });
+  expect((await ana.callTool({ name: "sideband_vault_members", arguments: { categoryId: groupId } })).structuredContent).toEqual({ members: [pending.to] });
 
   expect(requests).toEqual([
     { path: "POST /v1/agent/ask", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: question },
     { path: "GET /v1/agent/inbox", userId: "bob", agentId: "bob-bot", scopes: Scope.options, body: undefined },
     { path: "POST /v1/agent/reply", userId: "bob", agentId: "bob-bot", scopes: Scope.options, body: answer },
     { path: "GET /v1/agent/requests/request-1", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "POST /v1/agent/contact-groups", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: createGroup },
+    { path: "GET /v1/agent/contact-groups", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "GET /v1/agent/network/users", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: `GET /v1/agent/vault/members?categoryId=${groupId}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
   ]);
 });
 
@@ -177,7 +230,12 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
       keys: [{ ...publicKey.export({ format: "jwk" }), kid: "oauth-test", alg: "EdDSA" }],
     }));
   }));
-  const origin = await listen(createHttpServer({ audience, issuer, jwksUrl: `${jwksOrigin}/jwks` }, agent));
+  const messages = vi.fn<HandleMessage>(async (context, input) => {
+    if (input.text === "estado") await context.ops.status("request-1");
+    else await context.ops.contacts();
+    return { kind: "clarification", question: "¿A quién?", continuationId: "opaque" };
+  });
+  const origin = await listen(createHttpServer({ audience, issuer, jwksUrl: `${jwksOrigin}/jwks` }, agent, undefined, messages));
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
   function token(scope: string) {
     const jwt = `${encode({ typ: "at+jwt", alg: "EdDSA", kid: "oauth-test" })}.${encode({
@@ -205,6 +263,14 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
   });
 
   const limited = await connect(`${origin}/mcp`, token("sideband:status"));
+  const message = (text: string) => limited.callTool({ name: "sideband_message", arguments: { text, messageId: "ba915d2c-3d48-44eb-a3d4-146033dc216a" } });
+  expect((await limited.listTools()).tools.map(t => t.name)).toContain("sideband_message");
+  expect(await message("contactos")).toMatchObject({ isError: true, structuredContent: { error: { code: "forbidden" } } });
+  expect(agent.contacts).not.toHaveBeenCalled();
+  expect(await message("estado")).toMatchObject({ isError: true, structuredContent: { error: { code: "not_found" } } });
+  expect(agent.status).toHaveBeenLastCalledWith({ userId: "oauth-user", agentId: "oauth-agent", scopes: ["sideband:status"] }, "request-1");
+  expect(messages.mock.calls.at(-1)?.[0].deliveryId).toBe("ba915d2c-3d48-44eb-a3d4-146033dc216a");
+  expect(messages.mock.calls.at(-1)?.[0].binding).toBe(JSON.stringify(["mcp", "oauth-agent", ["sideband:status"]]));
   await expect(limited.request({
     method: "events/subscribe",
     params: { name: WAKE_EVENT, delivery: { mode: "webhook", url: "https://callback.example.test/sideband", secret: `whsec_${Buffer.alloc(32).toString("base64")}` } },

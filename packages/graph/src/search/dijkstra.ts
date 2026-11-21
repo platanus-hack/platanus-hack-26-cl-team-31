@@ -1,4 +1,4 @@
-import { MinHeap } from "../heap.js";
+import { MinHeap } from "./heap.js";
 import type { Arc, NodeId } from "../model.js";
 import {
   allowAll,
@@ -11,7 +11,7 @@ import {
   type SearchStats,
   type TraversalContext,
 } from "../view.js";
-import { DEFAULT_BATCH, EMPTY, frontierRequest, recordFetch, visibleArcs } from "./common.js";
+import { buildPath, DEFAULT_BATCH, EMPTY, frontierRequest, parentArcs, recordFetch, visibleArcs } from "./common.js";
 
 /** Predicado de "nodo objetivo". Recibe solo las aristas visibles para el viewer. */
 export type NodeMatcher = (id: NodeId, visibleArcs: readonly Arc[]) => boolean;
@@ -72,7 +72,8 @@ export function* dijkstra(view: AdjacencyView, source: NodeId, opts: DijkstraOpt
   stats.pushes++;
 
   const isDone = (id: NodeId) => state.get(id)?.done === true;
-  const path = (to: NodeId, cost: number) => buildPathFrom(source, to, cost, state);
+  const path = (to: NodeId, cost: number) =>
+    buildPath(source, to, cost, parentArcs(source, to, (id) => state.get(id)?.parent).reverse());
   let prunedByCost = false;
 
   while (heap.size > 0) {
@@ -149,24 +150,11 @@ export function* dijkstra(view: AdjacencyView, source: NodeId, opts: DijkstraOpt
   return { paths, stats };
 }
 
-function buildPathFrom(source: NodeId, target: NodeId, cost: number, state: Map<NodeId, State>): Path {
-  const arcs: Arc[] = [];
-  let cur = target;
-  while (cur !== source) {
-    const arc = state.get(cur)?.parent;
-    if (!arc) throw new Error(`Camino roto en ${cur}`);
-    arcs.push(arc);
-    cur = arc.from;
-  }
-  arcs.reverse();
-  return { source, target, cost, nodes: [source, ...arcs.map((a) => a.to)], arcs };
-}
-
 // ---------------------------------------------------------------------------
 // Multi-objetivo con conjunto de candidatos conocido
 // ---------------------------------------------------------------------------
 
-export interface TargetedOptions extends DijkstraOptions {
+export interface TargetedOptions extends Omit<DijkstraOptions, "target" | "potential"> {
   /** Candidatos explícitos (p. ej. los vecinos de un tema). `match` se sigue aplicando. */
   readonly targets: readonly NodeId[];
   /** Expansiones de la fase hacia atrás. Default: 4·|targets| + 256. */
@@ -194,7 +182,8 @@ export function* targetedNearest(view: AdjacencyView, source: NodeId, opts: Targ
   const set = new Set(opts.targets);
   const userMatch = opts.match;
   const res = yield* dijkstra(view, source, {
-    ...opts,
+    viewer: ctx.viewer, filter, batchSize: opts.batchSize, k: opts.k, includeSource: opts.includeSource,
+    maxCost: opts.maxCost, maxExpanded: opts.maxExpanded,
     match: (id, arcs) => set.has(id) && (!userMatch || userMatch(id, arcs)),
     potential: (id) => {
       const d = back.dist.get(id);

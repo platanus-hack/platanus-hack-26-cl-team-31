@@ -10,12 +10,22 @@ WORKDIR /app
 
 FROM base AS pruner
 COPY . .
-RUN turbo prune @team-31/server @team-31/scale @team-31/mcp --docker
+ARG SIDEBAND_PACKAGE
+RUN if [ -n "$SIDEBAND_PACKAGE" ]; then turbo prune "$SIDEBAND_PACKAGE" --docker; \
+    else turbo prune @team-31/server @team-31/scale @team-31/mcp --docker; fi
 
 FROM base AS deps
 COPY --from=pruner /app/out/json/ .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --prefer-offline
+
+FROM deps AS sideband
+ARG SIDEBAND_PACKAGE
+COPY --from=pruner /app/out/full/ .
+COPY vitest.shared.ts .
+RUN --mount=type=cache,id=turbo-cache,target=/app/.turbo/cache \
+    turbo run build --filter="$SIDEBAND_PACKAGE" --cache-dir=/app/.turbo/cache
+USER node
 
 FROM deps AS app
 COPY --from=pruner /app/out/full/ .

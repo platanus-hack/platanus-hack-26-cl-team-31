@@ -2,9 +2,9 @@
 
 import { useActionState, useState, useTransition } from "react";
 import type { Contact, Invitation, Sharing, TagPresets } from "@team-31/protocol";
-import { contactTagNames, contactTags, type ContactTag } from "@team-31/protocol/constants";
+import { contactTagNames, contactTags, sameSharing, type ContactTag } from "@team-31/protocol/constants";
 
-import { answerInvitation, removeContact, saveContactTag, saveSharing, saveTagPreset, sendInvitation } from "../actions";
+import { answerInvitation, removeContact, saveContactTag, saveSharing, saveTagPreset, sendInvitation } from "./actions";
 import { button, card, Feedback, input, primaryButton } from "../ui";
 import { describeSharing } from "./describe";
 import { SharingPicker } from "./sharing";
@@ -56,10 +56,6 @@ export function IncomingInvitation({ invitation, presets }: { invitation: Invita
       </form>
     </li>
   );
-}
-
-function sameSharing(a: Sharing, b: Sharing) {
-  return a.length === b.length && a.every((category) => b.includes(category));
 }
 
 export function ContactRow({ contact, presets }: { contact: Contact; presets: TagPresets }) {

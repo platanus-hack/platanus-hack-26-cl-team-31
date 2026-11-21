@@ -1,19 +1,24 @@
-import type { Address, ContactTag, Sharing, OwnerVault } from "@team-31/protocol";
-import { BrokerError } from "../errors.js";
+import { Address, type ContactGroups, type ContactTag, type Sharing, type OwnerVault } from "@team-31/protocol";
+import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit } from "./directory.js";
+import { activeAgentConflict, BrokerError } from "../errors.js";
+import { wakeClaim } from "./store.js";
 import type {
-  AgentConnectionRow, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
+  AgentConnectionRow, AskReceipt, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "./store.js";
 
 type State = {
   vaults: Map<string, OwnerVault>;
+  memberRules: Map<string, Map<Address, boolean>>;
+  contactGroups: Map<string, ContactGroups["groups"]>;
   users: Map<string, UserRow>;
   grants: (GrantRow & { revokedAt?: Date })[];
-  friends: Map<string, Set<Address>>;
+  contacts: Map<string, Set<Address>>;
   contactTags: Map<string, Map<Address, ContactTag>>;
   tagPresets: Map<string, Partial<Record<ContactTag, Sharing>>>;
   circles: Map<string, CircleRow>;
   circleMembers: CircleMemberRow[];
   requests: Map<string, RequestRow>;
+  askReceipts: Map<string, AskReceipt>;
   events: RequestEvent[];
   wakes: Map<string, WakeJob>;
   agents: Map<string, AgentConnectionRow>;
@@ -33,12 +38,25 @@ function transaction(state: State): StoreTx {
     return [...state.users.values()].find((user) => user.address === address);
   }
 
+  function canRead(owner: string, c: OwnerVault["categories"][number], reader: Address) {
+    if (!state.contacts.get(owner)?.has(reader)) return false;
+    const rule = state.memberRules.get(pairKey(owner, c.id))?.get(reader);
+    if (rule !== undefined) return rule;
+    const tag = state.contactTags.get(owner)?.get(reader);
+    return (tag && c.groups.includes(tag)) || state.contactGroups.get(owner)?.some(group =>
+      group.members.includes(reader) && c.contactGroups?.some(g => g.id === group.id));
+  }
+
   function listRecipientRequests(address: Address, status: "awaiting_agent" | "awaiting_owner"): RequestRow[] {
     const ownerId = findUserByAddress(address)?.userId;
     if (!ownerId) return [];
     return structuredClone([...state.requests.values()]
       .filter((row) => row.toAddress === address && row.toUserId === ownerId && row.status === status)
       .sort(byCreatedAt));
+  }
+
+  function categoryMembers(owner: string, category: OwnerVault["categories"][number]) {
+    return [...(state.contacts.get(owner) ?? [])].filter(address => canRead(owner, category, address)).sort();
   }
 
   function circleMember(circleId: string, address: Address) {
@@ -50,6 +68,8 @@ function transaction(state: State): StoreTx {
   }
 
   function putAgent(row: AgentConnectionRow): AgentConnectionRow {
+    if (!row.revokedAt && [...state.agents.values()].some(other =>
+      other.userId === row.userId && other.agentId !== row.agentId && !other.revokedAt)) throw activeAgentConflict();
     ensureUser(row.userId, row.createdAt);
     const stored = structuredClone(row);
     state.agents.set(pairKey(row.userId, row.agentId), stored);
@@ -65,7 +85,53 @@ function transaction(state: State): StoreTx {
   }
 
   return {
-    async ownerVault(owner) { return structuredClone(state.vaults.get(owner) ?? { categories: [] }); },
+    async networkAddresses(after, limit, q) {
+      const connected = new Set([...state.agents.values()].map(agent => agent.userId));
+      return [...state.users.values()].flatMap(({ userId, address }) =>
+        address && connected.has(userId) && (!after || address > after) && (!q || address.includes(q)) ? [address] : []).sort().slice(0, limit);
+    },
+    async vaultCatalog(owner) {
+      return { categories: (state.vaults.get(owner)?.categories ?? []).map(({ id, name, groups, contactGroups }) =>
+        structuredClone({ id, name, groups, contactGroups: contactGroups ?? [] })) };
+    },
+    async vaultMembers(owner, categoryId) {
+      const category = state.vaults.get(owner)?.categories.find(c => c.id === categoryId);
+      return category ? categoryMembers(owner, category) : null;
+    },
+    async contactGroups(owner) {
+      return { groups: structuredClone(state.contactGroups.get(owner) ?? []).sort((a, b) => a.name.localeCompare(b.name)) };
+    },
+    async changeContactGroup(owner, id, change) {
+      const groups = state.contactGroups.get(owner) ?? [];
+      if (change.action === "create") {
+        if (groups.some(g => g.name.toLowerCase() === change.name.toLowerCase())) {
+          throw new BrokerError("conflict", "Ya tienes un grupo con ese nombre.");
+        }
+        state.contactGroups.set(owner, [...groups, { id, name: change.name, members: [] }]);
+        return true;
+      }
+      const group = groups.find(g => g.id === id);
+      if (!group) return false;
+      if (change.action === "delete") {
+        state.contactGroups.set(owner, groups.filter(g => g !== group));
+        for (const category of state.vaults.get(owner)?.categories ?? []) {
+          const others = category.contactGroups?.filter(g => g.id !== id);
+          if (others?.length) category.contactGroups = others;
+          else delete category.contactGroups;
+        }
+      } else if (change.action === "add_contact") {
+        if (!state.contacts.get(owner)?.has(change.address)) return false;
+        if (!group.members.includes(change.address)) group.members = [...group.members, change.address].sort();
+      } else {
+        group.members = group.members.filter(address => address !== change.address);
+      }
+      return true;
+    },
+    async ownerVault(owner) {
+      const vault = structuredClone(state.vaults.get(owner) ?? { categories: [] });
+      for (const category of vault.categories) category.members = categoryMembers(owner, category);
+      return vault;
+    },
     async changeVault(owner, id, change) {
       const vault = state.vaults.get(owner) ?? { categories: [] };
       if (change.action === "create") {
@@ -77,11 +143,31 @@ function transaction(state: State): StoreTx {
       if (!c) return false;
       switch (change.action) {
         case "rename": c.name = change.name; break;
-        case "delete": vault.categories = vault.categories.filter(item => item !== c); break;
+        case "delete":
+          state.memberRules.delete(pairKey(owner, id));
+          vault.categories = vault.categories.filter(item => item !== c);
+          break;
+        case "set_member": {
+          if (!state.contacts.get(owner)?.has(change.address)) return false;
+          const key = pairKey(owner, id);
+          const rules = state.memberRules.get(key) ?? new Map<Address, boolean>();
+          rules.set(change.address, change.allowed);
+          state.memberRules.set(key, rules);
+          break;
+        }
         case "set_group":
           c.groups = c.groups.filter(group => group !== change.group);
           if (change.allowed) c.groups.push(change.group);
           break;
+        case "set_contact_group": {
+          const group = state.contactGroups.get(owner)?.find(g => g.id === change.groupId);
+          if (!group) return false;
+          const groups = (c.contactGroups ?? []).filter(g => g.id !== change.groupId);
+          if (change.allowed) groups.push({ id: group.id, name: group.name });
+          if (groups.length) c.contactGroups = groups.sort((a, b) => a.name.localeCompare(b.name));
+          else delete c.contactGroups;
+          break;
+        }
         case "put_entry":
           c.entries = [...c.entries.filter(e => e.label !== change.label), { label: change.label, value: change.value }];
           break;
@@ -91,10 +177,22 @@ function transaction(state: State): StoreTx {
     },
     async sharedVault(reader, to, id) {
       const owner = findUserByAddress(to)?.userId;
-      const group = owner && state.contactTags.get(owner)?.get(reader);
-      if (!owner || !group || !state.friends.get(owner)?.has(reader)) return { categories: [] };
-      return { categories: (state.vaults.get(owner)?.categories ?? []).filter(c => (!id || id === c.id) && c.groups.includes(group))
+      if (!owner) return { categories: [] };
+      return { categories: (state.vaults.get(owner)?.categories ?? []).filter(c => (!id || id === c.id) && canRead(owner, c, reader))
         .map(c => ({ id: c.id, name: c.name, ...(id ? { entries: structuredClone(c.entries) } : {}) })) };
+    },
+    async searchPublicProfiles(query) {
+      const term = normalizeSearch(query);
+      const exact = Address.safeParse(term);
+      return [...state.users.values()].flatMap(({ address, displayName }) => {
+        if (!address) return [];
+        const handle = address.split("@")[0]!;
+        const name = normalizeSearch(displayName ?? "");
+        if (exact.success ? address !== exact.data : !address.includes(term) && !name.includes(term)) return [];
+        const rank = name === term || handle === term ? 0 : name.startsWith(term) || handle.startsWith(term) ? 1 : 2;
+        return [{ rank, address, displayName: displayName || handle }];
+      }).sort((a, b) => a.rank - b.rank || Buffer.compare(Buffer.from(a.address), Buffer.from(b.address)))
+        .slice(0, publicProfileLimit).map(({ address, displayName }) => ({ address, displayName }));
     },
     async getUser(userId) {
       return structuredClone(state.users.get(userId) ?? null);
@@ -127,18 +225,44 @@ function transaction(state: State): StoreTx {
       live.revokedAt = structuredClone(at);
       return true;
     },
-    async listFriends(userId) {
-      return [...(state.friends.get(userId) ?? [])].sort();
+    async listContacts(userId) {
+      const me = state.users.get(userId)?.address;
+      if (!me) return [];
+      return [...(state.contacts.get(userId) ?? [])].sort().map(address => {
+        const other = findUserByAddress(address);
+        const gives = liveGrants(userId).filter(g => g.granteeAddress === address);
+        const receives = other ? liveGrants(other.userId).filter(g => g.granteeAddress === me) : [];
+        return directoryContact({ address, name: other?.displayName, tag: state.contactTags.get(userId)?.get(address),
+          gives: gives.map(g => g.category), receives: receives.map(g => g.category) });
+      });
     },
-    async addFriend(userId, address) {
-      const friends = state.friends.get(userId) ?? new Set<Address>();
-      if (friends.has(address)) return false;
-      friends.add(address);
-      state.friends.set(userId, friends);
+    async listJoinedCircles(userId) {
+      const me = state.users.get(userId)?.address;
+      if (!me) return [];
+      const joined = [...state.circles.values()].filter(c => circleMember(c.id, me)?.joinedAt)
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
+      return directoryCircles(joined.flatMap(({ id, name: circleName }) => {
+        const others = state.circleMembers.filter(m => m.circleId === id && m.joinedAt && m.address !== me)
+          .map(m => m.address).sort();
+        return [{ id, circleName }, ...others.map(address => ({
+          id, circleName, address, memberName: findUserByAddress(address)?.displayName,
+        }))];
+      }));
+    },
+    async listContactAddresses(userId) {
+      return [...(state.contacts.get(userId) ?? [])].sort();
+    },
+    async addContact(userId, address) {
+      const contacts = state.contacts.get(userId) ?? new Set<Address>();
+      if (contacts.has(address)) return false;
+      contacts.add(address);
+      state.contacts.set(userId, contacts);
       return true;
     },
-    async removeFriend(userId, address) {
-      return state.friends.get(userId)?.delete(address) ?? false;
+    async removeContact(userId, address) {
+      for (const c of state.vaults.get(userId)?.categories ?? []) state.memberRules.get(pairKey(userId, c.id))?.delete(address);
+      for (const group of state.contactGroups.get(userId) ?? []) group.members = group.members.filter(member => member !== address);
+      return state.contacts.get(userId)?.delete(address) ?? false;
     },
     async listContactTags(userId) {
       return new Map(state.contactTags.get(userId));
@@ -162,6 +286,7 @@ function transaction(state: State): StoreTx {
         .sort(byCreatedAt));
     },
     async insertCircle(row) {
+      if (state.circles.has(row.id)) throw new BrokerError("conflict", "El círculo ya existe.");
       state.circles.set(row.id, structuredClone(row));
     },
     async getCircle(id) {
@@ -194,6 +319,15 @@ function transaction(state: State): StoreTx {
       state.circleMembers = state.circleMembers.filter((current) => current !== member);
       return member !== undefined;
     },
+    async lockRequiredRelation(userId, from, to, relation) {
+      if (relation.kind === "circle") {
+        return Boolean(circleMember(relation.circleId, from)?.joinedAt && circleMember(relation.circleId, to)?.joinedAt);
+      }
+      return Boolean(state.contacts.get(userId)?.has(to)) &&
+        (relation.tag === undefined || state.contactTags.get(userId)?.get(to) === relation.tag);
+    },
+    async lockAskReceipt(keyHash) { return structuredClone(state.askReceipts.get(keyHash) ?? null); },
+    async insertAskReceipt(receipt) { state.askReceipts.set(receipt.keyHash, structuredClone(receipt)); },
     async shareCircle(a, b) {
       const joined = (address: Address) => state.circleMembers
         .filter((member) => member.address === address && member.joinedAt).map((member) => member.circleId);
@@ -223,12 +357,15 @@ function transaction(state: State): StoreTx {
     async listOwnerPending(address) {
       return listRecipientRequests(address, "awaiting_owner");
     },
-    async listActivity(address, limit) {
+    async listActivity(address, limit, requestId) {
       const ownerId = findUserByAddress(address)?.userId;
       if (!ownerId) return [];
-      return structuredClone([...state.requests.values()]
-        .filter((row) => (row.toAddress === address && row.toUserId === ownerId)
-          || (row.fromAddress === address && row.fromUserId === ownerId))
+      const candidates = requestId === undefined ? state.requests.values() : [state.requests.get(requestId)];
+      return structuredClone([...candidates]
+        .filter((row): row is RequestRow => row !== undefined && (
+          (row.toAddress === address && row.toUserId === ownerId) ||
+          (row.fromAddress === address && row.fromUserId === ownerId)
+        ))
         .sort((a, b) => byCreatedAt(b, a)).slice(0, limit));
     },
     async listDueForExpiry(now, limit) {
@@ -252,10 +389,11 @@ function transaction(state: State): StoreTx {
         .sort((a, b) => a.runAt.getTime() - b.runAt.getTime() || a.id.localeCompare(b.id)).slice(0, limit);
       return jobs.map((job) => {
         const recovered = job.state === "running";
+        const dueAt = job.runAt;
         job.state = "running";
         job.runAt = structuredClone(leaseUntil);
         if (recovered) job.attempt++;
-        return structuredClone({ ...job, state: "running", recovered });
+        return structuredClone(wakeClaim(job, recovered, dueAt));
       });
     },
     async recordWakeAttempt(claim, now, result, nextRunAt) {
@@ -278,8 +416,10 @@ function transaction(state: State): StoreTx {
     },
     async ensureAgentConnection(row, onCreated) {
       const existing = state.agents.get(pairKey(row.userId, row.agentId));
-      if (!existing) onCreated?.();
-      return structuredClone(existing ?? putAgent(row));
+      if (existing) return structuredClone(existing);
+      const created = putAgent(row);
+      onCreated?.();
+      return structuredClone(created);
     },
     async upsertAgentConnection(row) {
       putAgent(row);
@@ -311,8 +451,8 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    vaults: new Map(), users: new Map(), grants: [], friends: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
-    events: [], wakes: new Map(), agents: new Map(), channels: new Map(),
+    vaults: new Map(), memberRules: new Map(), contactGroups: new Map(), users: new Map(), grants: [], contacts: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
+    askReceipts: new Map(), events: [], wakes: new Map(), agents: new Map(), channels: new Map(),
   };
   let previous = Promise.resolve();
 

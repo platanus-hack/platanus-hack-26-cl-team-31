@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { TelemetryEvent } from "../shared/contract.js"
 import { AdminQueryError, type AdminQueries } from "../shared/queries.js"
 import { createAdminApp } from "./app.js"
-import { createPgAuditLog, migrateAdminTables } from "./audit.js"
+import { createPgAuditLog, migrateAdminTables, type AuditLog } from "./audit.js"
 import { createAdminAuth, createRoleResolver, migrateAdminAuth, type AdminAuthOptions } from "./auth/index.js"
 import { createBrokerAdminClient } from "./broker.js"
 import { createAdminPool } from "./db.js"
@@ -41,7 +41,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     events: async ({ afterId }) => (afterId ? [] : [telemetryEvent("2"), telemetryEvent("1")]),
   })
 
-  function buildApp(overrides: { devAuth?: boolean; queries?: AdminQueries; live?: LiveOptions } = {}) {
+  function buildApp(overrides: { devAuth?: boolean; queries?: AdminQueries; live?: LiveOptions; audit?: AuditLog } = {}) {
     const telemetry = createTelemetry({ service: "admin", sink, heartbeatMs: 0, lifecycle: false })
     const tokens = createPgTokenStore(pool)
     return createAdminApp({
@@ -51,7 +51,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
       queries: overrides.queries ?? queries,
       tokens,
       authenticateToken: (bearer) => tokens.authenticate(bearer),
-      audit: createPgAuditLog(pool, telemetry),
+      audit: overrides.audit ?? createPgAuditLog(pool, telemetry),
       broker: createBrokerAdminClient({ baseUrl: BROKER_URL, privateKey: privateJwk, fetch: brokerFetch }),
       revealer: { reveal },
       limiters: createAdminLimiters(),
@@ -253,6 +253,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     const [url, init] = brokerFetch.mock.calls[0]!
     expect(String(url)).toBe(`${BROKER_URL}/v1/admin/requests/req_1/rewake`)
     expect(init?.method).toBe("POST")
+    expect(init?.redirect).toBe("error")
     expect(JSON.parse(String(init?.body))).toEqual({ reason: "el aviso se perdió" })
     const token = String(new Headers(init?.headers).get("authorization")).replace("Bearer ", "")
     const { payload } = await jwtVerify(token, publicJwk, { issuer: "admin", audience: "broker", algorithms: ["EdDSA"] })
@@ -267,6 +268,27 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     const rows = await auditRows()
     expect(rows.find((row) => row.action === "rewake")).toMatchObject({ target: "req_1", reason: "el aviso se perdió", meta: { ok: true } })
     expect(sink.find("admin.action")[0]).toMatchObject({ attrs: { action: "rewake", target: "req_1" } })
+  })
+
+  it("audits an unexpected HTML success as a broker failure", async () => {
+    brokerFetch.mockResolvedValue(new Response("<html>OK</html>", { status: 200 }))
+    const cookie = await login("op@test.cl")
+    const response = await buildApp().request("/api/admin/requests/req_1/rewake", post(cookie, { reason: "revisar el aviso" }))
+    expect(response.status).toBe(502)
+    expect((await auditRows()).find((row) => row.action === "rewake")?.meta).toEqual({ ok: false, code: "upstream" })
+  })
+
+  it("preserves the broker error ID when recording the failed action also fails", async () => {
+    const errorId = "2b6953de-f8cd-44e5-a34a-4de79dad2d96"
+    brokerFetch.mockResolvedValue(Response.json({ error: { code: "not_found", message: "cerrada" } },
+      { status: 404, headers: { "X-Error-Id": errorId } }))
+    const audit = { record: vi.fn().mockRejectedValue(new Error("audit unavailable")) }
+    const cookie = await login("op@test.cl")
+    const response = await buildApp({ audit }).request("/api/admin/requests/req_1/expire", post(cookie, { reason: "cerrar solicitud" }))
+    expect(response.status).toBe(404)
+    expect(response.headers.get("X-Error-Id")).toBe(errorId)
+    expect((await response.json()).error).toMatchObject({ errorId, code: "not_found" })
+    expect(sink.find("error")).toContainEqual(expect.objectContaining({ attrs: expect.objectContaining({ operation: "admin.action.audit" }) }))
   })
 
   it("expire y revokeAgent: errores del broker se mapean y quedan auditados", async () => {
@@ -348,11 +370,37 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     ])
     expect(sink.find("admin.mcp.call")[0]).toMatchObject({ attrs: { action: "mcp:admin_services", tool: "admin_services" } })
 
+    allow.operators = []
+    expect((await call(token)).status).toBe(401)
+    allow.operators = ["op@test.cl"]
     await tokens.revoke(meta.id)
     const revoked = await call(token)
     expect(revoked.status).toBe(401)
     expect(revoked.headers.get("www-authenticate")).toContain("Bearer")
     expect(sink.find("auth.token.rejected")[0]).toMatchObject({ attrs: { issuer: "admin", reason: "invalid_token" } })
+  })
+
+  it("a downgraded operator's SQL token retains only viewer reads", async () => {
+    const sql = vi.fn(queries.sql)
+    const app = buildApp({ queries: { ...queries, sql } })
+    const { token } = await createPgTokenStore(pool).create({ name: "downgrade", ttlDays: 1, scopes: ["admin:sql"] }, "op@test.cl")
+    const call = (name: string, args: object) => app.request("/mcp", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+    })
+    const previous = { ...allow }
+    try {
+      allow.operators = []
+      allow.viewers = [...allow.viewers, "op@test.cl"]
+      expect(await (await call("admin_sql", { sql: "SELECT 1" })).text()).toContain("admin:sql")
+      expect(sql).not.toHaveBeenCalled()
+      const read = await call("admin_services", {})
+      expect(read.status).toBe(200)
+      expect(await read.text()).toContain("structuredContent")
+    } finally {
+      Object.assign(allow, previous)
+    }
   })
 
   it("dev login solo con ADMIN_DEV_AUTH=1 y Origin válido", async () => {

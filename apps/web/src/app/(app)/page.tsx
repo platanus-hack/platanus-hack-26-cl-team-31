@@ -1,14 +1,13 @@
 import Link from "next/link";
-import { ToolArgs } from "@team-31/protocol";
 
 import { getAuthBaseUrl } from "@/lib/auth-env.mjs";
 
 import { readHome } from "./actions";
 import { ActivityList } from "./activity-list";
-import { DecisionForm } from "./decision-form";
-import { InviteActions } from "./invite-actions";
+import { DecisionForm } from "./_home/decision-form";
+import { InviteActions } from "./_home/invite-actions";
 import { toolLabels } from "./labels";
-import { OwnerProfile } from "./owner-profile";
+import { OwnerProfile } from "./_home/owner-profile";
 import { card, Empty, Heading, Stamp, textLink } from "./ui";
 
 export default async function HomePage() {
@@ -35,8 +34,8 @@ export default async function HomePage() {
           {pending.length === 0 && invitations.length === 0 ? <Empty>No tienes solicitudes pendientes.</Empty> : (
             <ul className="space-y-3">
               {pending.map((item) => {
-                const slot = item.tool === "availability" ? ToolArgs.availability.parse(item.args) : undefined;
-                const interest = item.tool === "interest_check" ? ToolArgs.interest_check.parse(item.args).interest : undefined;
+                const slot = item.tool === "availability" ? item.args : undefined;
+                const interest = item.tool === "interest_check" ? item.args.interest : undefined;
                 return (
                   <li key={item.requestId} className={`${card} p-5`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -46,6 +45,7 @@ export default async function HomePage() {
                     <p className="mt-2 text-xs text-muted">Vence el <Stamp value={item.expiresAt} /></p>
                     {slot && <p className="mt-3 text-sm text-body">{slot.date} · {slot.start} ({slot.timezone}) · {slot.durationMinutes} min</p>}
                     {interest && <p className="mt-3 break-words text-sm text-body">Interés consultado · {interest}</p>}
+                    {item.tool === "vault_access" && <p className="mt-3 break-words text-sm text-body">Pide leer tu categoría <strong>{item.args.categoryName}</strong>. Si aceptas, podrá leer sus datos actuales y futuros. Si no existe, se creará vacía.</p>}
                     <div className="mt-3 rounded-xl stage p-3 text-sm">
                       <p className="font-medium text-muted">Mensaje de un tercero</p>
                       {item.senderMessage.text || item.senderMessage.purpose ? (

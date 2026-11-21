@@ -1,35 +1,21 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { catalog, describeCatalog, getEventDefinition } from "./catalog.js";
-import { EventKind, Level, Service } from "./types.js";
-
-const sql = readFileSync(new URL("../../ops/sql/0001_events.sql", import.meta.url), "utf8");
-
-function checkValues(column: string): string[] {
-  const match = new RegExp(`${column}\\s+text[^\\n]*CHECK \\(${column} IN \\(([^)]*)\\)`).exec(sql);
-  if (!match) throw new Error(`No encontré el CHECK de ${column}`);
-  return match[1]!.split(",").map((value) => value.trim().replace(/'/g, ""));
-}
 
 describe("catálogo", () => {
-  it("usa los mismos enums que los CHECK de ops.events", () => {
-    expect([...Service.options].sort()).toEqual(checkValues("service").sort());
-    expect([...EventKind.options].sort()).toEqual(checkValues("kind").sort());
-    expect([...Level.options].sort()).toEqual(checkValues("level").sort());
-  });
-
   it("declara todos los eventos de docs/admin.md#3", () => {
     const expected = [
       "service.started", "service.heartbeat", "service.stopping",
       "http.request", "http.rate_limited",
       "auth.token.verified", "auth.token.rejected", "auth.service_jwt.rejected", "auth.oauth.consent", "auth.scope.denied",
+      "message.interpret", "message.interpreted", "message.recipients.resolved", "message.turn.saved", "message.turn.completed",
+      "broker.ask.receipt", "broker.ask.relation_checked", "broker.profiles.searched",
       "web.invite.progress", "web.agent.ping",
       "mcp.tool.call", "broker.policy.evaluated", "broker.request.created", "broker.request.status_changed",
       "broker.request.closed", "broker.reply.rejected", "broker.reply.sanitized", "broker.owner.decided", "broker.grant.set", "broker.grant.revoked",
       "broker.contact.connected", "broker.contact.removed", "broker.contact.tagged", "broker.channel.set", "broker.tag.preset_set",
       "broker.vault.changed", "broker.vault.queried",
       "broker.circle.changed", "broker.agent.connected", "broker.agent.revoked",
-      "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
+      "worker.tick.completed", "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
       "admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created",
       "admin.token.revoked", "admin.mcp.call", "admin.live.opened", "admin.live.closed", "telemetry.invalid_event",
       "whatsapp.link", "whatsapp.request", "whatsapp.send", "whatsapp.delivery", "whatsapp.interpret",
@@ -47,7 +33,7 @@ describe("catálogo", () => {
 
   it("se serializa para admin://schema", () => {
     const entry = describeCatalog().find((event) => event.name === "wake.attempt");
-    expect(entry).toMatchObject({ kind: "wake", attrs: ["kind", "attempt", "ok", "httpStatus", "code"] });
+    expect(entry).toMatchObject({ kind: "wake", attrs: ["kind", "attempt", "queueWaitMs", "ok", "httpStatus", "code"] });
     expect(JSON.parse(JSON.stringify(describeCatalog()))).toHaveLength(catalog.length);
   });
 });

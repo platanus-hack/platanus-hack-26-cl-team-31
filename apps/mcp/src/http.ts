@@ -2,11 +2,12 @@ import { createServer as createNodeServer, type IncomingMessage, type ServerResp
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { createMcpGuard } from "@team-31/auth/resource";
-import type { AgentPort } from "@team-31/broker/client";
+import { acceptsMcpOrigin } from "@team-31/auth";
+import { BrokerError, type AgentPort } from "@team-31/broker-client";
 import { Scope, type Principal } from "@team-31/protocol";
-import type { Telemetry } from "@team-31/telemetry";
+import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
+import type { HandleMessage } from "./tools/message.js";
 import { createServer } from "./server.js";
-import { silentTelemetry } from "./telemetry.js";
 
 const mcpPath = "/mcp";
 const metadataPath = "/.well-known/oauth-protected-resource";
@@ -28,7 +29,8 @@ function rejectionReason(authorization: string | undefined, status: number): str
 export function createHttpServer(
   options: Parameters<typeof createMcpGuard>[0],
   agent: AgentPort,
-  telemetry: Telemetry = silentTelemetry(),
+  telemetry: Telemetry = silentTelemetry("mcp"),
+  messages?: HandleMessage,
 ) {
   const guard = createMcpGuard(options);
   const resource = new URL(options.audience);
@@ -41,6 +43,7 @@ export function createHttpServer(
 
   return createNodeServer((req, res) => {
     const path = req.url?.split("?", 1)[0];
+    if (path === mcpPath) res.setHeader("Cache-Control", "no-store");
     const route = routeOf(path);
     const run = route === "/healthz" ? () => handle(req, res, path) : () => observed(req, res, path, route);
     void run().catch((error: unknown) => failed(req, res, route, error));
@@ -98,6 +101,12 @@ export function createHttpServer(
       res.writeHead(404).end();
       return;
     }
+    if (!acceptsMcpOrigin(req.headers.origin, resource.origin)) {
+      res.writeHead(403, { "Content-Type": "application/json" }).end(JSON.stringify({
+        jsonrpc: "2.0", id: null, error: { code: -32000, message: "Origen no permitido." },
+      }));
+      return;
+    }
     if (req.method !== "POST") {
       res.writeHead(405, { Allow: "POST" }).end();
       return;
@@ -129,7 +138,24 @@ export function createHttpServer(
     telemetry.emit("auth.token.verified", { attrs: { issuer, reason: devToken ? "dev_token" : "jwt" } });
     if (res.destroyed) return;
 
-    const server = createServer(principal, agent, telemetry);
+    try {
+      await agent.connect(principal);
+    } catch (error) {
+      if (!(error instanceof BrokerError) || !["conflict", "not_found", "rate_limited"].includes(error.code)) throw error;
+      const status = error.code === "conflict" ? 409 : error.code === "rate_limited" ? 429 : 403;
+      res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify({
+        jsonrpc: "2.0", id: null, error: { code: -32000, message: error.message },
+      }));
+      return;
+    }
+    const server = createServer(principal, agent, {
+      ...telemetry,
+      error(operation, error, fields) {
+        const errorId = telemetry.error(operation, error, fields);
+        if (!res.headersSent) res.setHeader("X-Error-Id", errorId);
+        return errorId;
+      },
+    }, messages);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.once("close", () => {
       void server.close().catch((error: unknown) => telemetry.error("mcp.close", error));

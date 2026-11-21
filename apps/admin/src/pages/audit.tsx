@@ -1,14 +1,13 @@
-import * as React from "react"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import type { AuditEntry } from "@shared/contract"
 import { BotIcon, UserIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Spinner } from "@/components/ui/spinner"
+import { LoadMore } from "@/components/load-more"
+import { cursorPagination, usePageItems } from "@/lib/queries"
 import { DataTable } from "@/components/data-table"
-import { ErrorState, Muted, Page, PageHeader, Panel } from "@/components/page"
+import { Muted, Page, PageHeader, QueryPanel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { ToneBadge } from "@/components/status"
 import { api } from "@/lib/api"
@@ -94,13 +93,9 @@ export function AuditPage() {
     queryKey: ["audit"],
     queryFn: ({ pageParam, signal }) =>
       api("audit", { query: { cursor: pageParam } }, { signal }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    ...cursorPagination,
   })
-  const rows = React.useMemo(
-    () => query.data?.pages.flatMap((p) => p.items),
-    [query.data]
-  )
+  const rows = usePageItems(query.data)
 
   return (
     <Page>
@@ -109,10 +104,7 @@ export function AuditPage() {
         description="Cada login, revelación, acción de operador, token y llamada al MCP admin, con su motivo."
         actions={<Badge variant="outline">admin.audit</Badge>}
       />
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={columns}
           data={rows}
@@ -120,22 +112,8 @@ export function AuditPage() {
           getRowId={(a) => a.id}
           empty={{ title: "Sin registros" }}
         />
-        {query.hasNextPage ? (
-          <div className="flex justify-center border-t p-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={query.isFetchingNextPage}
-              onClick={() => void query.fetchNextPage()}
-            >
-              {query.isFetchingNextPage ? (
-                <Spinner data-icon="inline-start" />
-              ) : null}
-              Cargar más
-            </Button>
-          </div>
-        ) : null}
-      </Panel>
+        <LoadMore query={query} />
+      </QueryPanel>
     </Page>
   )
 }

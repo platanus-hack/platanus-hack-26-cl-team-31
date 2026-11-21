@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 
-import { inviteToCircle } from "../actions";
+import { inviteToCircle } from "../circles/actions";
 import { button, Feedback, input, secondaryText } from "../ui";
 
 type Choice = { id: string; name: string; joined?: boolean };

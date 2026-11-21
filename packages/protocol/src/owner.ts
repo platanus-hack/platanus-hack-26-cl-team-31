@@ -1,14 +1,18 @@
 import { z } from "zod";
 import { Address } from "./address.js";
-import { FinalOutcome, RequestStatus, SenderMessage } from "./request.js";
+import { FinalOutcome, RequestStatus, SenderMessage, withToolArgs } from "./request.js";
 import { ContactTag, Sharing, TagPresets } from "./sharing.js";
-import { ToolArgs, ToolName, ToolResult } from "./tools.js";
+import { ToolName, ToolResult } from "./tools.js";
 import { WakeKind } from "./wake.js";
 
 const datetime = z.iso.datetime({ offset: true });
 
+export const ConnectInput = z.object({ to: Address, share: Sharing.optional(), tag: ContactTag.optional() });
+export type ConnectInput = z.infer<typeof ConnectInput>;
+
 export const OwnerDecision = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("approve_once") }),
+  z.object({ kind: z.literal("grant_vault_read") }),
   z.object({ kind: z.literal("deny") }),
   z.object({ kind: z.literal("answer"), result: ToolResult }),
 ]);
@@ -29,18 +33,13 @@ export type AgentConnection = z.infer<typeof AgentConnection>;
 export const PublicAgent = AgentConnection.pick({ agentId: true, label: true }).extend({ address: Address });
 export type PublicAgent = z.infer<typeof PublicAgent>;
 
-export const OwnerPendingItem = z.object({
+export const OwnerPendingItem = withToolArgs({
   requestId: z.string(),
   from: Address,
-  tool: ToolName,
-  args: z.unknown(),
   senderMessage: SenderMessage,
   escalated: z.boolean().optional(),
   expiresAt: datetime,
-}).refine(
-  (item) => ToolArgs[item.tool].safeParse(item.args).success,
-  { error: "Los argumentos no corresponden a la herramienta.", path: ["args"] },
-);
+});
 export type OwnerPendingItem = z.infer<typeof OwnerPendingItem>;
 
 export const ActivityEvent = z.object({
@@ -76,6 +75,7 @@ export type ActivityItem = z.infer<typeof ActivityItem>;
 
 export const Contact = z.object({
   address: Address,
+  displayName: z.string().optional(),
   tag: ContactTag.optional(),
   gives: Sharing,
   receives: Sharing,
@@ -98,9 +98,16 @@ export const ContactsView = z.object({
 });
 export type ContactsView = z.infer<typeof ContactsView>;
 
+export const PublicProfile = z.object({ address: Address, displayName: z.string(), headline: z.string().optional() });
+export type PublicProfile = z.infer<typeof PublicProfile>;
+export const ProfileSearch = z.object({ query: z.string().trim().min(2).max(100).refine(value => !value.includes("\0")) });
+
 export const AgentContacts = z.object({
-  contacts: z.array(z.object({ address: Address, tag: ContactTag.optional(), theyShare: Sharing, youShare: Sharing })),
-  circles: z.array(z.object({ name: z.string(), members: z.array(Address) })),
+  contacts: z.array(z.object({ address: Address, displayName: z.string().optional(), tag: ContactTag.optional(), theyShare: Sharing, youShare: Sharing })),
+  circles: z.array(z.object({
+    id: z.string().optional(), name: z.string(), members: z.array(Address),
+    memberNames: z.record(Address, z.string()).optional(),
+  })),
 });
 export type AgentContacts = z.infer<typeof AgentContacts>;
 

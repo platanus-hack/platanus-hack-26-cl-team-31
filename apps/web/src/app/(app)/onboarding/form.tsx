@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 
 import type { OnboardingSource } from "@/lib/onboarding-flow";
 
-import { claimAddress } from "../actions";
+import { claimAddress } from "./actions";
 import { Feedback, input, primaryButton } from "../ui";
 
 export function AddressForm({ source }: { source: OnboardingSource }) {

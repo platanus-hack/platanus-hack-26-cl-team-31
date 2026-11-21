@@ -8,28 +8,27 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { ChannelIcon, SidebandMark } from "./icons.js";
 import { categoryLabel, describeEvent, endpointLabel, outcomeLabel, rowStepLabels, ruleLabel, statusLabels, stepDetail, stepLabels, toolLabel } from "./labels.js";
 import { edgeCurve, layoutFlow, pointOnCurve, stageHeightFor, type LayoutInput } from "./layout.js";
-import { BROKER, type FlowActor, type FlowEvent, type FlowOwner, type FlowStatus } from "./model.js";
-import { EDGE_MS, LABEL_MS, PULSE_MS, scheduleLive, scheduleReplay } from "./schedule.js";
-import { activities, emptyFlowState, eventEndpoints, foldFlow, reduceFlow, resolveId, type ActorEntry, type Activity, type AppliedEvent, type FlowState } from "./state.js";
+import { BROKER, type FlowActor, type FlowEvent, type FlowStatus } from "./model.js";
+import { EDGE_MS, LABEL_MS, PULSE_MS } from "./schedule.js";
+import { activities, eventEndpoints, resolveId, type ActorEntry, type Activity, type AppliedEvent, type FlowState } from "./state.js";
+import { flowVisibility } from "./flow-visibility.js";
+import { useFlowViewport } from "./use-flow-viewport.js";
+import { useFlowPlayback } from "./use-flow-playback.js";
 import { css, statusColor, statusTone } from "./styles.js";
 
-export interface AgentFlowProps {
+type Playback = { mode: "replay"; loop?: boolean } | { mode: "live"; loop?: never };
+
+export type AgentFlowProps = Playback & {
   events: readonly FlowEvent[];
-  /** replay: los eventos son un escenario completo. live: la lista crece a medida que llegan. */
-  mode: "replay" | "live";
-  /** Repetición: vuelve a empezar al terminar. */
-  loop?: boolean;
   /** Nombre accesible del grafo. */
   title?: string;
   /** Contenido extra en la barra (p. ej. el estado de la conexión en vivo). */
   toolbar?: ReactNode;
   /** Titulares visibles al inicio: dirección, nombre o la parte antes de @ (sin distinguir mayúsculas). */
   defaultOwners?: readonly string[];
-  /** Texto cuando todavía no hay pasos. */
   emptyText?: string;
   /** Muestra la barra de controles (pausa, velocidad, filtro, pantalla completa). */
   controls?: boolean;
-  /** Empieza reproduciendo. */
   autoPlay?: boolean;
   /** Velocidad inicial (0.25–4). */
   speed?: number;
@@ -49,7 +48,7 @@ export interface AgentFlowProps {
   eventActions?: (event: FlowEvent) => ReactNode;
   className?: string;
   style?: CSSProperties;
-}
+};
 
 type Selection = { kind: "actor"; id: string } | { kind: "event"; id: string } | { kind: "hub" } | null;
 
@@ -63,7 +62,6 @@ const DRAW_MS = 650; // la arista se dibuja hacia el broker al conversar por pri
 const GLOW_MS = 1_400; // brillo al pasar de pasivo a activo
 const ease = (x: number) => 1 - Math.pow(1 - Math.max(0, Math.min(1, x)), 3);
 
-type Inspect = { start: number; end: number; focus: { actors: string[]; ids: string[] } };
 type Motion = { joinT?: number; leftT?: number; leaveP?: number };
 type Box = { x: number; y: number; w: number; h: number; round: boolean };
 type Chip = { label: string; opacity: number; style: CSSProperties };
@@ -114,301 +112,17 @@ export function AgentFlow({
 }: AgentFlowProps) {
   const flowEvents = useMemo(() => (presence ? events : events.filter((e) => e.step !== "joined" && e.step !== "left")), [events, presence]);
   const reducedMotion = usePrefersReducedMotion();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 880, root: 1200 });
-  const [paused, setPaused] = useState(!autoPlay);
-  const [speed, setSpeed] = useState<number>(() => Math.min(4, Math.max(0.25, initialSpeed)));
+  const { rootRef, stageRef, layoutRef, frameRef, visibleRef, full, fillMode, cssFull, toggleFullscreen, frame, size, scale } = useFlowViewport(fill);
   const [showPanels, setShowPanels] = useState(panels);
-  const [nativeFull, setNativeFull] = useState(false);
-  const [cssFull, setCssFull] = useState(false);
-  const [frame, setFrame] = useState({ width: 0, height: 0, available: 0 });
-  const layoutRef = useRef<HTMLDivElement>(null);
-  const frameRef = useRef<HTMLDivElement>(null);
   const [ownerQuery, setOwnerQuery] = useState<string[] | null>(() => (defaultOwners?.length ? defaultOwners.map((o) => o.toLowerCase()) : null));
-  const [flow, setFlow] = useState<FlowState>(emptyFlowState);
-  const [clock, setClock] = useState(0);
   const [selection, setSelection] = useState<Selection>(null);
   const [shownOwners, setShownOwners] = useState<Set<string> | null>(null);
   const [hiddenActors, setHiddenActors] = useState<Set<string>>(() => new Set(defaultHiddenActors ?? []));
-  const [announcement, setAnnouncement] = useState("");
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
-  // Inspección del pasado: se reconstruye el estado justo antes del evento y se repite su animación.
-  const [inspect, setInspect] = useState<Inspect | null>(null);
-  const [pending, setPending] = useState(0);
-  const [history, setHistory] = useState<FlowState | null>(null);
-  const [seeking, setSeeking] = useState(false);
-  const inspectRef = useRef<(Inspect & { until: number }) | null>(null);
-  const savedRef = useRef<{ clock: number; cursor: number; paused: boolean } | null>(null);
-  const foldCache = useRef(new Map<number, FlowState>());
-  // En vivo el host puede descartar los pasos más viejos (ventana): este es el estado tras ellos.
-  const baseRef = useRef<FlowState | undefined>(undefined);
-
-  const clockRef = useRef(0);
-  const flowRef = useRef(flow);
-  const cursorRef = useRef(0);
-  const scheduleRef = useRef<number[]>([]);
-  const eventsRef = useRef<readonly FlowEvent[]>([]);
-  const pausedRef = useRef(paused);
-  const speedRef = useRef(speed);
-  const visibleRef = useRef(true);
-  const lastAnnounce = useRef(0);
-  useEffect(() => {
-    pausedRef.current = paused;
-    speedRef.current = speed;
-  }, [paused, speed]);
-
-  const scheduleLiveTail = (events: readonly FlowEvent[]) => {
-    for (let i = scheduleRef.current.length; i < events.length; i++) {
-      scheduleRef.current.push(scheduleLive(scheduleRef.current[i - 1], clockRef.current, 320, Boolean(events[i]!.meta.snapshot)));
-    }
-  };
-
-  const reset = useCallback(() => {
-    clockRef.current = 0;
-    cursorRef.current = 0;
-    baseRef.current = undefined;
-    foldCache.current = new Map();
-    flowRef.current = emptyFlowState();
-    setFlow(flowRef.current);
-    setClock(0);
-    setSelection(null);
-  }, []);
-
-  // Calendario: completo en repetición, incremental en vivo.
-  useEffect(() => {
-    const events = flowEvents;
-    const previous = eventsRef.current;
-    eventsRef.current = events;
-    if (mode === "replay") {
-      // Un arreglo nuevo con los mismos pasos (p. ej. scenarioEvents() en cada render) no reinicia.
-      const same = previous.length === events.length && previous.every((event, i) => event.id === events[i]!.id);
-      if (same && scheduleRef.current.length === events.length) return;
-      scheduleRef.current = scheduleReplay(events);
-      foldCache.current = new Map();
-      inspectRef.current = null;
-      savedRef.current = null;
-      setInspect(null);
-      reset();
-      return;
-    }
-    // Ventana: el host quitó los `dropped` pasos más viejos y conservó el resto en orden. El estado
-    // ya los contiene, así que solo se recorta el calendario: nada se reinicia.
-    const head = events[0]?.id;
-    const dropped = previous.length > 0 && head !== undefined && head !== previous[0]!.id ? previous.findIndex((event) => event.id === head) : 0;
-    if (dropped > 0) {
-      if (inspectRef.current) exitInspectRef.current();
-      scheduleLiveTail(previous);
-      let next = flowRef.current;
-      for (let i = cursorRef.current; i < dropped; i++) next = reduceFlow(next, previous[i]!, scheduleRef.current[i]!);
-      if (next !== flowRef.current) {
-        flowRef.current = next;
-        setFlow(next);
-      }
-      baseRef.current = foldFlow(previous, scheduleRef.current, dropped, foldCache.current, 50, baseRef.current);
-      foldCache.current = new Map();
-      scheduleRef.current = scheduleRef.current.slice(dropped);
-      cursorRef.current = Math.max(0, cursorRef.current - dropped);
-    } else if (events.length < scheduleRef.current.length || (dropped < 0 && events.length > 0)) {
-      scheduleRef.current = [];
-      reset();
-    }
-    // Mientras se inspecciona el pasado, lo nuevo espera sin programarse.
-    if (inspectRef.current) {
-      setPending(events.length - scheduleRef.current.length);
-      return;
-    }
-    scheduleLiveTail(events);
-  }, [flowEvents, mode, reset]);
-
-  // Tamaño del contenedor (responsive) y visibilidad (la repetición se detiene fuera de pantalla).
-  useEffect(() => {
-    const root = rootRef.current;
-    const stage = stageRef.current;
-    const frameEl = frameRef.current;
-    const layoutEl = layoutRef.current;
-    if (!root || !stage || !frameEl || !layoutEl) return;
-    const measure = () => {
-      setSize({ width: Math.round(stage.clientWidth) || 880, root: Math.round(frameEl.clientWidth) || 1200 });
-      setFrame((current) => {
-        const next = { width: root.clientWidth, height: root.clientHeight, available: layoutEl.clientHeight };
-        return current.width === next.width && current.height === next.height && current.available === next.available ? current : next;
-      });
-    };
-    measure();
-    const resize = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : undefined;
-    resize?.observe(root);
-    resize?.observe(stage);
-    resize?.observe(layoutEl);
-    const intersection = typeof IntersectionObserver !== "undefined"
-      ? new IntersectionObserver(([entry]) => { visibleRef.current = entry?.isIntersecting ?? true; })
-      : undefined;
-    intersection?.observe(root);
-    return () => {
-      resize?.disconnect();
-      intersection?.disconnect();
-    };
-  }, []);
-
-  // Bucle de animación.
-  useEffect(() => {
-    let frame = 0;
-    let last = typeof performance !== "undefined" ? performance.now() : 0;
-    let renderedClock = -1;
-    const tick = (now: number) => {
-      const dt = Math.min(now - last, 100);
-      last = now;
-      const schedule = scheduleRef.current;
-      const list = eventsRef.current;
-      const inspecting = inspectRef.current;
-      if (inspecting) {
-        // Repite el tramo inspeccionado y se queda en su estado final.
-        if (clockRef.current < inspecting.until) clockRef.current = Math.min(inspecting.until, clockRef.current + dt * speedRef.current);
-      } else if (!pausedRef.current && (visibleRef.current || mode === "live")) {
-        let rate = speedRef.current;
-        // En vivo, si se acumula una ráfaga, se acelera hasta alcanzarla.
-        const lag = mode === "live" && schedule.length > 0 ? schedule[schedule.length - 1]! - clockRef.current : 0;
-        if (lag > 3_000) rate *= 1 + lag / 1_500;
-        clockRef.current += dt * rate;
-      }
-      let next = flowRef.current;
-      let applied: FlowEvent | undefined;
-      const limit = inspecting ? Math.min(list.length, inspecting.end + 1) : list.length;
-      while (cursorRef.current < limit && cursorRef.current < schedule.length && schedule[cursorRef.current]! <= clockRef.current) {
-        const event = list[cursorRef.current]!;
-        next = reduceFlow(next, event, schedule[cursorRef.current]!);
-        applied = event;
-        cursorRef.current++;
-      }
-      if (applied) {
-        flowRef.current = next;
-        setFlow(next);
-        if (now - lastAnnounce.current > 1_500) {
-          lastAnnounce.current = now;
-          setAnnouncement(describeEvent(applied));
-        }
-      }
-      if (!inspecting && mode === "replay" && loop && list.length > 0 && cursorRef.current >= list.length && clockRef.current > schedule[schedule.length - 1]! + 5_000) {
-        clockRef.current = 0;
-        cursorRef.current = 0;
-        flowRef.current = emptyFlowState();
-        setFlow(flowRef.current);
-      }
-      // Solo se vuelve a dibujar si hay algo animándose.
-      const log = flowRef.current.log;
-      const lastT = log.length > 0 ? log[log.length - 1]!.t : -Infinity;
-      const animating = clockRef.current - lastT < LABEL_MS + 100;
-      if (applied || (animating && clockRef.current !== renderedClock)) {
-        renderedClock = clockRef.current;
-        setClock(clockRef.current);
-      }
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [mode, loop]);
-
-  // ---------- Pantalla completa ----------
-  const full = nativeFull || cssFull;
-  const fillMode = fill || full;
-  useEffect(() => {
-    const onChange = () => setNativeFull(typeof document !== "undefined" && document.fullscreenElement === rootRef.current);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
-  const toggleFullscreen = useCallback(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    if (document.fullscreenElement) {
-      void document.exitFullscreen();
-      return;
-    }
-    if (cssFull) {
-      setCssFull(false);
-      return;
-    }
-    // Sin la API (iframe sin allowfullscreen, Safari iOS) se usa un modo expandido con CSS.
-    if (document.fullscreenEnabled && root.requestFullscreen) root.requestFullscreen().catch(() => setCssFull(true));
-    else setCssFull(true);
-  }, [cssFull]);
-  // ---------- Inspección del pasado ----------
-  const indexOf = (id: string) => eventsRef.current.findIndex((e) => e.id === id);
-  const startInspect = (start: number, end: number, focus: Inspect["focus"]) => {
-    const events = eventsRef.current;
-    const times = scheduleRef.current;
-    if (!controls || start < 0 || end < start || end >= times.length) return;
-    if (!inspectRef.current) {
-      savedRef.current = { clock: clockRef.current, cursor: cursorRef.current, paused: pausedRef.current };
-      setHistory(flowRef.current);
-    }
-    // Inspeccionar pausa la reproducción: la línea de tiempo deja de moverse y los clics son estables.
-    setPaused(true);
-    // Un salto en el tiempo no anima el reacomodo de tarjetas: se ubican de inmediato.
-    setSeeking(true);
-    window.setTimeout(() => setSeeking(false), 90);
-    const until = times[end]! + LABEL_MS - 300;
-    const next = { start, end, focus, until };
-    inspectRef.current = next;
-    flowRef.current = foldFlow(events, times, start, foldCache.current, 50, baseRef.current);
-    cursorRef.current = start;
-    // Con movimiento reducido se salta al estado final con un resaltado estático.
-    clockRef.current = reducedMotion ? until : times[start]! - 350;
-    setFlow(flowRef.current);
-    setClock(clockRef.current);
-    setInspect({ start, end, focus });
-    setPending(Math.max(0, events.length - times.length));
-  };
-  const exitInspect = () => {
-    const saved = savedRef.current;
-    if (!inspectRef.current || !saved) return;
-    inspectRef.current = null;
-    savedRef.current = null;
-    flowRef.current = foldFlow(eventsRef.current, scheduleRef.current, saved.cursor, foldCache.current, 50, baseRef.current);
-    cursorRef.current = saved.cursor;
-    clockRef.current = saved.clock;
-    if (mode === "live") scheduleLiveTail(eventsRef.current);
-    setFlow(flowRef.current);
-    setClock(clockRef.current);
-    setInspect(null);
-    setPending(0);
-    setHistory(null);
-    setPaused(saved.paused);
-    setSeeking(true);
-    window.setTimeout(() => setSeeking(false), 90);
-  };
-  const exitInspectRef = useRef(exitInspect);
-  useEffect(() => {
-    exitInspectRef.current = exitInspect;
-  });
-  const focusOf = (indices: number[]): Inspect["focus"] => {
-    const actors = new Set<string>();
-    for (const i of indices) {
-      const event = eventsRef.current[i];
-      if (!event) continue;
-      for (const end of [event.from, event.to]) if (end !== BROKER) actors.add(end.id);
-    }
-    return { actors: [...actors], ids: indices.map((i) => eventsRef.current[i]?.id ?? "") };
-  };
-  const inspectEvent = (id: string) => {
-    const i = indexOf(id);
-    if (i >= 0) startInspect(i, i, focusOf([i]));
-  };
-  const inspectMany = (ids: string[]) => {
-    const indices = ids.map(indexOf).filter((i) => i >= 0).sort((a, b) => a - b);
-    if (indices.length > 0) startInspect(indices[0]!, indices[indices.length - 1]!, focusOf(indices));
-  };
-  const inspectRequest = (requestId: string) =>
-    inspectMany(eventsRef.current.filter((e) => e.requestId === requestId && scheduleRef.current[eventsRef.current.indexOf(e)] !== undefined).map((e) => e.id));
-  // ← y →: paso anterior y siguiente (sin la foto inicial de la red).
-  const stepInspect = (direction: -1 | 1) => {
-    const events = eventsRef.current;
-    let i = inspectRef.current ? (direction < 0 ? inspectRef.current.start : inspectRef.current.end) + direction : cursorRef.current - 1;
-    while (i >= 0 && i < scheduleRef.current.length && events[i]?.meta.snapshot) i += direction;
-    if (i < 0 || i >= scheduleRef.current.length || (!inspectRef.current && direction > 0)) return;
-    const event = events[i]!;
-    setSelection({ kind: "event", id: event.id });
-    startInspect(i, i, focusOf([i]));
-  };
+  const selectEvent = useCallback((id: string | null) => setSelection(id === null ? null : { kind: "event", id }), []);
+  const {
+    flow, clock, paused, setPaused, speed, setSpeed, history, seeking, announcement, inspect, pending,
+    reset, inspectEvent, inspectMany, inspectRequest, exitInspect, stepInspect,
+  } = useFlowPlayback({ flowEvents, mode, loop, autoPlay, initialSpeed, controls, reducedMotion, visibleRef, selectEvent });
 
   // Atajos: f pantalla completa, p pausa, ←/→ pasos, Esc vuelve al presente o sale del modo expandido.
   // En embed y pantalla completa escuchan en todo el documento; si no, solo con el foco dentro.
@@ -421,14 +135,14 @@ export function AgentFlow({
       toggleFullscreen();
     } else if (event.key === "p" && controls) {
       event.preventDefault();
-      if (inspectRef.current) exitInspect();
+      if (inspect) exitInspect();
       else setPaused((value) => !value);
     } else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && controls) {
       event.preventDefault();
       stepInspect(event.key === "ArrowLeft" ? -1 : 1);
     } else if (event.key === "Escape") {
-      if (inspectRef.current) exitInspect();
-      else if (cssFull) setCssFull(false);
+      if (inspect) exitInspect();
+      else if (cssFull) toggleFullscreen();
     }
   };
   const shortcutRef = useRef(onShortcut);
@@ -441,9 +155,6 @@ export function AgentFlow({
     document.addEventListener("keydown", listener);
     return () => document.removeEventListener("keydown", listener);
   }, [fillMode]);
-  // En pantalla completa y embed todo escala desde un lienzo lógico de 1440 × 810 para que se lea a distancia.
-  const scale = fillMode && frame.width > 0 ? Math.min(1.75, Math.max(1, Math.min(frame.width / 1440, frame.height / 810))) : 1;
-
   // Paneles al costado solo si al grafo le quedan al menos ~760 px.
   const wide = size.root >= 1100;
   // En embed angosto no hay espacio para los paneles: el grafo ocupa todo.
@@ -452,27 +163,7 @@ export function AgentFlow({
   // ---------- Filtro ----------
   const ownerList = useMemo(() => [...flow.owners.values()].sort((a, b) => a.order - b.order).map((o) => o.owner), [flow.owners]);
   const actorList = useMemo(() => [...flow.actors.values()].sort((a, b) => a.order - b.order), [flow.actors]);
-  const ownerShown = (owner: FlowOwner) => {
-    if (shownOwners) return shownOwners.has(owner.key);
-    if (!ownerQuery) return true;
-    const key = owner.key.toLowerCase();
-    return ownerQuery.some((q) => q === key || q === owner.label.toLowerCase() || q === key.split("@")[0]);
-  };
-  const actorVisibleIn = (state: FlowState, id: string) => {
-    if (id === BROKER) return true;
-    const entry = state.actors.get(id);
-    if (!entry) return false;
-    return ownerShown(entry.actor.owner) && !hiddenActors.has(id);
-  };
-  const eventVisibleIn = (state: FlowState, event: FlowEvent) => {
-    const { fromId, toId } = eventEndpoints(state, event);
-    if (!actorVisibleIn(state, fromId) || !actorVisibleIn(state, toId)) return false;
-    const track = event.requestId ? state.requests.get(event.requestId) : undefined;
-    if (track) {
-      for (const id of [track.requester, track.recipient, track.human]) if (id && !actorVisibleIn(state, resolveId(state, id))) return false;
-    }
-    return true;
-  };
+  const { ownerShown, actorVisibleIn, eventVisibleIn } = flowVisibility(shownOwners, ownerQuery, hiddenActors);
   const actorVisible = (id: string) => actorVisibleIn(flow, id);
 
   // ---------- Layout ----------
@@ -553,26 +244,21 @@ export function AgentFlow({
   useEffect(() => {
     filterChangeRef.current = onFilterChange;
   });
-  const filterKey = JSON.stringify([shownOwners ? [...shownOwners] : (ownerQuery ?? null), [...hiddenActors]]);
-  const reportedFilter = useRef(filterKey);
+  const filter = useMemo(() => ({
+    owners: shownOwners ? [...shownOwners] : ownerQuery,
+    hiddenActors: [...hiddenActors],
+  }), [shownOwners, ownerQuery, hiddenActors]);
+  const reportedFilter = useRef(JSON.stringify(filter));
   useEffect(() => {
-    if (reportedFilter.current === filterKey) return;
-    reportedFilter.current = filterKey;
-    const [owners, hidden] = JSON.parse(filterKey) as [string[] | null, string[]];
-    filterChangeRef.current?.({ owners, hiddenActors: hidden });
-  }, [filterKey]);
+    const key = JSON.stringify(filter);
+    if (reportedFilter.current === key) return;
+    reportedFilter.current = key;
+    filterChangeRef.current?.(filter);
+  }, [filter]);
 
   const selectedEvent = selection?.kind === "event" ? findEvent(selection.id) : undefined;
   const selectedActor = selection?.kind === "actor" ? flow.actors.get(selection.id) : undefined;
-  const timeline = recordLog.slice(-TIMELINE_LIMIT).reverse();
-  // Entradas seguidas a la red (menos de 2 s entre una y otra) se agrupan: «3 personas se unieron».
-  const timelineItems: AppliedEvent[][] = [];
-  for (const entry of timeline) {
-    const group = timelineItems[timelineItems.length - 1];
-    const head = group?.[group.length - 1];
-    if (group && head && entry.event.step === "joined" && head.event.step === "joined" && Math.abs(head.t - entry.t) < 2_000) group.push(entry);
-    else timelineItems.push([entry]);
-  }
+  const timelineExpansion = useTimelineExpansion(inspectMany);
   const modeState = paused ? "paused" : mode === "live" ? "live" : "playing";
   const modeText = paused ? "En pausa" : mode === "live" ? "En vivo" : `Repetición · ${speed}×`;
   const fade = (entry: AppliedEvent) => Math.max(0, Math.min(1, (LABEL_MS - (clock - entry.t)) / 400));
@@ -586,9 +272,7 @@ export function AgentFlow({
   const dimmed = (ids: string[]) => Boolean(focusActors) && !ids.some((id) => focusActors!.has(id));
   const inspectBar = (() => {
     if (!inspect) return null;
-    const first = eventsRef.current[inspect.start];
-    const entry = first ? flow.log.find((e) => e.event.id === first.id) ?? { event: first, t: scheduleRef.current[inspect.start] ?? 0 } : undefined;
-    if (!entry) return null;
+    const entry = inspect.first;
     const steps = inspect.focus.ids.length;
     const what = steps > 1 ? `${steps} pasos` : `${stepLabels[entry.event.step]}${stepDetail(entry.event) ? ` · ${stepDetail(entry.event)}` : ""}`;
     return (
@@ -1031,41 +715,8 @@ export function AgentFlow({
 
         {sidePanels ? (
         <div className="af-side">
-          <section className="af-panel af-timeline" aria-label="Línea de tiempo">
-            <p className="af-eyebrow">Línea de tiempo</p>
-            {timeline.length === 0 ? <p className="af-placeholder">Los pasos aparecen aquí a medida que ocurren.</p> : null}
-            <ol className="af-list">
-              {timelineItems.map((item) =>
-                item.length === 1 ? (
-                  <li key={item[0]!.event.id} className={clock - item[0]!.t < 600 ? "af-new" : undefined}>
-                    <StepButton entry={item[0]!} current={selection?.kind === "event" && selection.id === item[0]!.event.id} timeLabel={timeLabel} onClick={() => pick(item[0]!.event.id)} />
-                  </li>
-                ) : (
-                  <li key={`group-${item[0]!.event.id}`} className={clock - item[0]!.t < 600 ? "af-new" : undefined}>
-                    <JoinGroup
-                      entries={item}
-                      open={openGroups.has(item[item.length - 1]!.event.id)}
-                      onToggle={() => {
-                        const id = item[item.length - 1]!.event.id;
-                        const opening = !openGroups.has(id);
-                        setOpenGroups((current) => {
-                          const next = new Set(current);
-                          if (next.has(id)) next.delete(id);
-                          else next.add(id);
-                          return next;
-                        });
-                        // Abrir el grupo repite toda la ola de entradas.
-                        if (opening) inspectMany(item.map((e) => e.event.id));
-                      }}
-                      timeLabel={timeLabel}
-                      onSelect={pick}
-                      selectedId={selection?.kind === "event" ? selection.id : undefined}
-                    />
-                  </li>
-                ),
-              )}
-            </ol>
-          </section>
+          <Timeline log={recordLog} clock={clock} expansion={timelineExpansion} selectedId={selection?.kind === "event" ? selection.id : undefined}
+            timeLabel={timeLabel} onSelect={pick} />
           <section className="af-panel af-detail" aria-label="Detalle">
             <p className="af-eyebrow">Detalle</p>
             {selectedEvent ? (
@@ -1121,6 +772,62 @@ function route(event: FlowEvent): string {
   const name = (endpoint: FlowEvent["from"]) =>
     endpoint === BROKER ? "Broker" : endpoint.role === "owner" ? `${endpoint.owner.label} (titular)` : `${endpoint.owner.label} · ${endpoint.label}`;
   return event.from === event.to ? name(event.from) : `${name(event.from)} → ${name(event.to)}`;
+}
+
+// Keep expanded groups across hiding and reopening the panels.
+function useTimelineExpansion(inspectMany: (ids: string[]) => void) {
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
+  function toggle(id: string, entries: AppliedEvent[]) {
+    if (!openGroups.has(id)) inspectMany(entries.map((entry) => entry.event.id));
+    setOpenGroups((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  return { openGroups, toggle };
+}
+
+function Timeline({ log, clock, selectedId, expansion, timeLabel, onSelect }: {
+  log: AppliedEvent[];
+  clock: number;
+  selectedId?: string;
+  expansion: ReturnType<typeof useTimelineExpansion>;
+  timeLabel: (entry: AppliedEvent) => string;
+  onSelect: (id: string) => void;
+}) {
+  const timeline = log.slice(-TIMELINE_LIMIT).reverse();
+  // Entradas seguidas a la red (menos de 2 s entre una y otra) se agrupan: «3 personas se unieron».
+  const timelineItems: AppliedEvent[][] = [];
+  for (const entry of timeline) {
+    const group = timelineItems[timelineItems.length - 1];
+    const head = group?.[group.length - 1];
+    if (group && head && entry.event.step === "joined" && head.event.step === "joined" && Math.abs(head.t - entry.t) < 2_000) group.push(entry);
+    else timelineItems.push([entry]);
+  }
+  return (
+    <section className="af-panel af-timeline" aria-label="Línea de tiempo">
+      <p className="af-eyebrow">Línea de tiempo</p>
+      {timeline.length === 0 ? <p className="af-placeholder">Los pasos aparecen aquí a medida que ocurren.</p> : null}
+      <ol className="af-list">
+        {timelineItems.map((entries) => {
+          const newest = entries[0]!;
+          const groupId = entries[entries.length - 1]!.event.id;
+          return (
+            <li key={entries.length === 1 ? newest.event.id : `group-${groupId}`} className={clock - newest.t < 600 ? "af-new" : undefined}>
+              {entries.length === 1 ? (
+                <StepButton entry={newest} current={selectedId === newest.event.id} timeLabel={timeLabel} onClick={() => onSelect(newest.event.id)} />
+              ) : (
+                <JoinGroup entries={entries} open={expansion.openGroups.has(groupId)} onToggle={() => expansion.toggle(groupId, entries)}
+                  timeLabel={timeLabel} onSelect={onSelect} selectedId={selectedId} />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
 }
 
 function StepButton({ entry, current, timeLabel, onClick }: { entry: AppliedEvent; current: boolean; timeLabel: (entry: AppliedEvent) => string; onClick: () => void }) {

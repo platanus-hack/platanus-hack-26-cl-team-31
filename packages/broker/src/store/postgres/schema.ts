@@ -23,6 +23,11 @@ export const users = sideband.table("users", {
   createdAt: time("created_at").notNull().defaultNow(),
 });
 
+export const quotaWindows = sideband.table("quota_windows", {
+  userId: text("user_id").notNull(), bucket: text("bucket").notNull(),
+  count: integer("count").notNull(), resetAt: time("reset_at").notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.bucket] }), index("quota_expiry_idx").on(t.resetAt)]);
+
 export const vaultCategories = sideband.table("vault_categories", {
   owner: text("owner_id").notNull().references(() => users.userId),
   id: text("category_id").notNull(),
@@ -66,6 +71,30 @@ export const friends = sideband.table("friends", {
   address: text("address").notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.address] })]);
 
+export const vaultMemberRules = sideband.table("vault_member_rules", {
+  owner: text("owner_id").notNull(), id: text("category_id").notNull(),
+  address: text("address").notNull(), allowed: boolean("allowed").notNull(),
+}, t => [primaryKey({ columns: [t.owner, t.id, t.address] }),
+  foreignKey({ columns: [t.owner, t.id], foreignColumns: [vaultCategories.owner, vaultCategories.id] }).onDelete("cascade"),
+  foreignKey({ columns: [t.owner, t.address], foreignColumns: [friends.userId, friends.address] }).onDelete("cascade")]);
+
+export const vaultContactGroups = sideband.table("vault_contact_groups", {
+  owner: text("owner_id").notNull().references(() => users.userId),
+  id: text("group_id").notNull(), name: text("name").notNull(),
+}, t => [primaryKey({ columns: [t.owner, t.id] }), uniqueIndex("vault_contact_group_name").on(t.owner, sql`lower(${t.name})`)]);
+
+export const vaultContactGroupMembers = sideband.table("vault_contact_group_members", {
+  owner: text("owner_id").notNull(), groupId: text("group_id").notNull(), address: text("address").notNull(),
+}, t => [primaryKey({ columns: [t.owner, t.groupId, t.address] }),
+  foreignKey({ columns: [t.owner, t.groupId], foreignColumns: [vaultContactGroups.owner, vaultContactGroups.id] }).onDelete("cascade"),
+  foreignKey({ columns: [t.owner, t.address], foreignColumns: [friends.userId, friends.address] }).onDelete("cascade")]);
+
+export const vaultContactGroupPermissions = sideband.table("vault_contact_group_permissions", {
+  owner: text("owner_id").notNull(), id: text("category_id").notNull(), groupId: text("group_id").notNull(),
+}, t => [primaryKey({ columns: [t.owner, t.id, t.groupId] }),
+  foreignKey({ columns: [t.owner, t.id], foreignColumns: [vaultCategories.owner, vaultCategories.id] }).onDelete("cascade"),
+  foreignKey({ columns: [t.owner, t.groupId], foreignColumns: [vaultContactGroups.owner, vaultContactGroups.id] }).onDelete("cascade")]);
+
 export const contactTags = sideband.table("contact_tags", {
   userId: text("user_id").notNull().references(() => users.userId),
   address: text("address").notNull(),
@@ -103,6 +132,7 @@ export const requests = sideband.table("requests", {
   toUserId: text("to_user_id").references(() => users.userId),
   targetAgentId: text("target_agent_id"),
   originChannel: text("origin_channel", { enum: channelNames }),
+  senderGroupId: text("sender_group_id"),
   tool: text("tool").notNull(),
   args: jsonb("args").notNull(),
   purpose: text("purpose"),
@@ -132,6 +162,13 @@ export const requests = sideband.table("requests", {
   index("requests_to_user_created_at_idx").on(table.toUserId, table.createdAt.desc()),
   index("requests_status_expires_at_idx").on(table.status, table.expiresAt),
 ]);
+
+export const askReceipts = sideband.table("ask_receipts", {
+  keyHash: text("key_hash").primaryKey(),
+  inputHash: text("input_hash").notNull(),
+  requestId: text("request_id").notNull().references(() => requests.id, { onDelete: "cascade" }),
+  waitingFor: text("waiting_for", { enum: ["agent", "owner"] }),
+}, (t) => [index("ask_receipts_request_idx").on(t.requestId)]);
 
 export const requestEvents = sideband.table("request_events", {
   id: bigserial("id", { mode: "bigint" }).primaryKey(),
@@ -171,6 +208,7 @@ export const agentConnections = sideband.table("agent_connections", {
   createdAt: time("created_at").notNull(),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.agentId] }),
+  uniqueIndex("agent_connections_one_active").on(table.userId).where(sql`${table.revokedAt} is null`),
   // "none" y "polling" no tienen secreto: nadie les escribe.
   check("agent_connections_wake_secret_check", sql`(${table.wakeKind} in ('none', 'polling')) = (${table.wakeSecret} is null)`),
 ]);
@@ -186,4 +224,23 @@ export const channels = sideband.table("channels", {
   primaryKey({ columns: [table.userId, table.name] }),
   check("channels_name_check", sql`${table.name} in (${values(channelNames)})`),
   check("channels_wake_secret_check", sql`(${table.wakeKind} in ('none', 'polling')) = (${table.wakeSecret} is null)`),
+]);
+
+// Conversation checkpoints are accessed only by the message-flow runtime.
+export const messageTurns = sideband.table("message_turns", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  binding: text("binding").notNull(),
+  agentId: text("agent_id").notNull(),
+  deliveryId: text("delivery_id"),
+  parentId: text("parent_id").unique(),
+  state: jsonb("state"),
+  outcome: text("outcome"),
+  clarification: jsonb("clarification"),
+  createdAt: time("created_at").notNull().defaultNow(),
+  expiresAt: time("expires_at").notNull(),
+}, t => [
+  uniqueIndex("message_turn_delivery_idx").on(t.userId, t.binding, t.agentId, t.deliveryId),
+  index("message_turn_binding_idx").on(t.userId, t.binding, t.agentId, t.createdAt),
+  index("message_turn_expiry_idx").on(t.expiresAt),
 ]);

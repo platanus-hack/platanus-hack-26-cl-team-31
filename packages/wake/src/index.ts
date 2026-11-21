@@ -5,6 +5,7 @@ import { mcpEventsPost, verifyMcpCallback } from "./adapters/mcp-events.js";
 import { openclawPost } from "./adapters/openclaw.js";
 import { standardWebhookPost } from "./adapters/standard-webhook.js";
 import { createSafeFetch } from "./safe-fetch.js";
+export { readWebhookBody } from "./read-webhook-body.js";
 
 // "none" and "polling" have no adapter: nobody writes to them.
 function adapterPost(target: Exclude<WakeTarget, { kind: "none" | "polling" }>, notice: WakeNotice) {
@@ -77,7 +78,7 @@ export function createWaker({ allowInsecure, telemetry }: {
       ...(attempt?.userId ? { userId: attempt.userId } : {}),
       ...(attempt?.agentId ? { agentId: attempt.agentId } : {}),
     };
-    const result = await telemetry.span("wake.attempt", { ...ids, attrs: { kind, attempt: attempt?.attempt } }, async (span) => {
+    const result = await telemetry.span("wake.attempt", { ...ids, attrs: { kind, attempt: attempt?.attempt, queueWaitMs: attempt?.queueWaitMs } }, async (span) => {
       const result = await deliver(target, notice);
       span.set({ ok: result.ok, code: resultCode(result), ...(result.status === undefined ? {} : { httpStatus: result.status }) });
       if (!result.ok) span.setStatus("failed");

@@ -24,6 +24,8 @@ Revisión del código y del stack local con Node 24, pnpm 10, Postgres 17 e iden
 
 ## 5. Contenido
 
+En el runtime de Sideband, `question` usa `localQuestionSource(categoría, leer)` en vez de un conector genérico. La categoría autorizada viene del broker; el lector recibe solo la dirección autenticada del remitente y devuelve un mapa de preguntas y respuestas preparadas por el titular para esa categoría. Sin coincidencia exacta el runtime devuelve `no_data`; sin fuente registrada, `declined`. El lector debe abrir únicamente su fuente, sin mezclar categorías. Esta restricción se aplica al runtime del SDK: el broker no puede aislar la memoria o herramientas de clientes MCP externos que construyan su propia respuesta.
+
 - **OK en el contrato local.** El receptor de loopback recibió un aviso Standard Webhook con solo `event` y `requestId`. NX-15 también verifica que los adaptadores de OpenClaw, Grok Bot y MCP Events omiten el texto y el propósito usando receptores simulados. En `sideband_inbox`, el broker adjunta `senderMessage.trusted: false` y las instrucciones MCP mandan tratar ese contenido como datos de terceros. [Contrato E2E](../e2e/src/contract.test.ts) · [Vista de bandeja](../packages/broker/src/core/views.ts) · [Bloque de confianza](agents/trust-snippet.md)
 - **Comportamiento del agente real sin verificar.** La revisión local comprueba la etiqueta, la separación de datos y el texto de las instrucciones. La respuesta de OpenClaw a instrucciones no confiables requiere un agente real con el bloque de confianza configurado y queda fuera del alcance local.
 
@@ -34,7 +36,7 @@ Revisión del código y del stack local con Node 24, pnpm 10, Postgres 17 e iden
 
 ## 7. Operación
 
-- **OK en una instancia.** El broker devuelve `429 rate_limited` y `Retry-After` al usuario que supera la cuota. La prueba HTTP cubre `ask` y verifica el aislamiento por usuario. La misma implementación limita `reply` y las demás rutas protegidas, con pruebas directas de sus cuotas. El contador vive en la memoria del broker. [Límites](../apps/broker/src/http/rate-limit.ts) · [Pruebas HTTP](../apps/broker/src/server.test.ts)
+- Con `DATABASE_URL`, las réplicas comparten una ventana por titular y tipo de operación en PostgreSQL. Al superar la cuota devuelven `429` y `Retry-After`; un fallo de la base no habilita un contador local. El modo en memoria conserva cuotas por proceso. Aplica `pnpm sideband:broker:migrate` antes de actualizar las réplicas. [Límites](../apps/broker/src/http/rate-limit.ts) · [Prueba concurrente entre dos conexiones](../packages/broker/src/store/postgres/postgres-store.test.ts)
 - **Hallazgo en la bitácora local.** La prueba Postgres ejecutó `UPDATE`, `DELETE` y `TRUNCATE` con el rol local y el trigger devolvió `55000`. Sin embargo, el stack da al broker el rol `postgres`. Una consulta de catálogo confirmó que el rol es superusuario y conserva el privilegio `UPDATE` sobre `sideband.request_events`, aunque el trigger bloquee las operaciones normales. La prueba del rol runtime separado confirma permisos de lectura e inserción y ausencia de permisos de mutación. Falta usar ese esquema de privilegios en el stack local. [Compose](../docker-compose.yml) · [Migración de la bitácora](../packages/broker/drizzle/0000_store.sql) · [Pruebas Postgres](../packages/broker/src/store/postgres/postgres-store.test.ts) · [#28](https://github.com/platanus-hack/platanus-hack-26-cl-team-31/issues/28)
 
 ## Validación del repositorio

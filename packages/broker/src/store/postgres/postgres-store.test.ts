@@ -1,11 +1,13 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Principal, WakeTarget } from "@team-31/protocol";
 import pg from "pg";
+import { createTelemetry, memorySink } from "@team-31/telemetry";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createBroker, type BrokerDeps } from "../../index.js";
 import { runStoreContractTests } from "../contract.js";
-import type { RequestRow, WakeJob } from "../store.js";
+import type { RequestRow, WakeClaim, WakeJob } from "../store.js";
 import { applyPostgresMigrations, createPostgresStore, type PostgresStore } from "./index.js";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? "";
@@ -57,6 +59,20 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   runStoreContractTests(() => store);
 
+  it("comparte la cuota entre réplicas concurrentes y renueva solo la ventana vencida", async () => {
+    const replica = createPostgresStore({ databaseUrl, secretsKey });
+    try {
+      const results = await Promise.all(Array.from({ length: 12 }, (_, i) =>
+        (i % 2 ? replica : store).consumeQuota("ana", "ask", 5)));
+      expect(results.filter(result => result === undefined)).toHaveLength(5);
+      expect(results.filter(result => result && result.retryAfter > 0 && result.retryAfter <= 60)).toHaveLength(7);
+      expect(await replica.consumeQuota("bob", "ask", 5)).toBeUndefined();
+      expect(await replica.consumeQuota("ana", "reply", 5)).toBeUndefined();
+      await isolated.query("UPDATE sideband.quota_windows SET reset_at = now() WHERE user_id='ana' AND bucket='ask'");
+      expect(await store.consumeQuota("ana", "ask", 5)).toBeUndefined();
+    } finally { await replica.close(); }
+  });
+
   async function makeRequest(overrides: Partial<RequestRow> = {}) {
     const row: RequestRow = {
       id: randomUUID(), fromUserId: "alice", toUserId: "bruno",
@@ -77,11 +93,62 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     });
   }
 
-  it("delivers an agent reply after the owner approves once and the Store reopens", async () => {
-    const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes: ["sideband:ask", "sideband:status"] };
-    const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["sideband:inbox", "sideband:reply"] };
+  it("serializa envíos con la misma clave entre dos brokers y conserva el recibo al reiniciar", async () => {
+    await createParticipants();
+    const replica = createPostgresStore({ databaseUrl, secretsKey });
+    const deps = brokerDeps();
+    const owner = { userId: "alice" };
+    const input = { to: "bruno@sideband.app", tool: "interest_check" as const, args: { interest: "cerámica" }, idempotencyKey: "demo-1" };
+    try {
+      const brokers = [createBroker({ ...deps, store }), createBroker({ ...deps, store: replica })];
+      await brokers[0]!.owner.setGrant({ userId: "bruno" }, { grantee: "alice@sideband.app", category: "interests" });
+      const copies = await Promise.all(Array.from({ length: 12 }, (_, n) => brokers[n % 2]!.owner.ask(owner, input)));
+      expect(new Set(copies.map(view => view.requestId)).size).toBe(1);
+      expect((await isolated.query("SELECT * FROM sideband.wake_jobs")).rowCount).toBe(1);
+      await store.close();
+      store = createPostgresStore({ databaseUrl, secretsKey });
+      expect(await createBroker({ ...deps, store }).owner.ask(owner, input)).toEqual(copies[0]);
+    } finally { await replica.close(); }
+  });
+
+  it("mantiene contacto y etiqueta bloqueados mientras la solicitud está en curso", async () => {
+    await createParticipants();
+    const from = "alice@sideband.app";
+    const to = "bruno@sideband.app";
+    await store.tx(async tx => { await tx.addContact("alice", to); await tx.setContactTag("alice", to, "friend"); });
+    await store.tx(async tx => {
+      expect(await tx.lockRequiredRelation("alice", from, to, { kind: "contact", tag: "friend" })).toBe(true);
+      for (const table of ["friends", "contact_tags"]) {
+        await expect(isolated.query(`SELECT * FROM sideband.${table} WHERE user_id = 'alice' FOR UPDATE NOWAIT`))
+          .rejects.toMatchObject({ code: "55P03" });
+      }
+    });
+  });
+
+  it("encuentra un nombre con tildes y proyecta nombres de miembros del círculo fuera de la agenda", async () => {
+    await createParticipants();
+    await isolated.query("UPDATE sideband.users SET display_name = $1 WHERE user_id = 'bruno'", ["Simón Pérez"]);
+    const circleId = randomUUID();
+    await store.tx(async tx => {
+      await tx.insertCircle({ id: circleId, ownerUserId: "alice", name: "Dibujo", createdAt: now });
+      for (const address of ["alice@sideband.app", "bruno@sideband.app", "carla@sideband.app"]) {
+        await tx.inviteCircleMember(circleId, address);
+      }
+      await tx.joinCircle(circleId, "alice@sideband.app", now);
+      await tx.joinCircle(circleId, "bruno@sideband.app", now);
+      expect(await tx.listContacts("alice")).toEqual([]);
+      expect(await tx.listJoinedCircles("alice")).toEqual([{
+        id: circleId, name: "Dibujo", members: ["bruno@sideband.app"], memberNames: { "bruno@sideband.app": "Simón Pérez" },
+      }]);
+      expect(await tx.searchPublicProfiles("simon perez")).toEqual([{ address: "bruno@sideband.app", displayName: "Simón Pérez" }]);
+      await tx.addContact("alice", "bruno@sideband.app");
+      expect(await tx.listContacts("alice")).toMatchObject([{ address: "bruno@sideband.app", displayName: "Simón Pérez" }]);
+    });
+  });
+
+  function brokerDeps(): Omit<BrokerDeps, "store"> {
     const { privateKey } = generateKeyPairSync("ed25519");
-    const deps: Omit<BrokerDeps, "store"> = {
+    return {
       clock: { now: () => now },
       signingKey: privateKey,
       nonceKey: new Uint8Array(32).fill(4),
@@ -91,6 +158,12 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       },
       config: { addressDomain: "sideband.app", requestTtlSeconds: 900, wakeRetryDelaysMs: [0] },
     };
+  }
+
+  it("delivers an agent reply after the owner approves once and the Store reopens", async () => {
+    const alice: Principal = { userId: "alice", agentId: "alice-bot", scopes: ["sideband:ask", "sideband:status"] };
+    const bruno: Principal = { userId: "bruno", agentId: "bruno-bot", scopes: ["sideband:inbox", "sideband:reply"] };
+    const deps = brokerDeps();
     await createParticipants();
     const broker = createBroker({ ...deps, store });
     const grant = await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "general" });
@@ -116,6 +189,30 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await expect(reopened.agent.status(alice, requestId)).resolves.toMatchObject({
       final: true, decision: "allow", result,
     });
+  });
+
+  it("keeps grants and pending requests created between two contact removals", async () => {
+    await createParticipants();
+    const sink = memorySink();
+    const telemetry = createTelemetry({ service: "broker", sink, lifecycle: false });
+    const broker = createBroker({ ...brokerDeps(), store, telemetry });
+    const alice: Principal = { userId: "alice", agentId: "a", scopes: ["sideband:inbox", "sideband:reply"] };
+    const bruno: Principal = { userId: "bruno", agentId: "b", scopes: ["sideband:ask", "sideband:status"] };
+    const to = "bruno@sideband.app";
+    const invitation = await broker.owner.connect(alice, { to, tag: "work" });
+    await expect(broker.owner.connect(alice, { to, tag: "family" })).rejects.toMatchObject({ code: "conflict" });
+    expect((await broker.owner.connect(alice, { to })).requestId).toBe(invitation.requestId);
+    await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
+    expect((await broker.owner.contacts(alice)).contacts[0]).toMatchObject({ tag: "work", gives: ["availability"] });
+    await broker.owner.removeContact(alice, to);
+    const grant = await broker.owner.setGrant(alice, { grantee: to, category: "general" });
+    const { requestId } = await broker.agent.ask(bruno, { to: "alice@sideband.app", tool: "question", args: { text: "¿Vienes?" } });
+    await broker.owner.removeContact(alice, to);
+    expect(await broker.owner.grants(alice)).toContainEqual(grant);
+    expect(sink.find("broker.contact.removed")).toHaveLength(1);
+    const [item] = await broker.agent.inbox(alice);
+    await broker.agent.reply(alice, { requestId, nonce: item!.nonce, outcome: "answered", result: { answer: "Sí" } });
+    expect(await broker.agent.status(bruno, requestId)).toMatchObject({ final: true, decision: "allow" });
   });
 
   it("filters lists on the participant ID as well as the claimed address", async () => {
@@ -162,14 +259,14 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       for (const job of jobs) await tx.enqueueWake(job);
     });
 
-    const claimed = deferred<WakeJob[]>();
+    const claimed = deferred<WakeClaim[]>();
     const release = deferred<void>();
     const first = store.tx(async (tx) => {
       claimed.resolve(await tx.claimDueWakes(now, leaseUntil, 1));
       await release.promise;
     });
     const timeout = new AbortController();
-    let second: Promise<WakeJob[]> | undefined;
+    let second: Promise<WakeClaim[]> | undefined;
     try {
       expect(await Promise.race([claimed.promise, first])).toMatchObject([{ id: "first", state: "running" }]);
       second = store.tx((tx) => tx.claimDueWakes(now, leaseUntil, 1));
@@ -201,7 +298,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     ];
     await store.tx(async (tx) => {
       for (const wakeTarget of targets) {
-        await tx.upsertAgentConnection({ userId: "alice", agentId: wakeTarget.kind, label: "Bot", createdAt: now, wakeTarget });
+        await tx.upsertAgentConnection({ userId: "alice", agentId: wakeTarget.kind, label: "Bot", createdAt: now, revokedAt: now, wakeTarget });
       }
     });
     const { rows } = await isolated.query<{ wake_kind: string; wake_public: object; wake_secret: Buffer | null }>(
@@ -245,11 +342,36 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(10);
+    const journal = JSON.parse(await readFile(new URL("../../../drizzle/meta/_journal.json", import.meta.url), "utf8"));
+    expect(rows).toHaveLength(journal.entries.length);
+  });
+
+  it("keeps the first active agent and preserves previously revoked history when migrating", async () => {
+    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
+    await isolated.query("DROP TABLE sideband.vault_member_rules");
+    await isolated.query("DROP INDEX sideband.agent_connections_one_active");
+    await isolated.query("DROP TABLE IF EXISTS sideband.message_turns, sideband.ask_receipts, sideband.quota_windows");
+    await isolated.query("DELETE FROM sideband.__drizzle_migrations WHERE id >= 11");
+    const base = { userId: "alice", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now } as const;
+    await store.tx(async tx => {
+      await tx.upsertAgentConnection({ ...base, agentId: "first" });
+      await tx.upsertAgentConnection({ ...base, agentId: "later", createdAt: new Date(now.getTime() + 1) });
+      await tx.upsertAgentConnection({ ...base, agentId: "old", revokedAt: now });
+    });
+    await applyPostgresMigrations({ databaseUrl });
+    const agents = await store.tx(tx => tx.listAgentConnections("alice"));
+    expect(agents.filter(a => !a.revokedAt).map(a => a.agentId)).toEqual(["first"]);
+    expect(agents.find(a => a.agentId === "old")?.revokedAt).toEqual(now);
+    expect(agents.find(a => a.agentId === "later")?.revokedAt).toBeInstanceOf(Date);
   });
 
   // Rewind the vault and channel tables before replaying older fixtures.
   async function undoVaultAndNotifyOrigin() {
+    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
+    await isolated.query("DROP TABLE sideband.vault_member_rules");
+    await isolated.query("DROP INDEX sideband.agent_connections_one_active");
+    await isolated.query("DROP TABLE IF EXISTS sideband.message_turns, sideband.ask_receipts, sideband.quota_windows");
+    await isolated.query("DROP TABLE sideband.vault_contact_group_permissions, sideband.vault_contact_group_members, sideband.vault_contact_groups");
     await isolated.query("DROP TABLE sideband.vault_permissions, sideband.vault_entries, sideband.vault_categories");
     await isolated.query("DROP TABLE sideband.channels");
     await isolated.query("ALTER TABLE sideband.requests DROP COLUMN origin_channel");
@@ -378,10 +500,37 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect(await tx.listEvents([row.id])).toMatchObject([{ kind: "received" }]);
           expect(await tx.updateRequest(row.id, { guidance: "updated by runtime" }, row.version)).toBe(true);
           const friend = "alice@sideband.app";
-          expect(await tx.addFriend("bruno", friend)).toBe(true);
-          expect(await tx.addFriend("bruno", friend)).toBe(false);
-          expect(await tx.listFriends("bruno")).toEqual([friend]);
-          expect(await tx.removeFriend("bruno", friend)).toBe(true);
+          expect(await tx.addContact("bruno", friend)).toBe(true);
+          expect(await tx.addContact("bruno", friend)).toBe(false);
+          expect(await tx.listContactAddresses("bruno")).toEqual([friend]);
+          expect(await tx.lockRequiredRelation("bruno", "bruno@sideband.app", friend, { kind: "contact" })).toBe(true);
+          expect(await tx.lockAskReceipt("dedup-test")).toBeNull();
+          await tx.insertAskReceipt({ keyHash: "dedup-test", inputHash: "input", requestId: row.id, waitingFor: "agent" });
+          const groupId = randomUUID();
+          const categoryId = randomUUID();
+          const group = { id: groupId, name: "Instituciones", members: [friend] };
+          const membership = { groupId, address: friend };
+          const sharing = { action: "set_contact_group", categoryId, groupId, allowed: true } as const;
+          expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
+          expect(await tx.changeContactGroup("bruno", groupId, { action: "create", name: group.name })).toBe(true);
+          expect(await tx.changeContactGroup("bruno", groupId, { ...membership, action: "add_contact" })).toBe(true);
+          expect(await tx.contactGroups("bruno")).toEqual({ groups: [group] });
+          expect(await tx.contactGroups("alice")).toEqual({ groups: [] });
+          await tx.changeVault("bruno", categoryId, { action: "create", name: "Prueba" });
+          expect(await tx.changeVault("bruno", categoryId, sharing)).toBe(true);
+          expect(await tx.vaultMembers("bruno", categoryId)).toEqual([friend]);
+          const individual = { action: "set_member", categoryId, address: friend } as const;
+          await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
+          expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
+          await tx.changeVault("bruno", categoryId, { ...individual, allowed: true });
+          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([{ id: categoryId, name: "Prueba" }]);
+          expect(await tx.changeContactGroup("bruno", groupId, { ...membership, action: "remove_contact" })).toBe(true);
+          expect(await tx.vaultMembers("bruno", categoryId)).toEqual([friend]);
+          await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
+          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([]);
+          expect(await tx.changeContactGroup("bruno", groupId, { groupId, action: "delete" })).toBe(true);
+          expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
+          expect(await tx.removeContact("bruno", friend)).toBe(true);
         });
       } finally {
         await runtime.close();
@@ -391,6 +540,13 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
         [runtimeRole],
       );
       expect(privileges?.can_mutate).toBe(false);
+      const { rows: groupPrivileges } = await isolated.query(
+        `SELECT name, has_table_privilege($1, name, 'UPDATE, TRUNCATE') AS excess
+         FROM unnest(ARRAY['sideband.friends', 'sideband.vault_contact_groups',
+           'sideband.vault_contact_group_members', 'sideband.vault_contact_group_permissions']) AS t(name)`,
+        [runtimeRole],
+      );
+      expect(groupPrivileges.every(({ excess }) => !excess)).toBe(true);
     } finally {
       await isolated.query(`DROP OWNED BY ${pg.escapeIdentifier(runtimeRole)}`);
       await isolated.query(`DROP ROLE IF EXISTS ${pg.escapeIdentifier(runtimeRole)}`);

@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto"
+import { ed25519PrivateKey } from "@team-31/auth/service"
 import { z } from "zod"
 
 // Configuración del servidor admin. Ver docs/admin.md (secciones 4 y 8) y .env.local.example.
 const flag = z.enum(["0", "1"]).default("0").transform((value) => value === "1")
 const optional = (value: unknown) => (value === "" ? undefined : value)
 const postgresUrl = z.url({ protocol: /^postgres(ql)?$/ })
-const jwkCoordinate = z.base64url().refine((value) => Buffer.from(value, "base64url").length === 32, "Se requieren 32 bytes en base64url.")
-const ed25519PrivateKey = z.object({ kty: z.literal("OKP"), crv: z.literal("Ed25519"), x: jwkCoordinate, d: jwkCoordinate })
 
 const privateKeyJson = z.string().transform((value, ctx) => {
   try {

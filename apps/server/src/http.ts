@@ -14,7 +14,7 @@ type Tool = {
   name: string;
   description: string;
   inputSchema: unknown;
-  run(db: pg.PoolClient, person: string, input: unknown): Promise<object>;
+  run(db: pg.PoolClient, person: string, input: unknown): Promise<Record<string, unknown>>;
 };
 
 function json(response: ServerResponse, status: number, value: unknown) {

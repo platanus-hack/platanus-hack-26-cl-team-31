@@ -8,9 +8,10 @@ import { button, card, Empty, input, secondaryText, textLink } from "../ui";
 import { CirclePicker } from "./circle-picker";
 
 async function readAgentDirectory() {
-  const broker = ownerClient();
-  const { address, data: [agents, circles] } = await readAsOwner((owner) =>
-    Promise.all([broker.agentDirectory(owner), broker.circles(owner)]));
+  const { address, data: [agents, circles] } = await readAsOwner((owner) => {
+    const broker = ownerClient();
+    return Promise.all([broker.agentDirectory(owner), broker.circles(owner)]);
+  });
   const clientIds = [...new Set(agents.filter((agent) => agent.agentId === agent.label).map((agent) => agent.agentId))];
   const { adapter } = await getAuth().$context;
   const clients = clientIds.length ? await adapter.findMany<{ clientId: string; name?: string }>({

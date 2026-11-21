@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { InboxIcon, WaypointsIcon } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router"
@@ -15,6 +15,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
+import { eventReferences } from "@/components/event-references"
 import { CopyButton, CopyId } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
 import {
@@ -24,12 +25,11 @@ import {
   SelectFilter,
 } from "@/components/filters"
 import {
-  ErrorState,
+  QueryError,
   KeyValues,
-  Muted,
   Page,
   PageHeader,
-  Panel,
+  QueryPanel,
 } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { api } from "@/lib/api"
@@ -134,12 +134,7 @@ function ErrorSheet({
         </SheetHeader>
         <div className="flex flex-col gap-4 overflow-y-auto p-4">
           {query.isPending ? <Skeleton className="h-40" /> : null}
-          {query.isError ? (
-            <ErrorState
-              error={query.error}
-              onRetry={() => void query.refetch()}
-            />
-          ) : null}
+          <QueryError query={query} />
           {event ? (
             <>
               <KeyValues
@@ -152,48 +147,7 @@ function ErrorSheet({
                     ),
                   },
                   { label: "Ocurrió", value: formatAbsolute(event.at) },
-                  {
-                    label: "Traza",
-                    value: event.traceId ? (
-                      <CopyId
-                        value={event.traceId}
-                        to={`/trazas/${event.traceId}`}
-                        max={16}
-                      />
-                    ) : (
-                      <Muted />
-                    ),
-                  },
-                  {
-                    label: "Solicitud",
-                    value: event.requestId ? (
-                      <CopyId
-                        value={event.requestId}
-                        to={`/solicitudes/${event.requestId}`}
-                      />
-                    ) : (
-                      <Muted />
-                    ),
-                  },
-                  {
-                    label: "Persona",
-                    value: event.userId ? (
-                      <CopyId
-                        value={event.userId}
-                        to={`/personas/${event.userId}`}
-                      />
-                    ) : (
-                      <Muted />
-                    ),
-                  },
-                  {
-                    label: "Agente",
-                    value: event.agentId ? (
-                      <CopyId value={event.agentId} />
-                    ) : (
-                      <Muted />
-                    ),
-                  },
+                  ...eventReferences(event),
                 ]}
               />
               {issues ? (
@@ -261,7 +215,7 @@ export function ErrorsPage() {
         { query: { window, service, operation: operation || undefined } },
         { signal }
       ),
-    placeholderData: (previous) => previous,
+    placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   })
   const total = query.data?.items.reduce((sum, e) => sum + e.count, 0) ?? 0
@@ -296,10 +250,7 @@ export function ErrorsPage() {
           }}
         />
       </FilterBar>
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={columns}
           data={query.data?.items}
@@ -312,7 +263,7 @@ export function ErrorsPage() {
             description: `Nada registrado en ${windowPhrase[window]}.`,
           }}
         />
-      </Panel>
+      </QueryPanel>
       <ErrorSheet id={id} onClose={() => navigate("/errores")} />
     </Page>
   )

@@ -61,7 +61,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { CopyButton } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
-import { ErrorState, Muted, Page, PageHeader, Panel } from "@/components/page"
+import { QueryError, Muted, Page, PageHeader, Panel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { ToneBadge } from "@/components/status"
 import { api, isApiError } from "@/lib/api"
@@ -476,9 +476,7 @@ export function TokensPage() {
         description="Tokens personales sba_ para que Claude Code o Codex consulten el MCP de administración. Solo lectura y auditados."
         actions={<CreateTokenDialog />}
       />
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
+      <QueryError query={query} />
       <Panel>
         <DataTable
           columns={columns}

@@ -1,18 +1,20 @@
 import type {
-  ActivityEvent,
-  OwnerVault, VaultChange, VaultResult,
+  ActivityEvent, AgentContacts, Contact,
+  OwnerVault, VaultCatalog, VaultChange, VaultResult,
   Address,
   Category,
   ChannelName,
   ContactTag,
   FinalOutcome,
+  RequiredRelation,
   RequestStatus,
-  PublicAgent,
+  PublicAgent, PublicProfile,
   Sharing,
   ToolName,
   ToolResult,
   WakeResult,
   WakeTarget,
+  ContactGroupChange, ContactGroups,
 } from "@team-31/protocol";
 
 export type UserRow = {
@@ -31,6 +33,7 @@ export type RequestRow = {
   targetAgentId?: string;
   // Channel where the owner wrote the request. It receives a notice on each later change.
   originChannel?: ChannelName;
+  senderGroupId?: string;
   tool: ToolName;
   args: unknown;
   purpose?: string;
@@ -52,6 +55,13 @@ export type RequestRow = {
   expiresAt: Date;
   closedAt?: Date;
   version: number;
+};
+
+export type AskReceipt = {
+  keyHash: string;
+  inputHash: string;
+  requestId: string;
+  waitingFor: "owner" | "agent" | null;
 };
 
 export type RequestEvent = {
@@ -76,7 +86,16 @@ export type WakeJob = {
   lastResult?: WakeResult;
 };
 
-export type WakeClaim = WakeJob & { state: "running"; recovered: boolean };
+export type WakeClaim = Omit<WakeJob, "runAt" | "state"> & {
+  state: "running";
+  leaseUntil: Date;
+  dueAt: Date;
+  recovered: boolean;
+};
+
+export function wakeClaim({ runAt, ...job }: WakeJob, recovered: boolean, dueAt: Date): WakeClaim {
+  return { ...job, state: "running", leaseUntil: runAt, recovered, dueAt };
+}
 
 export type AgentConnectionRow = {
   userId: string;
@@ -116,9 +135,15 @@ export interface Store {
 }
 
 export interface StoreTx {
+  networkAddresses(after: Address | undefined, limit: number, q?: string): Promise<Address[]>;
+  vaultCatalog(owner: string, lockNames?: boolean): Promise<VaultCatalog>;
+  vaultMembers(owner: string, categoryId: string): Promise<Address[] | null>;
   ownerVault(owner: string): Promise<OwnerVault>;
   changeVault(owner: string, id: string, change: VaultChange): Promise<boolean>;
+  contactGroups(owner: string): Promise<ContactGroups>;
+  changeContactGroup(owner: string, id: string, change: ContactGroupChange): Promise<boolean>;
   sharedVault(reader: Address, to: Address, categoryId?: string): Promise<VaultResult>;
+  searchPublicProfiles(query: string): Promise<PublicProfile[]>;
   getUser(userId: string): Promise<UserRow | null>;
   getUserByAddress(address: Address): Promise<UserRow | null>;
   // Creates a user if needed and fails with conflict if either address is occupied.
@@ -133,10 +158,12 @@ export interface StoreTx {
   // False when the grantor has no live grant with that id.
   revokeGrant(id: string, grantorUserId: string, at: Date): Promise<boolean>;
 
-  listFriends(userId: string): Promise<Address[]>;
+  listContacts(userId: string): Promise<Contact[]>;
+  listJoinedCircles(userId: string): Promise<AgentContacts["circles"]>;
+  listContactAddresses(userId: string): Promise<Address[]>;
   // True when this transaction creates a new membership.
-  addFriend(userId: string, address: Address): Promise<boolean>;
-  removeFriend(userId: string, address: Address): Promise<boolean>;
+  addContact(userId: string, address: Address): Promise<boolean>;
+  removeContact(userId: string, address: Address): Promise<boolean>;
   // The tag a holder put on each contact. A null tag removes it.
   listContactTags(userId: string): Promise<Map<Address, ContactTag>>;
   setContactTag(userId: string, address: Address, tag: ContactTag | null): Promise<void>;
@@ -146,6 +173,7 @@ export interface StoreTx {
   // Pending connect requests sent or received by the user, oldest first.
   listOpenInvitations(userId: string): Promise<RequestRow[]>;
 
+  // A duplicate ID raises conflict and preserves the existing circle.
   insertCircle(row: CircleRow): Promise<void>;
   getCircle(id: string): Promise<CircleRow | null>;
   // Also deletes its members and invitations.
@@ -161,6 +189,12 @@ export interface StoreTx {
   // True when both addresses have joined the same circle.
   shareCircle(a: Address, b: Address): Promise<boolean>;
 
+  // Preserve a matching relationship until the transaction commits.
+  lockRequiredRelation(userId: string, from: Address, to: Address, relation: RequiredRelation): Promise<boolean>;
+  // Serializes this key even before the first receipt exists.
+  lockAskReceipt(keyHash: string): Promise<AskReceipt | null>;
+  insertAskReceipt(receipt: AskReceipt): Promise<void>;
+
   insertRequest(row: RequestRow): Promise<void>;
   getRequest(
     id: string,
@@ -171,7 +205,7 @@ export interface StoreTx {
   updateRequest(id: string, patch: Partial<Omit<RequestRow, "id" | "version">>, expectedVersion: number): Promise<boolean>;
   listInbox(toAddress: Address): Promise<RequestRow[]>;
   listOwnerPending(toAddress: Address): Promise<RequestRow[]>;
-  listActivity(address: Address, limit: number): Promise<RequestRow[]>;
+  listActivity(address: Address, limit: number, requestId?: string): Promise<RequestRow[]>;
   listDueForExpiry(now: Date, limit: number): Promise<RequestRow[]>;
   appendEvent(event: RequestEvent): Promise<void>;
   // Returns events in insertion order for the supplied, already authorized request IDs.
@@ -191,8 +225,8 @@ export interface StoreTx {
   // onCreated runs only when this call inserted the row (presence telemetry).
   ensureAgentConnection(row: AgentConnectionRow, onCreated?: () => void): Promise<AgentConnectionRow>;
   upsertAgentConnection(row: AgentConnectionRow): Promise<void>;
-  // Oldest first, then by agent ID in UTF-8 byte order.
   listPublicAgents(): Promise<PublicAgent[]>;
+  // Oldest first, then by agent ID in UTF-8 byte order.
   listAgentConnections(userId: string): Promise<AgentConnectionRow[]>;
   getAgentConnection(userId: string, agentId: string, forUpdate?: boolean): Promise<AgentConnectionRow | null>;
 

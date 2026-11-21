@@ -1,8 +1,9 @@
-import { BrokerError } from "@team-31/broker/client";
+import { BrokerError } from "@team-31/broker-client";
 import { OwnerPendingItem } from "@team-31/protocol";
 import { revalidatePath } from "next/cache";
 import { beforeEach, expect, it, vi } from "vitest";
-import { decide, saveSharing } from "./actions";
+import { decide } from "./actions";
+import { saveSharing } from "./contacts/actions";
 import { getOwner, requireAddress } from "./owner";
 
 const broker = vi.hoisted(() => ({

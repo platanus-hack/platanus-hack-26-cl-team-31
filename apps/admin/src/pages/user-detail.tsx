@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router"
 import type { AgentRow } from "@shared/contract"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { initials } from "@/lib/format"
 import {
   Card,
   CardContent,
@@ -20,11 +21,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { agentColumns } from "@/components/agent-columns"
+import { agentColumns } from "@/features/agents/agent-columns"
 import { CopyButton, CopyId } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
 import {
-  ErrorState,
+  QueryError,
   KeyValues,
   Muted,
   Page,
@@ -32,19 +33,10 @@ import {
   Panel,
 } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
-import { requestColumns } from "@/components/request-columns"
-import { RevokeAgentDialog } from "@/components/revoke-agent-dialog"
+import { requestColumns } from "@/features/requests/request-columns"
+import { RevokeAgentDialog } from "@/features/agents/revoke-agent-dialog"
 import { userQuery } from "@/lib/queries"
 import { useSession } from "@/lib/session"
-
-function initials(text: string) {
-  return text
-    .split(/[\s@._-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join("")
-}
 
 export function UserDetailPage() {
   const { id = "" } = useParams()
@@ -66,7 +58,7 @@ export function UserDetailPage() {
     return (
       <Page>
         <PageHeader title={<span className="font-mono">{id}</span>} />
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
+        <QueryError query={query} />
       </Page>
     )
   }
@@ -224,8 +216,8 @@ export function UserDetailPage() {
           />
         </Panel>
         <Panel
-          title="Reglas para compartir"
-          description="Configuración del dueño (no son datos de terceros)"
+          title="Reglas históricas para compartir"
+          description="Registro anterior a los permisos por categoría. Los permisos vigentes se administran en Contactos."
           action={
             rules ? <CopyButton value={rules} label="Copiar reglas" /> : null
           }
@@ -236,7 +228,7 @@ export function UserDetailPage() {
             </pre>
           ) : (
             <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-              Sin reglas guardadas.
+              Sin reglas históricas guardadas.
             </p>
           )}
         </Panel>

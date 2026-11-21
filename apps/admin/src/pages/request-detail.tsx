@@ -31,7 +31,7 @@ import {
 import { CopyButton, CopyId } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
 import {
-  ErrorState,
+  QueryError,
   KeyValues,
   Muted,
   Page,
@@ -40,7 +40,7 @@ import {
 } from "@/components/page"
 import { ReasonActionDialog } from "@/components/reason-action-dialog"
 import { RelativeTime } from "@/components/relative-time"
-import { RevealDialog } from "@/components/reveal-dialog"
+import { RevealDialog } from "@/features/requests/reveal-dialog"
 import { RequestStatusBadge, StatusDot, ToneBadge } from "@/components/status"
 import { Timeline } from "@/components/timeline"
 import { api } from "@/lib/api"
@@ -345,7 +345,7 @@ export function RequestDetailPage() {
     return (
       <Page>
         <PageHeader title={<span className="font-mono">{id}</span>} />
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
+        <QueryError query={query} />
       </Page>
     )
   }

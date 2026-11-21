@@ -45,15 +45,17 @@ function rawFor(tool: ToolName) {
     case "interest_check":
       return fc.record({ matches: fc.boolean() });
     case "connect":
+    case "vault_access":
       return fc.record({ accepted: fc.boolean() });
   }
 }
 
-const tools: ToolName[] = ["profile", "availability", "question", "interest_check", "connect"];
+const tools: ToolName[] = ["profile", "availability", "question", "interest_check", "connect", "vault_access"];
 const hints = ["dentista", "Dr. Soto"];
 const required: Record<ToolName, string[]> = {
   profile: ["displayName"], availability: ["available"], question: ["answer"],
   interest_check: ["matches"], connect: ["accepted"],
+  vault_access: ["accepted"],
 };
 
 const scenario = fc

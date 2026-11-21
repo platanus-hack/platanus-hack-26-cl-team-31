@@ -1,15 +1,15 @@
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import type { AgentRow } from "@shared/contract"
 import { WakeKind } from "@team-31/protocol"
 
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Switch } from "@/components/ui/switch"
-import { agentColumns, agentHealth } from "@/components/agent-columns"
+import { agentColumns, agentHealth } from "@/features/agents/agent-columns"
 import { DataTable } from "@/components/data-table"
 import { FilterBar, SelectFilter } from "@/components/filters"
-import { ErrorState, Page, PageHeader, Panel } from "@/components/page"
-import { RevokeAgentDialog } from "@/components/revoke-agent-dialog"
+import { Page, PageHeader, QueryPanel } from "@/components/page"
+import { RevokeAgentDialog } from "@/features/agents/revoke-agent-dialog"
 import { ToneBadge } from "@/components/status"
 import { api } from "@/lib/api"
 import { wakeKindLabel } from "@/lib/status"
@@ -28,7 +28,7 @@ export function AgentsPage() {
         { query: { failing: failing || undefined, kind } },
         { signal }
       ),
-    placeholderData: (previous) => previous,
+    placeholderData: keepPreviousData,
   })
   const columns = React.useMemo(
     () => agentColumns({ onRevoke: isOperator ? setRevoking : undefined }),
@@ -64,10 +64,7 @@ export function AgentsPage() {
           </FieldLabel>
         </Field>
       </FilterBar>
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={columns}
           data={query.data?.items}
@@ -80,7 +77,7 @@ export function AgentsPage() {
               : undefined,
           }}
         />
-      </Panel>
+      </QueryPanel>
       <RevokeAgentDialog agent={revoking} onClose={() => setRevoking(null)} />
     </Page>
   )

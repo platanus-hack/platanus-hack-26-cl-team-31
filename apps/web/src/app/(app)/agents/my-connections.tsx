@@ -1,4 +1,4 @@
-import { readAgents } from "../actions";
+import { readAgents } from "./actions";
 import { wakeLabels } from "../labels";
 import { card, Empty, Stamp } from "../ui";
 import { AgentControls } from "./agent-controls";

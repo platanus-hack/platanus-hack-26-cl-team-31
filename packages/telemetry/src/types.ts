@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// El contrato del admin importa estos esquemas. catalog.test.ts los compara con los
-// CHECK de ops.events en packages/ops/sql/0001_events.sql.
+// El contrato del admin importa estos esquemas. La prueba de postgresSink los compara
+// con los CHECK de ops.events después de aplicar las migraciones.
 export const Service = z.enum(["web", "mcp", "broker", "worker", "admin", "coordination"]);
 export type Service = z.infer<typeof Service>;
 

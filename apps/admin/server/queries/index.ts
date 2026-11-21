@@ -409,7 +409,9 @@ export function createPgAdminQueries({
           async () =>
             db.query(
               `SELECT count(*) FILTER (WHERE kind = 'error') AS errors,
-                    count(*) FILTER (WHERE name = 'http.rate_limited') AS rate_limited
+                    count(*) FILTER (WHERE name = 'http.rate_limited') AS rate_limited,
+                    (SELECT sum(active_windows) FROM ops.v_quota_windows) AS active_windows,
+                    (SELECT count(*) FROM ops.v_message_turns WHERE phase = 'clarify' AND outcome = 'clarification') AS clarifications
              FROM ops.v_events
              WHERE at >= now() - $1::interval AND (kind = 'error' OR name = 'http.rate_limited')`,
               [interval]
@@ -451,6 +453,8 @@ export function createPgAdminQueries({
           })),
           errors: { total: num(counts.rows[0]?.errors), top },
           rateLimited: num(counts.rows[0]?.rate_limited),
+          awaitingClarifications: num(counts.rows[0]?.clarifications),
+          activeQuotaWindows: num(counts.rows[0]?.active_windows),
         })
       }),
 
@@ -494,7 +498,8 @@ export function createPgAdminQueries({
       ro(async (db) => {
         const { rows } = await db.query(
           `SELECT ${REQUEST_COLUMNS}, allowed_fields, dropped_fields, decision_reason, internal_reason,
-                  args_keys, result_keys, has_purpose, response_signed
+                  args_keys, result_keys, has_purpose, response_signed,
+                  (SELECT receipt_count FROM ops.v_ask_receipts WHERE request_id = $1) AS receipt_count
            FROM ops.v_requests WHERE id = $1`,
           [id]
         )
@@ -559,6 +564,7 @@ export function createPgAdminQueries({
         ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
         return RequestDetail.parse({
           summary: toRequestSummary(row),
+          idempotentReceipts: Number(row.receipt_count ?? 0),
           allowedFields: row.allowed_fields ?? [],
           droppedFields: row.dropped_fields ?? [],
           decisionReason: row.decision_reason ?? null,
@@ -728,9 +734,12 @@ export function createPgAdminQueries({
             )
         )
         return UserDetail.parse({
+          vaultContactGroups: await viewExists(db, "ops.v_vault_contact_group_summary")
+            ? (await db.query("SELECT groups::int, memberships::int, permissions::int FROM ops.v_vault_contact_group_summary WHERE user_id = $1", [userId])).rows[0]
+              ?? { groups: 0, memberships: 0, permissions: 0 } : undefined,
           vault: await viewExists(db, "ops.v_vault_summary")
-            ? (await db.query("SELECT categories::int, entries::int, permissions::int FROM ops.v_vault_summary WHERE user_id = $1", [userId])).rows[0]
-              ?? { categories: 0, entries: 0, permissions: 0 } : undefined,
+            ? (await db.query(`SELECT categories::int, entries::int, permissions::int, member_rules::int AS "memberRules" FROM ops.v_vault_summary WHERE user_id = $1`, [userId])).rows[0]
+              ?? { categories: 0, entries: 0, permissions: 0, memberRules: 0 } : undefined,
           summary: toUserSummary(row),
           identity: {
             email: identity?.rows[0]?.email ?? null,

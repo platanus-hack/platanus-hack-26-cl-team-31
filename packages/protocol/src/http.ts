@@ -3,13 +3,24 @@ import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
 import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
-import { ActivityItem, AgentConnection, AgentContacts, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent } from "./owner.js";
+import { ActivityItem, AgentConnection, AgentContacts, ContactsView, ConnectInput, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent, ProfileSearch, PublicProfile } from "./owner.js";
 import { ContactTag, Sharing } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
-import { AskInput, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
+import { AskInput, type AskArguments, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
 import { ChannelName, WakeTarget } from "./wake.js";
-import { OwnerVault, VaultCatalog, VaultQuery, VaultResult, VaultChange, VaultReceipt } from "./vault.js";
+import { ContactGroupChange, ContactGroupReceipt, ContactGroups, OwnerVault, VaultCatalog, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult, VaultChange, VaultReceipt } from "./vault.js";
+
+// A pre-routing broker accepts an unwrapped AskInput and would strip unfamiliar optional
+// fields. The envelope makes old replicas reject conditional sends before any side effect.
+const AskBody = z.union([z.strictObject({ checked: AskInput }), AskInput]);
+type AskBody = z.infer<typeof AskBody>;
+export function encodeAsk(input: AskArguments): z.input<typeof AskBody> {
+  return input.requireRelation || input.idempotencyKey ? { checked: input } : input;
+}
+export function decodeAsk(body: AskBody): AskInput {
+  return "checked" in body ? body.checked : body;
+}
 
 const requestParams = z.object({ id: z.string() });
 const agentParams = z.object({ agentId: z.string() });
@@ -18,10 +29,23 @@ const adminAgentParams = z.object({ userId: z.string(), agentId: z.string() });
 const noContent = { status: 204, response: z.undefined() } as const;
 const circleMemberParams = z.object({ id: z.string(), address: Address });
 
+const ownerActivityQuery = z.object({
+  limit: z.coerce.number<string | number>().int().positive().optional(),
+  requestId: z.string().min(1).optional(),
+});
+export type OwnerActivityQuery = z.output<typeof ownerActivityQuery>;
+
 export const routes = {
+  agentNetworkUsers: { method: "GET", path: "/v1/agent/network/users", query: z.strictObject({ after: Address.optional(), q: z.string().trim().min(1).max(128).toLowerCase().optional() }),
+    response: z.object({ addresses: z.array(Address), nextCursor: Address.optional() }), iss: "mcp", port: "agent.networkUsers" },
+  agentConnect: { method: "POST", path: "/v1/agent/connection", ...noContent, iss: "mcp", port: "agent.connect" },
+  agentContactGroups: { method: "GET", path: "/v1/agent/contact-groups", response: ContactGroups, iss: "mcp", port: "agent.contactGroups" },
+  ownerContactGroups: { method: "GET", path: "/v1/owner/contact-groups", response: ContactGroups.extend(VaultCatalog.shape), iss: "web", port: "owner.contactGroups" },
+  agentChangeContactGroup: { method: "POST", path: "/v1/agent/contact-groups", body: ContactGroupChange, response: ContactGroupReceipt, iss: "mcp", port: "agent.changeContactGroup" },
   ownerVault: { method: "GET", path: "/v1/owner/vault", response: OwnerVault, iss: "web", port: "owner.vault" },
   ownerChangeVault: { method: "POST", path: "/v1/owner/vault", body: VaultChange, response: VaultReceipt, iss: "web", port: "owner.changeVault" },
   agentVaultCatalog: { method: "GET", path: "/v1/agent/vault", response: VaultCatalog, iss: "mcp", port: "agent.vaultCatalog" },
+  agentVaultMembers: { method: "GET", path: "/v1/agent/vault/members", query: VaultMembersQuery, response: VaultMembers, iss: "mcp", port: "agent.vaultMembers" },
   agentChangeVault: { method: "POST", path: "/v1/agent/vault", body: VaultChange, response: VaultReceipt, iss: "mcp", port: "agent.changeVault" },
   agentQueryVault: { method: "POST", path: "/v1/agent/vault/query", body: VaultQuery, response: VaultResult, iss: "mcp", port: "agent.queryVault" },
   agentCapabilities: {
@@ -31,7 +55,7 @@ export const routes = {
   agentAsk: {
     method: "POST",
     path: "/v1/agent/ask",
-    body: AskInput,
+    body: AskBody,
     response: RequesterViewSchema,
     iss: "mcp",
     port: "agent.ask",
@@ -52,6 +76,10 @@ export const routes = {
     iss: "mcp",
     port: "agent.reply",
   },
+  agentSearchPublicProfiles: { method: "POST", path: "/v1/agent/profiles/search", body: ProfileSearch, response: z.object({ items: z.array(PublicProfile) }), iss: "mcp", port: "agent.searchPublicProfiles" },
+  ownerSearchPublicProfiles: { method: "POST", path: "/v1/owner/profiles/search", body: ProfileSearch, response: z.object({ items: z.array(PublicProfile) }), iss: "web", port: "owner.searchPublicProfiles" },
+  ownerDirectory: { method: "GET", path: "/v1/owner/contact-directory", response: AgentContacts, iss: "web", port: "owner.directory" },
+  ownerQueryVault: { method: "POST", path: "/v1/owner/vault/query", body: VaultQuery, response: VaultResult, iss: "web", port: "owner.queryVault" },
   agentContacts: {
     method: "GET",
     path: "/v1/agent/contacts",
@@ -131,17 +159,17 @@ export const routes = {
   ownerActivity: {
     method: "GET",
     path: "/v1/owner/activity",
-    query: z.object({ limit: z.coerce.number<string | number>().int().positive().optional() }),
+    query: ownerActivityQuery,
     response: z.object({ items: z.array(ActivityItem) }),
     iss: "web",
     port: "owner.activity",
   },
   ownerAsk: {
-    method: "POST", path: "/v1/owner/requests", body: AskInput,
+    method: "POST", path: "/v1/owner/requests", body: AskBody,
     response: RequesterViewSchema, iss: "web", port: "owner.ask",
   },
   ownerChannelAsk: {
-    method: "POST", path: "/v1/owner/channels/:name/requests", params: channelParams, body: AskInput,
+    method: "POST", path: "/v1/owner/channels/:name/requests", params: channelParams, body: AskBody,
     response: RequesterViewSchema, iss: "web", port: "owner.channelAsk",
   },
   ownerSetChannel: {
@@ -205,7 +233,7 @@ export const routes = {
   ownerConnect: {
     method: "POST",
     path: "/v1/owner/connections",
-    body: z.object({ to: Address, share: Sharing.optional(), tag: ContactTag.optional() }),
+    body: ConnectInput,
     response: RequesterViewSchema,
     iss: "web",
     port: "owner.connect",
@@ -253,13 +281,13 @@ export const routes = {
     iss: "web",
     port: "owner.answerInvitation",
   },
-  ownerRemoveFriend: {
+  ownerRemoveContact: {
     method: "DELETE",
     path: "/v1/owner/connections/:address",
     params: z.object({ address: Address }),
     ...noContent,
     iss: "web",
-    port: "owner.removeFriend",
+    port: "owner.removeContact",
   },
   ownerCircles: {
     method: "GET",
@@ -351,3 +379,7 @@ export const routes = {
     port: null,
   },
 } as const;
+
+export type RouteInput<Route> = {
+  [Key in keyof Route & ("params" | "query" | "body")]: z.input<Route[Key]>;
+};

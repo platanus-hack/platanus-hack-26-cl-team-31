@@ -54,7 +54,7 @@ Sesiones de 8 h que se renuevan cada 15 min de uso, sin caché de cookie. Las mu
 ```bash
 pnpm build --filter @team-31/admin...
 pnpm with-env pnpm --filter @team-31/admin start            # ADMIN_SERVE_SPA=1: SPA + API + MCP en ADMIN_PORT
-docker compose --env-file .env --env-file .env.local --profile sideband up -d admin   # solo loopback
+docker compose --env-file .env --env-file .env.local --profile sideband up -d --build admin   # compila en Docker; solo loopback
 ```
 
 ### Pruebas
@@ -139,7 +139,7 @@ Flujo sugerido: `admin_overview` → `admin_search_requests` (por ejemplo `stuck
 
 ### Probar en local
 
-Las pruebas de `server/mcp/` montan la ruta con `mountAdminMcp(app, deps, telemetry)` en una app Hono en memoria. Usan el cliente MCP del SDK y un `AdminQueries` falso.
+Las peticiones de navegador a `POST /mcp` deben llevar el origen de `ADMIN_URL`; los clientes nativos pueden omitir `Origin`. Las pruebas de `server/mcp/` montan la ruta en una app Hono en memoria. Usan el cliente MCP del SDK y un `AdminQueries` falso.
 
 ```bash
 pnpm test --filter @team-31/admin

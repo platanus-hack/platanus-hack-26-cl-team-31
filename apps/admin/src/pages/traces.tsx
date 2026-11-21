@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/tooltip"
 import { CopyButton, CopyId } from "@/components/copy-id"
 import {
-  ErrorState,
+  QueryError,
   KeyValues,
   Muted,
   Page,
@@ -61,11 +61,13 @@ function layout(spans: Span[]): { rows: Row[]; t0: number; total: number } {
     // Un padre que no está en la traza (otro servicio sin instrumentar) se trata como raíz.
     const parent =
       span.parentSpanId && ids.has(span.parentSpanId) ? span.parentSpanId : null
-    byParent.set(parent, [...(byParent.get(parent) ?? []), span])
+    const siblings = byParent.get(parent)
+    if (siblings) siblings.push(span)
+    else byParent.set(parent, [span])
   }
   const rows: Row[] = []
   const visit = (parent: string | null, depth: number) => {
-    const children = [...(byParent.get(parent) ?? [])].sort((a, b) =>
+    const children = (byParent.get(parent) ?? []).sort((a, b) =>
       a.startAt.localeCompare(b.startAt)
     )
     for (const child of children) {
@@ -365,9 +367,7 @@ export function TraceDetailPage() {
           ) : null
         }
       />
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
+      <QueryError query={query} />
       {query.isPending ? <Skeleton className="h-96" /> : null}
       {trace ? (
         <>
@@ -483,11 +483,7 @@ export function TracesPage() {
             ))}
           </div>
         ) : recent.isError ? (
-          <ErrorState
-            error={recent.error}
-            className="m-3 w-auto"
-            onRetry={() => void recent.refetch()}
-          />
+          <QueryError query={recent} className="m-3 w-auto" />
         ) : (
           <Table className="text-[13px]">
             <TableHeader>

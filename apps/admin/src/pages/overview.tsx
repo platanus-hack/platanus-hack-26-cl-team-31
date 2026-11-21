@@ -45,7 +45,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { CopyId } from "@/components/copy-id"
-import { ErrorState, Page, PageHeader, Panel } from "@/components/page"
+import { QueryError, Page, PageHeader, Panel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { RequestStatusBadge, StatusDot } from "@/components/status"
 import { api } from "@/lib/api"
@@ -323,10 +323,7 @@ function StatusChart({ window }: { window: Window }) {
         {query.isPending ? (
           <Skeleton className="min-h-56 w-full flex-1" />
         ) : query.isError ? (
-          <ErrorState
-            error={query.error}
-            onRetry={() => void query.refetch()}
-          />
+          <QueryError query={query} />
         ) : (
           <ChartContainer
             config={chartConfig}
@@ -478,6 +475,8 @@ function StuckRequests() {
           <Skeleton className="h-5" />
           <Skeleton className="h-5" />
         </div>
+      ) : query.isError ? (
+        <QueryError query={query} />
       ) : items.length === 0 ? (
         <p className="px-4 py-6 text-center text-sm text-muted-foreground">
           Nada atascado. El barrido está al día.
@@ -700,7 +699,7 @@ export function OverviewPage() {
         }
       />
       {query.isError && !data ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
+        <QueryError query={query} />
       ) : null}
       {!data && query.isPending ? <OverviewSkeleton /> : null}
       {data ? (

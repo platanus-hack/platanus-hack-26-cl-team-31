@@ -3,7 +3,7 @@ import { createTestDatabase, type TestDatabase } from "@team-31/test-db";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTelemetry } from "../telemetry.js";
-import type { TelemetryRecord } from "../types.js";
+import { EventKind, Level, Service, type TelemetryRecord } from "../types.js";
 import { postgresSink, type Queryable } from "./postgres.js";
 
 function record(name: string): TelemetryRecord {
@@ -15,6 +15,17 @@ function record(name: string): TelemetryRecord {
 }
 
 describe("postgresSink: cola", () => {
+  it.each([0, -1, 0.5, NaN, Infinity])("rechaza el tamaño de lote inválido %s", (batchSize) => {
+    expect(() => postgresSink({ batchSize })).toThrow(/batchSize/);
+  });
+
+  it("comparte el cierre del pool entre llamadas simultáneas", async () => {
+    const sink = postgresSink({ connectionString: "postgres://localhost/unused" });
+    const closing = sink.close();
+    expect(sink.close()).toBe(closing);
+    await closing;
+  });
+
   it("con la cola llena descarta y cuenta dropped", async () => {
     const inserted: number[] = [];
     const pool: Queryable = {
@@ -77,6 +88,20 @@ describe.skipIf(!testDatabaseUrl)("postgresSink contra TEST_DATABASE_URL", () =>
 
   afterAll(async () => {
     await testDb?.drop();
+  });
+
+  it("uses the catalog enums in the migrated events table", async () => {
+    const { rows } = await db.query<{ column_name: string; definition: string }>(`
+      SELECT a.attname AS column_name, pg_get_constraintdef(c.oid) AS definition
+      FROM pg_constraint c JOIN pg_attribute a
+        ON a.attrelid = c.conrelid AND c.conkey = ARRAY[a.attnum]
+      WHERE c.conrelid = 'ops.events'::regclass AND c.contype = 'c'
+        AND a.attname IN ('service', 'kind', 'level')`);
+    const enumValues = Object.fromEntries(rows.map(({ column_name, definition }) =>
+      [column_name, [...definition.matchAll(/'([^']+)'/g)].map((match) => match[1]).sort()]));
+    expect(enumValues).toEqual({
+      service: [...Service.options].sort(), kind: [...EventKind.options].sort(), level: [...Level.options].sort(),
+    });
   });
 
   it("escribe eventos, spans y errores en ops.events", async () => {

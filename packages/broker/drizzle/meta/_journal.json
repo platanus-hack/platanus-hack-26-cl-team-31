@@ -68,8 +68,57 @@
     {
       "idx": 9,
       "version": "7",
-      "when": 1795288671833,
-      "tag": "0009_sondeo_sin_secreto",
+      "when": 1795286591899,
+      "tag": "0009_vault_contact_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795287670482,
+      "tag": "0010_one_active_agent",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795287905008,
+      "tag": "0011_quota_windows",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795289788676,
+      "tag": "0012_vault_member_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795290922584,
+      "tag": "0013_invitation_sender_group",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795290922585,
+      "tag": "0200_ask_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1795290922586,
+      "tag": "0201_message_turns",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795295494379,
+      "tag": "0016_sondeo_sin_secreto",
       "breakpoints": true
     }
   ]

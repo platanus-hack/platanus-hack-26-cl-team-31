@@ -3,7 +3,7 @@ import { z } from "zod";
 import { defineTool } from "./tool.js";
 
 // Pairs (requester, recipient, group) where the requester may ask and the recipient shares in that group.
-const grants = `
+export const grants = `
   SELECT asker.person_id AS requester, owner.person_id AS recipient, asker.group_id
   FROM memberships asker
   JOIN memberships owner ON owner.group_id = asker.group_id
@@ -19,11 +19,6 @@ const checkArgs = z.object({
   minutes: z.number().int().min(1).max(1440),
 });
 
-export async function allowed(db: PoolClient, requester: string, recipient: string, group: string) {
-  const result = await db.query(`SELECT EXISTS (${permission}) AS allowed`, [requester, recipient, group]);
-  return result.rows[0].allowed as boolean;
-}
-
 export async function groupAllowed(db: PoolClient, requester: string, recipients: string[], group: string) {
   const result = await db.query(`SELECT NOT EXISTS (
     SELECT unnest($2::text[]) EXCEPT SELECT recipient FROM (${grants}) g WHERE requester=$1 AND group_id=$3
@@ -31,13 +26,21 @@ export async function groupAllowed(db: PoolClient, requester: string, recipients
   return result.rows[0].allowed as boolean;
 }
 
-// Only for an agent consulting its own calendar.
-export async function isFree(db: PoolClient, person: string, slot: string, minutes: number) {
-  const result = await db.query("SELECT calendar_is_free($1, $2, $3) AS free", [person, slot, minutes]);
-  return result.rows[0].free as boolean;
+// A meeting organizer may check their own calendar; sharing another participant's slots needs a grant.
+export async function readMeetingFreeSlots(
+  db: PoolClient, organizer: string, participant: string, group: string, slots: Date[], minutes: number,
+): Promise<Date[] | null> {
+  const { rows } = await db.query<{ free_slots: Date[] }>(`
+    SELECT ARRAY(
+      SELECT slot FROM unnest($4::timestamptz[]) WITH ORDINALITY AS options(slot, priority)
+      WHERE calendar_is_free($2, slot, $5) ORDER BY priority
+    ) AS free_slots
+    WHERE $1::text = $2::text OR EXISTS (${permission})
+  `, [organizer, participant, group, slots, minutes]);
+  return rows[0]?.free_slots ?? null;
 }
 
-export async function readAvailability(
+async function readAvailability(
   db: PoolClient, requester: string, recipient: string, group: string, slot: string, minutes: number,
 ): Promise<boolean | null> {
   // Evaluate permission and the bounded calendar projection in the same snapshot.
@@ -56,10 +59,13 @@ async function saveCheck(db: PoolClient, me: string, args: z.infer<typeof checkA
 }
 
 async function deliverCheck(db: PoolClient, me: string, requestId: string) {
-  const result = await db.query(`SELECT recipient, group_id, available FROM availability_requests
-    WHERE requester = $1 AND id = $2`, [me, requestId]);
+  // Use a fresh snapshot after saveCheck so a revocation before delivery is respected.
+  const result = await db.query<{ available: boolean }>(`
+    SELECT r.available FROM availability_requests r
+    JOIN (${grants}) g USING (requester, recipient, group_id)
+    WHERE r.requester = $1 AND r.id = $2`, [me, requestId]);
   const row = result.rows[0];
-  if (!row || !await allowed(db, me, row.recipient, row.group_id)) return notShareable;
+  if (!row) return notShareable;
   return { status: row.available ? "available" : "busy", request_id: requestId };
 }
 

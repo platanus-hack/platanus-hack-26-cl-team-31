@@ -1,16 +1,16 @@
 import * as React from "react"
-import { useInfiniteQuery } from "@tanstack/react-query"
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useNavigate, useSearchParams } from "react-router"
 import type { UserSummary } from "@shared/contract"
 
-import { Button } from "@/components/ui/button"
-import { Spinner } from "@/components/ui/spinner"
+import { LoadMore } from "@/components/load-more"
+import { cursorPagination, usePageItems } from "@/lib/queries"
 import { CopyId } from "@/components/copy-id"
 import { DataTable } from "@/components/data-table"
 import { FilterBar, SearchInput } from "@/components/filters"
 import { PersonHoverCard } from "@/components/hover-cards"
-import { ErrorState, Muted, Page, PageHeader, Panel } from "@/components/page"
+import { Muted, Page, PageHeader, QueryPanel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
 import { api } from "@/lib/api"
 
@@ -104,14 +104,10 @@ export function UsersPage() {
         { query: { q: q || undefined, cursor: pageParam, limit: 50 } },
         { signal }
       ),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
-    placeholderData: (previous) => previous,
+    ...cursorPagination,
+    placeholderData: keepPreviousData,
   })
-  const rows = React.useMemo(
-    () => query.data?.pages.flatMap((p) => p.items),
-    [query.data]
-  )
+  const rows = usePageItems(query.data)
   const onSearch = React.useCallback(
     (value: string) => setParams(value ? { q: value } : {}, { replace: true }),
     [setParams]
@@ -132,10 +128,7 @@ export function UsersPage() {
           className="sm:w-72"
         />
       </FilterBar>
-      {query.isError ? (
-        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-      ) : null}
-      <Panel>
+      <QueryPanel query={query}>
         <DataTable
           columns={columns}
           data={rows}
@@ -147,22 +140,8 @@ export function UsersPage() {
             description: q ? `Nada coincide con «${q}».` : undefined,
           }}
         />
-        {query.hasNextPage ? (
-          <div className="flex justify-center border-t p-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={query.isFetchingNextPage}
-              onClick={() => void query.fetchNextPage()}
-            >
-              {query.isFetchingNextPage ? (
-                <Spinner data-icon="inline-start" />
-              ) : null}
-              Cargar más
-            </Button>
-          </div>
-        ) : null}
-      </Panel>
+        <LoadMore query={query} />
+      </QueryPanel>
     </Page>
   )
 }

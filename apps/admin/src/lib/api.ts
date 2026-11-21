@@ -9,9 +9,12 @@ import {
   TelemetryEvent,
   type AdminRouteName,
 } from "@shared/contract"
-import type { z } from "zod"
+import { z } from "zod"
 
 type Routes = typeof adminRoutes
+type JsonRouteName = {
+  [N in AdminRouteName]: Routes[N] extends { contentType: "text/event-stream" } ? never : N
+}[AdminRouteName]
 type Route<N extends AdminRouteName> = Routes[N]
 
 type ParamsPart<N extends AdminRouteName> =
@@ -108,8 +111,24 @@ const statusCodes: Record<number, ApiErrorCode> = {
   503: "upstream",
 }
 
+function networkError(error: unknown): never {
+  if (error instanceof Error && error.name === "AbortError") throw error
+  throw new ApiError("network", "No se pudo contactar al servidor admin.", 0)
+}
+
+async function request(url: string, init: RequestInit) {
+  try {
+    return await fetch(url, init)
+  } catch (error) {
+    return networkError(error)
+  }
+}
+
 async function toApiError(response: Response): Promise<ApiError> {
-  const json: unknown = await response.json().catch(() => null)
+  const json: unknown = await response.json().catch((error: unknown) => {
+    if (error instanceof SyntaxError) return null
+    return networkError(error)
+  })
   const parsed = ErrorBody.safeParse(json)
   if (parsed.success) {
     const { code, message, errorId } = parsed.data.error
@@ -126,7 +145,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   )
 }
 
-export async function api<N extends AdminRouteName>(
+export async function api<N extends JsonRouteName>(
   name: N,
   ...args: ApiArgs<N>
 ): Promise<ApiOutput<N>> {
@@ -145,41 +164,46 @@ export async function api<N extends AdminRouteName>(
   }
 
   const url = buildPath(route.path, params) + buildQuery(query)
-  let response: Response
-  try {
-    response = await fetch(url, {
-      method: route.method,
-      credentials: "include",
-      headers:
-        body === undefined
-          ? { Accept: "application/json" }
-          : { Accept: "application/json", "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: options?.signal,
-    })
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError")
-      throw error
-    throw new ApiError("network", "No se pudo contactar al servidor admin.", 0)
-  }
+  const response = await request(url, {
+    method: route.method,
+    credentials: "include",
+    headers:
+      body === undefined
+        ? { Accept: "application/json" }
+        : { Accept: "application/json", "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: options?.signal,
+  })
   if (!response.ok) throw await toApiError(response)
-  return parseResponse(name, await response.json())
+  return parseResponse(name, await readJson(name, response), response)
+}
+
+function invalidResponse(name: string, response?: Response) {
+  return new ApiError(
+    "invalid_response",
+    `La respuesta de ${name} no cumple el contrato.`,
+    response?.status ?? 200,
+    response?.headers.get("X-Error-Id") ?? undefined
+  )
+}
+
+async function readJson(name: string, response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch (error) {
+    if (error instanceof SyntaxError) throw invalidResponse(name, response)
+    return networkError(error)
+  }
 }
 
 function parseResponse<N extends AdminRouteName>(
   name: N,
-  data: unknown
+  data: unknown,
+  response?: Response
 ): ApiOutput<N> {
   const schema = adminRoutes[name].response as z.ZodType
   const parsed = schema.safeParse(data)
-  if (!parsed.success) {
-    console.warn(`[admin] respuesta inválida en ${name}`, parsed.error.issues)
-    throw new ApiError(
-      "invalid_response",
-      `La respuesta de ${name} no cumple el contrato.`,
-      200
-    )
-  }
+  if (!parsed.success) throw invalidResponse(name, response)
   return parsed.data as ApiOutput<N>
 }
 
@@ -191,33 +215,31 @@ export async function signInWithGoogle(callbackURL = "/"): Promise<void> {
     await mockDevLogin()
     return
   }
-  const response = await fetch("/api/auth/sign-in/social", {
+  const response = await request("/api/auth/sign-in/social", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ provider: "google", callbackURL }),
   })
   if (!response.ok) throw await toApiError(response)
-  const data = (await response.json().catch(() => ({}))) as { url?: string }
-  if (data.url) window.location.assign(data.url)
+  const redirect = z.object({ url: z.url({ protocol: /^https$/ }) })
+    .safeParse(await readJson("sign-in/social", response))
+  if (!redirect.success) throw invalidResponse("sign-in/social", response)
+  window.location.assign(redirect.data.url)
 }
 
 // true si el servidor tiene dev auth (ADMIN_DEV_AUTH=1): GET responde {enabled:true}; si no, 404.
 export async function probeDevLogin(): Promise<boolean> {
   if (isMock) return true
-  try {
-    const response = await fetch("/api/admin/dev-login", {
-      method: "GET",
-      credentials: "include",
-    })
-    if (!response.ok) return false
-    const data = (await response.json().catch(() => null)) as {
-      enabled?: boolean
-    } | null
-    return data?.enabled === true
-  } catch {
-    return false
-  }
+  const response = await request("/api/admin/dev-login", {
+    method: "GET",
+    credentials: "include",
+  })
+  if (response.status === 404) return false
+  if (!response.ok) throw await toApiError(response)
+  const probe = z.object({ enabled: z.boolean() }).safeParse(await readJson("dev-login", response))
+  if (!probe.success) throw invalidResponse("dev-login", response)
+  return probe.data.enabled
 }
 
 export async function devLogin(): Promise<void> {
@@ -226,7 +248,7 @@ export async function devLogin(): Promise<void> {
     await mockDevLogin()
     return
   }
-  const response = await fetch("/api/admin/dev-login", {
+  const response = await request("/api/admin/dev-login", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -241,12 +263,13 @@ export async function signOut(): Promise<void> {
     await mockSignOut()
     return
   }
-  await fetch("/api/auth/sign-out", {
+  const response = await request("/api/auth/sign-out", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: "{}",
   })
+  if (!response.ok) throw await toApiError(response)
 }
 
 // ---------- En vivo (SSE) ----------
@@ -256,6 +279,17 @@ export type LiveStatus = "connecting" | "open" | "error"
 export type LiveHandlers = {
   onEvent: (event: TelemetryEvent) => void
   onStatus: (status: LiveStatus) => void
+}
+
+const parseStreamEvent = <T>(schema: z.ZodType<T>, message: Event): T | undefined => {
+  try {
+    const parsed = schema.safeParse(
+      JSON.parse((message as MessageEvent<string>).data)
+    )
+    return parsed.success ? parsed.data : undefined
+  } catch {
+    return undefined
+  }
 }
 
 // Se suscribe a /api/admin/live. Devuelve la función para cerrar la conexión.
@@ -286,14 +320,8 @@ export function subscribeLive(
       source.readyState === EventSource.CLOSED ? "error" : "connecting"
     )
   source.addEventListener("telemetry", (message) => {
-    try {
-      const parsed = TelemetryEvent.safeParse(
-        JSON.parse((message as MessageEvent<string>).data)
-      )
-      if (parsed.success) handlers.onEvent(parsed.data)
-    } catch {
-      // Mensaje mal formado: se ignora, el stream sigue.
-    }
+    const row = parseStreamEvent(TelemetryEvent, message)
+    if (row) handlers.onEvent(row)
   })
   return () => source.close()
 }
@@ -342,31 +370,22 @@ export function subscribeFlow(
   const url =
     adminRoutes.flowLive.path + buildQuery({ after: after ?? undefined })
   const source = new EventSource(url, { withCredentials: true })
-  const parse = <T>(schema: z.ZodType<T>, message: Event): T | undefined => {
-    try {
-      const parsed = schema.safeParse(
-        JSON.parse((message as MessageEvent<string>).data)
-      )
-      return parsed.success ? parsed.data : undefined
-    } catch {
-      return undefined
-    }
-  }
   source.onopen = () => handlers.onOpen()
   source.onerror = () =>
     source.readyState === EventSource.CLOSED
       ? handlers.onClosed()
       : handlers.onRetrying()
   source.addEventListener("telemetry", (message) => {
-    const row = parse(TelemetryEvent, message)
+    const row = parseStreamEvent(TelemetryEvent, message)
     if (row) handlers.onRow(row)
   })
   source.addEventListener("request", (message) => {
-    const ref = parse(FlowRequestRef, message)
+    const ref = parseStreamEvent(FlowRequestRef, message)
     if (ref) handlers.onRequest(ref)
   })
   source.addEventListener("reset", (message) => {
-    handlers.onReset(parse(FlowReset, message)?.cursor ?? null)
+    const reset = parseStreamEvent(FlowReset, message)
+    if (reset) handlers.onReset(reset.cursor)
   })
   return () => source.close()
 }

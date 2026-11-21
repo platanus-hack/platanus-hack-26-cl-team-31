@@ -3,7 +3,7 @@
 //
 // - Duplicados: una fila con un id ya recibido se descarta (el stream reenvía tras reconectar y el
 //   servidor relee los últimos segundos para no perder escrituras que confirmaron tarde).
-// - Orden: cada fila espera `holdMs` desde que llegó. Las listas para salir se ordenan por el
+// - Orden: una fila espera hasta `holdMs` desde que llegó. Las listas para salir se ordenan por el
 //   momento en que ocurrió el paso (inicio para spans) y luego por id. Así un span del MCP que se
 //   escribió después que los eventos del broker que contiene se aplica en su lugar.
 // - Reloj: el orden solo se corrige dentro de la ventana de espera, así que un servicio con el
@@ -55,10 +55,11 @@ export function createLiveFeed(mapper: TelemetryMapper, { holdMs = 700, seenLimi
     drain(now, flush = false) {
       if (buffer.length === 0) return [];
       buffer.sort((a, b) => a.at - b.at || compareIds(a.row.id, b.row.id));
-      // Sale en orden mientras la primera ya esperó: una fila tardía y anterior retiene a las demás
-      // como mucho holdMs.
-      let count = 0;
-      while (count < buffer.length && (flush || now - buffer[count]!.arrived >= holdMs)) count++;
+      // Una fila que cumplió su espera libera también las anteriores en orden de ocurrencia.
+      let count = buffer.length;
+      if (!flush) {
+        while (count > 0 && now - buffer[count - 1]!.arrived < holdMs) count--;
+      }
       if (count === 0) return [];
       const ready = buffer.slice(0, count);
       buffer = buffer.slice(count);

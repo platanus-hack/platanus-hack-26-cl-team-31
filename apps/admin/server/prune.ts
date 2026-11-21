@@ -15,12 +15,17 @@ export function startPruneTask(pool: pg.Pool, retentionDays: number, telemetry: 
       telemetry.error("ops.prune_events", error)
     }
   }
-  const first = setTimeout(() => void run(), initialDelayMs)
-  const timer = setInterval(() => void run(), intervalMs)
+  let inFlight: Promise<void> | undefined
+  function schedule() {
+    inFlight ??= run().finally(() => { inFlight = undefined })
+  }
+  const first = setTimeout(schedule, initialDelayMs)
+  const timer = setInterval(schedule, intervalMs)
   first.unref()
   timer.unref()
-  return () => {
+  return async () => {
     clearTimeout(first)
     clearInterval(timer)
+    await inFlight
   }
 }

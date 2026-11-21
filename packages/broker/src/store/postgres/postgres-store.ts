@@ -6,14 +6,16 @@ import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, 
 import { alias } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { BrokerError } from "../../errors.js";
+import { activeAgentConflict, BrokerError } from "../../errors.js";
+import { wakeClaim } from "../store.js";
 import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
+import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit } from "../directory.js";
 import { createWakeCodec } from "./crypto.js";
 import { vaultStore } from "./vault-store.js";
 import {
-  agentConnections, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tagPresets, users, wakeJobs,
+  agentConnections, askReceipts, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tagPresets, users, wakeJobs,
 } from "./schema.js";
 
 export type PostgresStoreOptions = {
@@ -23,6 +25,7 @@ export type PostgresStoreOptions = {
 };
 
 export interface PostgresStore extends Store {
+  consumeQuota(userId: string, bucket: string, limit: number): Promise<{ retryAfter: number } | undefined>;
   close(): Promise<void>;
 }
 
@@ -57,6 +60,7 @@ function readRequest(row: typeof requests.$inferSelect): RequestRow {
     fromAddress: parseStored(Address, row.fromAddress),
     toAddress: parseStored(Address, row.toAddress),
     targetAgentId: row.targetAgentId ?? undefined,
+    senderGroupId: row.senderGroupId ?? undefined,
     originChannel: row.originChannel === null ? undefined : parseStored(ChannelName, row.originChannel),
     args: parseStored<unknown>(ToolArgs[tool], row.args),
     purpose: row.purpose ?? undefined,
@@ -145,6 +149,33 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
   return {
     ...vaultStore(db),
+    async searchPublicProfiles(query) {
+      const term = normalizeSearch(query);
+      const address = Address.safeParse(term);
+      // Address lookups use the unique index. Other queries match literal substrings and
+      // rank name or handle matches first, even when the result limit is reached.
+      const name = sql`lower(regexp_replace(normalize(coalesce(${users.displayName}, ''), NFD), ${"[\u0300-\u036f]"}, '', 'g'))`;
+      const handle = sql`split_part(${users.address}, '@', 1)`;
+      const rows = address.success
+        ? await db.select({ address: users.address, displayName: users.displayName }).from(users).where(eq(users.address, address.data))
+        : await db.select({ address: users.address, displayName: users.displayName }).from(users)
+          .where(and(isNotNull(users.address), or(sql`strpos(${users.address}, ${term}) > 0`, sql`strpos(${name}, ${term}) > 0`)))
+          .orderBy(sql`case when ${handle} = ${term} or ${name} = ${term} then 0
+                            when starts_with(${handle}, ${term}) or starts_with(${name}, ${term}) then 1 else 2 end`,
+            sql`${users.address} collate "C"`).limit(publicProfileLimit);
+      return rows.map(row => {
+        const address = parseStored(Address, row.address);
+        return { address, displayName: row.displayName || address.split("@")[0]! };
+      });
+    },
+    async networkAddresses(after, limit, q) {
+      const connected = db.select({ id: agentConnections.userId }).from(agentConnections);
+      const rows = await db.select({ address: users.address }).from(users)
+        .where(and(isNotNull(users.address), inArray(users.userId, connected), after ? gt(users.address, after) : undefined,
+          q ? sql`strpos(${users.address}, ${q}) > 0` : undefined))
+        .orderBy(users.address).limit(limit);
+      return rows.map(row => parseStored(Address, row.address));
+    },
     async getUser(userId) {
       const [row] = await db.select().from(users).where(eq(users.userId, userId));
       return row ? readUser(row) : null;
@@ -203,19 +234,52 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       return revoked.length > 0;
     },
 
-    async listFriends(userId) {
+    async listContacts(userId) {
+      const { rows } = await db.execute<{
+        address: string; name: string | null; tag: string | null; gives: string[]; receives: string[];
+      }>(sql`
+        SELECT f.address, other.display_name AS name, t.tag,
+          ARRAY(SELECT category FROM sideband.grants g
+                WHERE g.grantor_user_id = f.user_id AND g.grantee_address = f.address AND g.revoked_at IS NULL) AS gives,
+          ARRAY(SELECT category FROM sideband.grants g
+                WHERE g.grantor_user_id = other.user_id AND g.grantee_address = me.address AND g.revoked_at IS NULL) AS receives
+        FROM sideband.friends f
+        JOIN sideband.users me ON me.user_id = f.user_id AND me.address IS NOT NULL
+        LEFT JOIN sideband.users other ON other.address = f.address
+        LEFT JOIN sideband.contact_tags t ON (t.user_id, t.address) = (f.user_id, f.address)
+        WHERE f.user_id = ${userId}
+        ORDER BY f.address COLLATE "C"`);
+      return rows.map(directoryContact);
+    },
+
+    async listJoinedCircles(userId) {
+      const { rows } = await db.execute<{
+        id: string; circleName: string; address: string | null; memberName: string | null;
+      }>(sql`
+        SELECT c.id, c.name AS "circleName", m.address, u.display_name AS "memberName"
+        FROM sideband.users me
+        JOIN sideband.circle_members mine ON mine.address = me.address AND mine.joined_at IS NOT NULL
+        JOIN sideband.circles c ON c.id = mine.circle_id
+        LEFT JOIN sideband.circle_members m ON m.circle_id = c.id AND m.joined_at IS NOT NULL AND m.address <> me.address
+        LEFT JOIN sideband.users u ON u.address = m.address
+        WHERE me.user_id = ${userId}
+        ORDER BY c.created_at, c.id, m.address COLLATE "C"`);
+      return directoryCircles(rows);
+    },
+
+    async listContactAddresses(userId) {
       const rows = await db.select({ address: friends.address }).from(friends)
         .where(eq(friends.userId, userId)).orderBy(asc(friends.address));
       return rows.map(({ address }) => parseStored(Address, address));
     },
 
-    async addFriend(userId, address) {
+    async addContact(userId, address) {
       const inserted = await db.insert(friends).values({ userId, address }).onConflictDoNothing()
         .returning({ address: friends.address });
       return inserted.length > 0;
     },
 
-    async removeFriend(userId, address) {
+    async removeContact(userId, address) {
       const removed = await db.delete(friends).where(and(eq(friends.userId, userId), eq(friends.address, address)))
         .returning({ address: friends.address });
       return removed.length > 0;
@@ -257,7 +321,8 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
     },
 
     async insertCircle(row) {
-      await db.insert(circles).values(row);
+      const inserted = await db.insert(circles).values(row).onConflictDoNothing({ target: circles.id }).returning({ id: circles.id });
+      if (!inserted.length) throw new BrokerError("conflict", "El círculo ya existe.");
     },
 
     async getCircle(id) {
@@ -302,6 +367,32 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       return removed.length > 0;
     },
 
+    async lockRequiredRelation(userId, from, to, relation) {
+      if (relation.kind === "circle") {
+        const members = await db.select({ address: circleMembers.address }).from(circleMembers).where(and(
+          eq(circleMembers.circleId, relation.circleId), inArray(circleMembers.address, [from, to]),
+          isNotNull(circleMembers.joinedAt),
+        )).orderBy(asc(circleMembers.address)).for("share");
+        return members.length === 2;
+      }
+      const filter = and(eq(friends.userId, userId), eq(friends.address, to));
+      const [contact] = await db.select({ address: friends.address }).from(friends).where(filter).for("share");
+      if (!contact || !relation.tag) return Boolean(contact);
+      const [tag] = await db.select({ tag: contactTags.tag }).from(contactTags).where(and(
+        eq(contactTags.userId, userId), eq(contactTags.address, to), eq(contactTags.tag, relation.tag),
+      )).for("share");
+      return Boolean(tag);
+    },
+
+    async lockAskReceipt(keyHash) {
+      // Separate statements give the waiter a fresh READ COMMITTED snapshot after acquiring the lock.
+      await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"ask:" + keyHash}, 0))`);
+      const [receipt] = await db.select().from(askReceipts).where(eq(askReceipts.keyHash, keyHash));
+      return receipt ?? null;
+    },
+
+    async insertAskReceipt(receipt) { await db.insert(askReceipts).values(receipt); },
+
     async shareCircle(a, b) {
       const other = alias(circleMembers, "other");
       const [shared] = await db.select({ circleId: circleMembers.circleId }).from(circleMembers)
@@ -341,13 +432,14 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
     listInbox: (address) => listRecipientRequests(address, "awaiting_agent"),
     listOwnerPending: (address) => listRecipientRequests(address, "awaiting_owner"),
 
-    async listActivity(address, limit) {
+    async listActivity(address, limit, requestId) {
       const owner = ownerId(address);
+      const participant = or(
+        and(eq(requests.fromAddress, address), inArray(requests.fromUserId, owner)),
+        and(eq(requests.toAddress, address), inArray(requests.toUserId, owner)),
+      );
       const rows = await db.select().from(requests)
-        .where(or(
-          and(eq(requests.fromAddress, address), inArray(requests.fromUserId, owner)),
-          and(eq(requests.toAddress, address), inArray(requests.toUserId, owner)),
-        ))
+        .where(and(participant, requestId === undefined ? undefined : eq(requests.id, requestId)))
         .orderBy(desc(requests.createdAt), desc(requests.id)).limit(limit);
       return rows.map(readRequest);
     },
@@ -388,10 +480,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       }
       return jobs.map((job) => {
         const recovered = job.state === "running";
-        return {
-          ...readWake(job), state: "running", runAt: leaseUntil, recovered,
-          attempt: job.attempt + Number(recovered),
-        };
+        return wakeClaim({ ...readWake(job), runAt: leaseUntil, attempt: job.attempt + Number(recovered) }, recovered, job.runAt);
       });
     },
 
@@ -425,7 +514,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         .returning({ agentId: agentConnections.agentId });
       if (inserted.length > 0) onCreated?.();
       const connection = await getAgentConnection(row.userId, row.agentId, true);
-      if (!connection) throw new BrokerError("internal", "No se pudo registrar la conexión del agente.");
+      if (!connection) throw activeAgentConflict();
       return connection;
     },
 
@@ -475,7 +564,27 @@ export function createPostgresStore({ databaseUrl, secretsKey }: PostgresStoreOp
   pool.on("error", () => {});
   const db = drizzle(pool);
   let closed: Promise<void> | undefined;
+  let nextQuotaCleanup = 0;
   return {
+    async consumeQuota(userId, bucket, limit) {
+      if (Date.now() >= nextQuotaCleanup) {
+        nextQuotaCleanup = Date.now() + 60_000;
+        await pool.query(`DELETE FROM sideband.quota_windows WHERE (user_id, bucket) IN
+          (SELECT user_id, bucket FROM sideband.quota_windows WHERE reset_at <= now()
+           ORDER BY reset_at LIMIT 1000 FOR UPDATE SKIP LOCKED)`);
+      }
+      // Both replicas serialize on the same key. Use the DB clock for the whole window.
+      const { rows: [row] } = await pool.query<{ retry: number }>(`
+        INSERT INTO sideband.quota_windows AS w (user_id, bucket, count, reset_at)
+        VALUES ($1, $2, 1, statement_timestamp() + interval '1 minute')
+        ON CONFLICT (user_id, bucket) DO UPDATE SET
+          count = CASE WHEN w.reset_at <= statement_timestamp() THEN 1 ELSE least(w.count + 1, $3::int + 1) END,
+          reset_at = CASE WHEN w.reset_at <= statement_timestamp() THEN excluded.reset_at ELSE w.reset_at END
+        RETURNING CASE WHEN count > $3::int THEN greatest(1, ceil(extract(epoch FROM reset_at - statement_timestamp()))::int)
+                       ELSE 0 END AS retry`, [userId, bucket, limit]);
+      if (!row) throw new BrokerError("internal", "No se pudo verificar la cuota.");
+      return row.retry ? { retryAfter: row.retry } : undefined;
+    },
     async tx(fn) {
       try {
         return await db.transaction((tx) => fn(transaction(tx, codec)));

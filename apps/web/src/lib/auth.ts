@@ -20,6 +20,11 @@ export const getSession = cache(async () => {
   return getAuth().api.getSession({ headers: requestHeaders });
 });
 
+// Long-lived streams must check storage, not the render cache or a cached cookie.
+export function getStreamSession(headers: Headers) {
+  return getAuth().api.getSession({ headers, query: { disableRefresh: true, disableCookieCache: true } });
+}
+
 export async function requireSession() {
   const session = await getSession();
   if (!session) redirect("/sign-in");

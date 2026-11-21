@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 
-import { pingOrRevokeAgent } from "../actions";
+import { pingOrRevokeAgent } from "./actions";
 import { button, Feedback } from "../ui";
 
 export function AgentControls({ agentId, revoked }: { agentId: string; revoked: boolean }) {

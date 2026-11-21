@@ -72,5 +72,13 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app_test
 ENV
 
-[ -f "$ROOT/.env.local" ] || cp "$ROOT/.env.local.example" "$ROOT/.env.local"
+local_env="$ROOT/.env.local"
+if [ -f "$local_env" ]; then
+  chmod 600 "$local_env"
+elif [ -e "$local_env" ] || [ -L "$local_env" ]; then
+  echo ".env.local debe apuntar a un archivo regular." >&2
+  exit 1
+else
+  (umask 077; cp "$ROOT/.env.local.example" "$local_env")
+fi
 echo "✔ .env listo (slot $SLOT): web :$WEB_PORT · mcp :$MCP_PORT · broker :$BROKER_PORT · admin :$ADMIN_PORT · postgres :$POSTGRES_PORT"

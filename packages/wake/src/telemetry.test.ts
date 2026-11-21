@@ -39,12 +39,12 @@ describe("telemetría del aviso", () => {
   it("registra cada intento como span wake.attempt sin secretos ni URL", async () => {
     const { sink, waker } = setup();
     const url = await receiver(202);
-    await waker.wake({ kind: "standard_webhook", url, secret }, notice, { attempt: 1, final: false, userId: "u1", agentId: "a1" });
+    await waker.wake({ kind: "standard_webhook", url, secret }, notice, { attempt: 1, queueWaitMs: 250, final: false, userId: "u1", agentId: "a1" });
 
     const [span] = sink.find("wake.attempt");
     expect(span).toMatchObject({
       kind: "wake", requestId: notice.requestId, userId: "u1", agentId: "a1", status: "ok",
-      attrs: { kind: "standard_webhook", attempt: 1, ok: true, httpStatus: 202, code: "ok" },
+      attrs: { kind: "standard_webhook", attempt: 1, queueWaitMs: 250, ok: true, httpStatus: 202, code: "ok" },
     });
     expect(span?.durationMs).toEqual(expect.any(Number));
     expect(sink.find("wake.exhausted")).toHaveLength(0);

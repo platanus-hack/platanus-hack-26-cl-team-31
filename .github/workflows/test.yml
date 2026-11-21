@@ -61,6 +61,13 @@ jobs:
       - name: Lint, typecheck y tests
         run: pnpm turbo run lint typecheck test --summarize --continue
 
+      - name: Contrato MCP con el broker en memoria
+        run: |
+          pnpm env:init
+          node infra/gen-keys.ts
+          pnpm turbo run build --filter=@team-31/broker-service --filter=@team-31/mcp
+          pnpm with-env bash scripts/ci-mcp-contract.sh
+
       # Deja en la caché solo las tareas de esta corrida: no crece con cada commit.
       - name: Podar la caché de turbo
         if: always()

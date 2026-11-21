@@ -1,4 +1,5 @@
 import { AlertCircleIcon, RotateCwIcon } from "lucide-react"
+import type { UseQueryResult } from "@tanstack/react-query"
 import { cn } from "cn"
 
 import {
@@ -100,6 +101,34 @@ export function Panel({
         {children}
       </CardContent>
     </Card>
+  )
+}
+
+export function QueryError({
+  query,
+  className,
+}: {
+  query: Pick<UseQueryResult, "error" | "isError" | "refetch">
+  className?: string
+}) {
+  return query.isError ? (
+    <ErrorState
+      error={query.error}
+      onRetry={() => void query.refetch()}
+      className={className}
+    />
+  ) : null
+}
+
+export function QueryPanel({ query, children }: {
+  query: { isError: boolean; error: unknown; data: unknown; refetch: () => Promise<unknown> }
+  children: React.ReactNode
+}) {
+  return (
+    <>
+      {query.isError && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
+      {(!query.isError || query.data !== undefined) && <Panel>{children}</Panel>}
+    </>
   )
 }
 

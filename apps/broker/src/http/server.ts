@@ -1,7 +1,7 @@
 import { BrokerError, type BrokerCore } from "@team-31/broker";
 import { ErrorBody, httpStatusOf } from "@team-31/protocol";
-import { routes } from "@team-31/protocol/http";
-import { createTelemetry, offSink, type Telemetry } from "@team-31/telemetry";
+import { decodeAsk, routes } from "@team-31/protocol/http";
+import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
 import { honoTelemetry } from "@team-31/telemetry/hono";
 import { Hono, type Context } from "hono";
 import { routePath } from "hono/route";
@@ -31,7 +31,16 @@ async function parseBody<S extends z.ZodType>(c: HttpContext, schema: S): Promis
 
 async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, { agent, owner, admin }: BrokerCore) {
   switch (route.port) {
+    case "agent.networkUsers": {
+      const { after, q } = parseInput(route.query, c.req.query());
+      return agent.networkUsers(c.get("mcp"), after, q);
+    }
+    case "owner.contactGroups": return owner.contactGroups(c.get("web"));
+    case "agent.connect": return agent.connect(c.get("mcp"));
     case "agent.vaultCatalog": return agent.vaultCatalog(c.get("mcp"));
+    case "agent.contactGroups": return agent.contactGroups(c.get("mcp"));
+    case "agent.changeContactGroup": return agent.changeContactGroup(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.vaultMembers": return agent.vaultMembers(c.get("mcp"), parseInput(route.query, c.req.query()).categoryId);
     case "agent.changeVault": return agent.changeVault(c.get("mcp"), await parseBody(c, route.body));
     case "agent.queryVault": return agent.queryVault(c.get("mcp"), await parseBody(c, route.body));
     case "owner.vault": return owner.vault(c.get("web"));
@@ -39,11 +48,17 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "agent.capabilities":
       return agent.capabilities(c.get("mcp"), parseInput(route.query, c.req.query()).to);
     case "agent.ask":
-      return agent.ask(c.get("mcp"), await parseBody(c, route.body));
+      return agent.ask(c.get("mcp"), decodeAsk(await parseBody(c, route.body)));
     case "agent.inbox":
       return { items: await agent.inbox(c.get("mcp"), parseInput(route.query, c.req.query()).includeInvitations === "true") };
     case "agent.reply":
       return agent.reply(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.searchPublicProfiles":
+      return { items: await agent.searchPublicProfiles(c.get("mcp"), (await parseBody(c, route.body)).query) };
+    case "owner.searchPublicProfiles":
+      return { items: await owner.searchPublicProfiles(c.get("web"), (await parseBody(c, route.body)).query) };
+    case "owner.directory": return owner.directory(c.get("web"));
+    case "owner.queryVault": return owner.queryVault(c.get("web"), await parseBody(c, route.body));
     case "agent.contacts":
       return agent.contacts(c.get("mcp"));
     case "agent.status":
@@ -65,11 +80,11 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.pending":
       return { items: await owner.pending(c.get("web")) };
     case "owner.activity":
-      return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query()).limit) };
+      return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query())) };
     case "owner.ask":
-      return owner.ask(c.get("web"), await parseBody(c, route.body));
+      return owner.ask(c.get("web"), decodeAsk(await parseBody(c, route.body)));
     case "owner.channelAsk":
-      return owner.ask(c.get("web"), await parseBody(c, route.body), parseInput(route.params, c.req.param()).name);
+      return owner.ask(c.get("web"), decodeAsk(await parseBody(c, route.body)), parseInput(route.params, c.req.param()).name);
     case "owner.setChannel":
       return owner.setChannel(c.get("web"), parseInput(route.params, c.req.param()).name, await parseBody(c, route.body));
     case "owner.status":
@@ -87,8 +102,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.revokeAgent":
       return owner.revokeAgent(c.get("web"), parseInput(route.params, c.req.param()).agentId);
     case "owner.connect": {
-      const { to, share, tag } = await parseBody(c, route.body);
-      return owner.connect(c.get("web"), to, share, tag);
+      return owner.connect(c.get("web"), await parseBody(c, route.body));
     }
     case "owner.contacts":
       return owner.contacts(c.get("web"));
@@ -116,8 +130,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       const { id, address } = parseInput(route.params, c.req.param());
       return owner.removeFromCircle(c.get("web"), id, address);
     }
-    case "owner.removeFriend":
-      return owner.removeFriend(c.get("web"), parseInput(route.params, c.req.param()).address);
+    case "owner.removeContact":
+      return owner.removeContact(c.get("web"), parseInput(route.params, c.req.param()).address);
     case "admin.rewake":
       return admin.rewake(c.get("admin"), parseInput(route.params, c.req.param()).id, (await parseBody(c, route.body)).reason);
     case "admin.expire":
@@ -139,7 +153,7 @@ function requestIdOf(c: HttpContext, result: unknown): string | undefined {
   return c.req.param("id");
 }
 
-export function createHttpServer({ broker, publicKeys, limiter = createMemoryRateLimiter(), shutdown, telemetry = silentTelemetry() }: {
+export function createHttpServer({ broker, publicKeys, limiter = createMemoryRateLimiter(), shutdown, telemetry = silentTelemetry("broker") }: {
   broker: BrokerCore;
   publicKeys: ServiceKeys;
   limiter?: RateLimiter;
@@ -147,6 +161,10 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   telemetry?: Telemetry;
 }) {
   const app = new Hono<AuthContext>();
+  app.use("/v1/*", async (c, next) => {
+    c.header("Cache-Control", "no-store");
+    await next();
+  });
   app.use(honoTelemetry(telemetry));
   const auth = {
     mcp: requireServiceIdentity("mcp", publicKeys, telemetry),
@@ -157,7 +175,6 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   for (const route of Object.values(routes)) {
     app.on([route.method], [route.path], ...(route.iss ? [auth[route.iss]] : []), async (c: HttpContext) => {
       if (route.iss) {
-        c.header("Cache-Control", "no-store");
         const bucket = askPorts.includes(route.port) ? "ask" : route.port === "agent.reply" ? "reply" : "other";
         const caller = route.iss === "admin" ? `admin:${c.get("admin").adminId}` : c.get(route.iss).userId;
         const blocked = await limiter.consume(caller, bucket);
@@ -195,6 +212,3 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
 }
 
 // Tests and embedded uses may omit telemetry: the server stays instrumented without writing anywhere.
-function silentTelemetry(): Telemetry {
-  return createTelemetry({ service: "broker", sink: offSink(), heartbeatMs: 0, lifecycle: false });
-}

@@ -1,7 +1,7 @@
 export * from "./model.js";
 export * from "./cost.js";
 export * from "./view.js";
-export { MinHeap } from "./heap.js";
+export { MinHeap } from "./search/heap.js";
 export { MemoryGraphIndex } from "./memory.js";
 export {
   dijkstra,

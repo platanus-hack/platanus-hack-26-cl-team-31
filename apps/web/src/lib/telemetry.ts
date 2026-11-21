@@ -12,6 +12,10 @@ export function getTelemetry(): Telemetry {
   return holder.__sidebandWebTelemetry;
 }
 
+export function emptyResponse(status: number, errorId?: string): Response {
+  return new Response(null, { status, headers: errorId ? { "X-Error-Id": errorId } : undefined });
+}
+
 /**
  * Span http.request for a route handler. route is the file pattern (never the raw path). An
  * unexpected error answers 500 with X-Error-Id instead of escaping without a trace.

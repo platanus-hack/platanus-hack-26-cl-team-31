@@ -45,13 +45,22 @@ export function parseMessage(input: unknown, numberId: string, now = Date.now())
 }
 
 export async function sendText(kapso: NonNullable<ReturnType<typeof config>>, phone: string, text: string) {
-  const response = await fetch(`https://api.kapso.ai/meta/whatsapp/v24.0/${kapso.numberId}/messages`, {
-    method: "POST", redirect: "error", signal: AbortSignal.timeout(5_000),
-    headers: { "X-API-Key": kapso.apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", to: phone.slice(1), type: "text", text: {
-      body: text.slice(0, 4096), preview_url: false,
-    } }),
-  });
-  await response.body?.cancel();
-  if (!response.ok) throw Object.assign(new Error("Kapso no aceptó el mensaje."), { code: `kapso_${response.status}` });
+  for (let start = 0; start < text.length;) {
+    let end = Math.min(start + 4096, text.length);
+    if (end < text.length) {
+      const lineBreak = text.lastIndexOf("\n", end - 1);
+      if (lineBreak > start) end = lineBreak + 1;
+      else if (text.charCodeAt(end - 1) >= 0xd800 && text.charCodeAt(end - 1) <= 0xdbff) end--;
+    }
+    const response = await fetch(`https://api.kapso.ai/meta/whatsapp/v24.0/${kapso.numberId}/messages`, {
+      method: "POST", redirect: "error", signal: AbortSignal.timeout(5_000),
+      headers: { "X-API-Key": kapso.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", to: phone.slice(1), type: "text", text: {
+        body: text.slice(start, end), preview_url: false,
+      } }),
+    });
+    await response.body?.cancel();
+    if (!response.ok) throw Object.assign(new Error("Kapso no aceptó el mensaje."), { code: `kapso_${response.status}` });
+    start = end;
+  }
 }

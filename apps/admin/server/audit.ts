@@ -61,50 +61,45 @@ const LOCK = "hashtext('sideband:admin:migrations')"
 // Esquema y tablas propias del servidor admin. Idempotente y serializada con un candado
 // consultivo para que varias instancias (o suites de prueba) puedan correrla a la vez.
 export async function migrateAdminTables(pool: pg.Pool): Promise<void> {
-  const client = await pool.connect()
-  try {
-    await client.query(`SELECT pg_advisory_lock(${LOCK})`)
-    await client.query(`
-      CREATE SCHEMA IF NOT EXISTS admin;
+  // Un único mensaje SQL ejecuta el candado y el DDL en la misma transacción implícita.
+  await pool.query(`
+    SELECT pg_advisory_xact_lock(${LOCK});
+    CREATE SCHEMA IF NOT EXISTS admin;
 
-      CREATE TABLE IF NOT EXISTS admin.tokens (
-        id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        name         text NOT NULL,
-        token_hash   text NOT NULL UNIQUE,
-        prefix       text NOT NULL,
-        scopes       text[] NOT NULL,
-        created_by   text NOT NULL,
-        created_at   timestamptz NOT NULL DEFAULT now(),
-        expires_at   timestamptz NOT NULL,
-        last_used_at timestamptz,
-        revoked_at   timestamptz
-      );
+    CREATE TABLE IF NOT EXISTS admin.tokens (
+      id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      name         text NOT NULL,
+      token_hash   text NOT NULL UNIQUE,
+      prefix       text NOT NULL,
+      scopes       text[] NOT NULL,
+      created_by   text NOT NULL,
+      created_at   timestamptz NOT NULL DEFAULT now(),
+      expires_at   timestamptz NOT NULL,
+      last_used_at timestamptz,
+      revoked_at   timestamptz
+    );
 
-      CREATE TABLE IF NOT EXISTS admin.audit (
-        id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        at          timestamptz NOT NULL DEFAULT clock_timestamp(),
-        actor_type  text NOT NULL CHECK (actor_type IN ('admin', 'token')),
-        actor_id    text NOT NULL,
-        actor_label text NOT NULL,
-        action      text NOT NULL,
-        target      text,
-        reason      text,
-        ip          text,
-        meta        jsonb NOT NULL DEFAULT '{}'::jsonb
-      );
-      CREATE INDEX IF NOT EXISTS audit_at_idx ON admin.audit (at DESC, id DESC);
+    CREATE TABLE IF NOT EXISTS admin.audit (
+      id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      at          timestamptz NOT NULL DEFAULT clock_timestamp(),
+      actor_type  text NOT NULL CHECK (actor_type IN ('admin', 'token')),
+      actor_id    text NOT NULL,
+      actor_label text NOT NULL,
+      action      text NOT NULL,
+      target      text,
+      reason      text,
+      ip          text,
+      meta        jsonb NOT NULL DEFAULT '{}'::jsonb
+    );
+    CREATE INDEX IF NOT EXISTS audit_at_idx ON admin.audit (at DESC, id DESC);
 
-      -- AdminQueries.audit() (ADM-02) lee la bitácora con el rol de solo lectura.
-      DO $$
-      BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sideband_admin_ro') THEN
-          GRANT USAGE ON SCHEMA admin TO sideband_admin_ro;
-          GRANT SELECT ON admin.audit TO sideband_admin_ro;
-        END IF;
-      END $$;
-    `)
-  } finally {
-    await client.query(`SELECT pg_advisory_unlock(${LOCK})`).catch(() => undefined)
-    client.release()
-  }
+    -- AdminQueries.audit() (ADM-02) lee la bitácora con el rol de solo lectura.
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sideband_admin_ro') THEN
+        GRANT USAGE ON SCHEMA admin TO sideband_admin_ro;
+        GRANT SELECT ON admin.audit TO sideband_admin_ro;
+      END IF;
+    END $$;
+  `)
 }

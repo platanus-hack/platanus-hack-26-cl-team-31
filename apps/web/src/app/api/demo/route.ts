@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readIdentityToken } from "../../../../../../scripts/coordination-identity.mjs";
 import { checkContactRuntime, reportContactError, runContactSession } from "@team-31/demo/contact-session";
 import { resolve } from "node:path";
 import { IncompleteModelReply, readHistory, runDemoAgent, selectTools } from "../../../lib/demo-chat";
@@ -32,12 +32,8 @@ const modelName = () => {
   return name.split("/").at(-1)?.includes(":") ? name : `${name}:latest`;
 };
 
-async function tokenFor(person: Person) {
-  // Next runs from apps/web. These are the worktree's seeded demo credentials.
-  const file = resolve(process.cwd(), "../../.agents-local", `${person}.json`);
-  const token: unknown = JSON.parse(await readFile(file, "utf8")).mcpServers.coordination.env.AGENT_TOKEN;
-  if (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)) throw new Error("Credencial de demo inválida.");
-  return token;
+function tokenFor(person: Person) {
+  return readIdentityToken(resolve(process.cwd(), "../../.agents-local"), person);
 }
 
 async function checkApi() {
@@ -97,19 +93,25 @@ async function chat(request: Request) {
   }
 
   const { person, message } = input;
-  if (input.mode === "contacts") {
-    if (person !== "ana") return json({ text: "Esta agenda pertenece a Ana.", error: "api" }, 403);
-    const history = readHistory(input.history).filter(turn => turn.role === "user");
-    const prompt = history.length
-      ? `Preguntas anteriores (contexto): ${JSON.stringify(history.map(turn => turn.content))}\nPregunta actual: ${message}`
-      : message;
-    try {
-      const signal = AbortSignal.any([request.signal, AbortSignal.timeout(180_000)]);
-      return json(await runContactSession(prompt, { signal, root: resolve(process.cwd(), "../..") }));
-    } catch (error) {
-      return json({ text: "Revisa el broker del worktree, la sesión de Claude Code y el proxy.", error: "api" }, 503, reportContactError(error));
-    }
+  if (input.mode === "contacts") return contactChat(person, message, input.history, request.signal);
+  return coordinationChat(person, message, input, request.signal);
+}
+
+async function contactChat(person: Person, message: string, historyInput: unknown, requestSignal: AbortSignal) {
+  if (person !== "ana") return json({ text: "Esta agenda pertenece a Ana.", error: "api" }, 403);
+  const history = readHistory(historyInput).filter(turn => turn.role === "user");
+  const prompt = history.length
+    ? `Preguntas anteriores (contexto): ${JSON.stringify(history.map(turn => turn.content))}\nPregunta actual: ${message}`
+    : message;
+  try {
+    const signal = AbortSignal.any([requestSignal, AbortSignal.timeout(180_000)]);
+    return json(await runContactSession(prompt, { signal, root: resolve(process.cwd(), "../..") }));
+  } catch (error) {
+    return json({ text: "Revisa el broker del worktree, la sesión de Claude Code y el proxy.", error: "api" }, 503, reportContactError(error));
   }
+}
+
+async function coordinationChat(person: Person, message: string, input: Record<string, unknown>, requestSignal: AbortSignal) {
   let backend: string;
   let headers: HeadersInit;
   let tools: ReturnType<typeof selectTools>;
@@ -132,7 +134,7 @@ async function chat(request: Request) {
       : "No pude conectar con Ollama. Verifica que esté corriendo." }, 503);
   }
 
-  const deadline = AbortSignal.any([request.signal, AbortSignal.timeout(90_000)]);
+  const deadline = AbortSignal.any([requestSignal, AbortSignal.timeout(90_000)]);
   const reply = await runDemoAgent({
     person, message, history: readHistory(input.history), meetingId: input.meetingId, requestId: input.requestId, tools,
     async ask(messages, tools) {

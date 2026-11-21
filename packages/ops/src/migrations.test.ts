@@ -58,6 +58,13 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0012_whatsapp_deliveries.sql",
       "0013_events_name_idx.sql",
       "0014_personal_vault.sql",
+      "0015_vault_contact_groups.sql",
+      "0016_quota_windows.sql",
+      "0017_vault_member_rules.sql",
+      "0018_whatsapp_registration.sql",
+      "0019_group_invitations.sql",
+      "0200_ask_receipts.sql",
+      "0201_message_turns.sql",
     ]);
     expect(await applyOpsMigrations({ databaseUrl })).toEqual([]);
     expect(await views()).toEqual(["v_errors", "v_events", "v_service_health"]);
@@ -141,6 +148,10 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
     await applyOpsMigrations({ databaseUrl });
     expect(await asRole("sideband_admin_ro", "SELECT * FROM ops.v_whatsapp"))
       .toEqual([{ linked_accounts: "1", active_pairings: "1", inbound_receipts: "0", pending_deliveries: "1" }]);
+    await db.query(`ALTER TABLE public."user" ADD whatsapp_channel_registered boolean NOT NULL DEFAULT false`);
+    await applyOpsMigrations({ databaseUrl });
+    expect(await asRole("sideband_admin_ro", "SELECT * FROM ops.v_whatsapp"))
+      .toEqual([{ linked_accounts: "1", active_pairings: "1", inbound_receipts: "0", pending_deliveries: "1", pending_registrations: "1" }]);
     await expect(asRole("sideband_admin_ro", "SELECT * FROM whatsapp.pending_delivery")).rejects.toMatchObject({ code: "42501" });
   });
 

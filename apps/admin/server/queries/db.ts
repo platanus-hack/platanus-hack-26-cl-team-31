@@ -2,6 +2,7 @@
 // `BEGIN READ ONLY; SET LOCAL ROLE <rol>; SET LOCAL statement_timeout = '3s'`: el rol solo
 // puede leer las vistas redactadas (packages/ops/sql/0003_roles.sql), nunca las tablas.
 import pg from "pg"
+import { z } from "zod"
 
 import { AdminQueryError } from "../../shared/queries.js"
 
@@ -55,7 +56,7 @@ export async function readOnly<T>(
 ): Promise<T> {
   const setRole = (await canAssumeRole(pool, role)) ? ` SET LOCAL ROLE ${role};` : ""
   const client = await pool.connect()
-  let broken: Error | undefined
+  let reusable = false
   try {
     await client.query(
       `BEGIN READ ONLY;${setRole} SET LOCAL statement_timeout = '${STATEMENT_TIMEOUT}'`
@@ -63,17 +64,21 @@ export async function readOnly<T>(
     try {
       const result = await fn(client)
       await client.query("COMMIT")
+      reusable = true
       return result
     } catch (error) {
-      await client.query("ROLLBACK").catch((rollbackError: Error) => {
-        broken = rollbackError
-      })
+      try {
+        await client.query("ROLLBACK")
+        reusable = true
+      } catch {
+        // Discard the connection and preserve the original query failure.
+      }
       throw error
     }
   } catch (error) {
     throw mapPgError(error)
   } finally {
-    client.release(broken)
+    client.release(!reusable)
   }
 }
 
@@ -138,6 +143,14 @@ export function encodeCursor(at: string, id: string): string {
   return Buffer.from(JSON.stringify([at, id]), "utf8").toString("base64url")
 }
 
+const cursorTimestamp = z.iso.datetime({ offset: true })
+
+function isCursorTimestamp(at: string) {
+  // PostgreSQL emits a space separator and may abbreviate the zone to +HH.
+  const iso = at.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00")
+  return cursorTimestamp.safeParse(iso).success
+}
+
 export function decodeCursor(cursor: string): [string, string] {
   try {
     const value: unknown = JSON.parse(
@@ -146,9 +159,9 @@ export function decodeCursor(cursor: string): [string, string] {
     if (
       Array.isArray(value) &&
       value.length === 2 &&
-      value.every((part) => typeof part === "string")
+      typeof value[0] === "string" && typeof value[1] === "string" && isCursorTimestamp(value[0])
     ) {
-      return [value[0] as string, value[1] as string]
+      return [value[0], value[1]]
     }
   } catch {
     // cae al error de abajo

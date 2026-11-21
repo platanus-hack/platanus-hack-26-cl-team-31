@@ -162,11 +162,14 @@ export function DataTable<TData>({
                 "cursor-pointer focus-visible:bg-muted/60 focus-visible:outline-none",
               rowClassName?.(row)
             )}
-            onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+            onClick={onRowClick ? (event) => {
+              if (event.target instanceof Element && event.target.closest("a, button, input, select, textarea, [role='button']")) return
+              onRowClick(row.original)
+            } : undefined}
             onKeyDown={
               onRowClick
                 ? (event) => {
-                    if (event.key === "Enter") onRowClick(row.original)
+                    if (event.key === "Enter" && event.target === event.currentTarget) onRowClick(row.original)
                   }
                 : undefined
             }

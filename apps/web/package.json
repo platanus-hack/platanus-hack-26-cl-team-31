@@ -13,12 +13,12 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "1.12.0",
     "@better-auth/oauth-provider": "1.7.18",
     "@team-31/agent-flow": "workspace:*",
     "@team-31/auth": "workspace:*",
-    "@team-31/broker": "workspace:*",
+    "@team-31/broker-client": "workspace:*",
     "@team-31/demo": "workspace:*",
+    "@team-31/message-flow": "workspace:*",
     "@team-31/protocol": "workspace:^",
     "@team-31/telemetry": "workspace:*",
     "@team-31/wake": "workspace:*",
@@ -26,8 +26,8 @@
     "next": "16.4.6",
     "pg": "8.23.1",
     "qrcode": "1.5.4",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
@@ -40,6 +40,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "happy-dom": "^21.0.4",
     "tailwindcss": "4.3.3",
     "typescript": "^5"
   }

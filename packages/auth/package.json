@@ -19,6 +19,11 @@
       "@team-31/source": "./src/resource.ts",
       "default": "./dist/resource.js"
     },
+    "./rate-limit": {
+      "types": "./src/rate-limit.ts",
+      "@team-31/source": "./src/rate-limit.ts",
+      "default": "./dist/rate-limit.js"
+    },
     "./service": {
       "types": "./src/service.ts",
       "@team-31/source": "./src/service.ts",
