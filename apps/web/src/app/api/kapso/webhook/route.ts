@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { BrokerError } from "@team-31/broker/client";
+import { readWebhookBody } from "@team-31/wake";
 import { ownerClient } from "../../../../lib/broker";
 import { getTelemetry, observeRoute } from "../../../../lib/telemetry";
 import { setChannel } from "../../../../lib/whatsapp/channel";
@@ -24,16 +25,8 @@ export async function POST(request: Request) {
         telemetry.emit("auth.token.rejected", { attrs: { issuer: "kapso", reason: "signature" } });
         return reply(401);
       }
-      const chunks: Uint8Array[] = [];
-      let size = 0;
-      if (request.body) {
-        for await (const chunk of request.body as ReadableStream<Uint8Array> & AsyncIterable<Uint8Array>) {
-          size += chunk.length;
-          if (size > 32_768) return reply(413);
-          chunks.push(chunk);
-        }
-      }
-      const body = Buffer.concat(chunks);
+      const body = await readWebhookBody(request, 32_768);
+      if (!body) return reply(413);
       if (!validSignature(body, signature, kapso.secret)) {
         telemetry.emit("auth.token.rejected", { attrs: { issuer: "kapso", reason: "signature" } });
         return reply(401);
