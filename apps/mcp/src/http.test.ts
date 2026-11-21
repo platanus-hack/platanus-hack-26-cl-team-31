@@ -196,7 +196,7 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
   expect((await client.callTool({ name: "sideband_inbox" })).structuredContent).toEqual({ items: [] });
   expect(agent.inbox).toHaveBeenCalledWith({
     userId: "oauth-user", agentId: "oauth-agent", scopes: ["sideband:inbox", "sideband:status"],
-  });
+  }, undefined);
   expect(await client.callTool({ name: "sideband_check", arguments: { requestId: "missing" } })).toMatchObject({
     isError: true,
     structuredContent: { ok: false, error: { code: "not_found", message: "No se encontró la solicitud." } },

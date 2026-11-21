@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Address } from "./address.js";
 import { ToolArgs, ToolName, ToolResult, ToolResultSchemas } from "./tools.js";
+import { Sharing } from "./sharing.js";
 
 const askBase = z.object({
   to: Address,
@@ -100,6 +101,8 @@ export const ReplyArguments = z.object({
   requestId: z.string(),
   nonce: z.string(),
   outcome: BotOutcome,
+  // Recipient's grants for an accepted invitation. These never travel in result.
+  share: Sharing.optional(),
   result: z.unknown().optional(),
   internalReason: z.string().max(300).optional(),
 });

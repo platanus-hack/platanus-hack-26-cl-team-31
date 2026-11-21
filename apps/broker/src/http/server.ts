@@ -36,7 +36,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "agent.ask":
       return agent.ask(c.get("mcp"), await parseBody(c, route.body));
     case "agent.inbox":
-      return { items: await agent.inbox(c.get("mcp")) };
+      return { items: await agent.inbox(c.get("mcp"), parseInput(route.query, c.req.query()).includeInvitations === "true") };
     case "agent.reply":
       return agent.reply(c.get("mcp"), await parseBody(c, route.body));
     case "agent.contacts":

@@ -33,6 +33,7 @@ export const routes = {
   agentInbox: {
     method: "GET",
     path: "/v1/agent/inbox",
+    query: z.object({ includeInvitations: z.literal("true").optional() }),
     response: z.object({ items: z.array(InboxItem) }),
     iss: "mcp",
     port: "agent.inbox",

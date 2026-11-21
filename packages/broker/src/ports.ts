@@ -34,7 +34,7 @@ import type { Store } from "./store/store.js";
 export interface AgentPort {
   capabilities(p: Principal, to: Address): Promise<{ tools: Capability[] }>;
   ask(p: Principal, input: AskInput): Promise<RequesterView>;
-  inbox(p: Principal): Promise<InboxItem[]>;
+  inbox(p: Principal, includeInvitations?: boolean): Promise<InboxItem[]>;
   reply(p: Principal, input: ReplyInput): Promise<ReplyReceipt>;
   status(p: Principal, requestId: string): Promise<RequesterView>;
   // The caller's contacts and joined circles, so its agent knows whom it can ask.
