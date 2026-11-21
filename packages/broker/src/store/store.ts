@@ -1,6 +1,7 @@
 import type {
   ActivityEvent,
   Address,
+  Category,
   FinalOutcome,
   RequestStatus,
   ToolName,
@@ -79,13 +80,12 @@ export type AgentConnectionRow = {
   createdAt: Date;
 };
 
-// A live grant: the grantor lets the grantee use the tool and receive these result fields.
+// A live grant: the grantor lets the grantee ask about the category.
 export type GrantRow = {
   id: string;
   grantorUserId: string;
   granteeAddress: Address;
-  tool: ToolName;
-  fields: string[];
+  category: Category;
   createdAt: Date;
 };
 
@@ -106,11 +106,11 @@ export interface StoreTx {
   createAddress(userId: string, address: Address): Promise<void>;
 
   // Creates the address-less grantor if needed. A grantor keeps one live grant per grantee and
-  // tool: a second put replaces its fields and returns the stored row.
+  // category: a second put returns the stored row.
   putGrant(row: GrantRow): Promise<GrantRow>;
   // The three readers below ignore revoked grants.
   listGrants(grantorUserId: string): Promise<GrantRow[]>;
-  getGrant(grantorUserId: string, granteeAddress: Address, tool: ToolName): Promise<GrantRow | null>;
+  getGrant(grantorUserId: string, granteeAddress: Address, category: Category): Promise<GrantRow | null>;
   // False when the grantor has no live grant with that id.
   revokeGrant(id: string, grantorUserId: string, at: Date): Promise<boolean>;
 
@@ -118,9 +118,6 @@ export interface StoreTx {
   // True when this transaction creates a new membership.
   addFriend(userId: string, address: Address): Promise<boolean>;
   removeFriend(userId: string, address: Address): Promise<boolean>;
-  // An existing live grant takes precedence over the friendship default.
-  insertFriendGrant(row: GrantRow): Promise<boolean>;
-  revokeFriendGrants(userId: string, address: Address, at: Date): Promise<string[]>;
   // Pending connect requests sent or received by the user, oldest first.
   listOpenInvitations(userId: string): Promise<RequestRow[]>;
 

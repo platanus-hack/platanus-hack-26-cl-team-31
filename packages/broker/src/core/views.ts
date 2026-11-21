@@ -12,7 +12,7 @@ import type { AgentConnectionRow, GrantRow, RequestEvent, RequestRow } from "../
 
 export function toGrant(row: GrantRow): Grant {
   return Grant.parse({
-    id: row.id, grantee: row.granteeAddress, tool: row.tool, fields: row.fields, createdAt: row.createdAt.toISOString(),
+    id: row.id, grantee: row.granteeAddress, category: row.category, createdAt: row.createdAt.toISOString(),
   });
 }
 

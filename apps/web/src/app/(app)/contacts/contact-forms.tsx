@@ -63,7 +63,7 @@ export function IncomingInvitation({ invitation }: { invitation: Invitation }) {
 }
 
 function sameSharing(a: Sharing, b: Sharing) {
-  return a.availability === b.availability && a.interests === b.interests && a.questions === b.questions;
+  return a.length === b.length && a.every((category) => b.includes(category));
 }
 
 export function ContactRow({ contact }: { contact: Contact }) {

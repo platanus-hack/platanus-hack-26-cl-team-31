@@ -7,7 +7,7 @@ describe.skipIf(!enabled)("Denegaciones y solicitudes a uno mismo", () => {
     const { ownerPort, agents: [sender, recipient] } = await seedAgents("blocks", 2);
     if (!sender || !recipient) throw new Error("Faltan agentes de prueba.");
 
-    await grantTo(ownerPort, recipient.owner, [sender.address], "availability", ["available"]);
+    await grantTo(ownerPort, recipient.owner, [sender.address], "availability");
     const question = { tool: "question", args: { text: "¿Puedes compartir el dato de prueba?" } } as const;
 
     const domain = recipient.address.split("@")[1];

@@ -11,7 +11,7 @@ describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
     const { ownerPort, agents } = await seedAgents("isolation", Math.max(3, Math.ceil(count / 28)));
     for (const recipient of agents) {
       const senders = agents.filter((agent) => agent !== recipient).map(({ address }) => address);
-      await grantTo(ownerPort, recipient.owner, senders, "question", ["answer"]);
+      await grantTo(ownerPort, recipient.owner, senders, "general");
     }
 
     const messages = await Promise.all(Array.from({ length: count }, async (_, index) => {

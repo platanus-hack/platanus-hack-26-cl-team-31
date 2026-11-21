@@ -16,7 +16,7 @@ const web = generateKeyPairSync("ed25519");
 const signing = generateKeyPairSync("ed25519");
 const publicKeys = { mcp: mcp.publicKey.export({ format: "jwk" }), web: web.publicKey.export({ format: "jwk" }) };
 const question = { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes mañana?" } };
-const grantToAlice: GrantInput = { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] };
+const grantToAlice: GrantInput = { grantee: "alice@sideband.app", category: "general" };
 const mcpEvents = {
   kind: "mcp_events",
   callbackUrl: "https://example.com/events",
@@ -114,7 +114,7 @@ describe("HTTP interno del broker", () => {
     await broker.tick(new Date());
     expect(waker.wake).not.toHaveBeenCalled();
 
-    await call(app, routes.ownerSetGrant, { token: bruno, body: { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] } });
+    await call(app, routes.ownerSetGrant, { token: bruno, body: { grantee: "alice@sideband.app", category: "general" } });
     const asked = await call(app, routes.ownerAsk, { token: alice, body: question });
     expect(asked).toMatchObject({ decision: "pending", waitingFor: "agent" });
     expect((await call(app, routes.ownerActivity, { token: alice })).items).toContainEqual(expect.objectContaining({
@@ -163,9 +163,9 @@ describe("HTTP interno del broker", () => {
 
     const sharingPath = routes.ownerSetSharing.path.replace(":address", encodeURIComponent("bruno@sideband.app"));
     await call(app, routes.ownerSetSharing, {
-      token: alice, path: sharingPath, body: { availability: "slots", interests: false, questions: false },
+      token: alice, path: sharingPath, body: ["availability", "general"],
     });
-    expect((await contacts(bruno)).contacts[0]?.receives).toEqual({ availability: "slots", interests: false, questions: false });
+    expect((await contacts(bruno)).contacts[0]?.receives).toEqual(["availability", "general"]);
 
     const path = routes.ownerRemoveFriend.path.replace(":address", encodeURIComponent("bruno@sideband.app"));
     await call(app, routes.ownerRemoveFriend, { token: alice, path });

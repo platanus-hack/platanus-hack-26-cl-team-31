@@ -9,8 +9,8 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
   test("disponibilidad filtrada, denegación sin permiso y outcomes del agente", async () => {
     const { ownerPort, agents: [sender, recipient, unknown] } = await seedAgents("contract", 3);
     if (!sender || !recipient || !unknown) throw new Error("Faltan agentes de prueba.");
-    await grantTo(ownerPort, recipient.owner, [sender.address], "availability", ["available"]);
-    await grantTo(ownerPort, recipient.owner, [sender.address], "question", ["answer"]);
+    await grantTo(ownerPort, recipient.owner, [sender.address], "availability");
+    await grantTo(ownerPort, recipient.owner, [sender.address], "general");
 
     const availability = {
       to: recipient.address, tool: "availability",
@@ -42,7 +42,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     expect(await recipient.agent.inbox()).toEqual([]);
     expect(await ownerPort.pending(recipient.owner)).toEqual([]);
 
-    const granted = await ownerPort.setGrant(recipient.owner, { grantee: unknown.address, tool: "availability", fields: ["available"] });
+    const granted = await ownerPort.setGrant(recipient.owner, { grantee: unknown.address, category: "availability" });
     const empty = await unknown.agent.ask(availability);
     const emptyItem = await inboxItem(recipient.agent, empty.requestId);
     const internalReason = "Nota interna de prueba";
@@ -90,7 +90,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
   test("WhatsApp recupera por estado la respuesta del segundo agente", async () => {
     const { ownerPort, agents: [sender, recipient] } = await seedAgents("contract", 2);
     if (!sender || !recipient) throw new Error("Faltan agentes de prueba.");
-    await grantTo(ownerPort, recipient.owner, [sender.address], "question", ["answer"]);
+    await grantTo(ownerPort, recipient.owner, [sender.address], "general");
 
     // Use the same command handler as the signed webhook, with no call to Kapso.
     const command = (text: string) => runCommand(ownerPort, sender.owner, text, () => {});
@@ -121,7 +121,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     const setWake = (target: Parameters<typeof ownerPort.setWake>[2]) =>
       ownerPort.setWake(recipient.owner, recipient.agentId, target);
     onTestFinished(() => setWake({ kind: "none" }));
-    await grantTo(ownerPort, recipient.owner, [sender.address], "question", ["answer"]);
+    await grantTo(ownerPort, recipient.owner, [sender.address], "general");
 
     const verifyNotice = async (kind: "openclaw_hooks" | "grokbot_routine" | "mcp_events") => {
       const text = `Contenido reservado de la prueba ${randomUUID()}`;

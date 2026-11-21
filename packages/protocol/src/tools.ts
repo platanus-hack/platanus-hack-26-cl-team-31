@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { categories, Category } from "./categories.js";
 import { Sharing } from "./sharing.js";
 
 export const ToolName = z.enum(["profile", "availability", "question", "interest_check", "connect"]);
@@ -86,4 +87,9 @@ export type Capability = z.infer<typeof Capability>;
 
 export function describeTool(tool: ToolName, allowedFields: string[]): Capability {
   return { tool, execution: toolExecution[tool], inputSchema: z.toJSONSchema(ToolArgs[tool]), allowedFields };
+}
+
+// A tool belongs to at most one category.
+export function categoryOf(tool: ToolName): Category | undefined {
+  return Category.options.find((category) => categories[category].tools.includes(tool));
 }

@@ -3,6 +3,9 @@ import { fixtureUsers } from "./fixtures.js";
 import {
   ActivityItem,
   AskInput,
+  categories,
+  Category,
+  categoryOf,
   fieldsOf,
   GrantInput,
   ReplyInput,
@@ -142,17 +145,30 @@ describe("wake contracts", () => {
 });
 
 describe("GrantInput", () => {
-  const grant = { grantee: "ana@sideband.app", tool: "interest_check", fields: ["matches"] };
+  const grant = { grantee: "ana@sideband.app", category: "interests" };
 
-  it("accepts fields that the tool returns", () => {
+  it("accepts a category of the catalog", () => {
     expect(GrantInput.parse(grant)).toEqual(grant);
   });
 
   it.each([
-    ["a field the tool does not return", { ...grant, fields: ["matches", "answer"] }],
-    ["no fields", { ...grant, fields: [] }],
-    ["the stored profile tool", { ...grant, tool: "profile", fields: ["displayName"] }],
+    ["a tool in place of a category", { ...grant, category: "interest_check" }],
+    ["no category", { grantee: grant.grantee }],
   ])("rejects %s", (_label, input) => {
     expect(GrantInput.safeParse(input).success).toBe(false);
+  });
+});
+
+describe("categories", () => {
+  it("gives every category at least one tool", () => {
+    for (const category of Category.options) expect(categories[category].tools.length).toBeGreaterThan(0);
+  });
+
+  it("puts each tool in at most one category", () => {
+    expect(categoryOf("availability")).toBe("availability");
+    expect(categoryOf("interest_check")).toBe("interests");
+    expect(categoryOf("question")).toBe("general");
+    expect(categoryOf("connect")).toBeUndefined();
+    expect(categoryOf("profile")).toBeUndefined();
   });
 });

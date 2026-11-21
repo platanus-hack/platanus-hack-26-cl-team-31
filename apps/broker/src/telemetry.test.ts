@@ -40,7 +40,7 @@ beforeEach(async () => {
   });
   await broker.owner.claimAddress({ userId: "alice" }, "alice");
   await broker.owner.claimAddress({ userId: "bruno" }, "bruno");
-  await broker.owner.setGrant({ userId: "bruno" }, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
+  await broker.owner.setGrant({ userId: "bruno" }, { grantee: "alice@sideband.app", category: "general" });
   sink.clear();
 });
 

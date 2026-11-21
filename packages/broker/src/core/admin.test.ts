@@ -83,7 +83,7 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
       broker = createBroker(deps);
       await broker.owner.claimAddress(alice, "alice");
       await broker.owner.claimAddress(bruno, "bruno");
-      await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
+      await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "general" });
       await broker.agent.connectWake(bruno, webhook);
     });
 

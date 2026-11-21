@@ -72,28 +72,25 @@ it.each([
 
 const contact = "bob@sideband.app";
 
-function sharingForm(availability: string) {
+function sharingForm(...shared: string[]) {
   const form = new FormData();
-  form.set("availability", availability);
-  form.set("questions", "on");
+  for (const category of shared) form.append("category", category);
   return form;
 }
 
 it("checks sharing categories and revalidates only after saving", async () => {
-  await expect(saveSharing(contact, {}, sharingForm("available"))).resolves.toHaveProperty("error");
+  await expect(saveSharing(contact, {}, sharingForm("availability", "questions"))).resolves.toHaveProperty("error");
   expect(broker.setSharing).not.toHaveBeenCalled();
   expect(revalidatePath).not.toHaveBeenCalled();
 
-  await expect(saveSharing(contact, {}, sharingForm("busy"))).resolves.toEqual({ message: "Guardado." });
-  expect(broker.setSharing).toHaveBeenCalledWith(owner, contact, {
-    availability: "busy", interests: false, questions: true,
-  });
+  await expect(saveSharing(contact, {}, sharingForm("availability", "general"))).resolves.toEqual({ message: "Guardado." });
+  expect(broker.setSharing).toHaveBeenCalledWith(owner, contact, ["availability", "general"]);
   expect(vi.mocked(revalidatePath).mock.calls).toEqual([["/contacts"], ["/activity"], ["/"]]);
 });
 
 it("maps a broker conflict to owner feedback and preserves the cached page", async () => {
   broker.setSharing.mockRejectedValueOnce(new BrokerError("conflict", "internal detail"));
-  await expect(saveSharing(contact, {}, sharingForm("busy"))).resolves.toEqual({
+  await expect(saveSharing(contact, {}, sharingForm("availability"))).resolves.toEqual({
     error: "La solicitud ya cambió. Actualiza la página.",
   });
   expect(revalidatePath).not.toHaveBeenCalled();

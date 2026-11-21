@@ -10,7 +10,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
   let store: Store;
 
   function grantTo(granteeAddress: string): GrantRow {
-    return { id: randomUUID(), grantorUserId: "alice", granteeAddress, tool: "question", fields: ["answer"], createdAt: now };
+    return { id: randomUUID(), grantorUserId: "alice", granteeAddress, category: "general", createdAt: now };
   }
 
   async function makeRequest(overrides: Partial<RequestRow> = {}): Promise<RequestRow> {
@@ -182,17 +182,16 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
-    it("keeps one live grant per grantor, grantee and tool, and hides revoked grants", async () => {
+    it("keeps one live grant per grantor, grantee and category, and hides revoked grants", async () => {
       const grant: GrantRow = {
         id: randomUUID(), grantorUserId: "bruno", granteeAddress: fromAddress,
-        tool: "availability", fields: ["available"], createdAt: now,
+        category: "availability", createdAt: now,
       };
       await store.tx(async (tx) => {
         expect(await tx.putGrant(grant)).toEqual(grant);
-        const widened = { ...grant, fields: ["available", "freeSlots"] };
-        expect(await tx.putGrant({ ...widened, id: randomUUID() })).toEqual(widened);
-        expect(await tx.listGrants("bruno")).toEqual([widened]);
-        expect(await tx.getGrant("bruno", fromAddress, "question")).toBeNull();
+        expect(await tx.putGrant({ ...grant, id: randomUUID() })).toEqual(grant);
+        expect(await tx.listGrants("bruno")).toEqual([grant]);
+        expect(await tx.getGrant("bruno", fromAddress, "general")).toBeNull();
         expect(await tx.getGrant("alice", fromAddress, "availability")).toBeNull();
 
         expect(await tx.revokeGrant(grant.id, "alice", now)).toBe(false);

@@ -129,7 +129,7 @@ export const catalog = [
     name: "broker.policy.evaluated",
     kind: "policy",
     description: "Resultado de la política bilateral.",
-    attrs: { tool: code(), decision: z.enum(["allow", "deny", "ask_owner"]), rule: code() },
+    attrs: { tool: code(), category: code(), decision: z.enum(["allow", "deny", "ask_owner"]), rule: code() },
   }),
   defineEvent({
     name: "broker.request.created",
@@ -160,8 +160,8 @@ export const catalog = [
   defineEvent({
     name: "broker.grant.set",
     kind: "policy",
-    description: "El dueño creó o cambió un permiso. Sin la dirección autorizada: solo el id, la herramienta y cuántos campos.",
-    attrs: { grantId: id(), tool: code(), fields: int().nonnegative() },
+    description: "El titular dio un permiso. Sin la dirección autorizada: solo el id y la categoría.",
+    attrs: { grantId: id(), category: code() },
   }),
   defineEvent({ name: "broker.grant.revoked", kind: "policy", description: "El dueño revocó un permiso.", attrs: { grantId: id() } }),
   defineEvent({ name: "broker.contact.connected", kind: "policy", description: "Dos titulares quedaron conectados al aceptar una invitación.", attrs: {} }),

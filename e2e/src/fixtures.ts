@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mintServiceToken } from "@team-31/auth/service";
 import { createOwnerClient, type OwnerPort } from "@team-31/broker/client";
-import type { Address, GrantInput, Owner } from "@team-31/protocol";
+import type { Address, Category, Owner } from "@team-31/protocol";
 import { decodeJwt, type JWK } from "jose";
 import { expect, onTestFinished } from "vitest";
 import { z } from "zod";
@@ -104,10 +104,8 @@ export async function seedAgents(group: Group, count: number) {
   };
 }
 
-export async function grantTo(
-  ownerPort: OwnerPort, owner: Owner, senders: Address[], tool: GrantInput["tool"], fields: string[],
-) {
-  for (const grantee of senders) await ownerPort.setGrant(owner, { grantee, tool, fields });
+export async function grantTo(ownerPort: OwnerPort, owner: Owner, senders: Address[], category: Category) {
+  for (const grantee of senders) await ownerPort.setGrant(owner, { grantee, category });
 }
 
 export async function inboxItem(agent: Awaited<ReturnType<typeof connectAgent>>, requestId: string) {

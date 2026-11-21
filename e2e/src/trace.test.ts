@@ -54,7 +54,7 @@ async function askThroughMcp(sink: TelemetrySink) {
   });
   await broker.owner.claimAddress({ userId: "ana" }, "ana");
   await broker.owner.claimAddress({ userId: "bob" }, "bob");
-  await broker.owner.setGrant({ userId: "bob" }, { grantee: "ana@sideband.app", tool: "question", fields: ["answer"] });
+  await broker.owner.setGrant({ userId: "bob" }, { grantee: "ana@sideband.app", category: "general" });
 
   const brokerApp = createBrokerHttp({
     broker, publicKeys: { mcp: mcpKey.publicKey.export({ format: "jwk" }) }, telemetry: brokerTelemetry,

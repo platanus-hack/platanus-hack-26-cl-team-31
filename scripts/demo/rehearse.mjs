@@ -188,13 +188,13 @@ export async function rehearse(fixtures, { run, actors }, present) {
     await step("3. Claude Code local pregunta sin permiso y Simon se lo da.", async () => {
       assertFinal(await ask(claude), "deny");
       console.log("   Sin permiso, Claude recibió deny y Simon no fue avisado.");
-      const mode = await interact(`En Permisos, da «Disponibilidad» a ${actors.claude.address} y deja marcado solo «Si está disponible». Escribe api si la app falla.`);
+      const mode = await interact(`En Contactos, comparte «Disponibilidad horaria» con ${actors.claude.address}. Escribe api si la app falla.`);
       if (!present || mode === "api") {
-        await owner.setGrant(destination, { grantee: actors.claude.address, tool: "availability", fields: ["available"] });
+        await owner.setGrant(destination, { grantee: actors.claude.address, category: "availability" });
       }
       const pending = await ask(claude);
       assert.equal(pending.waitingFor, "agent");
-      await replyFromCalendar(claude, pending.requestId, ["available"]);
+      await replyFromCalendar(claude, pending.requestId, ["available", "freeSlots"]);
     });
 
     await step(`4. Simon revoca en vivo el permiso de Grok Bot local: ${actors.grok.address}`, async () => {

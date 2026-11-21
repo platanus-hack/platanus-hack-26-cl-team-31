@@ -6,7 +6,7 @@ describe.skipIf(!enabled)("Cierre de solicitudes por el worker", () => {
   test("vence una sin respuesta y cierra otra tras tres avisos HTTP 500", async () => {
     const { ownerPort, agents: [sender, recipient] } = await seedAgents("closure", 2);
     if (!sender || !recipient) throw new Error("Faltan agentes de prueba.");
-    await grantTo(ownerPort, recipient.owner, [sender.address], "question", ["answer"]);
+    await grantTo(ownerPort, recipient.owner, [sender.address], "general");
 
     const question = {
       to: recipient.address, tool: "question",

@@ -206,11 +206,7 @@ export async function readContacts() {
 }
 
 function sharingFrom(form: FormData) {
-  return Sharing.safeParse({
-    availability: form.get("availability"),
-    interests: form.get("interests") === "on",
-    questions: form.get("questions") === "on",
-  });
+  return Sharing.safeParse(form.getAll("category"));
 }
 
 function contactsChanged() {
