@@ -2,6 +2,7 @@
 // write to the same sink. Runs without the local stack (no E2E_MCP_URL needed).
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
 import { serve, type ServerType } from "@hono/node-server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -85,6 +86,24 @@ async function askThroughMcp(sink: TelemetrySink) {
   return requestId;
 }
 
+/**
+ * pg's Pool.end() resolves as soon as it has *asked* its clients to close, not when the server has
+ * let go of their backends. DROP DATABASE ... WITH (FORCE) against a backend that has not processed
+ * Terminate yet makes the server send FATAL 57P01 to a closing client, which the pool re-emits as an
+ * 'error'. So wait until no backend uses the database and keep FORCE only as a fallback.
+ */
+async function dropDatabase(admin: pg.Pool, name: string, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { rows: [row] } = await admin.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = $1", [name],
+    );
+    if (row?.count === 0) break;
+    await sleep(25);
+  }
+  await admin.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(name)} WITH (FORCE)`);
+}
+
 type Row = Pick<TelemetryRecord, "service" | "name" | "traceId" | "spanId" | "parentSpanId" | "requestId">;
 
 function expectOneTrace(rows: Row[], requestId: string) {
@@ -113,6 +132,7 @@ describe("traza de punta a punta MCP → broker", () => {
   });
 
   const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+  // CREATE DATABASE + migrations on a loaded CI box can exceed Vitest's default 5 s.
   it.skipIf(!testDatabaseUrl)("la misma traza queda en ops.events", async () => {
     const url = new URL(testDatabaseUrl!);
     if (!url.pathname.endsWith("_test")) throw new Error("TEST_DATABASE_URL debe apuntar a una base _test separada.");
@@ -122,10 +142,17 @@ describe("traza de punta a punta MCP → broker", () => {
     url.pathname = "/" + name;
     const databaseUrl = url.toString();
     const db = new pg.Pool({ connectionString: databaseUrl });
+    const poolErrors: unknown[] = [];
+    // An idle client that loses its backend re-emits on the pool; without a listener that is an
+    // uncaught exception. Only a 57P01 after end() is expected (from the FORCE fallback below).
+    db.on("error", (error: Error & { code?: string }) => {
+      if (!(db.ending && error.code === "57P01")) poolErrors.push(error);
+    });
     cleanup.push(async () => {
       await db.end();
-      await admin.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(name)} WITH (FORCE)`);
+      await dropDatabase(admin, name);
       await admin.end();
+      expect(poolErrors).toEqual([]);
     });
     await applyOpsMigrations({ databaseUrl });
 
@@ -141,5 +168,5 @@ describe("traza de punta a punta MCP → broker", () => {
       "SELECT count(*)::int AS count FROM ops.events WHERE attrs::text LIKE $1", [`%${secretText}%`],
     );
     expect(leak?.count).toBe(0);
-  });
+  }, 30_000);
 });
