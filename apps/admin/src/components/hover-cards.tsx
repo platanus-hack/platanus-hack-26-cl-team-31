@@ -13,6 +13,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { RelativeTime } from "@/components/relative-time"
 import { RequestStatusBadge } from "@/components/status"
+import { buildPath } from "@/lib/api"
 import { formatDuration, initials } from "@/lib/format"
 import { requestQuery, userQuery } from "@/lib/queries"
 import { toolLabel } from "@/lib/status"
@@ -82,7 +83,7 @@ export function PersonHoverCard({
                 {user.identity.activeSessions} sesiones
               </span>
               <Link
-                to={`/personas/${user.summary.userId}`}
+                to={buildPath("/personas/:id", { id: user.summary.userId })}
                 className="inline-flex items-center gap-0.5 text-foreground hover:underline"
               >
                 Abrir
@@ -141,7 +142,7 @@ export function RequestHoverCard({
               <RelativeTime value={s.createdAt} />
             </span>
             <Link
-              to={`/solicitudes/${s.id}`}
+              to={buildPath("/solicitudes/:id", { id: s.id })}
               className="inline-flex items-center gap-0.5 self-end text-xs hover:underline"
             >
               Abrir
