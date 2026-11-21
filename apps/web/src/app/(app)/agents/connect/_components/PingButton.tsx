@@ -21,8 +21,8 @@ const descriptions: Record<RequestStatus, string> = {
 
 type PingResult = {
   requestId: string;
-  ping?: Awaited<ReturnType<typeof readPingStatus>>;
-  readError?: boolean;
+  ping?: { status: RequestStatus; verified: boolean };
+  readError?: true | string;
 };
 
 export function PingButton({ agentId, kind, address }: { agentId: string; kind: ClientKind; address: string }) {
@@ -40,16 +40,22 @@ export function PingButton({ agentId, kind, address }: { agentId: string; kind: 
 
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
+    function showReadError(id: string, error: true | string) {
+      setResult((previous) => ({
+        requestId: id,
+        ping: previous?.requestId === id ? previous.ping : undefined,
+        readError: error,
+      }));
+    }
     async function poll(id: string) {
       try {
-        const ping = await readPingStatus(id);
-        if (active) setResult({ requestId: id, ping });
+        const response = await readPingStatus(id);
+        if (!active) return;
+        if (response && "errorId" in response && response.errorId) showReadError(id, response.errorId);
+        else if (response?.status) setResult({ requestId: id, ping: response });
+        else setResult({ requestId: id });
       } catch {
-        if (active) setResult((previous) => ({
-          requestId: id,
-          ping: previous?.requestId === id ? previous.ping : undefined,
-          readError: true,
-        }));
+        if (active) showReadError(id, true);
       } finally {
         if (active) timer = setTimeout(() => void poll(id), 2000);
       }
@@ -66,7 +72,7 @@ export function PingButton({ agentId, kind, address }: { agentId: string; kind: 
       <form action={action}>
         <button disabled={sending || waiting} className={primaryButton}>{sending ? "Enviando…" : "Probar"}</button>
       </form>
-      <Feedback error={state.error} />
+      <Feedback error={state.error} errorId={state.errorId} />
       <div role="status" className="space-y-2">
         {verified ? (
           <p className="text-sm font-semibold text-[#28513b]">El agente respondió a la prueba.</p>
@@ -77,7 +83,12 @@ export function PingButton({ agentId, kind, address }: { agentId: string; kind: 
           </>
         )}
         {missing && <p className={secondaryText}>La prueba ya no está disponible. Vuelve a probar.</p>}
-        {current?.readError && <p className={secondaryText}>Se perdió la actualización. Volveremos a consultar el estado.</p>}
+        {current?.readError && (
+          <p className={secondaryText}>
+            Se perdió la actualización. Volveremos a consultar el estado.
+            {typeof current.readError === "string" && <> Código de error <code>{current.readError}</code>.</>}
+          </p>
+        )}
       </div>
       {verified && !sending && (
         <>

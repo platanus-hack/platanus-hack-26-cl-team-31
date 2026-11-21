@@ -8,6 +8,10 @@ const { activity } = vi.hoisted(() => ({ activity: vi.fn<OwnerPort["activity"]>(
 vi.mock("./connections", () => ({
   connectContext: async () => ({ owner: { userId: "ana" }, broker: { activity } }),
 }));
+vi.mock("../../../../lib/telemetry", () => ({
+  observeWebRequest: (_method: string, _route: string, run: () => unknown) => run(),
+  webTelemetry: () => ({ identify: vi.fn(), emit: vi.fn() }),
+}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 

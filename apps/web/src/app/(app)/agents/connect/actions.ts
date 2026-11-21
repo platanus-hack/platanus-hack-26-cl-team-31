@@ -5,11 +5,13 @@ import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { observeWebRequest, webTelemetry } from "../../../../lib/telemetry";
+
 import { clients, type ClientKind, type ManualWakeKind } from "./clients";
 import { connectContext, listConnections } from "./connections";
 
 type SaveFeedback = { error?: string; message?: string };
-type PingFeedback = { requestId?: string; error?: string };
+type PingFeedback = { requestId?: string; error?: string; errorId?: string };
 
 export async function selectConnection(kind: ClientKind, form: FormData) {
   const connections = await listConnections();
@@ -52,27 +54,50 @@ export async function startPing(kind: ClientKind, agentId: string): Promise<Ping
     return { error: "Selecciona un agente para probar la conexión." };
   }
 
-  try {
-    const agent = (await broker.agents(owner)).find((item) => item.agentId === agentId && !item.revokedAt);
-    if (agent?.wakeKind !== clients[kind].wakeKind) {
-      return { error: "Configura el aviso del agente antes de probarlo." };
+  return observeWebRequest("POST", "/agents/connect", async (span): Promise<PingFeedback> => {
+    const telemetry = webTelemetry();
+    telemetry.identify({ userId: owner.userId, agentId });
+    try {
+      const agent = (await broker.agents(owner)).find((item) => item.agentId === agentId && !item.revokedAt);
+      if (agent?.wakeKind !== clients[kind].wakeKind) {
+        return { error: "Configura el aviso del agente antes de probarlo." };
+      }
+      const ping = await broker.ping(owner, agentId);
+      telemetry.identify({ requestId: ping.requestId });
+      telemetry.emit("web.agent.ping", { attrs: { stage: "started" } });
+      return ping;
+    } catch (error) {
+      const errorId = telemetry.error("web.agent.start_ping", error);
+      span.setErrorId(errorId);
+      return { error: "No se pudo enviar la prueba. Intenta de nuevo.", errorId };
     }
-    return await broker.ping(owner, agentId);
-  } catch {
-    return { error: "No se pudo enviar la prueba. Intenta de nuevo." };
-  }
+  });
 }
 
 export async function readPingStatus(requestId: string) {
-  const { owner, broker } = await connectContext();
   if (!requestId || !routes.ownerDecide.params.safeParse({ id: requestId }).success) return;
-  const items = await broker.activity(owner, 100);
-  const ping = items.find((item) => item.requestId === requestId);
-  if (!ping) return;
+  const { owner, broker } = await connectContext();
 
-  // El titular también puede responder una prueba escalada. La verificación exige la respuesta final del agente.
-  const { status, events } = ping;
-  const verified = (status === "answered" || status === "no_data") &&
-    events.some((event) => event.kind === "response" && event.status === status);
-  return { status, verified };
+  return observeWebRequest("POST", "/agents/connect", async (span) => {
+    const telemetry = webTelemetry();
+    telemetry.identify({ userId: owner.userId, requestId });
+    try {
+      const items = await broker.activity(owner, 100);
+      const ping = items.find((item) => item.requestId === requestId);
+      if (!ping) return;
+
+      // El titular también puede responder una prueba escalada. La verificación exige la respuesta final del agente.
+      const { status, events } = ping;
+      const verified = (status === "answered" || status === "no_data") &&
+        events.some((event) => event.kind === "response" && event.status === status);
+      if (status !== "awaiting_agent" && status !== "awaiting_owner") {
+        telemetry.emit("web.agent.ping", { attrs: { stage: "finished", outcome: status, verified } });
+      }
+      return { status, verified };
+    } catch (error) {
+      const errorId = telemetry.error("web.agent.read_ping_status", error);
+      span.setErrorId(errorId);
+      return { errorId };
+    }
+  });
 }
