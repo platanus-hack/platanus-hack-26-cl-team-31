@@ -335,9 +335,7 @@ async function meetingInbox(a) {
   for (const m of res.ok.meetings) {
     observe(m, res.reqId);
     inv.check("inbox_only_own_meetings", m.participants.includes(a.id), res.reqId, { id: m.id });
-    // WARN conocido: meeting_inbox elige ids pendientes y luego carga cada encuentro en otra sentencia
-    // (READ COMMITTED), así que puede devolver uno que otro participante acaba de cerrar.
-    inv.warn("inbox_only_pending", m.status === "collecting" || m.status === "proposed", res.reqId, { id: m.id, status: m.status });
+    inv.check("inbox_only_pending", m.status === "collecting" || m.status === "proposed", res.reqId, { id: m.id, status: m.status });
     const proposal = proposals.get(m.id);
     if (m.status === "collecting") {
       const r = await call(a, "meeting_respond", { id: m.id });

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { defineTool } from "./tool.js";
 
 // Pairs (requester, recipient, group) where the requester may ask and the recipient shares in that group.
-const grants = `
+export const grants = `
   SELECT asker.person_id AS requester, owner.person_id AS recipient, asker.group_id
   FROM memberships asker
   JOIN memberships owner ON owner.group_id = asker.group_id

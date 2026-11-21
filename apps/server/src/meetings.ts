@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { groupAllowed, isFree, personId, readAvailability } from "./availability.js";
+import { grants, groupAllowed, isFree, personId, readAvailability } from "./availability.js";
 import { defineTool } from "./tool.js";
 
 type Status = "collecting" | "no_shared_slot" | "proposed" | "declined" | "confirmed";
@@ -18,11 +18,13 @@ type Meeting = MeetingRow & { participants: string[] };
 const denied = { status: "not_shareable" } as const;
 const meetingId = z.object({ id: z.uuid() });
 
+const meetingWithParticipants = `
+  SELECT m.*, ARRAY(SELECT person_id FROM meeting_participants
+                    WHERE meeting_id = m.id ORDER BY person_id) AS participants
+  FROM meetings m`;
+
 async function loadMeeting(db: PoolClient, id: string, me: string, lock = false) {
-  const result = await db.query<Meeting>(`
-    SELECT m.*, ARRAY(SELECT person_id FROM meeting_participants
-                      WHERE meeting_id = m.id ORDER BY person_id) AS participants
-    FROM meetings m
+  const result = await db.query<Meeting>(`${meetingWithParticipants}
     WHERE m.id = $1 AND EXISTS (SELECT 1 FROM meeting_participants
                                 WHERE meeting_id = m.id AND person_id = $2)
     ${lock ? "FOR UPDATE OF m" : ""}
@@ -79,18 +81,19 @@ const propose = defineTool("meeting_propose", "Propose time options to members o
 });
 
 const inbox = defineTool("meeting_inbox", "List meetings awaiting your availability or decision.", z.object({}), async (db, me) => {
-  const { rows } = await db.query<{ id: string }>(`
-    SELECT m.id FROM meetings m JOIN meeting_participants p ON p.meeting_id = m.id
+  // Pending state, group permissions and returned details must come from the same snapshot.
+  const { rows } = await db.query<Meeting>(`${meetingWithParticipants}
+    JOIN meeting_participants p ON p.meeting_id = m.id
     WHERE p.person_id = $1 AND ((m.status = 'collecting' AND p.free_slots IS NULL)
-                            OR (m.status = 'proposed' AND p.accepted IS NULL))
+                             OR (m.status = 'proposed' AND p.accepted IS NULL))
+      AND NOT EXISTS (
+        SELECT person_id FROM meeting_participants WHERE meeting_id = m.id AND person_id <> m.organizer
+        EXCEPT
+        SELECT recipient FROM (${grants}) g WHERE requester = m.organizer AND g.group_id = m.group_id
+      )
     ORDER BY m.id
   `, [me]);
-  const meetings = [];
-  for (const { id } of rows) {
-    const meeting = await loadMeeting(db, id, me);
-    if (meeting) meetings.push(view(meeting));
-  }
-  return { meetings };
+  return { meetings: rows.map(view) };
 });
 
 const respond = defineTool("meeting_respond", "Check your calendar for a meeting in your inbox.", meetingId, async (db, me, { id }) => {
