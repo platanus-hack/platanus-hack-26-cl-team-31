@@ -235,7 +235,7 @@ Todos los servicios están instrumentados (ADM-07). Al tocar uno, extiende su te
 | Servicio | Dónde | Eventos |
 | --- | --- | --- |
 | broker HTTP (`broker`) y worker (`worker`) | `apps/broker/src/telemetry.ts`, `http/server.ts`, `http/auth.ts` | `http.request`, `auth.service_jwt.rejected`, `http.rate_limited`, `error` (con `X-Error-Id`) y latido de cada servicio |
-| core del broker | `packages/broker/src/core/events.ts` (`BrokerDeps.telemetry`, opcional) | `broker.policy.evaluated`, `broker.request.created`/`status_changed`/`closed`, `broker.reply.rejected`, `broker.owner.decided`, `admin.action`, `auth.scope.denied`. Se registran dentro de la transacción y se emiten solo si confirma |
+| core del broker | `packages/broker/src/core/events.ts` (`BrokerDeps.telemetry`, opcional) | `broker.policy.evaluated`, `broker.request.created`/`status_changed`/`closed`, `broker.reply.rejected`, `broker.owner.decided`, `broker.agent.connected`/`revoked`, `admin.action`, `auth.scope.denied`. Se registran dentro de la transacción y se emiten solo si confirma |
 | avisos | `packages/wake` (`createWaker({ telemetry })`, inyectada) | `wake.attempt` (span por intento) y `wake.exhausted` |
 | MCP | `apps/mcp/src/http.ts`, `tools/result.ts`, `events.ts` | `http.request`, `auth.token.verified`/`rejected`, `mcp.tool.call` (también `events/*`), `auth.scope.denied`. En stdio la telemetría nunca va a stdout |
 | web | `apps/web/src/lib/telemetry.ts` (singleton), `instrumentation.ts` | `http.request` (`observeRoute`), `auth.oauth.consent`, `error` (también `onRequestError`) |
@@ -246,8 +246,9 @@ Las llamadas internas al broker usan `tracedFetch` (opción `fetch` de `createAg
 ## Visualizador del flujo (`packages/agent-flow`)
 
 - Repetición pública en la landing (sección **En vivo**) y en `/embed/flujo` (iframe con `?autoplay&loop&speed&controls&panels&presence&owners`). Solo `/embed/*` envía `Content-Security-Policy: frame-ancestors *` (`apps/web/next.config.ts`).
-- Modo en vivo en el admin, página **Flujo** (`/flujo`): reutiliza `/api/admin/live`, `users`, `agents` y `requests/:id` con la sesión de admin. No hay endpoint público en vivo.
-- Un evento nuevo del catálogo que deba verse en el grafo se agrega en `packages/agent-flow/src/telemetry.ts` (mapeo y lista blanca de atributos) con su prueba. Contrato de datos, presencia y pendientes del modo en vivo: [README del paquete](packages/agent-flow/README.md). Guía de presentación: [docs/agent-flow.md](docs/agent-flow.md).
+- Modo en vivo en el admin, página **Flujo** (`/flujo`, rol viewer): `GET /api/admin/flow/snapshot` (foto de la red con cursor) y `GET /api/admin/flow/live` (SSE filtrado por nombre en SQL, attrs recortados con `projectFlowRow`, reanuda con `Last-Event-ID`). No hay endpoint público en vivo. Diseño, orden, huecos y regla de presencia: [docs/admin.md §7.1](docs/admin.md#71-flujo-en-vivo-flujo).
+- Presencia: `broker.agent.connected` (se crea la conexión) y `broker.agent.revoked` (primera revocación) se registran dentro de la transacción del broker. La inactividad nunca saca a alguien de la red.
+- Un evento nuevo del catálogo que deba verse en el grafo se agrega en `packages/agent-flow/src/telemetry.ts` (`flowEventNames`, `flowAttrKeys` y el mapeo) con su prueba: el servidor del admin filtra y recorta con esas mismas listas. Contrato de datos: [README del paquete](packages/agent-flow/README.md). Guía de presentación: [docs/agent-flow.md](docs/agent-flow.md).
 - `pnpm --filter @team-31/agent-flow test|typecheck|build`. Sin variables de entorno nuevas.
 
 ## Admin y observabilidad

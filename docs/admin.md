@@ -57,7 +57,7 @@ Decisiones (Philosophy of Software Design):
 
 ### 2.1 `ops.events` (ya creada en `packages/ops/sql/0001_events.sql`)
 
-Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name`, `level`, `trace_id`, `span_id`, `parent_span_id`, `request_id`, `user_id`, `agent_id`, `duration_ms`, `status`, `error_id`, `attrs` (jsonb ≤ 8 KB, solo escalares declarados en el catálogo). Retención: `TELEMETRY_RETENTION_DAYS` (14 por defecto), la poda el servidor admin una vez por hora con `ops.prune_events(interval)`.
+Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name`, `level`, `trace_id`, `span_id`, `parent_span_id`, `request_id`, `user_id`, `agent_id`, `duration_ms`, `status`, `error_id`, `attrs` (jsonb ≤ 8 KB, solo escalares declarados en el catálogo). Retención: `TELEMETRY_RETENTION_DAYS` (14 por defecto), la poda el servidor admin una vez por hora con `ops.prune_events(interval)`. Índices: `at`, `trace_id`, `(request_id, id)`, `(user_id, at)`, `(kind, name, at)`, `error_id`, `(service, at)` y `(name, id)` (0012, para las colas filtradas por nombre del flujo en vivo y de Eventos).
 
 ### 2.2 Vistas (ADM-02)
 
@@ -133,6 +133,8 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `broker.contact.connected` / `broker.contact.removed` | policy | sin atributos; `requestId` y `userId` en el sobre |
 | `broker.contact.tagged` / `broker.tag.preset_set` | policy | tag, categories (cantidad) |
 | `broker.circle.changed` | policy | circleId, action (`created` \| `deleted` \| `invited` \| `joined` \| `removed`) |
+| `broker.agent.connected` | lifecycle | kind (tipo de aviso al crearse: `none`). Se emite una vez por conexión, cuando la primera llamada autenticada del agente la crea; `userId` y `agentId` en el sobre. Presencia: el agente entra a la red |
+| `broker.agent.revoked` | lifecycle | by (`owner` \| `admin`). Solo la primera revocación. Presencia: el agente sale de la red |
 | `broker.channel.set` | lifecycle | channel (`whatsapp`), kind (tipo de aviso); nunca la URL ni el secreto |
 | `wake.attempt` | wake | kind, attempt, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
@@ -146,6 +148,7 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `demo.contact.seeded` | lifecycle | action (`rules`, `address` o `wake`), userId y agentId de la identidad ficticia |
 | `error` | error | operation, type, issues, frames |
 | `admin.login` / `admin.logout` / `admin.reveal` / `admin.action` / `admin.token.created` / `admin.token.revoked` / `admin.mcp.call` | admin | action, target, tool |
+| `admin.live.opened` / `admin.live.closed` | admin | stream (`events` \| `flow`), resumed, reset · reason (`client` \| `shutdown` \| `error` \| `stalled`), delivered; `userId` = id del admin, `durationMs` al cerrar |
 
 Prohibido en attrs y en cualquier log: tokens, encabezados `Authorization`, nonces, secretos de aviso, `args`, `result`, texto libre (pregunta, propósito, motivo, nota, respuesta), URLs completas de aviso.
 
@@ -206,6 +209,7 @@ La tabla completa está en `adminRoutes` (`apps/admin/shared/contract.ts`). Resu
 | `POST /api/admin/requests/:id/rewake` · `/expire` | operator + fresca | Acción en el broker |
 | `GET /api/admin/traces/:id` | viewer | Spans de todos los servicios para cascada |
 | `GET /api/admin/events` · `/live` (SSE) | viewer | Historial y cola en vivo de `ops.events` (cursor por id, `Last-Event-ID`) |
+| `GET /api/admin/flow/snapshot` · `/flow/live` (SSE) | viewer | Página Flujo: foto de la red (personas con dirección, conexiones activas y revocadas en 24 h, solicitudes abiertas o de los últimos 15 min) con el cursor de `ops.events` · cola filtrada por nombre en SQL con attrs recortados a la lista blanca del grafo (ver 7.1) |
 | `GET /api/admin/errors` · `/errors/:id` | viewer | Errores agrupados · un error por `errorId` |
 | `GET /api/admin/users` · `/users/:id` | viewer | Personas, identidad OAuth, reglas, agentes y solicitudes recientes |
 | `GET /api/admin/agents` · `POST /agents/:userId/:agentId/revoke` | viewer · operator | Conexiones y salud de avisos · revocar |
@@ -268,6 +272,7 @@ React 19 + Vite + Tailwind 4 + shadcn (preset Nova, Radix, Geist). Usa la skill 
 | Solicitudes (lista + detalle en sheet o página) | data table, badge por estado, tabs (Línea de tiempo · Avisos · Política · Payload), dialog «Revelar» con motivo, alert-dialog para acciones |
 | Trazas | cascada propia (divs con ancho proporcional), tooltip |
 | En vivo | EventSource sobre `/api/admin/live`, filtros con select y toggle-group, pausa |
+| Flujo | `@team-31/agent-flow` en modo `live` sobre `/api/admin/flow/*` (ver 7.1) |
 | Errores | table agrupada, sheet con frames |
 | Personas / Agentes / Avisos | data table, hover-card |
 | Auditoría | table |
@@ -275,6 +280,23 @@ React 19 + Vite + Tailwind 4 + shadcn (preset Nova, Radix, Geist). Usa la skill 
 | Global | command (⌘K), sonner, dropdown-menu de usuario, theme toggle |
 
 Colores de estado con tokens semánticos: `answered` verde, `no_data` gris, `declined`/`denied` ámbar, `expired`/`delivery_failed` rojo, `awaiting_*` azul.
+
+### 7.1 Flujo en vivo (`/flujo`)
+
+Grafo de la red y de cada solicitud que cruza el broker (`packages/agent-flow`). Lo que ve un viewer es lo mismo que ya ve en Personas, Agentes, Solicitudes y Eventos: direcciones, nombres, etiquetas, códigos, ids y latencias. Nunca contenido.
+
+**Servidor** (`apps/admin/server/live.ts`, mismo motor que `/live`):
+
+- Filtro en SQL: `name = ANY(flowEventNames)` (índice `(name, id)`). Las `coordination.tool.call` que no son `ask_contact`/`await_contact` se descartan antes de salir (`isFlowRow`) y cada fila sale con `attrs` recortado a `flowAttrKeys` (`projectFlowRow`). Ambas listas viven en `packages/agent-flow/src/telemetry.ts`, junto al mapeo.
+- Antes del primer evento de cada solicitud manda `event: request` con `FlowRequestRef` (quién pregunta y a quién): el navegador no pide `/requests/:id` por cada solicitud.
+- Orden y huecos: `id` de cada mensaje = `ops.events.id`; reanuda con `Last-Event-ID` o `?after=`. Como los lotes de cada servicio confirman en cualquier orden, cada lectura relee los últimos 3 s y descarta lo ya enviado (una escritura que confirma tarde no se pierde). Si al reanudar faltan más de 50.000 ids, manda `event: reset` y sigue desde el último.
+- Contrapresión: cada escritura espera al cliente; uno que no lee en 30 s se corta (`reason: stalled`). Máximo 6 streams por admin (`429`). Cada conexión deja `admin.live.opened` y `admin.live.closed`; un error inesperado, `error` con su `errorId`.
+
+**Cliente** (`apps/admin/src/lib/flow-live.ts`): foto → stream desde su cursor → `createLiveFeed` (descarta ids repetidos y reordena por momento de ocurrencia dentro de 700 ms, así un span del MCP escrito después que los eventos del broker se dibuja en su lugar; el reloj de cada servicio solo afecta dentro de esa ventana). Si el navegador deja de reintentar, toma otra foto: con un corte menor a 60 s retoma desde el último id; si no (o con `reset`), desde el cursor nuevo y reconcilia la presencia. Refresca el directorio cada minuto y cuando aparece un usuario o agente desconocido. Guarda como mucho 4.000 pasos: al pasarse descarta los más viejos y el renderer conserva el estado (presencia incluida).
+
+**Presencia.** En la red = titular con dirección o agente con una conexión no revocada. Entra con `broker.agent.connected`, `whatsapp.link` `confirmed` o su primera aparición en un paso; sale con `broker.agent.revoked`, `whatsapp.link` `unlinked` o cuando un refresco del directorio lo trae revocado. La inactividad nunca saca a nadie: un agente sin pasos se ve como pasivo (atenuado y sin arista).
+
+URL: `?titulares=<dirección>,…` y `?ocultos=agent:<id>,…` guardan el filtro. El detalle de un paso enlaza a `/solicitudes/:id` y `/trazas/:id`. Pantalla completa con el botón o la tecla `f`.
 
 ## 8. Desarrollo local
 
