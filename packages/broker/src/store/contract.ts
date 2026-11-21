@@ -263,6 +263,76 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("registra la lectura ajena de la bóveda y la conserva tras borrar la categoría", async () => {
+      const id = randomUUID();
+      await store.tx(async tx => {
+        await tx.changeVault("bruno", id, { action: "create", name: "Salud" });
+        await tx.addContact("bruno", fromAddress);
+        await tx.changeVault("bruno", id, { action: "set_member", categoryId: id, address: fromAddress, allowed: true });
+
+        // Sin permiso sobre las entradas no hay visita.
+        await tx.sharedVault("eva@sideband.app", toAddress, id, now);
+        expect((await tx.vaultVisits("bruno", { limit: 10 })).visits).toEqual([]);
+
+        // La bóveda propia no es una visita.
+        await tx.sharedVault(toAddress, toAddress, id, now);
+        expect((await tx.vaultVisits("bruno", { limit: 10 })).visits).toEqual([]);
+
+        await tx.sharedVault(fromAddress, toAddress, undefined, now);
+        await tx.sharedVault(fromAddress, toAddress, id, now);
+        const read = await tx.vaultVisits("bruno", { limit: 10 });
+        expect(read.readers).toBe(1);
+        expect(read.visits.map(visit => visit.kind)).toEqual(["entries", "catalog"]);
+        expect(read.visits[0]).toMatchObject({ reader: fromAddress, categoryId: id, categoryName: "Salud" });
+        expect(read.visits[1]!.categoryId).toBeUndefined();
+
+        // Filtrar por categoría deja fuera el listado del catálogo.
+        expect((await tx.vaultVisits("bruno", { categoryId: id, limit: 10 })).visits).toHaveLength(1);
+
+        await tx.changeVault("bruno", id, { action: "delete", categoryId: id });
+        const after = await tx.vaultVisits("bruno", { limit: 10 });
+        expect(after.visits).toHaveLength(2);
+        expect(after.visits[0]).toMatchObject({ categoryId: id });
+        expect(after.visits[0]!.categoryName).toBeUndefined();
+      });
+    });
+
+    it("registra la lectura de una categoría pública por alguien que no es contacto", async () => {
+      const id = randomUUID();
+      const stranger = "eva@sideband.app";
+      await store.tx(async tx => {
+        await tx.changeVault("bruno", id, { action: "create", name: "Viajes" });
+        await tx.changeVault("bruno", id, { action: "set_visibility", categoryId: id, visibility: "public" });
+        expect((await tx.sharedVault(stranger, toAddress, id, now)).categories).toHaveLength(1);
+        expect((await tx.vaultVisits("bruno", { limit: 10 })).visits)
+          .toMatchObject([{ reader: stranger, kind: "entries", categoryId: id }]);
+      });
+    });
+
+    it("registra la descarga de un documento como visita", async () => {
+      const id = randomUUID();
+      const documentId = randomUUID();
+      await store.tx(async tx => {
+        await tx.changeVault("bruno", id, { action: "create", name: "Salud" });
+        await tx.addContact("bruno", fromAddress);
+        await tx.changeVault("bruno", id, { action: "set_member", categoryId: id, address: fromAddress, allowed: true });
+        const stored = await tx.putVaultDocument({
+          id: documentId, owner: "bruno", categoryId: id, fileName: "examen.pdf", sizeBytes: 3,
+          sha256: "a".repeat(64), content: Buffer.from("pdf"), idempotencyKey: "k1", createdAt: now,
+        });
+        expect(stored).not.toBeNull();
+        const query = { to: toAddress, categoryId: id, documentId } as const;
+
+        // Sin permiso no hay visita.
+        expect(await tx.sharedVaultDocument("eva@sideband.app", toAddress, query, now)).toBeNull();
+        expect((await tx.vaultVisits("bruno", { limit: 10 })).visits).toEqual([]);
+
+        expect(await tx.sharedVaultDocument(fromAddress, toAddress, query, now)).not.toBeNull();
+        expect((await tx.vaultVisits("bruno", { limit: 10 })).visits)
+          .toMatchObject([{ reader: fromAddress, kind: "document", categoryId: id }]);
+      });
+    });
+
     it("uses the same effective category access for roster, discovery and reading entries", async () => {
       const categoryId = randomUUID();
       const member = { action: "set_member", categoryId, address: fromAddress, allowed: true } as const;

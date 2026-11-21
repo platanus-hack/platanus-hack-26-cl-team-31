@@ -1,4 +1,4 @@
-import { Address, defaultVaultCategories, type OwnerVault, type Tag } from "@team-31/protocol";
+import { Address, defaultVaultCategories, type OwnerVault, type Tag, type VaultVisitKind, type VaultVisits } from "@team-31/protocol";
 import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit, seededTags, sortTags } from "./directory.js";
 import { activeAgentConflict, BrokerError, notFound } from "../errors.js";
 import { wakeClaim } from "./store.js";
@@ -24,6 +24,8 @@ type State = {
   channels: Map<string, ChannelRow>;
   documents: Map<string, VaultDocumentRow>;
   documentKeys: Map<string, string>;
+  // Kept in insertion order; the read returns the most recent first.
+  visits: { owner: string; reader: Address; categoryId: string | null; kind: VaultVisitKind; at: Date }[];
 };
 
 function pairKey(userId: string, name: string): string {
@@ -58,6 +60,12 @@ function transaction(state: State): StoreTx {
   }
 
   // Every holder starts with the default categories. A deleted default stays deleted.
+  // A read of one's own vault is not a visit. Every other authorized read is one.
+  function recordVisit(owner: string, reader: Address, to: Address, categoryId: string | null, kind: VaultVisitKind, at?: Date) {
+    if (!at || reader === to) return;
+    state.visits.push({ owner, reader, categoryId, kind, at });
+  }
+
   function vaultOf(owner: string): OwnerVault {
     if (!state.vaults.has(owner) && state.users.has(owner)) {
       state.vaults.set(owner, { categories: defaultVaultCategories.map(category => ({ ...category, visibility: "private", entries: [], tags: [] })) });
@@ -162,11 +170,11 @@ function transaction(state: State): StoreTx {
       }
       return true;
     },
-    async sharedVault(reader, to, id) {
+    async sharedVault(reader, to, id, at) {
       const owner = findUserByAddress(to)?.userId;
       if (!owner) return { categories: [] };
       // Listing shows every category. Opening one requires the read.
-      return { categories: vaultOf(owner).categories.filter(c => !id || id === c.id && canRead(owner, c, reader))
+      const result = { categories: vaultOf(owner).categories.filter(c => !id || id === c.id && canRead(owner, c, reader))
         .map(c => {
           const documents = id
             ? [...state.documents.values()]
@@ -191,6 +199,10 @@ function transaction(state: State): StoreTx {
             ...(documents.length ? { documents } : {}),
           };
         }) };
+      // The catalog is open, so listing it is itself the visit: the reader learned the names.
+      if (!id) recordVisit(owner, reader, to, null, "catalog", at);
+      else if (result.categories.length) recordVisit(owner, reader, to, id, "entries", at);
+      return result;
     },
     async putVaultDocument(row) {
       const key = pairKey(row.owner, row.idempotencyKey);
@@ -209,14 +221,31 @@ function transaction(state: State): StoreTx {
       state.documentKeys.set(key, row.id);
       return structuredClone(row);
     },
-    async sharedVaultDocument(reader, to, query) {
+    async sharedVaultDocument(reader, to, query, at) {
       const owner = findUserByAddress(to)?.userId;
       if (!owner) return null;
       const category = state.vaults.get(owner)?.categories.find(item => item.id === query.categoryId);
       if (!category || (reader !== to && !canRead(owner, category, reader))) return null;
       const document = state.documents.get(query.documentId);
       if (!document || document.owner !== owner || document.categoryId !== query.categoryId) return null;
+      recordVisit(owner, reader, to, document.categoryId, "document", at);
       return structuredClone(document);
+    },
+    async vaultVisits(owner, query): Promise<VaultVisits> {
+      const mine = state.visits.filter(visit => visit.owner === owner);
+      const named = new Map(vaultOf(owner).categories.map(category => [category.id, category.name]));
+      const page = mine.filter(visit => !query.categoryId || visit.categoryId === query.categoryId)
+        .slice(-query.limit).reverse();
+      return {
+        readers: new Set(mine.map(visit => visit.reader)).size,
+        visits: page.map(visit => ({
+          reader: visit.reader,
+          ...(visit.categoryId ? { categoryId: visit.categoryId } : {}),
+          ...(visit.categoryId && named.has(visit.categoryId) ? { categoryName: named.get(visit.categoryId)! } : {}),
+          kind: visit.kind,
+          at: visit.at.toISOString(),
+        })),
+      };
     },
     async searchPublicProfiles(query) {
       const term = normalizeSearch(query);
@@ -512,6 +541,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
+    visits: [],
     vaults: new Map(), memberRules: new Map(), users: new Map(), grants: [], contacts: new Map(), contactTags: new Map(), tags: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
     askReceipts: new Map(), events: [], wakes: new Map(), agents: new Map(), channels: new Map(), documents: new Map(), documentKeys: new Map(),
   };

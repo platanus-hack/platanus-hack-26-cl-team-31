@@ -1,11 +1,16 @@
-import { Address, defaultVaultCategories, type OwnerVault, type VaultCatalog, type VaultDocumentQuery } from "@team-31/protocol";
-import { and, DrizzleQueryError, eq, inArray, sql, type SQLWrapper } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import {
+  Address, defaultVaultCategories,
+  type OwnerVault, type VaultCatalog, type VaultDocumentQuery, type VaultVisitKind, type VaultVisits,
+} from "@team-31/protocol";
+import { and, countDistinct, desc, DrizzleQueryError, eq, inArray, sql, type SQLWrapper } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import { BrokerError } from "../../errors.js";
 import type { StoreTx } from "../store.js";
 import {
   users, friends, grants as g, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e, vaultDocuments as d, vaultMemberRules as r,
+  vaultVisits as v,
 } from "./schema.js";
 
 type Tx = Parameters<Parameters<ReturnType<typeof drizzle>["transaction"]>[0]>[0];
@@ -27,7 +32,7 @@ function categoryInfo<T extends { description: string }>({ description, ...categ
   return { ...category, ...(description ? { description } : {}) };
 }
 
-export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "putVaultDocument" | "sharedVaultDocument"> {
+export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "putVaultDocument" | "sharedVaultDocument" | "vaultVisits"> {
   const info = { id: c.id, name: c.name, description: c.description, visibility: c.visibility };
   // Serialize name resolution (including an absent name) with category creation, rename and deletion.
   const lockNames = (owner: string) => db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}, 417))`);
@@ -37,6 +42,12 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       .where(and(eq(users.userId, owner), eq(users.vaultSeeded, false))).returning({ userId: users.userId });
     if (first) await db.insert(c).values(defaultVaultCategories.map(category => ({ owner, ...category }))).onConflictDoNothing();
   }
+  // A read of one's own vault is not a visit. Every other authorized read is one.
+  function recordVisit(owner: string, reader: Address, to: Address, categoryId: string | null, kind: VaultVisitKind, at?: Date) {
+    if (!at || reader === to) return;
+    return db.insert(v).values({ id: randomUUID(), owner, readerAddress: reader, categoryId, kind, visitedAt: at });
+  }
+
   async function vaultCatalog(owner: string, forNameResolution = false): Promise<VaultCatalog> {
     if (forNameResolution) await lockNames(owner);
     await seedDefaults(owner);
@@ -124,7 +135,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       }
       return true;
     },
-    async sharedVault(reader, to, id) {
+    async sharedVault(reader, to, id, at) {
       // Authorization is part of the same SELECT that reads entries. A tag from an outgoing
       // invitation is insufficient for a private category: the reader must also be an accepted contact.
       const owner = db.select({ owner: users.userId }).from(users).where(eq(users.address, to));
@@ -134,21 +145,24 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
         // The catalog is open to any Sideband user, so a holder who never opened the vault still shows the defaults.
         const [holder] = await db.select({ userId: users.userId }).from(users).where(eq(users.address, to));
         if (holder) await seedDefaults(holder.userId);
+        // The catalog is open, so listing it is itself the visit: the reader learned the names.
+        if (holder) await recordVisit(holder.userId, reader, to, null, "catalog", at);
         // Drizzle drops the table name from columns written directly in a single-table selection.
         // Nesting the predicate keeps them qualified, which the correlated subqueries need.
         const rows = await db.select({ ...info, canRead: sql<boolean>`${readable}` }).from(c)
           .where(inArray(c.owner, owner)).orderBy(c.name, c.id);
         return { categories: rows.map(categoryInfo) };
       }
-      const rows = await db.select({ ...info, entry: { label: e.label, value: e.value } }).from(c)
+      const rows = await db.select({ ...info, owner: c.owner, entry: { label: e.label, value: e.value } }).from(c)
         .leftJoin(e, and(eq(e.owner, c.owner), eq(e.id, c.id))).where(and(visible, eq(c.id, id))).orderBy(e.label);
       if (!rows[0]) return { categories: [] };
+      await recordVisit(rows[0].owner, reader, to, id, "entries", at);
       const documents = await db.select({
         id: d.id, fileName: d.fileName, mimeType: d.mimeType, sizeBytes: d.sizeBytes, sha256: d.sha256, createdAt: d.createdAt,
       }).from(d).innerJoin(c, and(eq(c.owner, d.owner), eq(c.id, d.categoryId)))
         .where(and(visible, eq(d.categoryId, id)))
         .orderBy(d.createdAt, d.id);
-      const { entry: _, ...category } = rows[0];
+      const { entry: _, owner: __, ...category } = rows[0];
       return {
         categories: [{
           ...categoryInfo(category),
@@ -184,7 +198,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       }
       return { ...stored, mimeType: stored.mimeType ?? undefined };
     },
-    async sharedVaultDocument(reader, to, query: VaultDocumentQuery) {
+    async sharedVaultDocument(reader, to, query: VaultDocumentQuery, at?: Date) {
       const owner = db.select({ owner: users.userId }).from(users).where(eq(users.address, to));
       const allowed = reader === to ? sql<boolean>`true` : canRead(sql`${reader}`);
       const [document] = await db.select({
@@ -193,7 +207,30 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       }).from(d).innerJoin(c, and(eq(c.owner, d.owner), eq(c.id, d.categoryId))).where(and(
         eq(d.id, query.documentId), eq(d.categoryId, query.categoryId), inArray(c.owner, owner), allowed,
       ));
-      return document ? { ...document, mimeType: document.mimeType ?? undefined } : null;
+      if (!document) return null;
+      await recordVisit(document.owner, reader, to, document.categoryId, "document", at);
+      return { ...document, mimeType: document.mimeType ?? undefined };
+    },
+
+    async vaultVisits(owner, query): Promise<VaultVisits> {
+      const mine = eq(v.owner, owner);
+      const rows = await db.select({
+        reader: v.readerAddress, categoryId: v.categoryId, categoryName: c.name, kind: v.kind, at: v.visitedAt,
+      }).from(v).leftJoin(c, and(eq(c.owner, v.owner), eq(c.id, v.categoryId)))
+        .where(and(mine, query.categoryId ? eq(v.categoryId, query.categoryId) : undefined))
+        .orderBy(desc(v.seq)).limit(query.limit);
+      // Distinct readers over the whole history, not over the returned page.
+      const [totals] = await db.select({ readers: countDistinct(v.readerAddress) }).from(v).where(mine);
+      return {
+        readers: Number(totals?.readers ?? 0),
+        visits: rows.map(row => ({
+          reader: Address.parse(row.reader),
+          ...(row.categoryId ? { categoryId: row.categoryId } : {}),
+          ...(row.categoryName ? { categoryName: row.categoryName } : {}),
+          kind: row.kind as VaultVisitKind,
+          at: row.at.toISOString(),
+        })),
+      };
     },
   };
 }

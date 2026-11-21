@@ -1,6 +1,6 @@
 import type {
   ActivityEvent, AgentContacts, Contact,
-  OwnerVault, VaultCatalog, VaultChange, VaultResult, VaultDocumentQuery,
+  OwnerVault, VaultCatalog, VaultChange, VaultResult, VaultVisits, VaultDocumentQuery,
   Address,
   Category,
   ChannelName,
@@ -157,9 +157,11 @@ export interface StoreTx {
   vaultMembers(owner: string, categoryId: string): Promise<Address[] | null>;
   ownerVault(owner: string): Promise<OwnerVault>;
   changeVault(owner: string, id: string, change: VaultChange): Promise<boolean>;
-  sharedVault(reader: Address, to: Address, categoryId?: string): Promise<VaultResult>;
+  // `at` turns the read into a recorded visit. Callers that only need the data leave it out.
+  sharedVault(reader: Address, to: Address, categoryId?: string, at?: Date): Promise<VaultResult>;
   putVaultDocument(row: VaultDocumentRow): Promise<VaultDocumentRow | null>;
-  sharedVaultDocument(reader: Address, to: Address, query: VaultDocumentQuery): Promise<VaultDocumentRow | null>;
+  sharedVaultDocument(reader: Address, to: Address, query: VaultDocumentQuery, at?: Date): Promise<VaultDocumentRow | null>;
+  vaultVisits(owner: string, query: { categoryId?: string; limit: number }): Promise<VaultVisits>;
   searchPublicProfiles(query: string): Promise<PublicProfile[]>;
   getUser(userId: string): Promise<UserRow | null>;
   getUserByAddress(address: Address): Promise<UserRow | null>;

@@ -96,6 +96,22 @@ export const vaultDocuments = sideband.table("vault_documents", {
   check("vault_documents_size_check", sql`${t.sizeBytes} >= 0 AND ${t.sizeBytes} <= 5242880`),
 ]);
 
+// One row per authorized read of a holder's vault by somebody else. Deliberately without a
+// foreign key to vault_categories: deleting a category must not erase who had already seen it.
+export const vaultVisits = sideband.table("vault_visits", {
+  id: text("visit_id").primaryKey(),
+  // Reads inside one transaction share a timestamp, so the sequence is what orders them.
+  seq: bigserial("seq", { mode: "number" }).notNull(),
+  owner: text("owner_id").notNull().references(() => users.userId),
+  readerAddress: text("reader_address").notNull(),
+  categoryId: text("category_id"),
+  kind: text("kind").notNull(),
+  visitedAt: time("visited_at").notNull(),
+}, (t) => [
+  index("vault_visits_owner_idx").on(t.owner, t.seq.desc()),
+  check("vault_visits_kind_check", sql`${t.kind} in (${values(["catalog", "entries", "document"])})`),
+]);
+
 export const friends = sideband.table("friends", {
   userId: text("user_id").notNull().references(() => users.userId),
   address: text("address").notNull(),

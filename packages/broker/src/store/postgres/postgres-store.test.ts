@@ -396,7 +396,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
   it("keeps the first active agent and preserves previously revoked history when migrating", async () => {
     await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
-    await isolated.query("DROP TABLE IF EXISTS sideband.message_turns, sideband.ask_receipts, sideband.quota_windows");
+    await isolated.query("DROP TABLE IF EXISTS sideband.vault_visits, sideband.message_turns, sideband.ask_receipts, sideband.quota_windows");
     await isolated.query("DELETE FROM sideband.__drizzle_migrations WHERE id >= 11");
     const base = { userId: "alice", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now } as const;
     await store.tx(async tx => {
@@ -422,7 +422,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
     await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
-    await isolated.query("DROP TABLE IF EXISTS sideband.message_turns, sideband.ask_receipts, sideband.quota_windows");
+    await isolated.query("DROP TABLE IF EXISTS sideband.vault_visits, sideband.message_turns, sideband.ask_receipts, sideband.quota_windows");
     await isolated.query("DROP TABLE sideband.vault_contact_group_permissions, sideband.vault_contact_group_members, sideband.vault_contact_groups");
     await isolated.query("DROP TABLE sideband.vault_permissions, sideband.vault_entries, sideband.vault_categories");
     await isolated.query("DROP TABLE sideband.channels");
