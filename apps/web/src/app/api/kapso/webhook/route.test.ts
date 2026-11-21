@@ -187,3 +187,22 @@ it.each(["status", "send", "list"])("procesa el comando aunque falle una entrega
   expect(broker.contacts).toHaveBeenCalledExactlyOnceWith({ userId: linkedUser });
   expect(JSON.parse(send.mock.calls.at(-1)![1].body).text.body).toContain("Aún no tienes contactos");
 });
+
+it("keeps channel registration retryable after a broker failure", async () => {
+  linkedUser = "user-a";
+  vi.stubEnv("WHATSAPP_NOTICE_SECRET", "whsec_test");
+  const linkId = "0b6f3c1e-8d2a-4f6b-9c1d-2e3f4a5b6c7d";
+  const outcomes: boolean[] = [];
+  store.registerChannel.mockImplementation(async (_link, register) => {
+    outcomes.push(await register(linkedUser, linkId));
+  });
+  broker.setChannel.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(undefined);
+  broker.contacts.mockResolvedValue({ contacts: [] });
+  for (let i = 0; i < 2; i++) {
+    await POST(inbound("contactos"));
+    await (vi.mocked(after).mock.calls.at(-1)![0] as () => Promise<void>)();
+  }
+  expect(outcomes).toEqual([false, true]);
+  expect(broker.setChannel.mock.calls[1]).toEqual(broker.setChannel.mock.calls[0]);
+  expect(broker.contacts).toHaveBeenCalledTimes(2);
+});
