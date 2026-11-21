@@ -49,20 +49,28 @@ function filteredFrame(frame: string): string | undefined {
   return `event: activity\n${version}data: ${JSON.stringify(item.data)}\n\n`;
 }
 
-export function activityStream(body: ReadableStream<Uint8Array>, signal: AbortSignal) {
+export function activityStream(body: ReadableStream<Uint8Array>, signal: AbortSignal, hasAccess: () => Promise<boolean>) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
 
   return body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
+    async transform(chunk, controller) {
       buffer += decoder.decode(chunk, { stream: true });
 
       let separator: RegExpExecArray | null;
+      let checked = false;
       while ((separator = frameEnd.exec(buffer))) {
         const output = filteredFrame(buffer.slice(0, separator.index));
         buffer = buffer.slice(separator.index + separator[0].length);
-        if (output) controller.enqueue(encoder.encode(output));
+        if (output) {
+          if (!checked && !await hasAccess()) {
+            controller.terminate();
+            return;
+          }
+          checked = true;
+          controller.enqueue(encoder.encode(output));
+        }
       }
     },
   }), { signal });

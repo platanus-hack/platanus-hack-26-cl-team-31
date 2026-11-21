@@ -1,6 +1,6 @@
 import { routes } from "@team-31/protocol/http";
 
-import { getSession } from "../../../../lib/auth";
+import { getStreamSession } from "../../../../lib/auth";
 import { brokerFetch, brokerUrl, signServiceToken } from "../../../../lib/broker";
 import { getTelemetry, observeRoute } from "../../../../lib/telemetry";
 import { activityStream } from "./activity-stream";
@@ -18,7 +18,7 @@ function emptyResponse(status: number, headers: Record<string, string> = {}) {
 
 export function GET(request: Request) {
   return observeRoute(request, route, async () => {
-    const session = await getSession();
+    const session = await getStreamSession(request.headers);
     if (!session) return emptyResponse(401);
     const telemetry = getTelemetry();
     telemetry.identify({ userId: session.user.id });
@@ -38,7 +38,17 @@ export function GET(request: Request) {
         return emptyResponse(502);
       }
 
-      return new Response(activityStream(upstream.body, request.signal), { headers: streamHeaders });
+      const hasAccess = async () => {
+        try {
+          const current = await getStreamSession(request.headers);
+          if (current?.session.id === session.session.id && current.user.id === session.user.id) return true;
+          telemetry.emit("auth.token.rejected", { userId: session.user.id, attrs: { issuer: "web_session", reason: "access_ended" } });
+        } catch (error) {
+          telemetry.error("cable.session", error, { userId: session.user.id });
+        }
+        return false;
+      };
+      return new Response(activityStream(upstream.body, request.signal, hasAccess), { headers: streamHeaders });
     } catch (error) {
       // A browser that leaves before the broker answers is not an error.
       if (request.signal.aborted) return emptyResponse(502);
