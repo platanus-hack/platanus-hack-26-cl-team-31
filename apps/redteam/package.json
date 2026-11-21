@@ -1,0 +1,27 @@
+{
+  "name": "@team-31/redteam",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "live": "pnpm -w with-env sh -c 'REDTEAM_LIVE=1 pnpm --filter @team-31/redteam exec vitest run src/live.test.ts'",
+    "agents": "pnpm -w with-env sh -c 'REDTEAM_AGENTS_LIVE=1 pnpm --filter @team-31/redteam exec vitest run src/agents-live.test.ts'",
+    "judge": "pnpm -w with-env sh -c 'REDTEAM_JUDGE=1 pnpm --filter @team-31/redteam exec vitest run src/judge.test.ts'"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "1.12.0",
+    "@team-31/auth": "workspace:*",
+    "@team-31/broker": "workspace:*",
+    "@team-31/demo": "workspace:*",
+    "@team-31/protocol": "workspace:*",
+    "@team-31/telemetry": "workspace:*",
+    "@team-31/typescript-config": "workspace:*",
+    "@types/node": "24.19.2",
+    "jose": "6.2.15",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "zod": "4.6.7"
+  }
+}

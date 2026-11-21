@@ -14,6 +14,7 @@ El MVP conserva MCP, server y broker como servicios separados, con bóvedas aloj
 | `apps/server` | API de coordinación con contactos, membresías, calendario, publicaciones y reuniones en PostgreSQL. Hoy también autentica tokens de la seed y expone su propio adaptador MCP. | Conservar bóvedas, grupos y reuniones. Retirar el directorio y las publicaciones. Migrar los consumidores y el historial antes de retirar `people.token_hash`, `availability_requests` y `apps/server/src/mcp.ts`. |
 | `packages/protocol`, `packages/auth`, `packages/wake` | `protocol` define herramientas, grants y mensajes. `auth` implementa OAuth y JWT de servicio. `wake` envía avisos a agentes. | Conservar y reutilizar desde los servicios y sus clientes. |
 | `apps/admin`, `packages/telemetry`, `packages/ops` | Panel y MCP de administración, instrumentación y esquema operativo de PostgreSQL. | Conservar para seguir las solicitudes por `requestId`. |
+| `apps/redteam` | Harness red team / blue team del broker: catálogo de ataques contra cada guardrail (`política`, `stillAuthorized`, sanitize, nonce, firma, avisos, telemetría) con veredictos `contained`/`known_gap`. Corre contra el núcleo real en memoria y, con `pnpm --filter @team-31/redteam live`, contra el broker HTTP del worktree. Un `known_gap` que deje de fugarse hace fallar el test: mover el caso a `contained` y celebrar. | Conservar como pruebas de seguridad continuas; los gaps documentados son la deuda a cerrar. |
 | `apps/demo` | Ejecuta Contactos de Ana desde la CLI y el dashboard. Ambos llaman al broker del worktree. Web aloja el receptor de avisos de los contactos en desarrollo. | Conservar el escenario y los datos de prueba. Los grants y las solicitudes ya se mantienen en el broker persistente. |
 | `infra/`, `scripts/`, `packages/typescript-config`, `e2e/` | Preparación del entorno, comandos de desarrollo y ensayos, configuración TypeScript y pruebas del stack. | Conservar como soporte. Para probar OAuth, web, MCP y broker juntos, usar el [guion de scripts/demo](docs/demo.md). |
 
@@ -206,6 +207,10 @@ Desde un worktree preparado con `pnpm bootstrap`, inicia web y broker en el host
 - [`e2e/`](e2e/README.md) prueba el stack local con clientes MCP del SDK. La suite se ejecuta cuando se define `E2E_MCP_URL` y usa `BROKER_URL` y `WEB_SERVICE_PRIVATE_KEY` de un worktree de prueba.
 - `E2E_AUTH_MODE` vale `dev` por defecto. Para `oauth`, pasa los access tokens de cuentas de prueba en `E2E_OAUTH_TOKENS`. `E2E_ISOLATION_COUNT` controla cuántas solicitudes simultáneas se envían (80 por defecto).
 - El broker debe ejecutarse en el host para llamar a los receptores falsos, que usan un puerto efímero en loopback. Configura `WAKE_ALLOW_INSECURE=1`, `REQUEST_TTL_SECONDS=20` y `WAKE_RETRY_DELAYS_MS=0,0`.
+
+## Red team / blue team del broker
+
+[`apps/redteam`](apps/redteam/README.md) ataca cada guardrail con ataques dirigidos (sin grant, categoría cruzada, canarios ofuscados, reutilización de nonce, sobre falsificado…) y comprueba, caso por caso, que el flujo no entregó lo prohibido. Corre contra el núcleo real del broker en memoria (determinista, sin stack) dentro de `pnpm test`, contra el broker HTTP vivo con `pnpm --filter @team-31/redteam live`, y contra los agentes reales del demo con `pnpm --filter @team-31/redteam agents`. El juez LLM (`src/judge.ts`, solo con `pnpm --filter @team-31/redteam judge` y `ANTHROPIC_API_KEY`) relee lo entregado y mide si un redactor LLM cerraría los gaps. Los veredictos `known_gap` documentan vectores que hoy pasan; cerrar uno exige mover el caso a `contained` en el mismo PR que lo arregle.
 
 ## 🔭 Todo debe ser monitoreable por el admin (obligatorio)
 
