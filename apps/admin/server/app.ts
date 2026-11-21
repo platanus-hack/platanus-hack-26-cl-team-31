@@ -40,7 +40,10 @@ export function createAdminApp(deps: AdminAppDeps) {
 
   mountAdminMcp(app, {
     queries: deps.queries,
-    authenticate: (bearer) => deps.authenticateToken(bearer),
+    authenticate: async (bearer) => {
+      const principal = await deps.authenticateToken(bearer)
+      return principal && deps.roleOf(principal.createdBy) ? principal : null
+    },
     audit: async ({ actor, action, target }) => {
       await deps.audit.record({ actor: { type: "token", id: actor.tokenId, label: actor.label }, action, target })
     },

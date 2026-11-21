@@ -370,6 +370,9 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     ])
     expect(sink.find("admin.mcp.call")[0]).toMatchObject({ attrs: { action: "mcp:admin_services", tool: "admin_services" } })
 
+    allow.operators = []
+    expect((await call(token)).status).toBe(401)
+    allow.operators = ["op@test.cl"]
     await tokens.revoke(meta.id)
     const revoked = await call(token)
     expect(revoked.status).toBe(401)
