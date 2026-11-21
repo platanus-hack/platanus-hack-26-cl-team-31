@@ -62,9 +62,10 @@ export async function claimAddress(source: OnboardingSource, _: Feedback, form: 
 }
 
 export async function readHome() {
-  const broker = ownerClient();
-  const { data: [pending, activity, { incoming }] } = await readAsOwner((owner) =>
-    Promise.all([broker.pending(owner), broker.activity(owner, 4), broker.contacts(owner)]));
+  const { data: [pending, activity, { incoming }] } = await readAsOwner((owner) => {
+    const broker = ownerClient();
+    return Promise.all([broker.pending(owner), broker.activity(owner, 4), broker.contacts(owner)]);
+  });
   return [pending.filter((item) => item.tool !== "connect"), activity, incoming] as const;
 }
 
