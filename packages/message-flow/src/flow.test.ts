@@ -186,6 +186,67 @@ describe("turnos del titular", () => {
     expect(context.ops.ask).not.toHaveBeenCalled();
   });
 
+  it("lee una categoría de todos los contactos que la comparten y lista aparte a los demás", async () => {
+    const salud = randomUUID();
+    // Without a category name Claude is asked once with the shared names; omitting it asks the holder.
+    const interpret = vi.fn<InterpretMessage>().mockResolvedValue({ action: "vault", selector: { scope: "unspecified", count: "many" } });
+    const { run, context, ask } = harness(interpret);
+    // The second contact lists its «Salud» but does not let the holder read it.
+    const queryVault = vi.fn(async ({ to, categoryId }: { to: string; categoryId?: string }) => ({ categories: [{
+      id: to === ana ? salud : randomUUID(), name: "Salud", visibility: "private" as const, canRead: to === ana,
+      ...(categoryId ? { entries: [{ label: "Tipo de sangre", value: "O negativo" }] } : {}) }] }));
+    context.ops.queryVault = queryVault;
+    const choice = await run("¿Alguien tiene sangre O negativo?");
+    if (choice.kind !== "clarification") throw new Error("expected category choice");
+    expect(choice.choices).toEqual([{ label: "Salud", value: "Salud" }]);
+    expect(await run("1", choice.continuationId)).toEqual({
+      kind: "vaults", categoryName: "Salud", missing: [second],
+      items: [{ to: ana, data: { categories: [{ id: salud, name: "Salud", visibility: "private", canRead: true, entries: [{ label: "Tipo de sangre", value: "O negativo" }] }] } }],
+    });
+    expect(queryVault).toHaveBeenCalledWith({ to: ana, categoryId: salud });
+    expect(queryVault).not.toHaveBeenCalledWith(expect.objectContaining({ to: second, categoryId: expect.anything() }));
+    expect(ask).not.toHaveBeenCalled();
+
+    // A name that no contact shares as a category is the data: Claude picks among the shared names.
+    interpret.mockReset()
+      .mockResolvedValueOnce({ action: "vault", selector: { scope: "unspecified", count: "many" }, categoryName: "sangre" })
+      .mockResolvedValueOnce({ action: "vault", selector: { scope: "contacts", count: "many" }, categoryName: "Salud" });
+    expect(await run("¿Alguno de mis contactos tiene sangre O negativo?")).toMatchObject({ kind: "vaults", categoryName: "Salud", missing: [second] });
+    expect(interpret).toHaveBeenLastCalledWith("¿Alguno de mis contactos tiene sangre O negativo?",
+      expect.objectContaining({ expected: "categoryName", choices: ["Salud"] }));
+
+    // A pick outside the shared names asks the holder.
+    interpret.mockReset()
+      .mockResolvedValueOnce({ action: "vault", selector: { scope: "unspecified", count: "many" }, categoryName: "sangre" })
+      .mockResolvedValueOnce({ action: "vault", selector: { scope: "contacts", count: "many" }, categoryName: "Finanzas" });
+    expect(await run("¿Alguien tiene sangre O negativo?")).toMatchObject({
+      kind: "clarification", question: expect.stringContaining("«sangre»"), choices: [{ value: "Salud" }],
+    });
+  });
+
+  it("al repetir una lectura de varios contactos omite a quien ya no está en el conjunto", async () => {
+    const id = randomUUID();
+    let state: TurnState | undefined;
+    let replay = false;
+    const store: TurnStore = { run: async (_owner, _token, turn) => turn({ id, continuationId: id, previous: state, replay,
+      save: async next => { state = structuredClone(next); } }) };
+    const interpret = vi.fn<InterpretMessage>().mockResolvedValue({
+      action: "vault", selector: { scope: "friend", count: "many" }, categoryName: "salud",
+    });
+    const { context } = harness();
+    const ids: Record<string, string> = { [ana]: randomUUID(), [second]: randomUUID() };
+    context.ops.queryVault = vi.fn(async ({ to, categoryId }: { to: string; categoryId?: string }) => ({ categories: [{ id: ids[to]!, name: "Salud", visibility: "private" as const, canRead: true,
+      ...(categoryId ? { entries: [{ label: "Tipo de sangre", value: "O negativo" }] } : {}) }] }));
+    const flow = createMessageFlow({ interpret, store });
+    const input = { text: "¿Qué tienen mis amigos en Salud?" };
+    expect(await flow.handleMessage(context, input)).toMatchObject({ kind: "vaults", missing: [], items: [{ to: ana }, { to: second }] });
+    expect(JSON.stringify(state)).not.toContain("negativo");
+    replay = true;
+    context.ops.contacts = async () => ({ ...directory, contacts: directory.contacts.filter(({ address }) => address === second) });
+    expect(await flow.handleMessage(context, input)).toMatchObject({ kind: "vaults", items: [{ to: second }] });
+    expect(interpret).toHaveBeenCalledTimes(1);
+  });
+
   it("lista las bóvedas propias, abre una por nombre y pregunta cuál si el nombre no calza", async () => {
     const health = { id: "health", name: "Salud", description: "Alergias y tratamientos.", visibility: "private" as const, tags: [] };
     const wishes = { id: randomUUID(), name: "Deseos", visibility: "public" as const, tags: [] };

@@ -157,6 +157,14 @@ function openedVaultText(categories: OwnCategory[]): string {
   return categories.map(c => [vaultTitle(c), ...(c.entries?.length ? c.entries.map(e => `• ${e.label}: ${e.value}`) : ["Aún no guarda datos."])].join("\n")).join("\n\n");
 }
 
+function vaultsText({ categoryName, items, missing }: Extract<MessageReply, { kind: "vaults" }>): string {
+  const lines = items.flatMap(({ to, data }) => data.categories.map(c =>
+    `${to} · ${c.name}: ${c.entries?.map(e => `${e.label}: ${e.value}`).join("; ") || "aún no guarda datos"}`));
+  if (!lines.length) return `Ninguno de tus contactos te comparte «${categoryName}».`;
+  if (missing.length) lines.push(`No te comparten «${categoryName}»: ${missing.join(", ")}`);
+  return lines.join("\n");
+}
+
 function requestRepliesText(reply: Extract<MessageReply, { kind: "requests" }>): string {
   const lines = reply.items.map(summarize);
   for (const ref of reply.confirmed ?? []) lines.push(`Solicitud confirmada para ${ref.to}. ID ${ref.requestId}.`);
@@ -179,6 +187,8 @@ export function formatMessageReply(reply: MessageReply): string {
         `${c.name}${c.description ? `: ${c.description}` : ""}${c.canRead ? "" : " (sin acceso)"}`,
         ...(c.entries ?? []).map(e => `• ${e.label}: ${e.value}`),
       ].join("\n")).join("\n") || "No encontré categorías para esa consulta.";
+    case "vaults":
+      return vaultsText(reply);
     case "own_vault": {
       // Entries come only for an opened category.
       const { categories } = reply.data;

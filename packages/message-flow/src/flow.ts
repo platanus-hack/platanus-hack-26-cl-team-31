@@ -107,18 +107,62 @@ class Turn {
   // broker reconstructs the result from the current directory and permissions.
   private async readPlan(plan: ReadPlan): Promise<Step> {
     const ops = this.context.ops;
-    if (plan.action === "profiles" && !ops.searchProfiles || plan.action === "vault" && !ops.queryVault ||
+    if (plan.action === "profiles" && !ops.searchProfiles || (plan.action === "vault" || plan.action === "vaults") && !ops.queryVault ||
       plan.action === "own_vault" && !ops.ownVault) return this.unavailable("unsupported");
     await this.session.save({ phase: "read", plan });
     if (plan.action === "contacts") return this.finish({ kind: "contacts", data: await ops.contacts() });
     if (plan.action === "own_vault") return this.finish({ kind: "own_vault", data: await ops.ownVault!(plan.categoryId) });
     if (plan.action === "profiles") return this.finish({ kind: "profiles", items: await ops.searchProfiles!(plan.query) });
+    if (plan.action === "vaults") return this.readVaults(plan);
     if (plan.empty) return this.finish({ kind: "vault", data: { categories: [] } });
     if (this.session.replay) {
       const current = await resolveRecipients(plan.selector, () => ops.contacts(), plan.circleId, true);
       if (current.kind !== "resolved") return this.finish({ kind: "vault", data: { categories: [] } });
     }
     return this.finish({ kind: "vault", data: await ops.queryVault!({ to: plan.selector.person!, categoryId: plan.categoryId }) });
+  }
+
+  // A replay reads again only from contacts still in the original set.
+  private async readVaults(plan: Extract<ReadPlan, { action: "vaults" }>): Promise<Step> {
+    const ops = this.context.ops;
+    let reads = plan.reads;
+    if (this.session.replay) {
+      const current = await resolveRecipients(plan.selector, () => ops.contacts(), plan.circleId, true);
+      const members = new Set(current.kind === "resolved" ? current.targets : []);
+      reads = reads.filter(({ to }) => members.has(to));
+    }
+    const results = await Promise.all(reads.map(async ({ to, categoryId }) => ({ to, data: await ops.queryVault!({ to, categoryId }) })));
+    const items = [...new Set(results.map(({ to }) => to))].map(to => ({
+      to, data: { categories: results.filter(result => result.to === to).flatMap(({ data }) => data.categories) },
+    }));
+    return this.finish({ kind: "vaults", categoryName: plan.categoryName, items, missing: plan.missing });
+  }
+
+  // Each contact names its own categories, so a read from several contacts matches the name in every catalog.
+  // Contacts without that category are listed apart instead of asking about each one.
+  private async prepareVaults(intent: Extract<Intent, { action: "vault" }>): Promise<Step> {
+    const query = this.context.ops.queryVault!;
+    // Catalogs list every category of the contact; only the readable ones count.
+    const catalogs = await Promise.all(this.targets.map(async to => ({ to, categories: (await query({ to })).categories.filter(c => c.canRead) })));
+    const names = new Map(catalogs.flatMap(({ categories }) => categories).map(({ name }) => [normalized(name), name]));
+    let name = intent.categoryName;
+    // A name that no catalog has is usually the data itself («sangre»). Claude picks among the shared
+    // names once; only a pick outside them falls back to asking the holder.
+    if (names.size && (!name || !names.has(normalized(name)))) {
+      const picked = await this.telemetry.span("message.interpret", this.identity, async () => Intent.parse(await this.interpret(this.input.text, {
+        at: this.at, timezone: this.timezone, expected: "categoryName", draft: intent, choices: [...names.values()],
+      })));
+      const choice = picked.action === "vault" && picked.categoryName ? names.get(normalized(picked.categoryName)) : undefined;
+      if (choice) name = choice;
+    }
+    if (!name || names.size && !names.has(normalized(name))) {
+      return this.clarify({ field: "categoryId", choices: [...names.values()].map(label => ({ label, value: label })),
+        question: name ? `Nadie te comparte una categoría «${name}». ¿Cuál quieres leer?` : "¿Qué categoría compartida quieres leer?" });
+    }
+    const reads = catalogs.flatMap(({ to, categories }) => categories
+      .filter(category => normalized(category.name) === normalized(name)).map(category => ({ to, categoryId: category.id })));
+    const missing = this.targets.filter(to => !reads.some(read => read.to === to));
+    return this.readPlan({ action: "vaults", selector: intent.selector, circleId: this.circleId, categoryName: name, reads, missing });
   }
 
   // The single category named or chosen by the holder, or the options to ask about.
@@ -178,6 +222,7 @@ class Turn {
   async prepare(): Promise<Step> {
     const intent = this.intent;
     if (intent.action === "vault") {
+      if (intent.selector.count === "many") return this.prepareVaults(intent);
       const to = this.targets[0]!;
       const query = this.context.ops.queryVault!;
       const plan: ReadPlan = { action: "vault", selector: intent.selector, circleId: this.circleId };
