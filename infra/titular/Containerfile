@@ -1,0 +1,95 @@
+# Imagen «titular»: un contenedor = un CLI de agente = un titular de Sideband.
+#
+# Deriva de ~/my-github/os/ai-containers (Debian trixie, codex, claude-code y el
+# cortafuegos de egreso por ipset/iptables) con tres diferencias deliberadas:
+#
+#   1. Multiarquitectura. El original fija aarch64 en el tarball de codex y en Go.
+#      Aquí todo sale de TARGETARCH, porque la segunda máquina del proyecto es x86_64.
+#   2. Suma `pi`, igual que `claude-code`: un paquete npm global.
+#   3. Quita lo que un titular no usa: Go, opencode, gh y el reenvío del agente SSH.
+#      El contenedor no compila ni abre PRs; sólo conversa con Sideband.
+#
+# Node 24: trixie trae 20.19 y `pi` exige >= 22.19.
+
+FROM debian:trixie-slim
+
+ARG TARGETARCH
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    dnsutils \
+    jq \
+    tini \
+    iproute2 \
+    ipset \
+    iptables \
+    gosu \
+    tar \
+    xz-utils \
+    gzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node 24 oficial. nodejs.org nombra arm64/x64; Docker nombra arm64/amd64.
+ARG NODE_VERSION="v24.22.3"
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      arm64) node_arch="arm64" ;; \
+      amd64) node_arch="x64" ;; \
+      *) echo "Arquitectura no soportada: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-${node_arch}.tar.xz" -o /tmp/node.tar.xz; \
+    mkdir -p /usr/local/lib/nodejs; \
+    tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs; \
+    rm /tmp/node.tar.xz; \
+    ln -sf "/usr/local/lib/nodejs/node-${NODE_VERSION}-linux-${node_arch}/bin/node" /usr/local/bin/node; \
+    ln -sf "/usr/local/lib/nodejs/node-${NODE_VERSION}-linux-${node_arch}/bin/npm" /usr/local/bin/npm; \
+    ln -sf "/usr/local/lib/nodejs/node-${NODE_VERSION}-linux-${node_arch}/bin/npx" /usr/local/bin/npx; \
+    node --version
+
+ARG USERNAME=agent
+RUN useradd -m -s /bin/bash -U "${USERNAME}"
+
+WORKDIR /home/${USERNAME}/workspace
+RUN chown "${USERNAME}:${USERNAME}" /home/${USERNAME}/workspace
+
+# codex: binario por arquitectura.
+ARG CODEX_VERSION="rust-v0.87.0"
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      arm64) codex_target="aarch64-unknown-linux-gnu" ;; \
+      amd64) codex_target="x86_64-unknown-linux-gnu" ;; \
+      *) echo "Arquitectura no soportada: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/openai/codex/releases/download/${CODEX_VERSION}/codex-${codex_target}.tar.gz" -o /tmp/codex.tar.gz; \
+    tar -xzf /tmp/codex.tar.gz -C /usr/local/bin; \
+    mv "/usr/local/bin/codex-${codex_target}" /usr/local/bin/codex; \
+    chmod 0755 /usr/local/bin/codex; \
+    rm /tmp/codex.tar.gz; \
+    codex --version
+
+# claude-code y pi: ambos por npm global, igual que en la imagen base.
+ARG CLAUDE_CODE_VERSION="latest"
+ARG PI_VERSION="1.4.0"
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+    && npm cache clean --force \
+    && claude --version \
+    && pi --version
+
+# mock-mcp: sin dependencias, se copia tal cual (ver infra/titular/mock-mcp/README.md).
+COPY mock-mcp /opt/mock-mcp
+
+# Bloque de confianza: un texto canónico y tres encabezados por CLI.
+COPY instrucciones /etc/titular/instrucciones
+
+COPY allowed-domains.txt /etc/firewall/allowed-domains.txt
+COPY config-mcp.sh /usr/local/bin/config-mcp.sh
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/config-mcp.sh
+
+ENV CONTAINER_USER="${USERNAME}"
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+CMD ["bash", "-l"]
