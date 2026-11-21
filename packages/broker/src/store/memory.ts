@@ -20,6 +20,15 @@ function byCreatedAt(a: RequestRow, b: RequestRow): number {
 }
 
 function transaction(state: State): StoreTx {
+  function putAgent(row: AgentConnectionRow): AgentConnectionRow {
+    if (!state.users.has(row.userId)) {
+      state.users.set(row.userId, { userId: row.userId, createdAt: structuredClone(row.createdAt) });
+    }
+    const stored = structuredClone(row);
+    state.agents.set(agentKey(row.userId, row.agentId), stored);
+    return stored;
+  }
+
   return {
     async getUser(userId) {
       return structuredClone(state.users.get(userId) ?? null);
@@ -104,15 +113,11 @@ function transaction(state: State): StoreTx {
       }
     },
     async ensureAgentConnection(row) {
-      const key = agentKey(row.userId, row.agentId);
-      if (!state.agents.has(key)) await this.upsertAgentConnection(row);
-      return structuredClone(state.agents.get(key)!);
+      const existing = state.agents.get(agentKey(row.userId, row.agentId));
+      return structuredClone(existing ?? putAgent(row));
     },
     async upsertAgentConnection(row) {
-      if (!state.users.has(row.userId)) {
-        state.users.set(row.userId, { userId: row.userId, createdAt: structuredClone(row.createdAt) });
-      }
-      state.agents.set(agentKey(row.userId, row.agentId), structuredClone(row));
+      putAgent(row);
     },
     async listAgentConnections(userId) {
       return structuredClone([...state.agents.values()].filter((row) => row.userId === userId));
