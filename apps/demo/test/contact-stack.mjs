@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { applyPostgresMigrations } from "@team-31/broker/postgres";
-import pg from "pg";
+import { createTestDatabase } from "@team-31/test-db";
 import { expect, vi } from "vitest";
 
 async function listen(server) {
@@ -17,23 +17,14 @@ async function listen(server) {
 const closeServer = server => new Promise((resolve, reject) =>
   server.close(error => error ? reject(error) : resolve()));
 
+// Base desechable de @team-31/test-db: drop() espera a que cierren los backends antes de
+// borrarla, así un pool que aún cierra no recibe un 57P01 sin listener.
 export async function isolatedDatabase(cleanup) {
-  const url = new URL(process.env.TEST_DATABASE_URL);
-  const dev = process.env.DATABASE_URL;
-  if (!url.pathname.endsWith("_test") || (dev && url.pathname === new URL(dev).pathname)) {
-    throw new Error("Usa una TEST_DATABASE_URL separada que termine en _test.");
-  }
-  const admin = new pg.Pool({ connectionString: url.href });
-  cleanup.defer(() => admin.end());
-  const name = "contacts_test_" + randomUUID().replaceAll("-", "");
-  await admin.query(`CREATE DATABASE ${pg.escapeIdentifier(name)}`);
-  cleanup.defer(() => admin.query(`DROP DATABASE ${pg.escapeIdentifier(name)} WITH (FORCE)`));
-  url.pathname = "/" + name;
-  vi.stubEnv("DATABASE_URL", url.href);
-  await applyPostgresMigrations({ databaseUrl: url.href });
-  const db = new pg.Pool({ connectionString: url.href });
-  cleanup.defer(() => db.end());
-  return db;
+  const testDb = await createTestDatabase("contacts");
+  cleanup.defer(() => testDb.drop());
+  vi.stubEnv("DATABASE_URL", testDb.url);
+  await applyPostgresMigrations({ databaseUrl: testDb.url });
+  return testDb.pool();
 }
 
 export async function configureBroker() {
