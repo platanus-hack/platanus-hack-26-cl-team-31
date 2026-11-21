@@ -1,9 +1,15 @@
-import { ErrorBody, type ErrorCode } from "@team-31/protocol";
+import {
+  ErrorBody,
+  invalidInputMessage,
+  invalidInputReasonLimit,
+  type ErrorCode,
+  type IssueSource,
+} from "@team-31/protocol";
 import { routes, type RouteInput } from "@team-31/protocol/http";
 import { BrokerError } from "./errors.js";
 
 type Schema<Value> = {
-  safeParse(input: unknown): { success: true; data: Value } | { success: false };
+  safeParse(input: unknown): { success: true; data: Value } | { success: false; error?: IssueSource };
 };
 
 type HttpRoute<Value = unknown> = {
@@ -27,6 +33,18 @@ const timeoutMs = 10_000;
 const retryStatuses = new Set([502, 503, 504]);
 const errorIdFormat = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
 
+/**
+ * Asimetría deliberada, no un descuido que haya que "ordenar".
+ *
+ * `invalid_input` habla del payload que el llamador ya tiene en la mano: nombrar el campo que
+ * falla no le revela nada ajeno, y sin ese nombre un agente sólo puede adivinar. Por eso su
+ * motivo viaja tal cual lo produjo el broker (acotado a `invalidInputReasonLimit`).
+ *
+ * `unauthorized`, `forbidden`, `not_found` y `conflict` hablan del estado y de los datos de
+ * OTRAS personas. Sus mensajes se reemplazan por estos genéricos para que todas las negativas
+ * sean indistinguibles entre sí: un agente revocado ve el mismo 404 que una solicitud que nunca
+ * existió, y una denegación no lleva motivo (docs/security.md, invariante 2). No los especifiques.
+ */
 const errorMessages = {
   unauthorized: "No se pudo autenticar la llamada al broker.",
   forbidden: "No tienes permiso para realizar esta operación.",
@@ -40,7 +58,8 @@ const errorMessages = {
 
 function parseInput<Value>(schema: Schema<Value>, input: unknown): Value {
   const parsed = schema.safeParse(input);
-  if (!parsed.success) throw new BrokerError("invalid_input", errorMessages.invalid_input);
+  // El payload lo armó quien llama, así que las rutas rechazadas son suyas: nombrarlas es seguro.
+  if (!parsed.success) throw new BrokerError("invalid_input", invalidInputMessage(errorMessages.invalid_input, parsed.error));
   return parsed.data;
 }
 
@@ -50,13 +69,13 @@ function buildUrl(baseUrl: string, route: HttpRoute, input: HttpInput): URL {
     const params = parseInput(route.params, input.params);
     path = path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, (_, key: string) => {
       const value = params[key];
-      if (!value || value === "." || value === "..") {
-        throw new BrokerError("invalid_input", errorMessages.invalid_input);
-      }
+      // `key` es el nombre del segmento en la ruta, no lo que mandó el llamador: nunca su valor.
+      const named = `${errorMessages.invalid_input} Revisa: ${key}.`;
+      if (!value || value === "." || value === "..") throw new BrokerError("invalid_input", named);
       try {
         return encodeURIComponent(value);
       } catch {
-        throw new BrokerError("invalid_input", errorMessages.invalid_input);
+        throw new BrokerError("invalid_input", named);
       }
     });
   }
@@ -87,9 +106,14 @@ function responseError(route: HttpRoute, input: unknown, errorId?: string): Brok
   const details = { errorId, stage: "response" } as const;
   if (!parsed.success) return new BrokerError("internal", errorMessages.internal, details);
 
-  const { code, reason } = parsed.data.error;
+  const { code, message, reason } = parsed.data.error;
   if (route === routes.agentConnectWake && code === "invalid_input" && reason) {
     return new BrokerError(code, reason, { ...details, reason });
+  }
+  // Ver el comentario de errorMessages: sólo invalid_input conserva lo que dijo el broker.
+  if (code === "invalid_input") {
+    const specific = message.trim().slice(0, invalidInputReasonLimit);
+    return new BrokerError(code, specific || errorMessages.invalid_input, details);
   }
   return new BrokerError(code, errorMessages[code], details);
 }

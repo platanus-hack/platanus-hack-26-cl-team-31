@@ -33,6 +33,7 @@ import {
   type RequesterView,
   type ToolResult,
   ContactGroupChange,
+  invalidInputMessage,
 } from "@team-31/protocol";
 import { sameSharing } from "@team-31/protocol/constants";
 import { BrokerError, notFound } from "../errors.js";
@@ -424,7 +425,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   async function ask(userId: string, input: unknown, origin: { principal?: Principal; channel?: ChannelName }) {
     const { principal, channel } = origin;
     const parsed = AskInput.safeParse(input);
-    if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
+    if (!parsed.success) {
+      throw new BrokerError("invalid_input", invalidInputMessage("La pregunta no cumple el formato de la herramienta.", parsed.error));
+    }
     if (principal && parsed.data.tool === "connect" && parsed.data.groupId) requireScope(principal, "changeContactGroup");
     const view = await store.tx(async (tx) => {
       if (principal) await ensureActiveAgentConnection(tx, principal);
@@ -635,7 +638,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           telemetry?.emit("broker.reply.rejected", {
             userId: p.userId, agentId: p.agentId, attrs: { code: "schema" },
           });
-          throw new BrokerError("invalid_input", "La respuesta no cumple el formato requerido.");
+          throw new BrokerError("invalid_input", invalidInputMessage("La respuesta no cumple el formato requerido.", parsed.error));
         }
         const { requestId, nonce } = parsed.data;
         const result = await store.tx<ReplyReceipt | BrokerError>(async (tx) => {

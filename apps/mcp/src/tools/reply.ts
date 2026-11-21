@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { BrokerError, type AgentPort } from "@team-31/broker-client";
-import { agentScopes, ReplyArguments, ReplyInput, ReplyReceipt, ToolResultSchemas, type Principal } from "@team-31/protocol";
+import { agentScopes, invalidInputMessage, ReplyArguments, ReplyInput, ReplyReceipt, ToolResultSchemas, type Principal } from "@team-31/protocol";
 import { z } from "zod";
 import { runTool, type ToolTelemetry } from "./result.js";
 
@@ -32,7 +32,10 @@ export function registerReply(server: McpServer, principal: Principal, agent: Ag
     outputSchema: ReplyReceipt,
   }, (input) => runTool(telemetry, principal, { tool: "sideband_reply", scope: agentScopes.reply, requestId: input.requestId }, () => {
     const parsed = ReplyInput.safeParse(input);
-    if (!parsed.success) throw new BrokerError("invalid_input", "La respuesta no cumple el formato requerido.");
+    // El motivo nombra el campo del propio payload, nunca su valor: sin eso el agente adivina.
+    if (!parsed.success) {
+      throw new BrokerError("invalid_input", invalidInputMessage("La respuesta no cumple el formato requerido.", parsed.error));
+    }
     return agent.reply(principal, parsed.data);
   }));
 }
