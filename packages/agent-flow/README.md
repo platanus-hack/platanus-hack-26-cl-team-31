@@ -6,7 +6,7 @@ Visualizador en tiempo real de la conversación entre agentes a través del brok
 | --- | --- | --- |
 | Landing (`apps/web`, sección «En vivo» de `/bienvenida`) | `replay` | `scenarioEvents()` (escenario ficticio) |
 | `/embed/flujo` en `apps/web` (iframe para presentaciones) | `replay` + `fill` | `scenarioEvents()` |
-| Admin, página **Flujo** (`/flujo`) | `live` | `/api/admin/live` (SSE de `ops.events`, sesión de admin) |
+| Admin, página **Flujo** (`/flujo`) | `live` | `/api/admin/flow/snapshot` + `/api/admin/flow/live` (SSE filtrado de `ops.events`, sesión de admin) |
 
 Sin dependencias: el grafo es SVG y HTML escritos a mano, las animaciones usan `requestAnimationFrame` y CSS. La única dependencia es `react` (peer).
 
@@ -32,6 +32,8 @@ const events = useMemo(() => scenarioEvents(), [])
 | `presence` | `true` | Red completa: entradas, salidas y participantes pasivos. Con `false` solo aparecen quienes conversan. |
 | `allowFullscreen` | `true` | Botón y tecla `f`. Usa la Fullscreen API; si no está disponible (iframe sin `allowfullscreen`), un modo expandido con CSS que se cierra con `Esc`. |
 | `toolbar`, `emptyText`, `title` | — | Contenido extra en la barra, texto sin pasos y nombre accesible. |
+| `defaultHiddenActors`, `onFilterChange` | — | Agentes ocultos al inicio y aviso de cada cambio del filtro (`{ owners, hiddenActors }`) para guardarlo en la URL. |
+| `eventActions` | — | Contenido extra en el detalle de un paso (el admin pone enlaces a la solicitud y la traza). |
 
 Atajos con el foco dentro del visualizador (en `fill` o pantalla completa, en todo el documento): `f` pantalla completa, `p` pausa, `←`/`→` paso anterior y siguiente, `Esc` vuelve al presente o sale del modo expandido. Sin `controls` no hay inspección.
 
@@ -95,9 +97,12 @@ interface FlowActor {
 | `broker.reply.sanitized` | `sanitized` (broker), con `flags` y `fieldsDropped` |
 | `broker.owner.decided` | `owner_decided` titular → broker |
 | `broker.request.closed` | `delivered` broker → quien preguntó (answered/no_data → `delivered`, declined/denied → `denied`, expired → `expired`, delivery_failed → `failed`) |
+| `broker.agent.connected` / `broker.agent.revoked` | `joined` / `left` del agente (`meta.by` = `owner` o `admin` al revocar) |
 | cualquier otro (`http.request`, latidos, auth…) | nada. `flowEventNames` lista los que importan para filtrar antes de mapear. |
 
-Campos de `ops.events` que usa: `id`, `at`, `service`, `name`, `requestId`, `userId`, `agentId`, `traceId`, `durationMs` y, de `attrs`, solo las claves de la tabla. Cualquier otra clave se ignora (hay una prueba con `args`, `result`, `text`, `nonce` y `token` que verifica que no aparezcan).
+Campos de `ops.events` que usa: `id`, `at`, `service`, `name`, `requestId`, `userId`, `agentId`, `traceId`, `durationMs` y, de `attrs`, solo las claves de `flowAttrKeys`. El servidor del admin recorta cada fila a esa lista con `projectFlowRow` y descarta con `isFlowRow` lo que no dibuja nada, así que lo demás ni siquiera llega al navegador (pruebas con `args`, `result`, `text`, `nonce` y `token` en el mapeo y en `apps/admin/server/api.test.ts`).
+
+Nombres: `ownerLabel` usa el nombre del titular o, si no tiene, la parte local de la dirección sin prefijos de prueba (`demo-ana@…` → «Ana»). La clave sigue siendo la dirección.
 
 El `FlowDirectory` (`createFlowDirectory`) resuelve nombres. Todo es opcional; sin él se ven ids cortos:
 
@@ -109,23 +114,28 @@ El `FlowDirectory` (`createFlowDirectory`) resuelve nombres. Todo es opcional; s
 
 Un `FlowEvent` con `step: "joined"` o `"left"` tiene `from === to === actor`. `reduceFlow` lo aplica de forma idempotente (una entrada repetida no cambia nada) y tolerante al orden (un evento con `at` más viejo que el último de presencia de ese actor se ignora). Participar en un paso posterior a una salida devuelve al actor a la red. `meta.snapshot` marca la foto inicial: se aplica de una vez, sin animación ni entrada en la línea de tiempo.
 
-Señales reales que mapea hoy:
+Señales:
 
 | Fuente | Paso |
 | --- | --- |
-| `mapper.snapshot(at)` sobre el directorio (`/api/admin/users` + `/api/admin/agents`) | `joined` (snapshot) por agente con `revokedAt` vacío y uno provisional («Sin agente») por titular con dirección y sin agentes |
+| `mapper.snapshot(at)` sobre la foto (`/api/admin/flow/snapshot`) | `joined` (snapshot) por agente con `revokedAt` vacío y uno provisional («Agente») por titular con dirección y sin agentes |
+| `broker.agent.connected` (al crearse la conexión: primera llamada autenticada del agente) | `joined` |
+| `broker.agent.revoked` (titular o admin, solo la primera vez) | `left` |
 | `whatsapp.link` (`confirmed` / `unlinked`, con `userId`) | `joined` / `left` del agente WhatsApp del titular |
-| primer `mcp.tool.call` de un `agentId` que no estaba | `joined` y luego el paso de la tool |
+| primer paso de un agente que no estaba (p. ej. `mcp.tool.call`) | `joined` y luego el paso |
+| `mapper.reconcile(at)` tras refrescar el directorio | `left` por cada presente que ahora figura revocado y `joined` por cada agente nuevo (cubre señales perdidas mientras el stream estuvo caído) |
 
-Faltan señales explícitas para conectar y desconectar agentes por OAuth u otros canales. Propuesta para el PR del admin (no está en el catálogo): `broker.agent.connected` (`userId`, `agentId`, attrs `kind`) al verificar una conexión y `broker.agent.revoked` (`userId`, `agentId`, attrs `by: owner|admin`) al revocarla, emitidas desde `upsertAgentConnection` y `revokeAgent` del broker. Mientras tanto, la política recomendada es no inferir salidas por inactividad: un agente sin señales sigue «en la red» como pasivo, y sale solo con `unlinked`, una revocación o cuando un refresco de `/api/admin/agents` lo trae con `revokedAt` (el host emite entonces un `left`). Si se quiere atenuar la inactividad, que sea visual (pasivo tras 30 min sin pasos), no un `left`.
+**Regla de salida.** Un agente está en la red mientras su conexión no esté revocada (un titular con dirección que nunca conectó un agente aparece en la foto como agente provisional; uno cuyos agentes se revocaron, no). Sale solo con una revocación, un `unlinked` o un refresco que lo trae revocado. La inactividad no es una salida: un agente sin pasos se ve como pasivo. `mapper.takeUnknown()` devuelve los usuarios y agentes que aparecieron sin estar en el directorio para que el host lo refresque.
 
 Qué se muestra: dirección Sideband y nombre del titular, etiqueta y canal del agente (lo mismo que ya ven los admins en Personas y Agentes). Nunca tokens, ids de cliente OAuth ni números de teléfono.
 
 ### Orden y duplicados
 
-- El mapeo tiene estado por `requestId`: recuerda el agente de cada lado para atribuir eventos que no traen `agentId` (cierres, rechazos).
-- Los spans (`mcp.tool.call`, `wake.attempt`) se escriben al terminar, así que llegan después de los eventos del broker que contienen. Por eso `ask` sale de `broker.policy.evaluated` y el span MCP solo dibuja la pregunta si llegó primero; lo mismo para `reply` entre `status_changed` y `sideband_reply`.
-- Entrega las filas en orden de `id` de `ops.events` (el SSE del admin ya lo hace). El renderer aplica los pasos en el orden recibido y en vivo los separa al menos 320 ms para que cada pulso se vea; si se acumulan, acelera hasta alcanzarlos.
+- `createLiveFeed(mapper)` (`src/live.ts`) es la entrada del modo en vivo: descarta ids repetidos (reconexiones y relecturas del servidor) y retiene cada fila 700 ms para ordenarlas por el momento en que ocurrieron (inicio para spans) y luego por id. Un span del MCP que se escribió después que los eventos del broker que contiene se aplica en su lugar. El reloj de cada servicio solo influye dentro de esa ventana: un servicio desfasado no retiene a los demás.
+- El mapeo también descarta una fila repetida y tiene estado por `requestId`: recuerda el agente de cada lado para atribuir eventos que no traen `agentId` (cierres, rechazos). Con el resumen de la solicitud (`event: request` del stream) el destinatario se conoce desde el primer evento.
+- Si aun así un span llega tarde, `ask` sale de `broker.policy.evaluated` y el span MCP solo dibuja la pregunta si llegó primero; lo mismo para `reply` entre `status_changed` y `sideband_reply`.
+- En vivo el renderer separa los pasos al menos 320 ms para que cada pulso se vea; si se acumulan, acelera hasta alcanzarlos.
+- Ventana: el host puede quitar los pasos más viejos de `events` (conservando el resto en orden). El renderer recorta su calendario y guarda el estado previo como base de `foldFlow`, así que la presencia y las solicitudes en curso no se pierden ni se reinicia el grafo.
 
 ### Filtro por titular o agente
 
@@ -135,12 +145,13 @@ El filtro es de cliente: oculta tarjetas y pasos, no cambia la suscripción. Un 
 
 Solo lo que ya está redactado en `ops.events` y en las lecturas del admin: códigos de tool, categoría, decisión, regla, resultado, campos descartados, códigos de saneo (`etapa:código`), intento y estado HTTP del aviso, latencia, ids de solicitud y traza, direcciones y nombres de titulares y etiquetas de agentes. Nunca tokens, encabezados `Authorization`, nonces, secretos de aviso, `args`, `result` ni texto libre de terceros. El escenario de la landing es ficticio.
 
-## Modo en vivo: estado y pendientes
+## Modo en vivo en el admin
 
-- `apps/admin/src/pages/flow.tsx` es un montaje mínimo: se suscribe a `/api/admin/live` sin filtros, descarta eventos fuera de `flowEventNames` y los anteriores a 30 s antes de abrir la página, pide el `RequestSummary` de cada solicitud nueva y espera hasta 2,5 s por él antes de mapear.
-- Al cargar Personas y Agentes inserta la foto inicial de la red (`mapper.snapshot`) antes de cualquier evento en vivo.
-- Pendiente: filtrar en el servidor por nombre de evento (hoy el SSE trae también `http.request` y latidos), reordenar por `at` dentro de una ventana corta si llegan eventos de varios servicios fuera de orden, y refrescar el directorio cuando aparece un usuario o agente nuevo después de abrir la página (hoy se cargan una vez, con `staleTime` de 60 s).
-- El MCP stdio de `apps/demo` (Contactos de Ana) emite `coordination.tool.call` con `ask_contact` y `await_contact`, que el mapeo dibuja como `ask` y `check`; sus otras tools se ignoran. Con `DATABASE_URL` definido esa telemetría llega a `ops.events`.
+Diseño completo en [docs/admin.md §7.1](../../docs/admin.md#71-flujo-en-vivo-flujo). Resumen:
+
+- `apps/admin/src/lib/flow-live.ts`: foto → stream desde su cursor → `createLiveFeed` → `FlowEvent[]` (como mucho 4.000; luego descarta los más viejos). Reconecta con `Last-Event-ID`; tras un corte largo o un `reset` toma otra foto y reconcilia.
+- Servidor (`apps/admin/server/live.ts`): filtro por nombre en SQL, recorte de `attrs`, resumen de cada solicitud, relectura de 3 s para escrituras que confirman tarde, `reset` con huecos grandes y telemetría `admin.live.*`.
+- El MCP stdio de `apps/demo` (Contactos de Ana) emite `coordination.tool.call` con `ask_contact` y `await_contact`, que el mapeo dibuja como `ask` y `check`; sus otras tools se ignoran (y el servidor no las envía).
 
 ## Desarrollo
 

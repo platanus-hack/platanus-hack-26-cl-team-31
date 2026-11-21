@@ -41,6 +41,12 @@ export interface AgentFlowProps {
   allowFullscreen?: boolean;
   /** Muestra la red completa: entradas, salidas y participantes pasivos. Sin ella solo aparecen quienes conversan. */
   presence?: boolean;
+  /** Agentes ocultos al inicio (ids de actor, p. ej. `agent:<id>`). */
+  defaultHiddenActors?: readonly string[];
+  /** Avisa cada cambio del filtro: titulares visibles (claves; null = todos) y agentes ocultos. Sirve para guardarlo en la URL. */
+  onFilterChange?: (filter: { owners: string[] | null; hiddenActors: string[] }) => void;
+  /** Acciones extra en el detalle de un paso (p. ej. enlaces a la solicitud o la traza en el admin). */
+  eventActions?: (event: FlowEvent) => ReactNode;
   className?: string;
   style?: CSSProperties;
 }
@@ -102,6 +108,9 @@ export function AgentFlow({
   fill = false,
   allowFullscreen = true,
   presence = true,
+  defaultHiddenActors,
+  onFilterChange,
+  eventActions,
 }: AgentFlowProps) {
   const flowEvents = useMemo(() => (presence ? events : events.filter((e) => e.step !== "joined" && e.step !== "left")), [events, presence]);
   const reducedMotion = usePrefersReducedMotion();
@@ -121,7 +130,7 @@ export function AgentFlow({
   const [clock, setClock] = useState(0);
   const [selection, setSelection] = useState<Selection>(null);
   const [shownOwners, setShownOwners] = useState<Set<string> | null>(null);
-  const [hiddenActors, setHiddenActors] = useState<Set<string>>(() => new Set());
+  const [hiddenActors, setHiddenActors] = useState<Set<string>>(() => new Set(defaultHiddenActors ?? []));
   const [announcement, setAnnouncement] = useState("");
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   // Inspección del pasado: se reconstruye el estado justo antes del evento y se repite su animación.
@@ -132,6 +141,8 @@ export function AgentFlow({
   const inspectRef = useRef<(Inspect & { until: number }) | null>(null);
   const savedRef = useRef<{ clock: number; cursor: number; paused: boolean } | null>(null);
   const foldCache = useRef(new Map<number, FlowState>());
+  // En vivo el host puede descartar los pasos más viejos (ventana): este es el estado tras ellos.
+  const baseRef = useRef<FlowState | undefined>(undefined);
 
   const clockRef = useRef(0);
   const flowRef = useRef(flow);
@@ -156,6 +167,8 @@ export function AgentFlow({
   const reset = useCallback(() => {
     clockRef.current = 0;
     cursorRef.current = 0;
+    baseRef.current = undefined;
+    foldCache.current = new Map();
     flowRef.current = emptyFlowState();
     setFlow(flowRef.current);
     setClock(0);
@@ -179,8 +192,24 @@ export function AgentFlow({
       reset();
       return;
     }
-    const schedule = scheduleRef.current;
-    if (events.length < schedule.length) {
+    // Ventana: el host quitó los `dropped` pasos más viejos y conservó el resto en orden. El estado
+    // ya los contiene, así que solo se recorta el calendario: nada se reinicia.
+    const head = events[0]?.id;
+    const dropped = previous.length > 0 && head !== undefined && head !== previous[0]!.id ? previous.findIndex((event) => event.id === head) : 0;
+    if (dropped > 0) {
+      if (inspectRef.current) exitInspectRef.current();
+      scheduleLiveTail(previous);
+      let next = flowRef.current;
+      for (let i = cursorRef.current; i < dropped; i++) next = reduceFlow(next, previous[i]!, scheduleRef.current[i]!);
+      if (next !== flowRef.current) {
+        flowRef.current = next;
+        setFlow(next);
+      }
+      baseRef.current = foldFlow(previous, scheduleRef.current, dropped, foldCache.current, 50, baseRef.current);
+      foldCache.current = new Map();
+      scheduleRef.current = scheduleRef.current.slice(dropped);
+      cursorRef.current = Math.max(0, cursorRef.current - dropped);
+    } else if (events.length < scheduleRef.current.length || (dropped < 0 && events.length > 0)) {
       scheduleRef.current = [];
       reset();
     }
@@ -320,7 +349,7 @@ export function AgentFlow({
     const until = times[end]! + LABEL_MS - 300;
     const next = { start, end, focus, until };
     inspectRef.current = next;
-    flowRef.current = foldFlow(events, times, start, foldCache.current);
+    flowRef.current = foldFlow(events, times, start, foldCache.current, 50, baseRef.current);
     cursorRef.current = start;
     // Con movimiento reducido se salta al estado final con un resaltado estático.
     clockRef.current = reducedMotion ? until : times[start]! - 350;
@@ -334,7 +363,7 @@ export function AgentFlow({
     if (!inspectRef.current || !saved) return;
     inspectRef.current = null;
     savedRef.current = null;
-    flowRef.current = foldFlow(eventsRef.current, scheduleRef.current, saved.cursor, foldCache.current);
+    flowRef.current = foldFlow(eventsRef.current, scheduleRef.current, saved.cursor, foldCache.current, 50, baseRef.current);
     cursorRef.current = saved.cursor;
     clockRef.current = saved.clock;
     if (mode === "live") scheduleLiveTail(eventsRef.current);
@@ -347,6 +376,10 @@ export function AgentFlow({
     setSeeking(true);
     window.setTimeout(() => setSeeking(false), 90);
   };
+  const exitInspectRef = useRef(exitInspect);
+  useEffect(() => {
+    exitInspectRef.current = exitInspect;
+  });
   const focusOf = (indices: number[]): Inspect["focus"] => {
     const actors = new Set<string>();
     for (const i of indices) {
@@ -516,6 +549,18 @@ export function AgentFlow({
       return next;
     });
   const filtered = Boolean(shownOwners) || Boolean(ownerQuery) || hiddenActors.size > 0;
+  const filterChangeRef = useRef(onFilterChange);
+  useEffect(() => {
+    filterChangeRef.current = onFilterChange;
+  });
+  const filterKey = JSON.stringify([shownOwners ? [...shownOwners] : (ownerQuery ?? null), [...hiddenActors]]);
+  const reportedFilter = useRef(filterKey);
+  useEffect(() => {
+    if (reportedFilter.current === filterKey) return;
+    reportedFilter.current = filterKey;
+    const [owners, hidden] = JSON.parse(filterKey) as [string[] | null, string[]];
+    filterChangeRef.current?.({ owners, hiddenActors: hidden });
+  }, [filterKey]);
 
   const selectedEvent = selection?.kind === "event" ? findEvent(selection.id) : undefined;
   const selectedActor = selection?.kind === "actor" ? flow.actors.get(selection.id) : undefined;
@@ -1024,7 +1069,7 @@ export function AgentFlow({
           <section className="af-panel af-detail" aria-label="Detalle">
             <p className="af-eyebrow">Detalle</p>
             {selectedEvent ? (
-              <EventDetail entry={selectedEvent} flow={record} onSelect={pick} onReplayRequest={controls ? inspectRequest : undefined} timeLabel={timeLabel} />
+              <EventDetail entry={selectedEvent} flow={record} onSelect={pick} onReplayRequest={controls ? inspectRequest : undefined} timeLabel={timeLabel} actions={eventActions?.(selectedEvent.event)} />
             ) : selectedActor ? (
               <ActorDetail flow={flow} id={selectedActor.actor.id} activity={acts.get(selectedActor.actor.id) ?? "idle"} log={visibleLog} onSelect={(id) => setSelection({ kind: "event", id })} timeLabel={timeLabel} />
             ) : selection?.kind === "hub" ? (
@@ -1103,7 +1148,7 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function EventDetail({ entry, flow, onSelect, onReplayRequest, timeLabel }: { entry: AppliedEvent; flow: FlowState; onSelect: (id: string) => void; onReplayRequest?: (requestId: string) => void; timeLabel: (entry: AppliedEvent) => string }) {
+function EventDetail({ entry, flow, onSelect, onReplayRequest, timeLabel, actions }: { entry: AppliedEvent; flow: FlowState; onSelect: (id: string) => void; onReplayRequest?: (requestId: string) => void; timeLabel: (entry: AppliedEvent) => string; actions?: ReactNode }) {
   const { event } = entry;
   const { meta } = event;
   const chain = event.requestId ? (flow.requests.get(event.requestId)?.events ?? []) : [];
@@ -1133,6 +1178,7 @@ function EventDetail({ entry, flow, onSelect, onReplayRequest, timeLabel }: { en
         <Row label="Traza" value={event.traceId} />
         <Row label="Hora" value={timeLabel(entry)} />
       </dl>
+      {actions ? <div className="af-detail-actions">{actions}</div> : null}
       {chain.length > 1 ? (
         <div>
           <div className="af-detail-title" style={{ marginBottom: 8 }}>

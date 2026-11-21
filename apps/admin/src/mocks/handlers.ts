@@ -394,6 +394,46 @@ export async function mockApi(
         .filter((e) => !query.traceId || e.traceId === query.traceId)
       return { items: items.slice(0, Number(query.limit ?? 100)) }
     }
+    case "flowSnapshot":
+      return {
+        generatedAt: new Date().toISOString(),
+        cursor: null,
+        users: userSummaries().map(({ userId, address, displayName }) => ({
+          userId,
+          address,
+          displayName,
+        })),
+        agents: agentRows().map(
+          ({
+            userId,
+            agentId,
+            label,
+            wakeKind,
+            verifiedAt,
+            revokedAt,
+            createdAt,
+          }) => ({
+            userId,
+            agentId,
+            label,
+            wakeKind,
+            verifiedAt,
+            revokedAt,
+            createdAt,
+          })
+        ),
+        requests: requests.slice(0, 50).map(({ summary }) => ({
+          id: summary.id,
+          fromAddress: summary.fromAddress,
+          toAddress: summary.toAddress,
+          targetAgentId: summary.targetAgentId,
+          answeredByAgentId: summary.answeredByAgentId,
+          status: summary.status,
+          createdAt: summary.createdAt,
+        })),
+        truncated: false,
+      }
+    case "flowLive":
     case "live":
       throw new ApiError(
         "invalid_input",

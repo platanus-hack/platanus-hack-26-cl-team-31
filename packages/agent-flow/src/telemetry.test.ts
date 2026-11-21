@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { BROKER, type FlowActor, type FlowEvent } from "./model.js";
 import { scenarioEvents, scenarioRows } from "./scenario.js";
-import { createFlowDirectory, createTelemetryMapper, type TelemetryRow } from "./telemetry.js";
+import { createFlowDirectory, createTelemetryMapper, flowAttrKeys, flowEventNames, isFlowRow, ownerLabel, projectFlowRow, type TelemetryRow } from "./telemetry.js";
 
 const directory = () =>
   createFlowDirectory({
@@ -175,8 +175,10 @@ describe("presence mapping", () => {
         { agentId: "old", userId: "u1", label: "Viejo", kind: "mcp_events", revokedAt: "2026-01-01T00:00:00Z" },
       ],
     });
+    dir.add({ users: [{ userId: "u5", address: "vera@sideband.app" }], agents: [{ agentId: "v1", userId: "u5", revokedAt: "2026-11-21T00:00:00Z" }] });
     const mapper = createTelemetryMapper(dir);
     const snapshot = mapper.snapshot(5);
+    // Vera solo tenía un agente revocado: ya salió, no vuelve como provisional.
     expect(snapshot.map((e) => `${e.step}:${actor(e.from)}`)).toEqual(["joined:agent:a1", "joined:agent@luz@sideband.app"]);
     expect(snapshot.every((e) => e.meta.snapshot)).toBe(true);
     // a1 ya estaba en la foto: su llamada no repite la entrada.
@@ -185,5 +187,90 @@ describe("presence mapping", () => {
     expect(mapper.map(row("whatsapp.link", { requestId: null, userId: "u4", attrs: { action: "confirmed" } }))).toMatchObject([{ step: "joined", from: { id: "whatsapp@max@sideband.app", channel: "WhatsApp" } }]);
     expect(mapper.map(row("whatsapp.link", { requestId: null, userId: "u4", attrs: { action: "unlinked" } }))).toMatchObject([{ step: "left" }]);
     expect(mapper.map(row("whatsapp.link", { requestId: null, userId: "u4", attrs: { action: "started" } }))).toEqual([]);
+  });
+});
+
+describe("live edge cases", () => {
+  it("maps a repeated row (reconnect, server lookback) only once", () => {
+    const mapper = createTelemetryMapper(directory());
+    const policy = row("broker.policy.evaluated", { userId: "u1", agentId: "a1", attrs: { tool: "question", category: "general", decision: "deny", rule: "no_grant" } });
+    expect(mapper.map(policy).map((e) => e.step)).toEqual(["ask", "policy"]);
+    expect(mapper.map({ ...policy })).toEqual([]);
+  });
+
+  it("attributes a close that arrives before the policy row to the requester from the request summary", () => {
+    const mapper = createTelemetryMapper(directory());
+    const closed = mapper.map(row("broker.request.closed", { attrs: { outcome: "denied", escalated: false } }));
+    expect(closed).toMatchObject([{ step: "delivered", status: "denied", to: { owner: { key: "ana@sideband.app" } } }]);
+  });
+
+  it("maps broker.agent.connected and broker.agent.revoked to joined and left", () => {
+    const dir = directory();
+    const mapper = createTelemetryMapper(dir);
+    dir.add({ agents: [{ agentId: "c1", userId: "u2", label: "OpenClaw", kind: "openclaw_hooks" }] });
+    const joined = mapper.map(row("broker.agent.connected", { requestId: null, userId: "u2", agentId: "c1", attrs: { kind: "none" } }));
+    expect(joined).toMatchObject([{ step: "joined", status: "ok", from: { id: "agent:c1", label: "OpenClaw", owner: { label: "Bob" } } }]);
+    const left = mapper.map(row("broker.agent.revoked", { requestId: null, userId: "u2", agentId: "c1", attrs: { by: "admin" } }));
+    expect(left).toMatchObject([{ step: "left", status: "expired", meta: { by: "admin" } }]);
+    // Sin ids no hay a quién mover.
+    expect(mapper.map(row("broker.agent.connected", { requestId: null, attrs: {} }))).toEqual([]);
+  });
+
+  it("reconciles a refreshed directory: revoked agents leave, new agents join, once", () => {
+    const dir = createFlowDirectory({
+      users: [{ userId: "u1", address: "ana@sideband.app" }, { userId: "u2", address: "bob@sideband.app" }],
+      agents: [{ agentId: "a1", userId: "u1", label: "Claude Code" }],
+    });
+    const mapper = createTelemetryMapper(dir);
+    mapper.snapshot(1);
+    dir.add({ agents: [{ agentId: "a1", userId: "u1", label: "Claude Code", revokedAt: "2026-11-21T00:00:00Z" }, { agentId: "b1", userId: "u2", label: "Codex" }] });
+    expect(mapper.reconcile(2).map((e) => `${e.step}:${actor(e.from)}`)).toEqual(["left:agent:a1", "joined:agent:b1"]);
+    expect(mapper.reconcile(3)).toEqual([]);
+  });
+
+  it("relabels an agent drawn before its owner reached the directory, without animation", () => {
+    const dir = createFlowDirectory();
+    const mapper = createTelemetryMapper(dir);
+    const [joined] = mapper.map(row("broker.agent.connected", { requestId: null, userId: "u7", agentId: "z7", attrs: {} }));
+    expect((joined!.from as FlowActor).owner.label).toBe("u7");
+    dir.add({ users: [{ userId: "u7", address: "demo-zoe@sideband.app" }], agents: [{ agentId: "z7", userId: "u7", label: "Claude Code" }] });
+    const fixed = mapper.reconcile(9);
+    expect(fixed).toMatchObject([{ step: "joined", meta: { snapshot: true }, from: { label: "Claude Code", owner: { key: "demo-zoe@sideband.app", label: "Zoe" } } }]);
+    expect(mapper.reconcile(10)).toEqual([]);
+  });
+
+  it("reports ids missing from the directory so the host can refresh it", () => {
+    const mapper = createTelemetryMapper(directory());
+    mapper.map(row("broker.agent.connected", { requestId: null, userId: "u9", agentId: "z9", attrs: {} }));
+    expect(mapper.takeUnknown()).toEqual({ users: ["u9"], agents: ["z9"] });
+    expect(mapper.takeUnknown()).toEqual({ users: [], agents: [] });
+  });
+
+  it("names owners by display name or by the readable local part of their address", () => {
+    expect(ownerLabel("demo-ana@sideband.app")).toBe("Ana");
+    expect(ownerLabel("test-maria_jose@sideband.app")).toBe("Maria Jose");
+    expect(ownerLabel("bob@sideband.app", "Roberto")).toBe("Roberto");
+    expect(ownerLabel("demo-@sideband.app")).toBe("demo-");
+    expect(ownerLabel(null)).toBe("Sin identificar");
+    const mapper = createTelemetryMapper(createFlowDirectory({ users: [{ userId: "d1", address: "demo-luz@sideband.app" }], agents: [{ agentId: "x", userId: "d1" }] }));
+    expect(mapper.snapshot(1)[0]!.from).toMatchObject({ owner: { key: "demo-luz@sideband.app", label: "Luz" } });
+  });
+
+  it("projects rows to the attributes the mapper reads and filters coordination tools", () => {
+    const leaky = row("broker.reply.rejected", {
+      attrs: { code: "leak_blocked", flags: "leak-guard:private_hint", args: "{secret}", result: "x", text: "hola", nonce: "n", token: "t" },
+    });
+    expect(projectFlowRow(leaky).attrs).toEqual({ code: "leak_blocked", flags: "leak-guard:private_hint" });
+    expect(projectFlowRow(row("http.request", { attrs: { route: "/x" } })).attrs).toEqual({});
+    expect(isFlowRow(row("coordination.tool.call", { attrs: { tool: "ask_contact" } }))).toBe(true);
+    expect(isFlowRow(row("coordination.tool.call", { attrs: { tool: "meeting_propose" } }))).toBe(false);
+    expect(isFlowRow(row("http.request"))).toBe(false);
+    // El acuse del receptor de avisos de la demo no es un segundo aviso.
+    const ack = row("wake.attempt", { service: "coordination", agentId: "b1", attrs: { ok: true, code: "accepted", httpStatus: 202 } });
+    expect(isFlowRow(ack)).toBe(false);
+    expect(createTelemetryMapper(directory()).map(ack)).toEqual([]);
+    expect(isFlowRow(row("wake.attempt", { attrs: { ok: true } }))).toBe(true);
+    // Cada evento que se mapea declara sus atributos.
+    for (const name of flowEventNames) expect(flowAttrKeys[name], name).toBeDefined();
   });
 });

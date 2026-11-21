@@ -30,10 +30,16 @@ function requireAction(actor: AdminActor, reason: string): void {
 }
 
 // Same effect as OwnerPort.revokeAgent: idempotent and keeps the first revocation time.
-export async function revokeConnection(tx: StoreTx, userId: string, agentId: string, at: Date): Promise<void> {
+// onRevoked runs only for the first revocation (presence telemetry: broker.agent.revoked).
+export async function revokeConnection(
+  tx: StoreTx, userId: string, agentId: string, at: Date,
+  onRevoked?: (fields: { userId: string; agentId: string }) => void,
+): Promise<void> {
   const connection = await tx.getAgentConnection(userId, agentId, true);
   if (!connection) throw notFound();
-  if (!connection.revokedAt) await tx.upsertAgentConnection({ ...connection, revokedAt: at });
+  if (connection.revokedAt) return;
+  await tx.upsertAgentConnection({ ...connection, revokedAt: at });
+  onRevoked?.({ userId, agentId });
 }
 
 export function createAdminPort(
@@ -81,7 +87,7 @@ export function createAdminPort(
 
     async revokeAgent(actor, userId, agentId, reason) {
       requireAction(actor, reason);
-      await store.tx((tx) => revokeConnection(tx, userId, agentId, clock.now()));
+      await store.tx((tx) => revokeConnection(tx, userId, agentId, clock.now(), (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "admin" } })));
       // Revocation has no request, so it leaves no request_event (code admin_revoke goes to telemetry).
       telemetry?.emit("admin.action", { userId, agentId, attrs: { action: "admin_revoke", target: `${userId}/${agentId}` } });
     },

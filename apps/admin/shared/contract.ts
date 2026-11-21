@@ -338,6 +338,44 @@ export const AgentFilters = z.object({
   kind: WakeKind.optional(),
 })
 
+// ---------- Flujo en vivo ----------
+// Página «Flujo» (packages/agent-flow). Solo lo que el admin ya muestra en Personas, Agentes y
+// Solicitudes: direcciones, nombres, etiquetas, ids y estados. Nunca contenido.
+
+export const FlowUser = UserSummary.pick({ userId: true, address: true, displayName: true })
+export type FlowUser = z.infer<typeof FlowUser>
+
+export const FlowAgent = AgentRow.pick({ userId: true, agentId: true, label: true, wakeKind: true, verifiedAt: true, revokedAt: true, createdAt: true })
+export type FlowAgent = z.infer<typeof FlowAgent>
+
+// Quién pregunta y a quién, para atribuir los eventos de una solicitud.
+export const FlowRequestRef = RequestSummary.pick({
+  id: true, fromAddress: true, toAddress: true, targetAgentId: true, answeredByAgentId: true, status: true, createdAt: true,
+})
+export type FlowRequestRef = z.infer<typeof FlowRequestRef>
+
+export const FlowSnapshot = z.object({
+  generatedAt: Iso,
+  // Último id de ops.events al tomar la foto: el stream sigue desde aquí sin huecos.
+  cursor: z.string().nullable(),
+  users: z.array(FlowUser),
+  // Conexiones activas y las revocadas en las últimas 24 h (para nombrar eventos recientes).
+  agents: z.array(FlowAgent),
+  // Abiertas y cerradas en los últimos 15 min.
+  requests: z.array(FlowRequestRef),
+  // true si se recortó alguna lista por el límite.
+  truncated: z.boolean(),
+})
+export type FlowSnapshot = z.infer<typeof FlowSnapshot>
+
+export const FlowLiveQuery = z.object({
+  // Cursor inicial (FlowSnapshot.cursor). Last-Event-ID, si viene, gana.
+  after: z.string().regex(/^\d{1,19}$/).optional(),
+})
+
+// Mensajes del SSE de /api/admin/flow/live.
+export const FlowReset = z.object({ cursor: z.string().nullable() })
+
 // ---------- Acciones de operador ----------
 // Se ejecutan en el broker (AdminPort) para respetar sus invariantes. Nunca escriben la base directo.
 
@@ -399,6 +437,11 @@ export const adminRoutes = {
   events: { method: "GET", path: "/api/admin/events", query: EventFilters, response: z.object({ items: z.array(TelemetryEvent) }), role: "viewer" },
   // SSE: event "telemetry" con un TelemetryEvent por mensaje; id = TelemetryEvent.id; acepta Last-Event-ID.
   live: { method: "GET", path: "/api/admin/live", query: EventFilters.omit({ afterId: true, beforeId: true, limit: true }), contentType: "text/event-stream", response: TelemetryEvent, role: "viewer" },
+  // Flujo en vivo. SSE: "telemetry" (TelemetryEvent con attrs recortados a lo que dibuja el grafo,
+  // id = TelemetryEvent.id), "request" (FlowRequestRef antes del primer evento de cada solicitud) y
+  // "reset" (FlowReset: el hueco desde el cursor es demasiado grande; pedir otra foto).
+  flowSnapshot: { method: "GET", path: "/api/admin/flow/snapshot", response: FlowSnapshot, role: "viewer" },
+  flowLive: { method: "GET", path: "/api/admin/flow/live", query: FlowLiveQuery, contentType: "text/event-stream", response: TelemetryEvent, role: "viewer" },
   errors: { method: "GET", path: "/api/admin/errors", query: ErrorFilters, response: z.object({ items: z.array(ErrorGroup) }), role: "viewer" },
   error: { method: "GET", path: "/api/admin/errors/:id", params: idParams, response: TelemetryEvent, role: "viewer" },
 

@@ -5,12 +5,14 @@ import { jwtVerify, type JWK } from "jose"
 import { createTestDatabase, ignoreTerminationAfterEnd, type TestDatabase } from "@team-31/test-db"
 import type pg from "pg"
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
-import { AdminQueryError } from "../shared/queries.js"
+import type { TelemetryEvent } from "../shared/contract.js"
+import { AdminQueryError, type AdminQueries } from "../shared/queries.js"
 import { createAdminApp } from "./app.js"
 import { createPgAuditLog, migrateAdminTables } from "./audit.js"
 import { createAdminAuth, createRoleResolver, migrateAdminAuth, type AdminAuthOptions } from "./auth/index.js"
 import { createBrokerAdminClient } from "./broker.js"
 import { createAdminPool } from "./db.js"
+import type { LiveOptions } from "./live.js"
 import { createAdminLimiters } from "./rate-limit.js"
 import { fakeQueries, telemetryEvent, TEST_DATABASE_URL } from "./test-support.js"
 import { createPgTokenStore } from "./tokens.js"
@@ -39,14 +41,14 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     events: async ({ afterId }) => (afterId ? [] : [telemetryEvent("2"), telemetryEvent("1")]),
   })
 
-  function buildApp(overrides: { devAuth?: boolean } = {}) {
+  function buildApp(overrides: { devAuth?: boolean; queries?: AdminQueries; live?: LiveOptions } = {}) {
     const telemetry = createTelemetry({ service: "admin", sink, heartbeatMs: 0, lifecycle: false })
     const tokens = createPgTokenStore(pool)
     return createAdminApp({
       telemetry,
       auth,
       roleOf,
-      queries,
+      queries: overrides.queries ?? queries,
       tokens,
       authenticateToken: (bearer) => tokens.authenticate(bearer),
       audit: createPgAuditLog(pool, telemetry),
@@ -58,7 +60,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
       devAuth: overrides.devAuth ?? false,
       trustProxy: false,
       serveSpa: false,
-      live: { pollMs: 20, heartbeatMs: 1_000 },
+      live: { pollMs: 20, heartbeatMs: 1_000, ...overrides.live },
     })
   }
 
@@ -386,5 +388,149 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     controller.abort()
     await reader.cancel()
     expect(text).toMatch(/event: telemetry\ndata: .*\nid: 1[\s\S]*id: 2/)
+  })
+
+  describe("flujo en vivo", () => {
+    // ops.events en memoria: el fake responde como createPgAdminQueries (cola ascendente con afterId).
+    function eventTable(initial: TelemetryEvent[]) {
+      const rows = [...initial]
+      const seenFilters: { names?: readonly string[] }[] = []
+      const flowQueries = fakeQueries({
+        latestEventId: async () => (rows.length ? rows.map((row) => BigInt(row.id)).reduce((a, b) => (a > b ? a : b)).toString() : null),
+        events: async (filters) => {
+          seenFilters.push({ names: filters.names })
+          const match = rows.filter((row) => !filters.names || filters.names.includes(row.name))
+          const sorted = match.sort((a, b) => Number(BigInt(a.id) - BigInt(b.id)))
+          if (filters.afterId) return sorted.filter((row) => BigInt(row.id) > BigInt(filters.afterId!)).slice(0, filters.limit)
+          return sorted.reverse().slice(0, filters.limit)
+        },
+        requestRefs: async (ids) =>
+          ids.filter((id) => id === "r1").map((id) => ({
+            id, fromAddress: "ana@sideband.app", toAddress: "bob@sideband.app", targetAgentId: "b1",
+            answeredByAgentId: null, status: "awaiting_agent" as const, createdAt: "2026-01-01T00:00:00.000Z",
+          })),
+      })
+      return { rows, seenFilters, queries: flowQueries }
+    }
+    const event = (id: string, name: string, fields: Partial<TelemetryEvent> = {}): TelemetryEvent => ({
+      ...telemetryEvent(id), name, requestId: "r1", attrs: {}, ...fields,
+    })
+
+    async function readUntil(response: Response, done: (text: string) => boolean, controller: AbortController) {
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let text = ""
+      const deadline = Date.now() + 3_000
+      while (!done(text) && Date.now() < deadline) {
+        const { value, done: ended } = await reader.read()
+        if (ended) break
+        text += decoder.decode(value)
+      }
+      controller.abort()
+      await reader.cancel().catch(() => undefined)
+      return text
+    }
+    const messages = (text: string) =>
+      text.split("\n\n").filter((block) => block.includes("data:")).map((block) => ({
+        event: /event: (.*)/.exec(block)?.[1],
+        id: /id: (.*)/.exec(block)?.[1],
+        data: JSON.parse(/data: (.*)/.exec(block)![1]!) as Record<string, unknown>,
+      }))
+
+    it("exige sesión y rol: 401 sin sesión, 403 sin acceso, viewer sí", async () => {
+      const app = buildApp()
+      expect((await app.request("/api/admin/flow/snapshot")).status).toBe(401)
+      expect((await app.request("/api/admin/flow/live")).status).toBe(401)
+      // Una sesión cuyo correo deja de estar en la lista de acceso.
+      allow.viewers = ["viewer@test.cl", "ex@test.cl"]
+      const outsider = await login("ex@test.cl")
+      allow.viewers = ["viewer@test.cl"]
+      expect((await app.request("/api/admin/flow/snapshot", { headers: { cookie: outsider } })).status).toBe(403)
+      expect((await app.request("/api/admin/flow/live", { headers: { cookie: outsider } })).status).toBe(403)
+      const viewer = await login("viewer@test.cl")
+      const snapshot = await app.request("/api/admin/flow/snapshot", { headers: { cookie: viewer } })
+      expect(snapshot.status).toBe(200)
+      expect(await snapshot.json()).toMatchObject({ cursor: null, users: [], agents: [], requests: [] })
+      expect((await app.request("/api/admin/flow/live?after=abc", { headers: { cookie: viewer } })).status).toBe(400)
+    })
+
+    it("filtra por nombre en el servidor, recorta attrs y manda el resumen de la solicitud antes de sus eventos", async () => {
+      const table = eventTable([
+        event("1", "http.request", { requestId: null, attrs: { route: "/mcp" } }),
+        event("2", "broker.policy.evaluated", { attrs: { tool: "question", decision: "allow", category: "general", rule: "grant", args: "secreto", text: "privado" } }),
+        event("3", "coordination.tool.call", { requestId: null, attrs: { tool: "meeting_propose", outcome: "ok" } }),
+        event("4", "mcp.tool.call", { attrs: { tool: "sideband_ask", outcome: "ok" } }),
+      ])
+      const cookie = await login("viewer@test.cl")
+      const controller = new AbortController()
+      const response = await buildApp({ queries: table.queries }).request("/api/admin/flow/live?after=0", { headers: { cookie }, signal: controller.signal })
+      expect(response.status).toBe(200)
+      expect(response.headers.get("cache-control")).toBe("no-store")
+      const sent = messages(await readUntil(response, (text) => text.includes("id: 4"), controller))
+
+      expect(sent.map((m) => `${m.event}:${m.id ?? ""}`)).toEqual(["request:", "telemetry:2", "telemetry:4"])
+      expect(sent[0]!.data).toMatchObject({ id: "r1", fromAddress: "ana@sideband.app", toAddress: "bob@sideband.app" })
+      expect(sent[1]!.data.attrs).toEqual({ tool: "question", decision: "allow", category: "general", rule: "grant" })
+      expect(JSON.stringify(sent)).not.toMatch(/secreto|privado|meeting_propose/)
+      // El filtro por nombre va a la consulta: http.request ni siquiera se lee.
+      expect(table.seenFilters[0]!.names).toContain("broker.policy.evaluated")
+      expect(table.seenFilters[0]!.names).not.toContain("http.request")
+    })
+
+    it("entrega una escritura que confirmó tarde (id menor) una sola vez", async () => {
+      const table = eventTable([event("10", "broker.request.created"), event("12", "broker.request.closed")])
+      const cookie = await login("viewer@test.cl")
+      const controller = new AbortController()
+      const response = await buildApp({ queries: table.queries }).request("/api/admin/flow/live?after=9", { headers: { cookie }, signal: controller.signal })
+      setTimeout(() => table.rows.push(event("11", "broker.request.status_changed", { attrs: { from: "awaiting_agent", to: "answered", by: "agent" } })), 80)
+      const text = await readUntil(response, (value) => value.includes("id: 11"), controller)
+      const ids = messages(text).filter((m) => m.event === "telemetry").map((m) => m.id)
+      expect(ids).toEqual(["10", "12", "11"])
+    })
+
+    it("Last-Event-ID gana sobre after y un hueco demasiado grande manda reset", async () => {
+      const table = eventTable([event("5", "broker.request.created"), event("6", "broker.request.closed"), event("100", "broker.request.created")])
+      const cookie = await login("viewer@test.cl")
+      let controller = new AbortController()
+      let response = await buildApp({ queries: table.queries }).request("/api/admin/flow/live?after=0", { headers: { cookie, "last-event-id": "5" }, signal: controller.signal })
+      let sent = messages(await readUntil(response, (text) => text.includes("id: 100"), controller))
+      expect(sent.filter((m) => m.event === "telemetry").map((m) => m.id)).toEqual(["6", "100"])
+
+      controller = new AbortController()
+      response = await buildApp({ queries: table.queries, live: { maxCatchUp: 50 } }).request("/api/admin/flow/live?after=5", { headers: { cookie }, signal: controller.signal })
+      sent = messages(await readUntil(response, (text) => text.includes("event: reset"), controller))
+      expect(sent[0]).toEqual({ event: "reset", id: "100", data: { cursor: "100" } })
+    })
+
+    it("un admin que se está apagando rechaza streams nuevos con Connection: close", async () => {
+      const cookie = await login("viewer@test.cl")
+      const response = await buildApp({ live: { shutdown: AbortSignal.abort() } }).request("/api/admin/flow/live", { headers: { cookie } })
+      expect(response.status).toBe(502)
+      expect(response.headers.get("connection")).toBe("close")
+      expect((await response.json()).error.code).toBe("upstream")
+    })
+
+    it("limita las conexiones por admin y registra apertura y cierre", async () => {
+      const table = eventTable([event("1", "broker.request.created")])
+      const cookie = await login("viewer@test.cl")
+      const app = buildApp({ queries: table.queries, live: { maxStreams: 1 } })
+      const controller = new AbortController()
+      const first = await app.request("/api/admin/flow/live?after=0", { headers: { cookie }, signal: controller.signal })
+      expect(first.status).toBe(200)
+      const second = await app.request("/api/admin/flow/live?after=0", { headers: { cookie } })
+      expect(second.status).toBe(429)
+      expect((await second.json()).error.code).toBe("rate_limited")
+      await readUntil(first, (text) => text.includes("id: 1"), controller)
+
+      const deadline = Date.now() + 2_000
+      while (sink.find("admin.live.closed").length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(sink.find("admin.live.opened")).toEqual([expect.objectContaining({ attrs: { stream: "flow", resumed: true, reset: false } })])
+      expect(sink.find("admin.live.closed")).toEqual([expect.objectContaining({ attrs: expect.objectContaining({ stream: "flow", reason: "client", delivered: 1 }) })])
+      // Cerrada la primera, se puede volver a abrir.
+      const again = new AbortController()
+      const third = await app.request("/api/admin/flow/live?after=0", { headers: { cookie }, signal: again.signal })
+      expect(third.status).toBe(200)
+      again.abort()
+    })
   })
 })

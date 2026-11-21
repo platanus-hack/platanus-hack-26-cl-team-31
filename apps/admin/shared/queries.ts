@@ -7,6 +7,8 @@ import type {
   AuditEntry,
   ErrorGroup,
   EventFilters,
+  FlowRequestRef,
+  FlowSnapshot,
   Overview,
   RequestDetail,
   RequestFilters,
@@ -36,7 +38,10 @@ export interface AdminQueries {
   request(id: string): Promise<RequestDetail | null>
 
   trace(traceId: string): Promise<Trace | null>
-  events(filters: EventFilters): Promise<TelemetryEvent[]>
+  // names: solo esos nombres (uso interno de los streams; no está en EventFilters del contrato).
+  events(filters: EventFilters & { names?: readonly string[] }): Promise<TelemetryEvent[]>
+  // Último id de ops.events (null si está vacía).
+  latestEventId(): Promise<string | null>
   errors(filters: z.infer<typeof ErrorFilters>): Promise<ErrorGroup[]>
   error(errorId: string): Promise<TelemetryEvent | null>
 
@@ -47,6 +52,11 @@ export interface AdminQueries {
   wakeQueue(state?: WakeJobRow["state"]): Promise<WakeJobRow[]>
 
   audit(cursor?: string): Promise<Page<AuditEntry>>
+
+  // Flujo en vivo: foto de la red (personas, agentes, solicitudes recientes) con su cursor.
+  flowSnapshot(): Promise<FlowSnapshot>
+  // Quién pregunta y a quién de cada solicitud (máximo 200 ids; las que no existen se omiten).
+  requestRefs(ids: readonly string[]): Promise<FlowRequestRef[]>
 
   // SELECT de solo lectura sobre ops.v_* (excepto ops.v_request_payloads).
   // statement_timeout 3 s, máximo 200 filas. Lanza AdminQueryError("invalid_input") si no es un SELECT.

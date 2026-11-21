@@ -186,6 +186,18 @@ export const catalog = [
     description: "El titular registró dónde avisar las solicitudes que escribe en un canal. Sin la URL ni el secreto.",
     attrs: { channel: code(), kind: code() },
   }),
+  defineEvent({
+    name: "broker.agent.connected",
+    kind: "lifecycle",
+    description: "Se creó la conexión de un agente con su titular (su primera llamada autenticada): entra a la red. Sin la etiqueta ni el destino de aviso.",
+    attrs: { kind: code() },
+  }),
+  defineEvent({
+    name: "broker.agent.revoked",
+    kind: "lifecycle",
+    description: "Se revocó la conexión de un agente: sale de la red. Solo se emite la primera revocación.",
+    attrs: { by: z.enum(["owner", "admin"]) },
+  }),
   defineEvent({ name: "broker.grant.revoked", kind: "policy", description: "El dueño revocó un permiso.", attrs: { grantId: id() } }),
   defineEvent({ name: "broker.contact.connected", kind: "policy", description: "Dos titulares quedaron conectados al aceptar una invitación.", attrs: {} }),
   defineEvent({ name: "broker.contact.tagged", kind: "policy", description: "Un titular le puso una etiqueta a un contacto. Sin la dirección.", attrs: { tag: code() } }),
@@ -244,6 +256,18 @@ export const catalog = [
   defineEvent({ name: "admin.action", kind: "admin", level: "warn", description: "Acción de operador en el broker.", attrs: adminAttrs }),
   defineEvent({ name: "admin.token.created", kind: "admin", description: "Token sba_ creado.", attrs: adminAttrs }),
   defineEvent({ name: "admin.token.revoked", kind: "admin", description: "Token sba_ revocado.", attrs: adminAttrs }),
+  defineEvent({
+    name: "admin.live.opened",
+    kind: "admin",
+    description: "Un admin abrió un stream en vivo (/api/admin/live o /api/admin/flow/live). resumed: reanudó desde un cursor; reset: el hueco era demasiado grande y se saltó al último evento.",
+    attrs: { stream: z.enum(["events", "flow"]), resumed: bool(), reset: bool() },
+  }),
+  defineEvent({
+    name: "admin.live.closed",
+    kind: "admin",
+    description: "Se cerró un stream en vivo. reason: client (el navegador cerró), shutdown, error (con su evento error) o stalled (el cliente no leía). delivered: eventos enviados.",
+    attrs: { stream: z.enum(["events", "flow"]), reason: z.enum(["client", "shutdown", "error", "stalled"]), delivered: int().nonnegative() },
+  }),
   defineEvent({ name: "admin.mcp.call", kind: "admin", description: "Llamada al MCP de administración.", attrs: adminAttrs }),
 
   defineEvent({

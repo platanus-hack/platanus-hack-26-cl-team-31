@@ -200,6 +200,9 @@ export const css = `
 .af-dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 16px;margin:0;font-size:12.5px}
 .af-dl dt{color:var(--af-muted)}
 .af-dl dd{margin:0;font-family:var(--af-mono);font-size:12px;color:var(--af-ink);overflow-wrap:anywhere}
+.af-detail-actions{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:12px;font-size:12.5px}
+.af-detail-actions a{color:var(--af-accent-ink);font-weight:500;text-decoration:none}
+.af-detail-actions a:hover{text-decoration:underline;text-underline-offset:3px}
 .af-timeline{display:flex;flex-direction:column;min-height:0;overflow:hidden;padding-bottom:8px}
 .af-list{list-style:none;margin:0 -8px;padding:0;overflow:auto;min-height:0;display:grid;gap:2px;align-content:start;height:320px;scrollbar-width:thin;scrollbar-color:var(--af-line-strong) transparent}
 .af-wide .af-list{height:auto;flex:1 1 auto}

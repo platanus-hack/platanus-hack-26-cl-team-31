@@ -101,7 +101,15 @@ async function start(env: AdminEnv, telemetry: Telemetry) {
     shutdown.abort()
     stopPrune()
     try {
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+      const closed = new Promise<void>((resolve) => server.close(() => resolve()))
+      // Las conexiones keep-alive ociosas se cierran ya; las ocupadas (streams en vivo, que el
+      // shutdown ya cortó) tienen unos segundos antes de cerrarse a la fuerza.
+      const http = server as { closeIdleConnections?: () => void; closeAllConnections?: () => void }
+      http.closeIdleConnections?.()
+      const force = setTimeout(() => http.closeAllConnections?.(), 5_000)
+      force.unref()
+      await closed
+      clearTimeout(force)
       await pool.end()
       await telemetry.shutdown()
     } catch (error) {
