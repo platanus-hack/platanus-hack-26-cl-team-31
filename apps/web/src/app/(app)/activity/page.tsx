@@ -2,11 +2,11 @@ import Link from "next/link";
 
 import { readActivity } from "../actions";
 import { ActivityList } from "../activity-list";
-import { validPage } from "../labels";
+import { parseActivityPage } from "../labels";
 import { button, Heading } from "../ui";
 
 export default async function ActivityPage({ searchParams }: PageProps<"/activity">) {
-  const page = validPage((await searchParams).page);
+  const page = parseActivityPage((await searchParams).page);
   const { items, hasNext } = await readActivity(String(page));
 
   return (

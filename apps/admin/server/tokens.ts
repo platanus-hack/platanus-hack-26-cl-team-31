@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto"
 import type pg from "pg"
 import { z } from "zod"
 import { AdminToken, AdminTokenScope, CreateAdminToken } from "../shared/contract.js"
-import type { TokenPrincipal } from "./mcp/index.js"
+import type { TokenPrincipal } from "./mcp/types.js"
 
 // Tokens personales nxa_ para el MCP de administración. Solo se guarda sha256(token).
 // Ver docs/admin.md#4-sesiones-y-acceso.

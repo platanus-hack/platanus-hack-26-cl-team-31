@@ -2,7 +2,7 @@ import {
   ActivityEvent, Address, FinalOutcome, RequestStatus, ToolArgs, ToolName,
   ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
 } from "@team-31/protocol";
-import { and, asc, desc, DrizzleQueryError, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { BrokerError } from "../../errors.js";
@@ -221,11 +221,12 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       if (!inserted) throw new BrokerError("conflict", "La solicitud ya existe.");
     },
 
-    async getRequest(id, participant) {
+    async getRequest(id, participant, forUpdate) {
       // The worker looks up an already claimed job's request by ID. All ports supply a participant.
       const sender = participant && "fromUserId" in participant ? eq(requests.fromUserId, participant.fromUserId) : undefined;
       const recipient = participant && "toUserId" in participant ? eq(requests.toUserId, participant.toUserId) : undefined;
-      const [row] = await db.select().from(requests).where(and(eq(requests.id, id), sender, recipient));
+      const query = db.select().from(requests).where(and(eq(requests.id, id), sender, recipient));
+      const [row] = await (forUpdate ? query.for("no key update") : query);
       return row ? readRequest(row) : null;
     },
 
@@ -278,21 +279,47 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       if (!inserted) throw new BrokerError("conflict", "El aviso ya existe.");
     },
 
-    async claimDueWakes(now, limit) {
+    async claimDueWakes(now, leaseUntil, limit) {
       const jobs = await db.select().from(wakeJobs)
-        .where(and(eq(wakeJobs.state, "queued"), lte(wakeJobs.runAt, now)))
+        .where(and(inArray(wakeJobs.state, ["queued", "running"]), lte(wakeJobs.runAt, now)))
         .orderBy(asc(wakeJobs.runAt), asc(wakeJobs.id)).limit(limit).for("update", { skipLocked: true });
       if (jobs.length > 0) {
-        await db.update(wakeJobs).set({ state: "running" }).where(inArray(wakeJobs.id, jobs.map(({ id }) => id)));
+        await db.update(wakeJobs).set({
+          state: "running", runAt: leaseUntil,
+          attempt: sql`case when ${wakeJobs.state} = 'running' then ${wakeJobs.attempt} + 1 else ${wakeJobs.attempt} end`,
+        }).where(inArray(wakeJobs.id, jobs.map(({ id }) => id)));
       }
-      return jobs.map((job) => readWake({ ...job, state: "running" }));
+      return jobs.map((job) => {
+        const recovered = job.state === "running";
+        return {
+          ...readWake(job), state: "running", runAt: leaseUntil, recovered,
+          attempt: job.attempt + Number(recovered),
+        };
+      });
     },
 
-    async completeWake(jobId, lastResult, nextRunAt) {
-      await db.update(wakeJobs).set(nextRunAt
+    async recordWakeAttempt(claim, now, lastResult, nextRunAt) {
+      const [updated] = await db.update(wakeJobs).set(nextRunAt
         ? { lastResult, state: "queued", runAt: nextRunAt, attempt: sql`${wakeJobs.attempt} + 1` }
-        : { lastResult, state: "done" })
-        .where(and(eq(wakeJobs.id, jobId), eq(wakeJobs.state, "running")));
+        : { lastResult, state: "done", runAt: now })
+        .where(and(
+          eq(wakeJobs.id, claim.id), eq(wakeJobs.state, "running"),
+          eq(wakeJobs.attempt, claim.attempt), gt(wakeJobs.runAt, now),
+        )).returning({ id: wakeJobs.id });
+      return updated !== undefined;
+    },
+
+    async getWakeForUpdate(requestId, requestVersion) {
+      const [job] = await db.select().from(wakeJobs)
+        .where(and(eq(wakeJobs.requestId, requestId), eq(wakeJobs.requestVersion, requestVersion)))
+        .limit(1).for("update");
+      return job ? readWake(job) : null;
+    },
+
+    async expediteQueuedWake(jobId, now) {
+      await db.update(wakeJobs).set({ runAt: now }).where(and(
+        eq(wakeJobs.id, jobId), eq(wakeJobs.state, "queued"), gt(wakeJobs.runAt, now),
+      ));
     },
 
     async ensureAgentConnection(row) {
@@ -313,7 +340,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
     async listAgentConnections(userId) {
       const rows = await db.select().from(agentConnections).where(eq(agentConnections.userId, userId))
-        .orderBy(asc(agentConnections.createdAt), asc(agentConnections.agentId));
+        .orderBy(asc(agentConnections.createdAt), sql`${agentConnections.agentId} COLLATE "C"`);
       return rows.map(readConnection);
     },
 

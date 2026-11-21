@@ -126,6 +126,19 @@ describe("contexto y spans", () => {
 });
 
 describe("error()", () => {
+  it("registra el mismo objeto de error en cada instancia que lo reporta", () => {
+    const first = setup();
+    const second = setup();
+    const failure = new Error("error compartido");
+
+    const firstId = first.telemetry.error("broker.request", failure);
+    const secondId = second.telemetry.error("worker.tick", failure);
+
+    expect(firstId).not.toBe(secondId);
+    expect(first.sink.find("error")[0]?.errorId).toBe(firstId);
+    expect(second.sink.find("error")[0]?.errorId).toBe(secondId);
+  });
+
   it("no incluye mensajes crudos, causas ni valores", () => {
     const { sink, telemetry } = setup();
     const secret = "Bearer eyJhbGciOi.secret-token";
@@ -161,6 +174,15 @@ describe("error()", () => {
 });
 
 describe("ciclo de vida", () => {
+  it("omite el arranque, los latidos y la detención con lifecycle desactivado", async () => {
+    vi.useFakeTimers();
+    const { sink, telemetry } = setup({ lifecycle: false, heartbeatMs: 1_000 });
+    vi.advanceTimersByTime(5_000);
+    await telemetry.shutdown();
+
+    expect(sink.records).toEqual([]);
+  });
+
   it("emite service.started, un latido cada 30 s y service.stopping", async () => {
     vi.useFakeTimers();
     const { sink, telemetry } = setup({ heartbeatMs: undefined, lifecycle: true });

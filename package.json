@@ -19,7 +19,7 @@
     "dev": "./scripts/with-env.sh turbo run dev",
     "build": "./scripts/with-env.sh --optional-env turbo run build",
     "test": "./scripts/with-env.sh --optional-env turbo run test",
-    "test:workspace": "pnpm build --filter './packages/*' && ./scripts/with-env.sh --optional-env vitest run --config vitest.workspace.ts",
+    "test:workspace": "pnpm test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",

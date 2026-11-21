@@ -2,8 +2,8 @@
 // eventos de telemetría. Las columnas salen de information_schema a través de
 // AdminQueries.sql (que corre con el rol nexo_admin_ro, así que solo ve lo que el rol puede
 // leer). Si esa consulta falla, se usa la lista estática de docs/admin.md (sección 2.2).
+import { describeCatalog, type Telemetry } from "@team-31/telemetry"
 import type { AdminQueries } from "../../shared/queries.js"
-import { describeCatalog } from "@team-31/telemetry"
 
 export type SchemaView = { name: string; columns: { name: string; type: string | null }[] }
 export type CatalogEvent = { name: string; kind: string; attrs: string[] }
@@ -79,14 +79,14 @@ function viewsFromRows(rows: unknown[][]): SchemaView[] {
   return [...views.values()]
 }
 
-export async function loadAdminSchema(queries: AdminQueries): Promise<AdminSchema> {
+export async function loadAdminSchema(queries: AdminQueries, telemetry: Telemetry): Promise<AdminSchema> {
   try {
     const result = await queries.sql(COLUMNS_SQL)
     const views = viewsFromRows(result.rows)
     if (views.length > 0) return { source: "information_schema", views, events: EVENT_CATALOG, notes: NOTES }
-  } catch {
-    // Sin acceso a information_schema (por ejemplo, vistas aún sin migrar): lista estática.
-    // TODO(admin): telemetry.error("mcp admin schema", error) al conectar @team-31/telemetry en admin.
+  } catch (error) {
+    // La lista estática permite consultar el recurso antes de terminar las migraciones.
+    telemetry.error("admin.mcp.schema", error)
   }
   return { source: "static", views: staticViews(), events: EVENT_CATALOG, notes: NOTES }
 }

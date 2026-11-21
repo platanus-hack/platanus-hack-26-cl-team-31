@@ -9,7 +9,11 @@ pnpm bootstrap
 pnpm dev
 ```
 
-`pnpm bootstrap` prepara el esquema `nexo` y el rol `nexo_broker`, que usa una contraseña local generada. El broker escucha en loopback. Postgres, web y MCP usan sus puertos asignados al worktree. Los servicios de coordinación siguen disponibles mediante `pnpm agents:up`.
+`pnpm bootstrap` prepara el esquema `nexo` y el rol `nexo_broker`, que usa una contraseña local generada. El broker escucha en loopback. Postgres, web y MCP usan sus puertos asignados al worktree.
+
+El MCP remoto de `apps/mcp` envía solicitudes al broker. En `/demo`, Contactos de Ana usa el broker a través del paquete `@team-31/demo`. La demo de fútbol usa la API local de `apps/server` y Ollama. `pnpm agents:up` prepara los grupos y la disponibilidad de esa demo e inicia la API en `COORDINATION_PORT`.
+
+La API de coordinación incluye `X-Trace-Id` en sus respuestas y `X-Error-Id` cuando una excepción impide completarlas. El servicio emite `http.request`, `coordination.tool.call` y `error` en el sink configurado. Con el sink de Postgres, puedes buscar esos identificadores desde el admin.
 
 Para iniciar sesión con Google, configura `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` en `.env.local`. En la consola de tu cliente OAuth agrega como retorno el valor de `BETTER_AUTH_URL` seguido de `/api/auth/callback/google`. Con las credenciales de Google omitidas, puedes iniciar el stack, consultar metadata y usar clientes de prueba locales.
 

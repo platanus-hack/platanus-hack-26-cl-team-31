@@ -21,6 +21,18 @@ function byCreatedAt(a: RequestRow, b: RequestRow): number {
 }
 
 function transaction(state: State): StoreTx {
+  function findUserByAddress(address: Address): UserRow | undefined {
+    return [...state.users.values()].find((user) => user.address === address);
+  }
+
+  function listRecipientRequests(address: Address, status: "awaiting_agent" | "awaiting_owner"): RequestRow[] {
+    const ownerId = findUserByAddress(address)?.userId;
+    if (!ownerId) return [];
+    return structuredClone([...state.requests.values()]
+      .filter((row) => row.toAddress === address && row.toUserId === ownerId && row.status === status)
+      .sort(byCreatedAt));
+  }
+
   function putAgent(row: AgentConnectionRow): AgentConnectionRow {
     if (!state.users.has(row.userId)) {
       state.users.set(row.userId, { userId: row.userId, createdAt: structuredClone(row.createdAt) });
@@ -47,7 +59,7 @@ function transaction(state: State): StoreTx {
       return structuredClone(state.users.get(userId) ?? null);
     },
     async getUserByAddress(address) {
-      return structuredClone([...state.users.values()].find((user) => user.address === address) ?? null);
+      return structuredClone(findUserByAddress(address) ?? null);
     },
     async createAddress(userId, address) {
       const user = state.users.get(userId);
@@ -121,16 +133,17 @@ function transaction(state: State): StoreTx {
       return true;
     },
     async listInbox(address) {
-      return structuredClone([...state.requests.values()]
-        .filter((row) => row.toAddress === address && row.status === "awaiting_agent").sort(byCreatedAt));
+      return listRecipientRequests(address, "awaiting_agent");
     },
     async listOwnerPending(address) {
-      return structuredClone([...state.requests.values()]
-        .filter((row) => row.toAddress === address && row.status === "awaiting_owner").sort(byCreatedAt));
+      return listRecipientRequests(address, "awaiting_owner");
     },
     async listActivity(address, limit) {
+      const ownerId = findUserByAddress(address)?.userId;
+      if (!ownerId) return [];
       return structuredClone([...state.requests.values()]
-        .filter((row) => row.toAddress === address || row.fromAddress === address)
+        .filter((row) => (row.toAddress === address && row.toUserId === ownerId)
+          || (row.fromAddress === address && row.fromUserId === ownerId))
         .sort((a, b) => byCreatedAt(b, a)).slice(0, limit));
     },
     async listDueForExpiry(now, limit) {
@@ -149,21 +162,34 @@ function transaction(state: State): StoreTx {
       if (state.wakes.has(job.id)) throw new BrokerError("conflict", "El aviso ya existe.");
       state.wakes.set(job.id, structuredClone(job));
     },
-    async claimDueWakes(now, limit) {
-      const jobs = [...state.wakes.values()].filter((job) => job.state === "queued" && job.runAt <= now)
+    async claimDueWakes(now, leaseUntil, limit) {
+      const jobs = [...state.wakes.values()].filter((job) => job.state !== "done" && job.runAt <= now)
         .sort((a, b) => a.runAt.getTime() - b.runAt.getTime() || a.id.localeCompare(b.id)).slice(0, limit);
-      for (const job of jobs) job.state = "running";
-      return structuredClone(jobs);
+      return jobs.map((job) => {
+        const recovered = job.state === "running";
+        job.state = "running";
+        job.runAt = structuredClone(leaseUntil);
+        if (recovered) job.attempt++;
+        return structuredClone({ ...job, state: "running", recovered });
+      });
     },
-    async completeWake(id, result, nextRunAt) {
-      const job = state.wakes.get(id);
-      if (!job || job.state !== "running") return;
+    async recordWakeAttempt(claim, now, result, nextRunAt) {
+      const job = state.wakes.get(claim.id);
+      if (!job || job.state !== "running" || job.attempt !== claim.attempt || job.runAt <= now) return false;
       job.lastResult = structuredClone(result);
       job.state = nextRunAt ? "queued" : "done";
-      if (nextRunAt) {
-        job.attempt++;
-        job.runAt = structuredClone(nextRunAt);
-      }
+      job.runAt = structuredClone(nextRunAt ?? now);
+      if (nextRunAt) job.attempt++;
+      return true;
+    },
+    async getWakeForUpdate(requestId, requestVersion) {
+      const job = [...state.wakes.values()].find((wake) =>
+        wake.requestId === requestId && wake.requestVersion === requestVersion);
+      return structuredClone(job ?? null);
+    },
+    async expediteQueuedWake(id, now) {
+      const job = state.wakes.get(id);
+      if (job?.state === "queued" && job.runAt > now) job.runAt = structuredClone(now);
     },
     async ensureAgentConnection(row) {
       const existing = state.agents.get(agentKey(row.userId, row.agentId));
@@ -173,7 +199,10 @@ function transaction(state: State): StoreTx {
       putAgent(row);
     },
     async listAgentConnections(userId) {
-      return structuredClone([...state.agents.values()].filter((row) => row.userId === userId));
+      const connections = [...state.agents.values()].filter((row) => row.userId === userId);
+      connections.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+        || Buffer.compare(Buffer.from(a.agentId), Buffer.from(b.agentId)));
+      return structuredClone(connections);
     },
     async getAgentConnection(userId, agentId) {
       return structuredClone(state.agents.get(agentKey(userId, agentId)) ?? null);

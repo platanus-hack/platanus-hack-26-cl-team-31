@@ -8,6 +8,7 @@ import {
   type Grant,
   type GrantInput,
   type Principal,
+  type ReplyInput,
   type WakeTarget,
   type Waker,
 } from "@team-31/protocol";
@@ -135,6 +136,11 @@ describe("contrato del broker", () => {
     expect(sent).not.toHaveProperty("decisionReason");
     const events = await deps.store.tx((tx) => tx.listEvents([item.requestId]));
     expect(events.filter((event) => event.code).map((event) => event.code)).toEqual(["forbidden", "invalid_input", "conflict"]);
+  });
+
+  it("rechaza una respuesta malformada antes de buscar la solicitud", async () => {
+    const malformed = { requestId: "missing", nonce: "nonce", outcome: "answered" } as unknown as ReplyInput;
+    await expect(broker.agent.reply(bruno, malformed)).rejects.toMatchObject({ code: "invalid_input" });
   });
 
   it("entrega no_data firmado y muestra el motivo exclusivamente al dueño destinatario", async () => {
@@ -393,7 +399,9 @@ describe("conexiones y prueba de aviso", () => {
     await expect(broker.agent.connectWake(limited, target)).rejects.toMatchObject({ code: "forbidden" });
     expect(verifyCallback).not.toHaveBeenCalled();
     verifyCallback.mockResolvedValueOnce({ ok: false, reason: "challenge_failed" });
-    await expect(broker.agent.connectWake(bruno, target)).rejects.toMatchObject({ code: "invalid_input", message: "challenge_failed" });
+    await expect(broker.agent.connectWake(bruno, target)).rejects.toMatchObject({
+      code: "invalid_input", reason: "challenge_failed", message: "challenge_failed",
+    });
     expect((await broker.owner.agents(bruno))[0]).toMatchObject({ wakeKind: "none" });
     const connected = await broker.agent.connectWake(bruno, target);
     expect(verifyCallback).toHaveBeenLastCalledWith(target);

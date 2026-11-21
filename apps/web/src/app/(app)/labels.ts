@@ -60,7 +60,7 @@ export function formatTime(value: string) {
 
 export const activityPageSize = 20;
 
-export function validPage(input: unknown) {
+export function parseActivityPage(input: unknown) {
   if (typeof input !== "string" || !/^[1-9][0-9]*$/.test(input)) return 1;
   const value = Number(input);
   return Number.isSafeInteger(value * activityPageSize + 1) ? value : 1;

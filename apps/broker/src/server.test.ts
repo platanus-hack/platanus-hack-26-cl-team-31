@@ -168,6 +168,20 @@ describe("HTTP interno del broker", () => {
     expect(await call(app, routes.ownerGrants, { token: alice })).toEqual({ items: [] });
   });
 
+  it("devuelve un motivo estructurado cuando falla la verificación del callback", async () => {
+    const { broker, waker } = fixture();
+    waker.verifyCallback.mockResolvedValueOnce({ ok: false, reason: "timeout" });
+    const app = createHttpServer({ broker, publicKeys });
+
+    const response = await request(app, routes.agentConnectWake, {
+      token: await agent("bruno"), body: mcpEvents,
+    });
+    expect(response.status).toBe(400);
+    expect(ErrorBody.parse(await response.json())).toEqual({
+      error: { code: "invalid_input", message: "timeout", reason: "timeout" },
+    });
+  });
+
   it("recorre el contrato completo con JWT de servicio y completa ask, inbox, reply y status", async () => {
     const { broker, waker } = fixture();
     const app = createHttpServer({ broker, publicKeys });

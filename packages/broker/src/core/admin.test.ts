@@ -1,5 +1,6 @@
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { type AdminActor, type Principal, type WakeTarget, type Waker } from "@team-31/protocol";
+import { createTelemetry, memorySink, type MemorySink } from "@team-31/telemetry";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
@@ -62,15 +63,18 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
     let now: Date;
     let store: Store;
     let broker: BrokerCore;
+    let sink: MemorySink;
     const wake = vi.fn<Waker["wake"]>();
 
     beforeEach(async () => {
       now = new Date("2026-11-21T15:00:00Z");
       wake.mockReset().mockResolvedValue({ ok: true, retryable: false, ms: 1 });
       store = await factory.make();
+      sink = memorySink();
       const deps: BrokerDeps = {
         store,
         waker: { wake, verifyCallback: async () => ({ ok: true }) },
+        telemetry: createTelemetry({ service: "worker", sink, lifecycle: false }),
         clock: { now: () => now },
         signingKey: privateKey,
         nonceKey: new Uint8Array(32).fill(4),
@@ -107,24 +111,72 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
     const row = (id: string) => store.tx((tx) => tx.getRequest(id));
 
     describe("rewake", () => {
-      it("encola el siguiente intento, invalida el reintento anterior y deja un evento admin_rewake", async () => {
+      it("adelanta el reintento existente y deja un evento admin_rewake", async () => {
         const requestId = await askAgent();
         wake.mockResolvedValueOnce({ ok: false, retryable: true, ms: 1 });
         expect(await broker.tick(now)).toMatchObject({ wakesRetried: 1 });
         const before = await row(requestId);
 
         await broker.admin.rewake(operator, requestId, reason);
-        expect((await row(requestId))?.version).toBe(before!.version + 1);
+        expect((await row(requestId))?.version).toBe(before!.version);
         expect((await events(requestId)).at(-1)).toMatchObject({ kind: "wake", code: "admin_rewake" });
 
         expect(await broker.tick(now)).toMatchObject({ wakesOk: 1, wakesRetried: 0, wakesFailed: 0 });
         expect(wake).toHaveBeenCalledTimes(2);
-        // The retry queued for the old version is due now but stale, so it does not wake again.
+        // The original retry deadline does not trigger another delivery.
         advance(10_000);
         expect(await broker.tick(now)).toEqual({ expired: 0, wakesOk: 0, wakesRetried: 0, wakesFailed: 0 });
         expect(wake).toHaveBeenCalledTimes(2);
         expect((await events(requestId)).filter((event) => event.kind === "wake").map(({ code }) => code))
           .toEqual(["failed", "admin_rewake", "ok"]);
+      });
+
+      it("rechaza un reaviso durante la concesión activa e ignora el resultado del worker anterior", async () => {
+        const requestId = await askAgent();
+        let signalStarted!: () => void;
+        let finish!: (result: Awaited<ReturnType<Waker["wake"]>>) => void;
+        const started = new Promise<void>((resolve) => { signalStarted = resolve; });
+        const inflight = new Promise<Awaited<ReturnType<Waker["wake"]>>>((resolve) => { finish = resolve; });
+        wake.mockImplementationOnce(() => {
+          signalStarted();
+          return inflight;
+        });
+        const first = broker.tick(now);
+        try {
+          await Promise.race([
+            started,
+            first.then(() => { throw new Error("El worker terminó antes de iniciar el primer aviso."); }),
+          ]);
+          await expect(broker.admin.rewake(operator, requestId, reason)).rejects.toMatchObject({ code: "conflict" });
+          advance(60_000);
+          expect(await broker.tick(now)).toMatchObject({ wakesOk: 1 });
+        } finally {
+          finish({ ok: false, retryable: false, ms: 1 });
+          await first;
+        }
+        expect(await first).toMatchObject({ wakesFailed: 0, wakesRetried: 0 });
+        expect(wake).toHaveBeenCalledTimes(2);
+        expect(sink.find("wake.lease_recovered")).toMatchObject([{ requestId, attrs: { attempt: 2 } }]);
+        expect((await events(requestId)).filter(({ kind }) => kind === "wake").map(({ code }) => code)).toEqual(["ok"]);
+        expect(await row(requestId)).toMatchObject({ status: "awaiting_agent" });
+      });
+
+      it("cierra la solicitud cuando el último aviso perdió su concesión", async () => {
+        const requestId = await askAgent();
+        for (const attempt of [1, 2, 3]) {
+          const leaseUntil = new Date(now.getTime() + 60_000);
+          const claimed = await store.tx((tx) => tx.claimDueWakes(now, leaseUntil, 1));
+          expect(claimed).toMatchObject([{ requestId, attempt }]);
+          advance(60_000);
+        }
+
+        expect(await broker.tick(now)).toMatchObject({ wakesFailed: 1 });
+        expect(wake).not.toHaveBeenCalled();
+        expect(sink.find("wake.exhausted")).toMatchObject([{ requestId, attrs: { attempts: 3 } }]);
+        expect(await row(requestId)).toMatchObject({ status: "delivery_failed" });
+        expect(await events(requestId)).toEqual(expect.arrayContaining([
+          expect.objectContaining({ kind: "wake", code: "lease_exhausted" }),
+        ]));
       });
 
       it("continúa la cuenta de intentos: sin reintentos restantes, un aviso fallido cierra como delivery_failed", async () => {

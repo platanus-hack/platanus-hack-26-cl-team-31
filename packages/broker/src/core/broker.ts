@@ -73,10 +73,9 @@ function rejectionCode(error: BrokerError) {
 }
 
 export function createBroker(deps: BrokerDeps): BrokerCore {
-  const { clock, config, nonceKey, signingKey, waker } = deps;
+  const { clock, config, nonceKey, signingKey, waker, telemetry } = deps;
   const events = createLifecycleEvents(deps.store, deps.telemetry);
   const { store, record } = events;
-  const observedDeps: BrokerDeps = { ...deps, store };
   const systemAddress = Address.parse(`system@${config.addressDomain}`);
 
   function requireScope(principal: Principal, scope: Scope, operation: string): void {
@@ -151,7 +150,26 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return true;
   }
 
-  async function activeAgent(tx: StoreTx, principal: Principal) {
+  async function prepareAgentReply(row: RequestRow, reply: ReplyInput, agentId: string, now: Date) {
+    const { outcome, internalReason } = reply;
+    const filtered = outcome === "answered" ? filterResult(row.tool, reply.result, row.allowedFields) : null;
+    const changed = outcome === "needs_owner"
+      ? await seal(escalate(row, deadline(now)))
+      : await finalize(transition(row, outcome), outcome, now, filtered?.result);
+    const droppedFields = filtered?.dropped ?? [];
+    const declaredFields = fieldsOf(row.tool);
+    return {
+      changed: {
+        ...changed, internalReason, answeredByAgentId: agentId,
+        droppedFields: droppedFields.filter((field) => declaredFields.includes(field)),
+      },
+      receipt: {
+        requestId: row.id, status: changed.status, deliveredFields: filtered?.delivered ?? [], droppedFields,
+      },
+    };
+  }
+
+  async function ensureActiveAgentConnection(tx: StoreTx, principal: Principal) {
     const { userId, agentId } = principal;
     const connection = await tx.ensureAgentConnection({
       userId, agentId, label: agentId, wakeTarget: { kind: "none" }, createdAt: clock.now(),
@@ -277,7 +295,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const parsed = AskInput.safeParse(input);
     if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
     const view = await store.tx(async (tx) => {
-      if (principal) await activeAgent(tx, principal);
+      if (principal) await ensureActiveAgentConnection(tx, principal);
       return submit(tx, userId, parsed.data, principal?.agentId);
     });
     if (view instanceof BrokerError) throw view;
@@ -286,7 +304,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
   async function status(userId: string, id: string, principal?: Principal) {
     const view = await store.tx(async (tx) => {
-      if (principal) await activeAgent(tx, principal);
+      if (principal) await ensureActiveAgentConnection(tx, principal);
       const row = await tx.getRequest(id, { fromUserId: userId });
       if (!row) return notFound();
       if (row.status === "answered" && row.answeredByAgentId && row.toUserId &&
@@ -304,7 +322,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async capabilities(p, to) {
         requireScope(p, "nexo:ask", "agent.capabilities");
         return store.tx(async tx => {
-          await activeAgent(tx, p);
+          await ensureActiveAgentConnection(tx, p);
           const from = (await tx.getUser(p.userId))?.address;
           const owner = await tx.getUserByAddress(to);
           if (!from || !owner || from === to) return { tools: [] };
@@ -323,7 +341,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async inbox(p) {
         requireScope(p, "nexo:inbox", "agent.inbox");
         return store.tx(async (tx) => {
-          await activeAgent(tx, p);
+          await ensureActiveAgentConnection(tx, p);
           const address = (await tx.getUser(p.userId))?.address;
           if (!address) return [];
           const now = clock.now();
@@ -335,18 +353,26 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       async reply(p, input) {
         requireScope(p, "nexo:reply", "agent.reply");
+        const parsed = ReplyInput.safeParse(input);
+        if (!parsed.success) {
+          telemetry?.emit("broker.reply.rejected", {
+            userId: p.userId, agentId: p.agentId, attrs: { code: "schema" },
+          });
+          throw new BrokerError("invalid_input", "La respuesta no cumple el formato requerido.");
+        }
+        const { requestId, nonce } = parsed.data;
         const result = await store.tx<ReplyReceipt | BrokerError>(async (tx) => {
-          const connection = await activeAgent(tx, p);
-          const row = await tx.getRequest(input.requestId, { toUserId: p.userId });
+          const connection = await ensureActiveAgentConnection(tx, p);
+          const row = await tx.getRequest(requestId, { toUserId: p.userId });
           if (!row || (row.targetAgentId !== undefined && row.targetAgentId !== p.agentId)) {
-            record(tx, "broker.reply.rejected", { requestId: input.requestId, attrs: { code: "not_recipient" } });
+            record(tx, "broker.reply.rejected", { requestId, attrs: { code: "not_recipient" } });
             return notFound();
           }
 
           const now = clock.now();
           async function reject(error: BrokerError): Promise<BrokerError> {
-            await tx.appendEvent({ requestId: input.requestId, at: now, kind: "response", code: error.code });
-            record(tx, "broker.reply.rejected", { requestId: input.requestId, attrs: { code: rejectionCode(error) } });
+            await tx.appendEvent({ requestId, at: now, kind: "response", code: error.code });
+            record(tx, "broker.reply.rejected", { requestId, attrs: { code: rejectionCode(error) } });
             return error;
           }
           if (row.status !== "awaiting_agent") return reject(closed());
@@ -354,45 +380,24 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             const changed = await closePending(tx, row, "expired", now);
             return reject(changed ? expired() : closed());
           }
-          if (!hasNonce(nonceKey, row.id, input.nonce)) {
+          if (!hasNonce(nonceKey, row.id, nonce)) {
             return reject(new BrokerError("forbidden", "El nonce no coincide."));
           }
-          const parsed = ReplyInput.safeParse(input);
-          if (!parsed.success) return reject(new BrokerError("invalid_input", "La respuesta no cumple el formato requerido."));
-
-          const { outcome, internalReason } = parsed.data;
-          let changed: RequestRow;
-          let deliveredFields: string[] = [];
-          let droppedFields: string[] = [];
+          let response: Awaited<ReturnType<typeof prepareAgentReply>>;
           try {
-            if (outcome === "needs_owner") {
-              changed = await seal(escalate(row, deadline(now)));
-            } else {
-              let filtered: ToolResult | undefined;
-              if (outcome === "answered") {
-                const { result, delivered, dropped } = filterResult(row.tool, parsed.data.result, row.allowedFields);
-                filtered = result;
-                deliveredFields = delivered;
-                droppedFields = dropped;
-              }
-              changed = await finalize(transition(row, outcome), outcome, now, filtered);
-            }
+            response = await prepareAgentReply(row, parsed.data, p.agentId, now);
           } catch (error) {
             if (error instanceof BrokerError) return reject(error);
             throw error;
           }
-          const declaredFields = fieldsOf(row.tool);
-          changed = {
-            ...changed, internalReason, answeredByAgentId: p.agentId,
-            droppedFields: droppedFields.filter((field) => declaredFields.includes(field)),
-          };
+          const { changed, receipt } = response;
           if (!await saveTransition(tx, row, changed)) return reject(closed());
           await applyConnection(tx, changed);
           recordTransition(tx, row, changed, "agent");
           await tx.appendEvent({ requestId: row.id, at: now, kind: "response", status: changed.status });
           if (changed.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
           if (row.targetAgentId !== undefined) await tx.upsertAgentConnection({ ...connection, verifiedAt: now });
-          return { requestId: row.id, status: changed.status, deliveredFields, droppedFields };
+          return receipt;
         });
         // Returning the error inside tx commits the expiry and any authorized audit event.
         if (result instanceof BrokerError) throw result;
@@ -410,12 +415,19 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (!parsed.success) throw new BrokerError("invalid_input", "La configuración del aviso no es válida.");
         const wakeTarget = parsed.data;
         if (wakeTarget.kind === "mcp_events") {
-          await store.tx((tx) => activeAgent(tx, p));
-          const verification = await waker.verifyCallback(wakeTarget).catch(() => ({ ok: false as const, reason: "challenge_failed" as const }));
-          if (!verification.ok) throw new BrokerError("invalid_input", verification.reason);
+          await store.tx((tx) => ensureActiveAgentConnection(tx, p));
+          const fields = { userId: p.userId, agentId: p.agentId };
+          let errorId: string | undefined;
+          const verification = await waker.verifyCallback(wakeTarget).catch((error: unknown) => {
+            errorId = telemetry?.error?.("wake.verify_callback", error, fields);
+            return { ok: false, reason: "challenge_failed" } as const;
+          });
+          const reason = verification.ok ? undefined : verification.reason;
+          telemetry?.emit("wake.callback_verification", { ...fields, attrs: { ok: verification.ok, reason } });
+          if (reason) throw new BrokerError("invalid_input", reason, { errorId, reason });
         }
         return store.tx(async (tx) => {
-          const connection = await activeAgent(tx, p);
+          const connection = await ensureActiveAgentConnection(tx, p);
           const updated = { ...connection, wakeTarget };
           await tx.upsertAgentConnection(updated);
           return toAgentConnection(updated);
@@ -425,7 +437,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async disconnectWake(p, subscriptionId) {
         requireScope(p, WAKE_SUBSCRIPTION_SCOPE, "agent.disconnectWake");
         await store.tx(async (tx) => {
-          const connection = await activeAgent(tx, p);
+          const connection = await ensureActiveAgentConnection(tx, p);
           if (connection.wakeTarget.kind !== "mcp_events" || connection.wakeTarget.subscriptionId !== subscriptionId) {
             throw notFound();
           }
@@ -608,8 +620,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
     },
 
-    admin: createAdminPort(observedDeps, { closePending, enqueue, record }),
+    admin: createAdminPort({ store, clock, telemetry }, { closePending, enqueue, record }),
 
-    tick: createWorker(observedDeps, closePending),
+    tick: createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs: config.wakeRetryDelaysMs }, closePending),
   };
 }

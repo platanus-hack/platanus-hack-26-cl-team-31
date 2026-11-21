@@ -244,10 +244,12 @@ it("anuncia eventos, valida suscripciones, devuelve los errores de callback y ca
   }
   expect(agent.connectWake).not.toHaveBeenCalled();
 
-  for (const reason of ["challenge_failed", "timeout", "https_required", "blocked_address"]) {
-    vi.mocked(agent.connectWake).mockRejectedValueOnce(new BrokerError("invalid_input", reason));
+  for (const reason of ["challenge_failed", "timeout", "https_required", "blocked_address"] as const) {
+    vi.mocked(agent.connectWake).mockRejectedValueOnce(new BrokerError("invalid_input", "callback failed", { reason }));
     await expect(subscribe(subscription)).rejects.toMatchObject({ code: -32015, data: { reason } });
   }
+  vi.mocked(agent.connectWake).mockRejectedValueOnce(new BrokerError("invalid_input", "challenge_failed"));
+  await expect(subscribe(subscription)).rejects.toMatchObject({ code: -32602, data: { code: "invalid_input" } });
   const expectedId = `sub_${createHash("sha256").update(`user|agent|${url}|${WAKE_EVENT}|{}`).digest("hex").slice(0, 16)}`;
   const before = Date.now();
   const result = await subscribe(subscription);

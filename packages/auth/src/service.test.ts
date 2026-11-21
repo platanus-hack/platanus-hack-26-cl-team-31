@@ -1,7 +1,7 @@
 import { decodeJwt, decodeProtectedHeader, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { mintServiceToken, verifyServiceToken } from "./service.js";
+import { mintServiceToken, parseServicePrivateKey, verifyServiceToken } from "./service.js";
 
 const mcp = await generateKeyPair("EdDSA", { extractable: true });
 const web = await generateKeyPair("EdDSA", { extractable: true });
@@ -13,6 +13,21 @@ const publicKeys = {
 };
 const sub = "user-1";
 const azp = "agent-1";
+
+describe("configuración JWT de servicio", () => {
+  it("acepta una llave privada Ed25519 configurada como JWK", async () => {
+    const key = await exportJWK(web.privateKey);
+    expect(parseServicePrivateKey(JSON.stringify(key), "web")).toEqual(key);
+  });
+
+  it("identifica la variable de una llave inválida sin incluir su contenido", () => {
+    for (const value of [undefined, "contenido privado inválido", JSON.stringify(publicKeys.web)]) {
+      expect(() => parseServicePrivateKey(value, "web")).toThrow(
+        /^WEB_SERVICE_PRIVATE_KEY debe contener una JWK privada Ed25519\.$/,
+      );
+    }
+  });
+});
 
 describe("JWT de servicio", () => {
   let mcpToken: string;

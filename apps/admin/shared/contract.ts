@@ -7,11 +7,15 @@
 //   PayloadReveal, que es solo para humanos con rol operator, exige un motivo y queda auditada.
 // - Fechas en ISO 8601 con zona. Ids de ops.events (bigint) viajan como string.
 import { FinalOutcome, RequestStatus, ToolName, WakeKind } from "@team-31/protocol"
+import { EventKind, Level, Service } from "@team-31/telemetry/types"
 import { z } from "zod"
+
+export { EventKind, Level, Service }
 
 const Iso = z.iso.datetime({ offset: true })
 const Scalar = z.union([z.string(), z.number(), z.boolean(), z.null()])
 const Attrs = z.record(z.string(), Scalar)
+const QueryBoolean = z.union([z.boolean(), z.stringbool()])
 
 // ---------- Identidad y sesiones ----------
 
@@ -65,14 +69,6 @@ export const CreatedAdminToken = z.object({
 })
 
 // ---------- Telemetría ----------
-
-export const Service = z.enum(["web", "mcp", "broker", "worker", "admin", "coordination"])
-export type Service = z.infer<typeof Service>
-
-export const EventKind = z.enum(["http", "tool", "lifecycle", "wake", "policy", "auth", "error", "admin"])
-export type EventKind = z.infer<typeof EventKind>
-
-export const Level = z.enum(["debug", "info", "warn", "error"])
 
 export const TelemetryEvent = z.object({
   id: z.string(),
@@ -182,7 +178,7 @@ export const RequestFilters = z.object({
   address: z.string().optional(),
   // Prefijo de request id.
   q: z.string().optional(),
-  stuck: z.coerce.boolean().optional(),
+  stuck: QueryBoolean.optional(),
   since: Iso.optional(),
   until: Iso.optional(),
   cursor: z.string().optional(),
@@ -336,7 +332,7 @@ export const UserFilters = z.object({
 })
 
 export const AgentFilters = z.object({
-  failing: z.coerce.boolean().optional(),
+  failing: QueryBoolean.optional(),
   kind: WakeKind.optional(),
 })
 

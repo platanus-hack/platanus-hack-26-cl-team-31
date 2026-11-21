@@ -70,7 +70,7 @@ El servidor admin expone en `POST $ADMIN_URL/mcp` un MCP de **solo lectura** par
 
 - Todos los datos ya vienen redactados. Nunca hay payloads (`args`, `result` ni propósito), tokens, nonces ni texto libre de terceros.
 - El MCP no ejecuta acciones. Reintentar, expirar o revocar se hace desde el panel.
-- Cada `tools/call` queda en la bitácora de auditoría (`mcp:<tool>`) con el token que la hizo.
+- Cada `tools/call` queda en la bitácora de auditoría (`mcp:<tool>`) con el identificador del token. Para `admin_sql` se registra la llamada con el destino vacío.
 - Límite: 60 solicitudes por minuto por token. Al superarlo responde `429` con `Retry-After`.
 
 ### 1. Crear un token
@@ -139,8 +139,8 @@ Flujo sugerido: `admin_overview` → `admin_search_requests` (por ejemplo `stuck
 
 ### Probar en local
 
-El código vive en `server/mcp/` y la ruta la monta el servidor admin con `mountAdminMcp(app, deps)`. Las pruebas usan el cliente MCP del SDK contra una app Hono en memoria y un `AdminQueries` falso, sin Postgres:
+Las pruebas de `server/mcp/` montan la ruta con `mountAdminMcp(app, deps, telemetry)` en una app Hono en memoria. Usan el cliente MCP del SDK y un `AdminQueries` falso.
 
 ```bash
-pnpm --filter @team-31/admin test
+pnpm test --filter @team-31/admin
 ```

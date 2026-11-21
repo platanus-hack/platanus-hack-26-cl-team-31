@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { type EventAttrs, type EventFields, type EventName, getEventDefinition } from "./catalog.js";
+import { type CatalogEvent, type EventAttrs, type EventFields, type EventName, getEventDefinition } from "./catalog.js";
 import {
   type ContextFields,
   formatTraceparent,
@@ -26,7 +26,7 @@ export interface TelemetryOptions {
   instance?: string;
   /** Intervalo del latido service.heartbeat. 0 lo desactiva. Por defecto 30 s. */
   heartbeatMs?: number;
-  /** Emite service.started al crear y service.stopping en shutdown(). Por defecto true. */
+  /** Emite service.started, service.heartbeat y service.stopping. Por defecto true. */
   lifecycle?: boolean;
 }
 
@@ -79,10 +79,6 @@ export interface Telemetry {
 // Campos de emit() sin el tipado por evento (la validación real la hace el catálogo).
 type LooseFields = Omit<EventFields, "attrs"> & { attrs?: unknown };
 
-// errorId ya asignado a un objeto de error: evita duplicar el evento cuando un span y el
-// manejador del servicio reportan el mismo error. Compartido entre instancias del proceso.
-const reported = new WeakMap<object, string>();
-
 function sanitizeName(name: unknown): string {
   return String(name).slice(0, 128).replace(/[^\w.:/@*-]/g, "_") || "unknown";
 }
@@ -102,6 +98,8 @@ export function createTelemetry(options: TelemetryOptions): Telemetry {
   const sink = options.sink ?? sinkFromEnv();
   const lifecycle = options.lifecycle ?? true;
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
+  // Reutiliza el errorId si un span y su manejador reportan el mismo error en esta instancia.
+  const reported = new WeakMap<object, string>();
   let closed = false;
 
   interface RecordExtra {
@@ -120,12 +118,10 @@ export function createTelemetry(options: TelemetryOptions): Telemetry {
     record("telemetry.invalid_event", { attrs: { event: sanitizeName(name), issues: issues.slice(0, 512) } }, {});
   }
 
-  function validate(name: string, attrs: unknown): Record<string, Scalar> | null {
-    const definition = getEventDefinition(name);
-    if (!definition) return null;
+  function validateAttrs(definition: CatalogEvent, attrs: unknown): Record<string, Scalar> {
     const parsed = definition.attrs.safeParse(attrs ?? {});
     if (!parsed.success) {
-      invalid(name, parsed.error.issues.map((issue) => `${issue.code}:${issue.path.join(".")}`).join(","));
+      invalid(definition.name, parsed.error.issues.map((issue) => `${issue.code}:${issue.path.join(".")}`).join(","));
       return {};
     }
     const clean: Record<string, Scalar> = {};
@@ -133,7 +129,7 @@ export function createTelemetry(options: TelemetryOptions): Telemetry {
       if (value !== undefined) clean[key] = value as Scalar;
     }
     if (Buffer.byteLength(JSON.stringify(clean)) > MAX_ATTRS_BYTES) {
-      invalid(name, "too_big:attrs");
+      invalid(definition.name, "too_big:attrs");
       return {};
     }
     return clean;
@@ -147,7 +143,7 @@ export function createTelemetry(options: TelemetryOptions): Telemetry {
         invalid(name, "unknown_event");
         return;
       }
-      const attrs = validate(name, fields.attrs) ?? {};
+      const attrs = validateAttrs(definition, fields.attrs);
       const ctx = extra.context ?? storage.getStore();
       const pick = (key: keyof ContextFields) => {
         const value = fields[key];
@@ -284,7 +280,7 @@ export function createTelemetry(options: TelemetryOptions): Telemetry {
   const beat = () => record("service.heartbeat", { attrs: lifecycleAttrs() }, { traceId: null, parentSpanId: null });
   let heartbeat: NodeJS.Timeout | null = null;
   if (lifecycle) record("service.started", { attrs: { version } }, { traceId: null, parentSpanId: null });
-  if (heartbeatMs > 0) {
+  if (lifecycle && heartbeatMs > 0) {
     beat();
     heartbeat = setInterval(beat, heartbeatMs);
     heartbeat.unref();

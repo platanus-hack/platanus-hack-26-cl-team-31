@@ -5,8 +5,8 @@ import { createHttpServer } from "./http/server.js";
 import { createBrokerTelemetry, type BrokerServiceTelemetry } from "./telemetry.js";
 import { startWorker } from "./worker.js";
 
-async function start(env: BrokerEnv, telemetry: BrokerServiceTelemetry) {
-  const { broker, close } = await composeBroker(env, telemetry);
+function start(env: BrokerEnv, telemetry: BrokerServiceTelemetry) {
+  const { broker, close } = composeBroker(env, telemetry);
   const shutdown = new AbortController();
   const app = createHttpServer({
     broker, publicKeys: env.SERVICE_JWT_PUBLIC_KEYS, shutdown: shutdown.signal, telemetry: telemetry.http,
@@ -26,8 +26,9 @@ async function start(env: BrokerEnv, telemetry: BrokerServiceTelemetry) {
     } catch (error) {
       telemetry.http.error("shutdown", error);
       process.exitCode = 1;
+    } finally {
+      await telemetry.shutdown();
     }
-    await telemetry.shutdown();
   }
 
   server.on("error", (error) => {
@@ -51,7 +52,7 @@ try {
 if (env) {
   const telemetry = createBrokerTelemetry();
   try {
-    await start(env, telemetry);
+    start(env, telemetry);
   } catch (error) {
     telemetry.http.error("startup", error);
     process.exitCode = 1;

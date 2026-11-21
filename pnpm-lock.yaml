@@ -443,6 +443,9 @@ importers:
       pg:
         specifier: 8.23.1
         version: 8.23.1
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
     devDependencies:
       '@team-31/typescript-config':
         specifier: workspace:*
@@ -456,9 +459,6 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
-      zod:
-        specifier: 4.6.7
-        version: 4.6.7
 
   packages/broker:
     dependencies:

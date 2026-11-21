@@ -96,16 +96,23 @@ export const InboxItem = z.object({
 );
 export type InboxItem = z.infer<typeof InboxItem>;
 
-export const ReplyInput = z.object({
+export const ReplyArguments = z.object({
   requestId: z.string(),
   nonce: z.string(),
   outcome: BotOutcome,
   result: z.unknown().optional(),
   internalReason: z.string().max(300).optional(),
-}).refine(
-  (input) => input.outcome !== "answered" || input.result !== undefined,
-  { error: "Incluye un resultado para la solicitud respondida.", path: ["result"] },
-);
+});
+
+export const ReplyInput = z.discriminatedUnion("outcome", [
+  ReplyArguments.extend({
+    outcome: z.literal("answered"),
+    result: z.custom<NonNullable<unknown> | null>((value) => value !== undefined, {
+      error: "Incluye un resultado para la solicitud respondida.",
+    }),
+  }),
+  ReplyArguments.extend({ outcome: BotOutcome.exclude(["answered"]) }),
+]);
 export type ReplyInput = z.infer<typeof ReplyInput>;
 
 export const ReplyReceipt = z.object({
