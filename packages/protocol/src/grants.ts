@@ -3,7 +3,8 @@ import { Address } from "./address.js";
 import { fieldsOf, ToolName } from "./tools.js";
 
 // `profile` is being retired and takes no grant.
-const GrantTool = ToolName.exclude(["profile"]);
+export const GrantTool = ToolName.exclude(["profile"]);
+export type GrantTool = z.infer<typeof GrantTool>;
 
 export const GrantInput = z.object({
   grantee: Address,
