@@ -510,6 +510,31 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
       expect((await response.json()).error.code).toBe("upstream")
     })
 
+    it("reserva un cupo durante la primera lectura y lo devuelve si esa lectura falla", async () => {
+      const cookie = await login("viewer@test.cl")
+      let started!: () => void
+      let fail!: (error: Error) => void
+      const reading = new Promise<void>((resolve) => { started = resolve })
+      const page = new Promise<null>((_, reject) => { fail = reject })
+      const latestEventId = vi.fn(async (): Promise<string | null> => null)
+        .mockImplementationOnce(() => { started(); return page })
+      const app = buildApp({ queries: fakeQueries({ latestEventId }), live: { maxStreams: 1 } })
+      const options = { headers: { cookie } }
+      const first = app.request("/api/admin/live", options)
+      await reading
+      try {
+        expect((await app.request("/api/admin/flow/live", options)).status).toBe(429)
+        expect(latestEventId).toHaveBeenCalledTimes(1)
+      } finally {
+        fail(new Error("lectura interrumpida"))
+      }
+      expect((await first).status).toBe(500)
+      const controller = new AbortController()
+      const retry = await app.request("/api/admin/live", { ...options, signal: controller.signal })
+      controller.abort()
+      expect(retry.status).toBe(200)
+    })
+
     it("limita las conexiones por admin y registra apertura y cierre", async () => {
       const table = eventTable([event("1", "broker.request.created")])
       const cookie = await login("viewer@test.cl")
