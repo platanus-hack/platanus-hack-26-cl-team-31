@@ -139,7 +139,7 @@ Flujo sugerido: `admin_overview` → `admin_search_requests` (por ejemplo `stuck
 
 ### Probar en local
 
-Las pruebas de `server/mcp/` montan la ruta con `mountAdminMcp(app, deps, telemetry)` en una app Hono en memoria. Usan el cliente MCP del SDK y un `AdminQueries` falso.
+Las peticiones de navegador a `POST /mcp` deben llevar el origen de `ADMIN_URL`; los clientes nativos pueden omitir `Origin`. Las pruebas de `server/mcp/` montan la ruta en una app Hono en memoria. Usan el cliente MCP del SDK y un `AdminQueries` falso.
 
 ```bash
 pnpm test --filter @team-31/admin
