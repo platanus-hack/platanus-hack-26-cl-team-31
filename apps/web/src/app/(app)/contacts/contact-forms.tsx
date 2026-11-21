@@ -1,15 +1,15 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import type { Contact, Invitation, Sharing, Tag } from "@team-31/protocol";
-import { sameSharing, tagSharing, type TagColor } from "@team-31/protocol/constants";
+import { sameSharing, tagSharing } from "@team-31/protocol/constants";
 
-import { answerInvitation, createTag, deleteTag, removeContact, saveContactTags, saveSharing, saveTag, sendInvitation } from "./actions";
-import { button, card, Feedback, input, primaryButton } from "../ui";
+import { answerInvitation, removeContact, saveContactTags, saveSharing, sendInvitation } from "./actions";
+import { button, card, Feedback, Initial, input, primaryButton } from "../ui";
 import { Modal, ModalCancel, useCloseModal } from "../modal";
 import { describeSharing } from "./describe";
 import { SharingPicker } from "./sharing";
-import { ColorPicker, TagMenu, TagPicker } from "./tags";
+import { TagMenu, TagPicker } from "./tags";
 
 const dangerButton = "inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg px-3.5 py-2 text-sm font-semibold text-danger transition hover:bg-danger-bg disabled:cursor-wait disabled:opacity-60";
 
@@ -54,23 +54,40 @@ export function InviteButton({ tags }: { tags: Tag[] }) {
 export function IncomingInvitation({ invitation, tags }: { invitation: Invitation; tags: Tag[] }) {
   const [state, submit, pending] = useActionState(answerInvitation.bind(null, invitation.requestId), {});
   const [chosen, setChosen] = useState<string[]>(() => initialTags(tags));
+  const [declining, setDeclining] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+  const decline = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!declining) return;
+    const timer = setTimeout(() => form.current?.requestSubmit(decline.current), 5000);
+    return () => clearTimeout(timer);
+  }, [declining]);
+  const gone = (pending || state.message) && !state.error;
+
+  if (declining && !state.error) {
+    return (
+      <li className="flex items-center justify-between gap-3 px-4 py-3 text-[13px] text-muted">
+        <span>Solicitud de {invitation.address} rechazada.</span>
+        {!pending && <button type="button" onClick={() => setDeclining(false)} className="cursor-pointer font-medium text-accent-ink hover:underline">Deshacer</button>}
+        <form ref={form} action={submit} hidden><button ref={decline} name="answer" value="decline" /></form>
+      </li>
+    );
+  }
+
   return (
-    <li className={`${card} space-y-4 p-5`}>
-      <div>
-        <h3 className="break-all font-semibold">{invitation.address}</h3>
-        <p className="text-sm text-muted">Quiere conectar contigo.</p>
+    <li className={`flex flex-wrap items-center gap-3 px-4 py-3 ${gone ? "hidden" : ""}`}>
+      <Initial name={invitation.address} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-ink">{invitation.address}</p>
+        <p className="truncate text-xs text-muted">Te comparte: {describeSharing(invitation.offer)}</p>
       </div>
-      <p className="text-sm"><span className="text-muted">Te compartirá:</span> <span className="font-medium">{describeSharing(invitation.offer)}</span></p>
-      <form action={submit} className="space-y-3">
-        <p className="text-sm font-semibold">¿Qué es para ti?</p>
-        <TagPicker tags={tags} value={chosen} onChange={setChosen} name="tag" />
-        <p className="text-sm"><span className="text-muted">Le compartirás:</span> <span className="font-medium">{describeSharing(tagSharing(tags, chosen))}</span></p>
-        <div className="flex flex-wrap gap-2">
-          <button className={primaryButton} name="answer" value="accept" disabled={pending}>Aceptar</button>
-          <button className={button} name="answer" value="decline" disabled={pending}>Rechazar</button>
-        </div>
-        <Feedback {...state} />
+      <TagMenu tags={tags} value={chosen} onChange={setChosen} />
+      <form action={submit} className="flex items-center gap-2">
+        {chosen.map((id) => <input key={id} type="hidden" name="tag" value={id} />)}
+        <button type="button" onClick={() => setDeclining(true)} className={button}>Rechazar</button>
+        <button className={primaryButton} name="answer" value="accept" disabled={pending}>Aceptar</button>
       </form>
+      {state.error && <div className="basis-full"><Feedback {...state} /></div>}
     </li>
   );
 }
@@ -96,9 +113,10 @@ export function ContactRow({ contact, tags }: { contact: Contact; tags: Tag[] })
 
   return (
     <li className={card}>
-      <div className="flex items-center gap-3 px-5 py-4">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <Initial name={contact.displayName || contact.address} />
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <p className="break-all font-semibold">{contact.address}</p>
+          <p className="break-all text-sm font-medium text-ink">{contact.address}</p>
           <TagMenu tags={tags} value={contact.tags} custom={custom} disabled={tagging} onChange={retag} />
         </div>
         <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "Ocultar opciones" : "Ver opciones"}
@@ -137,86 +155,3 @@ export function ContactRow({ contact, tags }: { contact: Contact; tags: Tag[] })
   );
 }
 
-function TagEditor({ tag }: { tag: Tag }) {
-  const [state, submit, pending] = useActionState(saveTag.bind(null, tag.id), {});
-  const [removeState, remove, removing] = useActionState(deleteTag.bind(null, tag.id), {});
-  const [name, setName] = useState(tag.name);
-  const [color, setColor] = useState<TagColor>(tag.color);
-  const [share, setShare] = useState<Sharing>(tag.categories);
-  const [confirming, setConfirming] = useState(false);
-  const dirty = name.trim() !== tag.name || color !== tag.color || !sameSharing(share, tag.categories);
-  function reset() {
-    setName(tag.name);
-    setColor(tag.color);
-    setShare(tag.categories);
-  }
-  return (
-    <div className="space-y-3 px-5 py-4">
-      <form action={submit} className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <label htmlFor={`tag-${tag.id}`} className="sr-only">Nombre de la etiqueta</label>
-          <input id={`tag-${tag.id}`} name="name" required maxLength={80} value={name} onChange={(event) => setName(event.target.value)}
-            className={`${input} min-w-40 flex-1 font-semibold`} />
-          <ColorPicker value={color} onChange={setColor} name="color" />
-        </div>
-        <SharingPicker value={share} onChange={setShare} />
-        <div className="flex flex-wrap items-center gap-3">
-          <button className={primaryButton} disabled={pending || !dirty}>{pending ? "Guardando…" : "Guardar"}</button>
-          {dirty && <button type="button" className={button} onClick={reset}>Deshacer</button>}
-          <Feedback {...(dirty ? {} : state)} />
-        </div>
-      </form>
-      <form action={remove} className="flex flex-wrap items-center gap-2">
-        {confirming ? (
-          <>
-            <p className="text-sm text-muted">Se quitará de tus contactos y de la bóveda.</p>
-            <button className={dangerButton} disabled={removing}>Sí, borrar etiqueta</button>
-            <button type="button" className={button} onClick={() => setConfirming(false)}>Cancelar</button>
-          </>
-        ) : (
-          <button type="button" className={dangerButton} onClick={() => setConfirming(true)}>Borrar etiqueta</button>
-        )}
-        <Feedback {...removeState} />
-      </form>
-    </div>
-  );
-}
-
-function CreateTagForm() {
-  const [state, submit, pending] = useActionState(createTag, {});
-  const [color, setColor] = useState<TagColor>("sky");
-  return (
-    <form action={submit} className="space-y-3 px-5 py-4">
-      <p className="font-semibold">Nueva etiqueta</p>
-      <div className="flex flex-wrap items-center gap-3">
-        <label htmlFor="new-tag" className="sr-only">Nombre de la etiqueta</label>
-        <input id="new-tag" name="name" required maxLength={80} placeholder="Nombre" className={`${input} min-w-40 flex-1`} />
-        <ColorPicker value={color} onChange={setColor} name="color" />
-        <button className={primaryButton} disabled={pending}>{pending ? "Creando…" : "Crear"}</button>
-      </div>
-      <Feedback {...state} />
-    </form>
-  );
-}
-
-export function TagsEditor({ tags }: { tags: Tag[] }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <section className={card}>
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
-        className="flex w-full cursor-pointer items-center justify-between gap-4 px-5 py-4 text-left">
-        <div>
-          <h2 className="font-semibold">Qué comparte cada etiqueta</h2>
-          <p className="text-sm text-muted">Un contacto comparte lo de todas sus etiquetas. Al cambiar una se actualizan sus contactos, salvo los que personalizaste.</p>
-        </div>
-        <span aria-hidden="true" className={`text-xl text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
-      </button>
-      {open && (
-        <div className="divide-y divide-line border-t border-line">
-          {tags.map((tag) => <TagEditor key={`${tag.id}:${tag.name}:${tag.color}:${tag.categories.join()}`} tag={tag} />)}
-          <CreateTagForm />
-        </div>
-      )}
-    </section>
-  );
-}

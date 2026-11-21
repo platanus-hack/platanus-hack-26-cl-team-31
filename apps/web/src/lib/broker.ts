@@ -5,6 +5,7 @@ import { createOwnerClient, type OwnerPort } from "@team-31/broker-client";
 import type { Owner } from "@team-31/protocol";
 import { tracedFetch } from "@team-31/telemetry";
 
+import { frozen, frozenOwnerClient } from "./frozen";
 import { getTelemetry } from "./telemetry";
 
 export function brokerUrl(): string {
@@ -24,6 +25,7 @@ export function brokerFetch(): typeof fetch {
 }
 
 export function ownerClient(): OwnerPort {
+  if (frozen) return frozenOwnerClient;
   const telemetry = getTelemetry();
   const client = createOwnerClient({ baseUrl: brokerUrl(), getServiceToken: signServiceToken, fetch: brokerFetch() });
   // Server components and actions have no http.request span: each call outside a trace starts

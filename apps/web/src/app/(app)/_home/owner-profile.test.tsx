@@ -12,6 +12,7 @@ vi.mock("@/lib/auth-owner", () => {
   };
 });
 vi.mock("@/lib/whatsapp/runtime", () => ({ whatsappStore: () => ({ state }) }));
+vi.mock("@/lib/frozen", () => ({ frozen: false }));
 vi.mock("@/lib/telemetry", () => ({ getTelemetry: () => ({ error: recordError }) }));
 
 it("muestra el perfil en una tabla con el teléfono confirmado del titular", async () => {

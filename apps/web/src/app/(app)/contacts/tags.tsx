@@ -5,12 +5,12 @@ import type { Tag } from "@team-31/protocol";
 import { tagColors, type TagColor } from "@team-31/protocol/constants";
 
 export const tagStyles: Record<TagColor, { badge: string; dot: string; active: string }> = {
-  emerald: { badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300", dot: "bg-emerald-400", active: "bg-emerald-500/25 text-emerald-200" },
-  amber: { badge: "border-amber-400/30 bg-amber-400/10 text-amber-300", dot: "bg-amber-400", active: "bg-amber-500/25 text-amber-200" },
-  violet: { badge: "border-violet-400/30 bg-violet-400/10 text-violet-300", dot: "bg-violet-400", active: "bg-violet-500/25 text-violet-200" },
-  sky: { badge: "border-sky-400/30 bg-sky-400/10 text-sky-300", dot: "bg-sky-400", active: "bg-sky-500/25 text-sky-200" },
-  rose: { badge: "border-rose-400/30 bg-rose-400/10 text-rose-300", dot: "bg-rose-400", active: "bg-rose-500/25 text-rose-200" },
-  slate: { badge: "border-slate-400/30 bg-slate-400/10 text-slate-300", dot: "bg-slate-400", active: "bg-slate-500/25 text-slate-200" },
+  emerald: { badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300", dot: "bg-emerald-400/60", active: "bg-emerald-500/25 text-emerald-200" },
+  amber: { badge: "border-amber-400/30 bg-amber-400/10 text-amber-300", dot: "bg-amber-400/60", active: "bg-amber-500/25 text-amber-200" },
+  violet: { badge: "border-violet-400/30 bg-violet-400/10 text-violet-300", dot: "bg-violet-400/60", active: "bg-violet-500/25 text-violet-200" },
+  sky: { badge: "border-sky-400/30 bg-sky-400/10 text-sky-300", dot: "bg-sky-400/60", active: "bg-sky-500/25 text-sky-200" },
+  rose: { badge: "border-rose-400/30 bg-rose-400/10 text-rose-300", dot: "bg-rose-400/60", active: "bg-rose-500/25 text-rose-200" },
+  slate: { badge: "border-slate-400/30 bg-slate-400/10 text-slate-300", dot: "bg-slate-400/60", active: "bg-slate-500/25 text-slate-200" },
 };
 
 const colorLabels: Record<TagColor, string> = {
@@ -91,14 +91,14 @@ export function TagMenu({ tags, value, custom, disabled, onChange }: {
   }, [open]);
 
   return (
-    <div ref={root} className="relative">
+    <div ref={root} className="relative flex">
       <button type="button" disabled={disabled} aria-haspopup="menu" aria-expanded={open} aria-controls={menu}
         aria-label={`Etiquetas: ${chosen.map((tag) => tag.name).join(", ") || "sin etiqueta"}. Cambiar`}
         onClick={() => setOpen(!open)}
         className="inline-flex cursor-pointer flex-wrap items-center gap-1.5 transition hover:brightness-125 disabled:cursor-wait disabled:opacity-60">
         <TagChips tags={tags} value={value} />
         {custom && <span className="text-xs text-muted">· personalizado</span>}
-        <span aria-hidden="true" className="text-xs text-muted">▾</span>
+        <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className="text-muted"><path d="m2.5 4 2.5 2.5L7.5 4" /></svg>
       </button>
       {open && (
         <div id={menu} role="menu" className="raised absolute left-0 z-20 mt-1.5 w-56 rounded-lg border border-line bg-raised p-1 shadow-lg">

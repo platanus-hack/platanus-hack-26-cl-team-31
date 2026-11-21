@@ -134,7 +134,7 @@ export function LiveActivity() {
   }, []);
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <Heading title="El cable" action={(
         <p role="status" className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${
           connection === "live" ? "bg-success-bg text-success" : "bg-warn-bg text-warn"

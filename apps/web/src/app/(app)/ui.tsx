@@ -11,14 +11,11 @@ export const input = "h-10 w-full rounded-xl bg-field px-3 text-sm text-ink plac
 export const secondaryText = "text-[13px] leading-relaxed text-muted";
 export const eyebrow = "text-[11px] text-subtle";
 
-export function Heading({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
+export function Heading({ title, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
-    <header className="mb-8 flex items-start justify-between gap-4">
-      <div className="min-w-0 max-w-2xl flex-1">
-        <h1 className="text-[30px] leading-[1.15] font-medium tracking-[-0.01em] text-white sm:text-[36px] sm:leading-[42px]">{title}</h1>
-        {children && <p className="mt-2 text-sm leading-[22px] text-body">{children}</p>}
-      </div>
-      {action && <div className="shrink-0 pt-1.5 sm:pt-2">{action}</div>}
+    <header className={`mb-6 flex items-center justify-between gap-4 ${action ? "" : "lg:hidden"}`}>
+      <h1 className="text-2xl leading-8 font-medium tracking-[-0.01em] text-white lg:sr-only">{title}</h1>
+      {action && <div className="ml-auto shrink-0">{action}</div>}
     </header>
   );
 }
@@ -52,4 +49,19 @@ export function Feedback({ error, message, errorId }: { error?: string; message?
 
 export function Empty({ children }: { children: ReactNode }) {
   return <p className={`${card} px-5 py-6 text-[13px] text-muted`}>{children}</p>;
+}
+
+const avatarColors = [
+  "bg-[#7db4ff]/25 text-[#9cc6ff]",
+  "bg-[#7ddba3]/25 text-[#8fe3b2]",
+  "bg-[#f2c66d]/25 text-[#f5d38e]",
+  "bg-[#c4a1ff]/25 text-[#d2b8ff]",
+  "bg-[#ff8f80]/25 text-[#ffab9f]",
+  "bg-[#6fd6e0]/25 text-[#8fe0e8]",
+  "bg-[#f59ac8]/25 text-[#f7b3d6]",
+];
+
+export function Initial({ name }: { name: string }) {
+  const hash = [...name].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 0);
+  return <span aria-hidden="true" className={`grid size-9 shrink-0 place-items-center rounded-full text-[13px] font-medium tag ${avatarColors[hash % avatarColors.length]}`}>{name.slice(0, 1).toUpperCase()}</span>;
 }

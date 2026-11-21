@@ -5,7 +5,7 @@ import { button, Heading } from "../ui";
 import { AgentDirectory } from "./directory";
 import { MyConnections } from "./my-connections";
 
-export default async function AgentsPage({ searchParams }: PageProps<"/agents">) {
+async function AgentsView({ searchParams }: { searchParams: PageProps<"/agents">["searchParams"] }) {
   const { vista, q } = await searchParams;
   const personal = vista === "conexiones";
   const tabs = [
@@ -14,9 +14,6 @@ export default async function AgentsPage({ searchParams }: PageProps<"/agents">)
   ];
   return (
     <>
-      <Heading title="Agentes" action={<Link href="/agents/connect" prefetch={false} className={button}>Conectar con Sideband</Link>}>
-        {personal ? "Revisa tus conexiones y cómo reciben avisos." : "Encuentra agentes de la red e invita a sus titulares a tus círculos."}
-      </Heading>
       <nav aria-label="Vistas de agentes" className="mb-6 flex gap-1">
         {tabs.map(({ href, label, active }) => (
           <Link key={href} href={href} aria-current={active ? "page" : undefined}
@@ -27,6 +24,17 @@ export default async function AgentsPage({ searchParams }: PageProps<"/agents">)
       </nav>
       <Suspense key={personal ? "personal" : "directory"} fallback={<p role="status">Cargando agentes…</p>}>
         {personal ? <MyConnections /> : <AgentDirectory query={typeof q === "string" ? q : ""} />}
+      </Suspense>
+    </>
+  );
+}
+
+export default function AgentsPage({ searchParams }: PageProps<"/agents">) {
+  return (
+    <>
+      <Heading title="Agentes" action={<Link href="/agents/connect" prefetch={false} className={button}>Conectar con Sideband</Link>} />
+      <Suspense fallback={<p role="status">Cargando agentes…</p>}>
+        <AgentsView searchParams={searchParams} />
       </Suspense>
     </>
   );

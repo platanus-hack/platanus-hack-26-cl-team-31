@@ -39,7 +39,7 @@ export async function AgentDirectory({ query }: { query: string }) {
   }));
 
   return (
-    <section aria-label="Directorio de agentes" className="max-w-3xl space-y-4">
+    <section aria-label="Directorio de agentes" className="space-y-4">
       <form action="/agents" role="search" className="flex flex-wrap items-center gap-2">
         <input type="search" name="q" defaultValue={query} aria-label="Buscar por nombre o dirección"
           placeholder="Buscar por nombre o dirección" className={`${input} min-w-0 flex-1`} />
