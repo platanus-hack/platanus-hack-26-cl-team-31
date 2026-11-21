@@ -53,6 +53,10 @@ function transaction(state: State): StoreTx {
       .sort(byCreatedAt));
   }
 
+  function categoryMembers(owner: string, category: OwnerVault["categories"][number]) {
+    return [...(state.contacts.get(owner) ?? [])].filter(address => canRead(owner, category, address)).sort();
+  }
+
   function circleMember(circleId: string, address: Address) {
     return state.circleMembers.find((member) => member.circleId === circleId && member.address === address);
   }
@@ -90,7 +94,7 @@ function transaction(state: State): StoreTx {
     },
     async vaultMembers(owner, categoryId) {
       const category = state.vaults.get(owner)?.categories.find(c => c.id === categoryId);
-      return category ? [...(state.contacts.get(owner) ?? [])].filter(address => canRead(owner, category, address)).sort() : null;
+      return category ? categoryMembers(owner, category) : null;
     },
     async contactGroups(owner) {
       return { groups: structuredClone(state.contactGroups.get(owner) ?? []).sort((a, b) => a.name.localeCompare(b.name)) };
@@ -121,7 +125,11 @@ function transaction(state: State): StoreTx {
       }
       return true;
     },
-    async ownerVault(owner) { return structuredClone(state.vaults.get(owner) ?? { categories: [] }); },
+    async ownerVault(owner) {
+      const vault = structuredClone(state.vaults.get(owner) ?? { categories: [] });
+      for (const category of vault.categories) category.members = categoryMembers(owner, category);
+      return vault;
+    },
     async changeVault(owner, id, change) {
       const vault = state.vaults.get(owner) ?? { categories: [] };
       if (change.action === "create") {

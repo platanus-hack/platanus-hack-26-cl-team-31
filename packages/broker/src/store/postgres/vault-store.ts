@@ -47,22 +47,29 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     exists(select 1 from ${gp} join ${m} on ${m.owner} = ${gp.owner} and ${m.groupId} = ${gp.groupId}
       where ${gp.owner} = ${c.owner} and ${gp.id} = ${c.id} and ${m.address} = ${friends.address}))`;
 
+  function memberRows(owner: string, categoryId?: string) {
+    return db.select({ id: c.id, address: friends.address }).from(c)
+      .leftJoin(friends, and(eq(friends.userId, c.owner), canRead))
+      .where(and(eq(c.owner, owner), categoryId ? eq(c.id, categoryId) : undefined)).orderBy(friends.address);
+  }
+
   return {
     async vaultMembers(owner, categoryId) {
-      const rows = await db.select({ address: friends.address }).from(c)
-        .leftJoin(friends, and(eq(friends.userId, c.owner), canRead))
-        .where(and(eq(c.owner, owner), eq(c.id, categoryId))).orderBy(friends.address);
+      const rows = await memberRows(owner, categoryId);
       return rows.length ? rows.flatMap(({ address }) => address ? [Address.parse(address)] : []) : null;
     },
     vaultCatalog,
     async ownerVault(owner) {
       const catalog = await vaultCatalog(owner);
       const categories: OwnerVault["categories"] = catalog.categories.map(({ contactGroups, ...category }) => ({
-        ...category, ...(contactGroups.length ? { contactGroups } : {}), entries: [],
+        ...category, ...(contactGroups.length ? { contactGroups } : {}), entries: [], members: [],
       }));
       if (!categories.length) return { categories };
 
       const byId = new Map(categories.map(category => [category.id, category]));
+      for (const { id, address } of await memberRows(owner)) {
+        if (address) byId.get(id)?.members?.push(Address.parse(address));
+      }
       const entries = await db.select({ id: e.id, label: e.label, value: e.value }).from(e).where(eq(e.owner, owner)).orderBy(e.label);
       for (const { id, label, value } of entries) byId.get(id)?.entries.push({ label, value });
       return { categories };

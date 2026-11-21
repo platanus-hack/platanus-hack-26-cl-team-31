@@ -62,5 +62,6 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
   revalidatePath("/");
   revalidatePath("/activity");
   revalidatePath("/contacts");
+  if (kind === "grant_vault_read") revalidatePath("/vault");
   return { message: "Decisión guardada." };
 }
