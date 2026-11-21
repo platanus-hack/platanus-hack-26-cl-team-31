@@ -146,6 +146,13 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
   return {
     ...vaultStore(db),
+    async networkAddresses(after, limit) {
+      const connected = db.select({ id: agentConnections.userId }).from(agentConnections);
+      const rows = await db.select({ address: users.address }).from(users)
+        .where(and(isNotNull(users.address), inArray(users.userId, connected), after ? gt(users.address, after) : undefined))
+        .orderBy(users.address).limit(limit);
+      return rows.map(row => parseStored(Address, row.address));
+    },
     async getUser(userId) {
       const [row] = await db.select().from(users).where(eq(users.userId, userId));
       return row ? readUser(row) : null;

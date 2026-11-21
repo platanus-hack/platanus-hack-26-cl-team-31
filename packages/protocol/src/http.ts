@@ -9,7 +9,7 @@ import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
 import { ChannelName, WakeTarget } from "./wake.js";
-import { ContactGroupChange, ContactGroupReceipt, ContactGroups, OwnerVault, VaultCatalog, VaultQuery, VaultResult, VaultChange, VaultReceipt } from "./vault.js";
+import { ContactGroupChange, ContactGroupReceipt, ContactGroups, OwnerVault, VaultCatalog, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult, VaultChange, VaultReceipt } from "./vault.js";
 
 const requestParams = z.object({ id: z.string() });
 const agentParams = z.object({ agentId: z.string() });
@@ -19,12 +19,15 @@ const noContent = { status: 204, response: z.undefined() } as const;
 const circleMemberParams = z.object({ id: z.string(), address: Address });
 
 export const routes = {
+  agentNetworkUsers: { method: "GET", path: "/v1/agent/network/users", query: z.strictObject({ after: Address.optional() }),
+    response: z.object({ addresses: z.array(Address), nextCursor: Address.optional() }), iss: "mcp", port: "agent.networkUsers" },
   agentConnect: { method: "POST", path: "/v1/agent/connection", ...noContent, iss: "mcp", port: "agent.connect" },
   agentContactGroups: { method: "GET", path: "/v1/agent/contact-groups", response: ContactGroups, iss: "mcp", port: "agent.contactGroups" },
   agentChangeContactGroup: { method: "POST", path: "/v1/agent/contact-groups", body: ContactGroupChange, response: ContactGroupReceipt, iss: "mcp", port: "agent.changeContactGroup" },
   ownerVault: { method: "GET", path: "/v1/owner/vault", response: OwnerVault, iss: "web", port: "owner.vault" },
   ownerChangeVault: { method: "POST", path: "/v1/owner/vault", body: VaultChange, response: VaultReceipt, iss: "web", port: "owner.changeVault" },
   agentVaultCatalog: { method: "GET", path: "/v1/agent/vault", response: VaultCatalog, iss: "mcp", port: "agent.vaultCatalog" },
+  agentVaultMembers: { method: "GET", path: "/v1/agent/vault/members", query: VaultMembersQuery, response: VaultMembers, iss: "mcp", port: "agent.vaultMembers" },
   agentChangeVault: { method: "POST", path: "/v1/agent/vault", body: VaultChange, response: VaultReceipt, iss: "mcp", port: "agent.changeVault" },
   agentQueryVault: { method: "POST", path: "/v1/agent/vault/query", body: VaultQuery, response: VaultResult, iss: "mcp", port: "agent.queryVault" },
   agentCapabilities: {

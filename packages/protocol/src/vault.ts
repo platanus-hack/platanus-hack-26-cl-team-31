@@ -9,6 +9,8 @@ export const VaultEntry = z.object({ label: name, value });
 export const VaultCategory = z.object({ id: categoryId, name });
 export const VaultCatalog = z.object({ categories: z.array(VaultCategory) });
 export type VaultCatalog = z.infer<typeof VaultCatalog>;
+export const VaultMembersQuery = z.strictObject({ categoryId });
+export const VaultMembers = z.object({ members: z.array(Address) });
 const groupId = z.uuid();
 export const ContactGroups = z.object({ groups: z.array(z.object({ id: groupId, name, members: z.array(Address) })) });
 export type ContactGroups = z.infer<typeof ContactGroups>;
@@ -38,6 +40,7 @@ export const VaultChange = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("delete_entry"), categoryId, label: name }),
   z.strictObject({ action: z.literal("set_group"), categoryId, group: ContactTag, allowed: z.boolean() }),
   z.strictObject({ action: z.literal("set_contact_group"), categoryId, groupId, allowed: z.boolean() }),
+  z.strictObject({ action: z.literal("set_member"), categoryId, address: Address, allowed: z.boolean() }),
 ]);
 export type VaultChange = z.infer<typeof VaultChange>;
 export const VaultReceipt = z.object({ categoryId });

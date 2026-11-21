@@ -259,10 +259,11 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(13);
   });
 
   it("keeps the first active agent and preserves previously revoked history when migrating", async () => {
+    await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
     await isolated.query("DROP TABLE sideband.quota_windows");
     await isolated.query("DELETE FROM sideband.__drizzle_migrations WHERE id >= 11");
@@ -281,6 +282,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   // Rewind the vault and channel tables before replaying older fixtures.
   async function undoVaultAndNotifyOrigin() {
+    await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");
     await isolated.query("DROP TABLE sideband.quota_windows");
     await isolated.query("DROP TABLE sideband.vault_contact_group_permissions, sideband.vault_contact_group_members, sideband.vault_contact_groups");
@@ -427,8 +429,15 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           expect(await tx.contactGroups("alice")).toEqual({ groups: [] });
           await tx.changeVault("bruno", categoryId, { action: "create", name: "Prueba" });
           expect(await tx.changeVault("bruno", categoryId, sharing)).toBe(true);
+          expect(await tx.vaultMembers("bruno", categoryId)).toEqual([friend]);
+          const individual = { action: "set_member", categoryId, address: friend } as const;
+          await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
+          expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
+          await tx.changeVault("bruno", categoryId, { ...individual, allowed: true });
           expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([{ id: categoryId, name: "Prueba" }]);
           expect(await tx.changeContactGroup("bruno", groupId, { ...membership, action: "remove_contact" })).toBe(true);
+          expect(await tx.vaultMembers("bruno", categoryId)).toEqual([friend]);
+          await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
           expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories).toEqual([]);
           expect(await tx.changeContactGroup("bruno", groupId, { groupId, action: "delete" })).toBe(true);
           expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });

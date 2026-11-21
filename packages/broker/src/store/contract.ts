@@ -33,6 +33,20 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("pages network addresses once per holder with connection history, including revoked agents", async () => {
+      await store.tx(async tx => {
+        const agent = { agentId: "old", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now } as const;
+        expect(await tx.networkAddresses(undefined, 2)).toEqual([]);
+        await tx.upsertAgentConnection({ ...agent, userId: "alice", revokedAt: now });
+        await tx.upsertAgentConnection({ ...agent, userId: "bruno", revokedAt: now });
+        await tx.upsertAgentConnection({ ...agent, userId: "bruno", agentId: "new" });
+        await tx.upsertAgentConnection({ ...agent, userId: "no-address" });
+        expect(await tx.networkAddresses(undefined, 1)).toEqual([fromAddress]);
+        expect(await tx.networkAddresses(fromAddress, 2)).toEqual([toAddress]);
+        expect(await tx.networkAddresses(toAddress, 2)).toEqual([]);
+      });
+    });
+
     it("rolls back addresses, grants, requests and their events when a transaction rejects", async () => {
       const row = await makeRequest();
       await expect(store.tx(async (tx) => {
@@ -69,6 +83,32 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
           { id: first, name: "Agenda", entries: [{ label: "Días", value: 2 }], groups: [] },
           { id: second, name: "Salud", entries: [], groups: ["family"] },
         ] });
+      });
+    });
+
+    it("uses the same effective category access for roster, discovery and reading entries", async () => {
+      const categoryId = randomUUID();
+      const member = { action: "set_member", categoryId, address: fromAddress, allowed: true } as const;
+      await store.tx(async tx => {
+        await tx.changeVault("bruno", categoryId, { action: "create", name: "Salud" });
+        expect(await tx.vaultMembers("alice", categoryId)).toBeNull();
+        expect(await tx.changeVault("bruno", categoryId, member)).toBe(false);
+        await tx.addFriend("bruno", fromAddress);
+        expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
+        expect(await tx.changeVault("bruno", categoryId, member)).toBe(true);
+        expect(await tx.vaultMembers("bruno", categoryId)).toEqual([fromAddress]);
+        expect((await tx.sharedVault(fromAddress, toAddress, categoryId)).categories).toHaveLength(1);
+        await tx.setContactTag("bruno", fromAddress, "family");
+        await tx.changeVault("bruno", categoryId, { action: "set_group", categoryId, group: "family", allowed: true });
+        await tx.changeVault("bruno", categoryId, { ...member, allowed: false });
+        expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
+        expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [] });
+        expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
+        await tx.changeVault("bruno", categoryId, member);
+        await tx.removeFriend("bruno", fromAddress);
+        await tx.setContactTag("bruno", fromAddress, null);
+        await tx.addFriend("bruno", fromAddress);
+        expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
       });
     });
 
