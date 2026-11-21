@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import {
   ActivityItem,
   basicSharing,
+  contactTags,
   InboxItem,
   RequesterView,
   WAKE_EVENT,
@@ -541,6 +542,7 @@ describe("solicitudes de conexión", () => {
     await expectFinal(carla, request.requestId, "allow", "answered", { accepted: true });
     expect(await broker.owner.contacts(bruno)).toEqual({
       contacts: [{ address: "carla@sideband.app", gives: share, receives: basicSharing }],
+      presets: { friend: contactTags.friend.sharing, family: contactTags.family.sharing, work: contactTags.work.sharing },
       incoming: [],
       outgoing: [],
     });
@@ -586,6 +588,34 @@ describe("solicitudes de conexión", () => {
       { address: "carla@sideband.app", gives: basicSharing, receives: offer },
     ]);
     await expect(broker.owner.connect(carla, "bruno@sideband.app")).rejects.toMatchObject({ code: "invalid_input" });
+  });
+
+  it("las etiquetas ponen lo que se comparte y el contacto editado a mano conserva lo suyo", async () => {
+    const first = await broker.owner.connect(carla, "bruno@sideband.app", undefined, "work");
+    expect((await broker.owner.contacts(carla)).outgoing[0]?.offer).toEqual(contactTags.work.sharing);
+    await broker.owner.answerInvitation(bruno, first.requestId, { accept: true, tag: "family" });
+    expect((await broker.owner.contacts(bruno)).contacts).toEqual([
+      { address: "carla@sideband.app", tag: "family", gives: contactTags.family.sharing, receives: contactTags.work.sharing },
+    ]);
+    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tag: "work", gives: ["availability"] });
+    expect((await broker.agent.contacts(carla)).contacts[0]).toMatchObject({ tag: "work" });
+
+    await broker.owner.setTagPreset(carla, "work", ["availability", "interests"]);
+    expect((await broker.owner.contacts(carla)).contacts[0]?.gives).toEqual(["availability", "interests"]);
+    expect((await broker.owner.contacts(carla)).presets.work).toEqual(["availability", "interests"]);
+
+    await broker.owner.setSharing(carla, "bruno@sideband.app", ["general"]);
+    await broker.owner.setTagPreset(carla, "work", ["availability"]);
+    expect((await broker.owner.contacts(carla)).contacts[0]?.gives).toEqual(["general"]);
+
+    await broker.owner.setContactTag(carla, "bruno@sideband.app", "friend");
+    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tag: "friend", gives: contactTags.friend.sharing });
+    await expect(broker.owner.setContactTag(carla, "diego@sideband.app", "friend")).rejects.toMatchObject({ code: "not_found" });
+
+    await broker.owner.removeFriend(carla, "bruno@sideband.app");
+    const again = await broker.owner.connect(carla, "bruno@sideband.app");
+    await broker.owner.answerInvitation(bruno, again.requestId, { accept: true });
+    expect((await broker.owner.contacts(carla)).contacts[0]).not.toHaveProperty("tag");
   });
 
   it("el agente lista los contactos y los círculos aceptados de su titular", async () => {

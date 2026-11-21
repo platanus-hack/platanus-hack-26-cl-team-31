@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Address } from "./address.js";
 import { FinalOutcome, RequestStatus, SenderMessage } from "./request.js";
-import { Sharing } from "./sharing.js";
+import { ContactTag, Sharing, TagPresets } from "./sharing.js";
 import { ToolArgs, ToolName, ToolResult } from "./tools.js";
 import { WakeKind } from "./wake.js";
 
@@ -76,6 +76,7 @@ export type ActivityItem = z.infer<typeof ActivityItem>;
 
 export const Contact = z.object({
   address: Address,
+  tag: ContactTag.optional(),
   gives: Sharing,
   receives: Sharing,
 });
@@ -91,13 +92,14 @@ export type Invitation = z.infer<typeof Invitation>;
 
 export const ContactsView = z.object({
   contacts: z.array(Contact),
+  presets: TagPresets,
   incoming: z.array(Invitation),
   outgoing: z.array(Invitation),
 });
 export type ContactsView = z.infer<typeof ContactsView>;
 
 export const AgentContacts = z.object({
-  contacts: z.array(z.object({ address: Address, theyShare: Sharing, youShare: Sharing })),
+  contacts: z.array(z.object({ address: Address, tag: ContactTag.optional(), theyShare: Sharing, youShare: Sharing })),
   circles: z.array(z.object({ name: z.string(), members: z.array(Address) })),
 });
 export type AgentContacts = z.infer<typeof AgentContacts>;
@@ -105,5 +107,6 @@ export type AgentContacts = z.infer<typeof AgentContacts>;
 export const InvitationAnswer = z.object({
   accept: z.boolean(),
   share: Sharing.optional(),
+  tag: ContactTag.optional(),
 });
 export type InvitationAnswer = z.infer<typeof InvitationAnswer>;

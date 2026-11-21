@@ -2,23 +2,23 @@ import { Suspense } from "react";
 
 import { readContacts } from "../actions";
 import { card, Empty, Heading, Stamp } from "../ui";
-import { ContactRow, IncomingInvitation, InviteForm } from "./contact-forms";
+import { ContactRow, IncomingInvitation, InviteForm, TagPresetsEditor } from "./contact-forms";
 import { describeSharing } from "./describe";
 
 async function ContactsList() {
-  const { contacts, incoming, outgoing } = await readContacts();
+  const { contacts, presets, incoming, outgoing } = await readContacts();
   return (
     <div className="space-y-10">
       {incoming.length > 0 && (
         <section aria-labelledby="incoming-title">
           <h2 id="incoming-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Invitaciones</h2>
           <ul className="space-y-3">
-            {incoming.map((invitation) => <IncomingInvitation key={invitation.requestId} invitation={invitation} />)}
+            {incoming.map((invitation) => <IncomingInvitation key={invitation.requestId} invitation={invitation} presets={presets} />)}
           </ul>
         </section>
       )}
 
-      <InviteForm />
+      <InviteForm presets={presets} />
 
       {outgoing.length > 0 && (
         <section aria-labelledby="outgoing-title">
@@ -41,10 +41,12 @@ async function ContactsList() {
         <h2 id="contacts-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Tus contactos</h2>
         {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Invita a alguien con su dirección Sideband.</Empty> : (
           <ul className="space-y-2">
-            {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} />)}
+            {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} presets={presets} />)}
           </ul>
         )}
       </section>
+
+      <TagPresetsEditor presets={presets} />
     </div>
   );
 }
@@ -53,7 +55,7 @@ export default function ContactsPage() {
   return (
     <div className="max-w-2xl">
       <Heading title="Contactos">
-        Al conectarte con alguien, cada uno elige qué le comparte al otro. Puedes cambiarlo cuando quieras.
+        Cada contacto tiene una etiqueta que define qué le compartes. Si quieres, ajustas a alguien en particular.
       </Heading>
       <Suspense fallback={<p role="status">Cargando contactos…</p>}>
         <ContactsList />

@@ -26,7 +26,7 @@ describe("catálogo", () => {
       "web.invite.progress", "web.agent.ping",
       "mcp.tool.call", "broker.policy.evaluated", "broker.request.created", "broker.request.status_changed",
       "broker.request.closed", "broker.reply.rejected", "broker.reply.sanitized", "broker.owner.decided", "broker.grant.set", "broker.grant.revoked",
-      "broker.contact.connected", "broker.contact.removed",
+      "broker.contact.connected", "broker.contact.removed", "broker.contact.tagged", "broker.tag.preset_set",
       "broker.circle.changed",
       "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
       "admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created",

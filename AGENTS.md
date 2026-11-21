@@ -53,6 +53,7 @@ Pendiente, cada uno en su PR:
 - **Preguntas abiertas.** La categoría `general` cubre lo que no entra en otra. El agente del titular decide qué contesta. Queda fuera de lo básico.
 - **Básico.** Al conectar vienen marcadas Disponibilidad horaria e Intereses.
 - **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro (el que invita al enviar, el invitado al aceptar; lo básico viene marcado) y puede cambiarlo después sin avisar. Solo el titular acepta, desde la App Sideband; su agente responde `needs_owner`. Dejar de ser contactos borra la conexión y sus grants en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeFriend` del `OwnerPort`). `Sharing` es la lista de categorías que un titular le da a un contacto.
+- **Etiqueta.** Cada contacto lleva una etiqueta (`friend`, `family`, `work`, en `ContactTag` de `packages/protocol/src/sharing.ts`) que fija lo que le compartes con el preset de esa etiqueta. Cada titular edita sus presets (`setTagPreset`); el cambio alcanza a los contactos con esa etiqueta que seguían el preset anterior, y un contacto editado a mano (`setSharing`) conserva lo suyo. Se guardan en `sideband.contact_tags` y `sideband.tag_presets`.
 
 ### Modelo decidido, por construir
 

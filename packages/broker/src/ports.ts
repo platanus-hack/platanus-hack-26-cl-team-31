@@ -12,6 +12,7 @@ import type {
   AgentContacts,
   AskInput,
   ContactsView,
+  ContactTag,
   InboxItem,
   InvitationAnswer,
   Owner,
@@ -58,9 +59,14 @@ export interface OwnerPort {
   setWake(o: Owner, agentId: string, target: WakeTarget): Promise<void>;
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;
   revokeAgent(o: Owner, agentId: string): Promise<void>;
-  connect(o: Owner, to: Address, share?: Sharing): Promise<RequesterView>;
+  // With a tag and no share, the invitation offers the tag's preset and the contact gets the tag.
+  connect(o: Owner, to: Address, share?: Sharing, tag?: ContactTag): Promise<RequesterView>;
   contacts(o: Owner): Promise<ContactsView>;
   setSharing(o: Owner, contact: Address, sharing: Sharing): Promise<void>;
+  // Tags the contact and replaces its sharing with the tag's preset.
+  setContactTag(o: Owner, contact: Address, tag: ContactTag): Promise<void>;
+  // Contacts with the tag that still match its old preset follow the new one.
+  setTagPreset(o: Owner, tag: ContactTag, sharing: Sharing): Promise<void>;
   answerInvitation(o: Owner, requestId: string, answer: InvitationAnswer): Promise<void>;
   // Circles the owner joined or is invited to.
   circles(o: Owner): Promise<Circle[]>;

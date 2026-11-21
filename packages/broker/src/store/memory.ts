@@ -1,4 +1,4 @@
-import type { Address } from "@team-31/protocol";
+import type { Address, ContactTag, Sharing } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import type {
   AgentConnectionRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
@@ -8,6 +8,8 @@ type State = {
   users: Map<string, UserRow>;
   grants: (GrantRow & { revokedAt?: Date })[];
   friends: Map<string, Set<Address>>;
+  contactTags: Map<string, Map<Address, ContactTag>>;
+  tagPresets: Map<string, Partial<Record<ContactTag, Sharing>>>;
   circles: Map<string, CircleRow>;
   circleMembers: CircleMemberRow[];
   requests: Map<string, RequestRow>;
@@ -102,6 +104,21 @@ function transaction(state: State): StoreTx {
     },
     async removeFriend(userId, address) {
       return state.friends.get(userId)?.delete(address) ?? false;
+    },
+    async listContactTags(userId) {
+      return new Map(state.contactTags.get(userId));
+    },
+    async setContactTag(userId, address, tag) {
+      const tags = state.contactTags.get(userId) ?? new Map<Address, ContactTag>();
+      if (tag) tags.set(address, tag);
+      else tags.delete(address);
+      state.contactTags.set(userId, tags);
+    },
+    async listTagPresets(userId) {
+      return structuredClone(state.tagPresets.get(userId) ?? {});
+    },
+    async putTagPreset(userId, tag, sharing) {
+      state.tagPresets.set(userId, { ...state.tagPresets.get(userId), [tag]: [...sharing] });
     },
     async listOpenInvitations(userId) {
       return structuredClone([...state.requests.values()]
@@ -251,7 +268,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    users: new Map(), grants: [], friends: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
+    users: new Map(), grants: [], friends: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
     events: [], wakes: new Map(), agents: new Map(),
   };
   let previous = Promise.resolve();

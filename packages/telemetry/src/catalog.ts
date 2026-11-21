@@ -177,6 +177,8 @@ export const catalog = [
   }),
   defineEvent({ name: "broker.grant.revoked", kind: "policy", description: "El dueño revocó un permiso.", attrs: { grantId: id() } }),
   defineEvent({ name: "broker.contact.connected", kind: "policy", description: "Dos titulares quedaron conectados al aceptar una invitación.", attrs: {} }),
+  defineEvent({ name: "broker.contact.tagged", kind: "policy", description: "Un titular le puso una etiqueta a un contacto. Sin la dirección.", attrs: { tag: code() } }),
+  defineEvent({ name: "broker.tag.preset_set", kind: "policy", description: "Un titular cambió lo que comparte una etiqueta.", attrs: { tag: code(), categories: int().nonnegative() } }),
   defineEvent({ name: "broker.contact.removed", kind: "policy", description: "Un titular terminó una conexión en ambos sentidos.", attrs: {} }),
   defineEvent({
     name: "broker.circle.changed",
