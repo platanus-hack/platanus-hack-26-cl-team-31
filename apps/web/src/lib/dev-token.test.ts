@@ -191,3 +191,75 @@ it("no reusa el cliente que el titular conectó desde el navegador", async () =>
   expect(seen.register).toBeDefined();
   expect(token.clientId).toBe("cliente-1");
 });
+
+/**
+ * Better Auth falso con estado: `register` guarda el consentimiento, como hace el proveedor real al
+ * aceptar. Es la única forma de ejercitar la segunda emisión de un mismo titular, que es donde el
+ * broker rechaza con 409 si el client_id cambió: el agentId del MCP es ese client_id y
+ * sideband.agent_connections solo admite una conexión viva por titular.
+ */
+function statefulAuth() {
+  const consents: { clientId: string; scopes: string[]; createdAt: string; name: string }[] = [];
+  let next = 0;
+  return {
+    registered: () => consents.length,
+    api: {
+      devSignIn: async ({ body }: { body: { email: string; name: string } }) => ({
+        response: { userId: `user-${body.email}` },
+        headers: new Headers({ "set-cookie": "better-auth.session_token=galleta; Path=/" }),
+      }),
+    },
+    handler: async (request: Request): Promise<Response> => {
+      const url = new URL(request.url);
+      const owner = url.searchParams.get("client_id");
+      if (url.pathname.endsWith("/oauth2/get-consents")) return Response.json(consents);
+      if (url.pathname.endsWith("/oauth2/public-client")) {
+        const found = consents.find((consent) => consent.clientId === owner);
+        return found ? Response.json({ client_id: found.clientId, client_name: found.name }) : new Response("no", { status: 404 });
+      }
+      if (url.pathname.endsWith("/oauth2/register")) {
+        const { client_name: name } = (await request.json()) as { client_name: string };
+        next += 1;
+        const clientId = `cliente-${next}`;
+        consents.push({ clientId, scopes: [...Scope.options], createdAt: new Date(2026, 0, next).toISOString(), name });
+        return Response.json({ client_id: clientId }, { status: 201 });
+      }
+      if (url.pathname.endsWith("/oauth2/authorize")) {
+        return new Response(null, { status: 302, headers: { Location: `http://127.0.0.1/sideband-dev-token?code=codigo-${owner}&state=abc` } });
+      }
+      if (url.pathname.endsWith("/oauth2/token")) {
+        const form = new URLSearchParams(await request.text());
+        return Response.json({ access_token: `token-${form.get("client_id")}`, expires_in: 3600 });
+      }
+      return new Response("no existe", { status: 404 });
+    },
+  };
+}
+
+it("vuelve a emitir el token de un mismo titular con el mismo client_id", async () => {
+  const auth = statefulAuth();
+  const ana = { baseUrl: BASE, resource: RESOURCE, email: "ana@sideband.local", name: "Ana" };
+
+  const first = await mintDevToken(auth, ana);
+  const second = await mintDevToken(auth, ana);
+
+  // El agentId del MCP es el client_id: si cambia, el broker responde 409 a toda tool porque la
+  // conexión viva del titular quedó con el anterior.
+  expect(second.clientId).toBe(first.clientId);
+  expect(second.accessToken).not.toBe("");
+  expect(auth.registered()).toBe(1);
+});
+
+it("da un cliente propio a cada titular, que pueden convivir", async () => {
+  const auth = statefulAuth();
+  const common = { baseUrl: BASE, resource: RESOURCE };
+
+  const ana = await mintDevToken(auth, { ...common, email: "ana@sideband.local", name: "Ana" });
+  const bob = await mintDevToken(auth, { ...common, email: "bob@sideband.local", name: "Bob" });
+  const anaOtraVez = await mintDevToken(auth, { ...common, email: "ana@sideband.local", name: "Ana" });
+
+  // La restricción del broker es por titular, no global: dos titulares sostienen su conexión a la vez.
+  expect(bob.clientId).not.toBe(ana.clientId);
+  expect(anaOtraVez.clientId).toBe(ana.clientId);
+  expect(auth.registered()).toBe(2);
+});
