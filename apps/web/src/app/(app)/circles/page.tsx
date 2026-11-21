@@ -58,15 +58,12 @@ export default async function CirclesPage() {
   const { address, circles } = await readCircles();
   return (
     <div className="max-w-2xl space-y-8">
-      <Heading title="Círculos">
+      <Heading title="Círculos" action={<CreateCircle />}>
         Los miembros de un círculo comparten su disponibilidad, sus horarios libres y sus coincidencias de interés.
       </Heading>
-      <section className={`${card} p-5 sm:p-6`}>
-        <CreateCircle />
-      </section>
       <section aria-labelledby="circles-title">
         <h2 id="circles-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Tus círculos</h2>
-        {circles.length === 0 ? <Empty>Todavía no estás en ningún círculo.</Empty> : (
+        {circles.length === 0 ? <Empty>Todavía no estás en ningún círculo. Toca Crear círculo para armar uno.</Empty> : (
           <ul className="space-y-4">
             {circles.map((circle) => <CircleCard key={circle.id} circle={circle} address={address} />)}
           </ul>

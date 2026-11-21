@@ -1,36 +1,49 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import type { Contact, Invitation, Sharing, TagPresets } from "@team-31/protocol";
 import { contactTagNames, contactTags, sameSharing, type ContactTag } from "@team-31/protocol/constants";
 
 import { answerInvitation, removeContact, saveContactTag, saveSharing, saveTagPreset, sendInvitation } from "./actions";
 import { button, card, Feedback, input, primaryButton } from "../ui";
+import { Modal, ModalCancel, useCloseModal } from "../modal";
 import { describeSharing } from "./describe";
 import { SharingPicker } from "./sharing";
 import { TagMenu, TagPicker } from "./tags";
 
 const dangerButton = "inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg px-3.5 py-2 text-sm font-semibold text-danger transition hover:bg-danger-bg disabled:cursor-wait disabled:opacity-60";
 
-export function InviteForm({ presets }: { presets: TagPresets }) {
+function InviteForm({ presets }: { presets: TagPresets }) {
   const [state, submit, pending] = useActionState(sendInvitation, {});
   const [tag, setTag] = useState<ContactTag>("friend");
+  const close = useCloseModal();
+  useEffect(() => { if (state.message) close(); }, [state, close]);
   return (
-    <form action={submit} className={`${card} space-y-4 p-5 sm:p-6`}>
-      <div>
-        <h2 className="text-lg font-semibold">Invitar a alguien</h2>
-        <p className="text-sm text-muted">Elige su etiqueta. Si acepta, quedan conectados y esa persona elige qué te comparte.</p>
+    <form action={submit} className="space-y-5">
+      <div className="space-y-1.5">
+        <label htmlFor="invite-to" className="text-[13px] font-medium text-body">Dirección Sideband</label>
+        <input id="invite-to" name="to" required autoFocus placeholder="nombre@sideband.app" autoCapitalize="none" autoComplete="off"
+          spellCheck={false} className={input} />
       </div>
-      <div className="flex flex-wrap items-start gap-2">
-        <label htmlFor="invite-to" className="sr-only">Dirección Sideband</label>
-        <input id="invite-to" name="to" required placeholder="nombre@sideband.app" autoCapitalize="none" autoComplete="off"
-          spellCheck={false} className={`${input} min-w-48 flex-1`} />
+      <div className="space-y-1.5">
+        <p className="text-[13px] font-medium text-body">¿Qué es para ti?</p>
+        <TagPicker value={tag} onChange={setTag} name="tag" />
+        <p className="text-[13px] text-muted">Le compartirás: <span className="text-ink">{describeSharing(presets[tag])}</span></p>
+      </div>
+      <Feedback error={state.error} errorId={state.errorId} />
+      <div className="flex justify-end gap-2 pt-1">
+        <ModalCancel />
         <button className={primaryButton} disabled={pending}>{pending ? "Enviando…" : "Enviar invitación"}</button>
       </div>
-      <TagPicker value={tag} onChange={setTag} name="tag" />
-      <p className="text-sm"><span className="text-muted">Le compartirás:</span> <span className="font-medium">{describeSharing(presets[tag])}</span></p>
-      <Feedback {...state} />
     </form>
+  );
+}
+
+export function InviteButton({ presets }: { presets: TagPresets }) {
+  return (
+    <Modal label="Invitar" title="Invitar a alguien" description="Si acepta, quedan conectados y esa persona elige qué te comparte.">
+      <InviteForm presets={presets} />
+    </Modal>
   );
 }
 

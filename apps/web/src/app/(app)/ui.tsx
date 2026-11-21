@@ -13,12 +13,12 @@ export const eyebrow = "text-[11px] text-subtle";
 
 export function Heading({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
-    <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
-      <div className="max-w-2xl">
+    <header className="mb-8 flex items-start justify-between gap-4">
+      <div className="min-w-0 max-w-2xl flex-1">
         <h1 className="text-[30px] leading-[1.15] font-medium tracking-[-0.01em] text-white sm:text-[36px] sm:leading-[42px]">{title}</h1>
         {children && <p className="mt-2 text-sm leading-[22px] text-body">{children}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0 pt-1.5 sm:pt-2">{action}</div>}
     </header>
   );
 }
