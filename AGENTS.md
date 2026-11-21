@@ -28,7 +28,7 @@ Un titular pregunta al agente de otro titular. El broker deja pasar la pregunta 
 El grant es el único modelo de permisos. Un grant dice que un titular deja a una dirección Nexo usar una tool y recibir ciertos campos de su respuesta. Sin un grant vivo, el broker deniega. Todo lo demás se construye creando y revocando grants.
 
 - El tipo es `Grant` (`packages/protocol/src/grants.ts`) y se guarda en `nexo.grants`. Un titular tiene un solo grant vivo por dirección y tool.
-- El titular los administra con `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`). Web los muestra en `/grants`.
+- El titular los administra con `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`). Web los muestra por contacto en `/contacts`.
 - Un permiso nuevo es una tool o un campo en `packages/protocol/src/tools.ts`. El grant ya lo cubre.
 - Los grants no se componen. Que Bob le dé un grant a Ana y Ana a Carla no le da a Carla nada de Bob.
 
@@ -46,7 +46,7 @@ Decidido el 2026-11-21. Lo que sigue todavía no existe en el código; quien lo 
 - **Categoría.** El titular da permisos por categoría de información y nunca ve tools ni campos. Cada categoría fija en el código su tool y sus campos: Disponibilidad (`availability`: `available`), Horarios libres (`availability`: `available`, `freeSlots`), Intereses (`interest_check`: `matches`) y Preguntas abiertas (`question`: `answer`).
 - **Preguntas abiertas no tiene límite de tema.** El broker no lee el texto y el agente del titular decide qué contesta. Por eso queda fuera de lo básico.
 - **Básico.** Las categorías que se dan por defecto: Disponibilidad e Intereses.
-- **Contacto.** Agregar a una persona le da lo básico; quitarla le quita todo. Va en un solo sentido: si Ana agrega a Bob, Bob puede preguntarle a Ana.
+- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro (el que invita al enviar, el invitado al aceptar; lo básico viene marcado) y puede cambiarlo después sin avisar. Solo el titular acepta, desde la App Nexo; su agente responde `needs_owner`. Dejar de ser contactos borra la conexión y los permisos en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeFriend` del `OwnerPort`) y las categorías en `packages/protocol/src/sharing.ts`.
 - **Grupo.** Un conjunto con nombre que crea un titular. Solo su creador invita y saca miembros, y cada invitado acepta antes de entrar. Cada miembro le da lo básico a los demás.
 - **Los permisos de grupo se calculan, no se guardan.** Bob puede preguntarle algo a Ana si ella le dio ese permiso, o si comparten un grupo y la categoría es básica. Salir de un grupo borra la membresía; si siguen juntos en otro, lo básico se mantiene.
 - **Perfil.** Nombre y dirección Nexo de cada titular, visibles para todo usuario con sesión.

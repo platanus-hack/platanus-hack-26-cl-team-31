@@ -11,7 +11,7 @@ import { toolLabels } from "./labels";
 import { card, Empty, Heading, Stamp, textLink } from "./ui";
 
 export default async function HomePage() {
-  const [pending, activity] = await readHome();
+  const [pending, activity, invitations] = await readHome();
   const inviteUrl = new URL("/invite", new URL(getAuthBaseUrl()).origin).href;
 
   return (
@@ -22,7 +22,16 @@ export default async function HomePage() {
       <div className="grid items-start gap-8 lg:grid-cols-[1.35fr_1fr]">
         <section aria-labelledby="pending-title">
           <h2 id="pending-title" className="mb-4 text-xl font-semibold tracking-tight">Por revisar</h2>
-          {pending.length === 0 ? <Empty>No tienes solicitudes pendientes.</Empty> : (
+          {invitations.length > 0 && (
+            <Link href="/contacts" className={`${card} mb-3 flex items-center justify-between gap-3 px-5 py-4 transition hover:bg-[#f7f8f2]`}>
+              <span className="text-sm">
+                <span className="font-semibold break-all">{invitations[0]!.address}</span>
+                {invitations.length > 1 ? ` y ${invitations.length - 1} más quieren conectar contigo.` : " quiere conectar contigo."}
+              </span>
+              <span className="shrink-0 text-sm font-semibold text-[#28513b]">Responder ›</span>
+            </Link>
+          )}
+          {pending.length === 0 && invitations.length === 0 ? <Empty>No tienes solicitudes pendientes.</Empty> : (
             <ul className="space-y-3">
               {pending.map((item) => {
                 const slot = item.tool === "availability" ? ToolArgs.availability.parse(item.args) : undefined;

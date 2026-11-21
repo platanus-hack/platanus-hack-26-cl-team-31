@@ -113,6 +113,8 @@ export interface StoreTx {
   // An existing live grant takes precedence over the friendship default.
   insertFriendGrant(row: GrantRow): Promise<boolean>;
   revokeFriendGrants(userId: string, address: Address, at: Date): Promise<string[]>;
+  // Pending connect requests sent or received by the user, oldest first.
+  listOpenInvitations(userId: string): Promise<RequestRow[]>;
 
   insertRequest(row: RequestRow): Promise<void>;
   getRequest(id: string, participant?: { fromUserId: string } | { toUserId: string }): Promise<RequestRow | null>;

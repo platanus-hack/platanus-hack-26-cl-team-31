@@ -26,6 +26,7 @@ describe("catálogo", () => {
       "web.invite.progress", "web.agent.ping",
       "mcp.tool.call", "broker.policy.evaluated", "broker.request.created", "broker.request.status_changed",
       "broker.request.closed", "broker.reply.rejected", "broker.owner.decided", "broker.grant.set", "broker.grant.revoked",
+      "broker.contact.connected", "broker.contact.removed",
       "wake.attempt", "wake.exhausted", "coordination.tool.call", "demo.contact.seeded", "error",
       "admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created",
       "admin.token.revoked", "admin.mcp.call", "telemetry.invalid_event",

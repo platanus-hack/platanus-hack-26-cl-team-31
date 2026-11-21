@@ -8,7 +8,9 @@ import type {
   Address,
   AgentConnection,
   AskInput,
+  ContactsView,
   InboxItem,
+  InvitationAnswer,
   Owner,
   OwnerDecision,
   OwnerPendingItem,
@@ -16,6 +18,7 @@ import type {
   ReplyInput,
   ReplyReceipt,
   RequesterView,
+  Sharing,
   WakeTarget,
   Waker,
 } from "@team-31/protocol";
@@ -46,8 +49,10 @@ export interface OwnerPort {
   setWake(o: Owner, agentId: string, target: WakeTarget): Promise<void>;
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;
   revokeAgent(o: Owner, agentId: string): Promise<void>;
-  connect(o: Owner, to: Address): Promise<RequesterView>;
-  friends(o: Owner): Promise<Address[]>;
+  connect(o: Owner, to: Address, share?: Sharing): Promise<RequesterView>;
+  contacts(o: Owner): Promise<ContactsView>;
+  setSharing(o: Owner, contact: Address, sharing: Sharing): Promise<void>;
+  answerInvitation(o: Owner, requestId: string, answer: InvitationAnswer): Promise<void>;
   removeFriend(o: Owner, friend: Address): Promise<void>;
 }
 

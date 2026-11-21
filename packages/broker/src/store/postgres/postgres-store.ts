@@ -216,6 +216,15 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       return revoked.map(({ id }) => id);
     },
 
+    async listOpenInvitations(userId) {
+      const rows = await db.select().from(requests).where(and(
+        eq(requests.tool, "connect"),
+        inArray(requests.status, ["awaiting_agent", "awaiting_owner"]),
+        or(eq(requests.fromUserId, userId), eq(requests.toUserId, userId)),
+      )).orderBy(asc(requests.createdAt), asc(requests.id));
+      return rows.map(readRequest);
+    },
+
     async insertRequest(row) {
       const [inserted] = await db.insert(requests).values(row).onConflictDoNothing().returning({ id: requests.id });
       if (!inserted) throw new BrokerError("conflict", "La solicitud ya existe.");

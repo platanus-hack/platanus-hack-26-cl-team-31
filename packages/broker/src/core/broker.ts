@@ -4,8 +4,16 @@ import {
   AskInput,
   fieldsOf,
   describeTool,
+  basicSharing,
   GrantInput,
   GrantTool,
+  InvitationAnswer,
+  noSharing,
+  Sharing,
+  sharingFields,
+  sharingOf,
+  sharingTools,
+  ToolArgs,
   LocalPart,
   OwnerDecision,
   ReplyInput,
@@ -33,11 +41,7 @@ import { createWorker } from "./worker.js";
 
 const connectionFields = fieldsOf("connect");
 const connectionGuidance =
-  "Pregúntale a tu titular si quiere conectar con esta dirección. Responde answered con accepted: true solo si lo confirma; si no, accepted: false.";
-const friendDefaults = [
-  { tool: "availability", fields: ["available", "freeSlots"] },
-  { tool: "interest_check", fields: ["matches"] },
-] satisfies Pick<GrantInput, "tool" | "fields">[];
+  "Cuéntale a tu titular quién quiere conectar. Solo tu titular acepta o rechaza desde la App Nexo: responde needs_owner.";
 
 // A request stays authorized while the recipient's grant to the sender still covers its fields.
 async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
@@ -160,26 +164,74 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return connection;
   }
 
-  async function applyConnection(tx: StoreTx, row: RequestRow): Promise<void> {
+  async function applySharing(tx: StoreTx, userId: string, address: Address, sharing: Sharing): Promise<void> {
+    const wanted = sharingFields(sharing);
+    for (const tool of sharingTools) {
+      const fields = wanted[tool];
+      const live = await tx.getGrant(userId, address, tool);
+      if (!fields) {
+        if (live && await tx.revokeGrant(live.id, userId, clock.now())) {
+          record(tx, "broker.grant.revoked", { userId, attrs: { grantId: live.id } });
+        }
+        continue;
+      }
+      if (live && live.fields.length === fields.length && fields.every((field) => live.fields.includes(field))) continue;
+      const grant = await tx.putGrant({
+        id: randomUUID(), grantorUserId: userId, granteeAddress: address, tool, fields, createdAt: clock.now(),
+      });
+      record(tx, "broker.grant.set", { userId, attrs: { grantId: grant.id, tool, fields: fields.length } });
+    }
+  }
+
+  function offerOf(row: RequestRow): Sharing {
+    const parsed = ToolArgs.connect.safeParse(row.args);
+    return (parsed.success && parsed.data.share) || basicSharing;
+  }
+
+  async function applyConnection(tx: StoreTx, row: RequestRow, recipientShare: Sharing = basicSharing): Promise<void> {
     if (row.tool !== "connect" || row.status !== "answered" || !row.fromUserId || !row.toUserId) return;
     if (!row.result || !("accepted" in row.result) || !row.result.accepted) return;
     const participants = [
-      { userId: row.fromUserId, address: row.toAddress },
-      { userId: row.toUserId, address: row.fromAddress },
+      { userId: row.fromUserId, address: row.toAddress, share: offerOf(row) },
+      { userId: row.toUserId, address: row.fromAddress, share: recipientShare },
     ];
     // Opposite-direction acceptances acquire the same membership rows in the same order.
     participants.sort((a, b) => a.userId.localeCompare(b.userId));
-    for (const { userId, address } of participants) {
-      if (!await tx.addFriend(userId, address)) continue;
-      for (const { tool, fields } of friendDefaults) {
-        const grantId = randomUUID();
-        if (await tx.insertFriendGrant({
-          id: grantId, grantorUserId: userId, granteeAddress: address, tool, fields, createdAt: clock.now(),
-        })) {
-          record(tx, "broker.grant.set", { userId, attrs: { grantId, tool, fields: fields.length } });
-        }
-      }
+    for (const { userId, address, share } of participants) {
+      await tx.addFriend(userId, address);
+      await applySharing(tx, userId, address, share);
     }
+    record(tx, "broker.contact.connected", { requestId: row.id, userId: row.toUserId });
+  }
+
+  async function closeInvitation(
+    tx: StoreTx, row: RequestRow, accept: boolean, share: Sharing | undefined, by: "owner" | "agent",
+  ): Promise<void> {
+    const now = clock.now();
+    const changed = accept
+      ? await finalize(transition(row, "answered"), "answered", now, { accepted: true })
+      : await finalize(transition(row, "declined"), "declined", now);
+    if (!await saveTransition(tx, row, changed)) throw closed();
+    await applyConnection(tx, changed, share);
+    recordTransition(tx, row, changed, by);
+    await tx.appendEvent({ requestId: row.id, at: now, kind: "permission", status: changed.status });
+    await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
+  }
+
+  // A repeated invitation returns the open one. Crossed invitations accept the received one.
+  async function existingInvitation(
+    tx: StoreTx, userId: string, to: Address, share: Sharing | undefined, byAgent: boolean,
+  ): Promise<RequesterView | BrokerError | "accepted" | null> {
+    if ((await tx.listFriends(userId)).includes(to)) return new BrokerError("invalid_input", "Ya son contactos.");
+    const now = clock.now();
+    const open = (await tx.listOpenInvitations(userId)).filter((row) => row.expiresAt > now);
+    const sent = open.find((row) => row.fromUserId === userId && row.toAddress === to);
+    if (sent) return toRequesterView(sent);
+    const received = open.find((row) => row.toUserId === userId && row.fromAddress === to);
+    if (!received) return null;
+    if (byAgent) return new BrokerError("invalid_input", "Esta persona ya te invitó. Tu titular la acepta desde la App Nexo.");
+    await closeInvitation(tx, received, true, share, "owner");
+    return "accepted";
   }
 
   async function submit(
@@ -190,6 +242,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
     if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
     const recipient = await tx.getUserByAddress(to);
+    const offer = input.tool === "connect" ? input.args.share : undefined;
+    const existing = recipient && tool === "connect" ? await existingInvitation(tx, userId, to, offer, agentId !== undefined) : null;
+    if (existing instanceof BrokerError || (existing && existing !== "accepted")) return existing;
     const now = clock.now();
     let row = await initialRequest({
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
@@ -202,7 +257,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       requestId: row.id, userId, ...(agentId ? { agentId } : {}),
       attrs: { tool, decision: invitation || grant ? "allow" : "deny", rule: ruleCode },
     });
-    if (invitation) {
+    if (existing === "accepted") {
+      row = await finalize({
+        ...row, status: "awaiting_agent", allowedFields: connectionFields, rule: "Invitación mutua",
+      }, "answered", now, { accepted: true });
+    } else if (invitation) {
       row = {
         ...row, status: "awaiting_agent", allowedFields: connectionFields,
         rule: "Solicitud de conexión", guidance: connectionGuidance,
@@ -342,6 +401,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (!parsed.success) return reject(new BrokerError("invalid_input", "La respuesta no cumple el formato requerido."));
 
           const { outcome, internalReason } = parsed.data;
+          if (row.tool === "connect" && outcome === "answered") {
+            return reject(new BrokerError("invalid_input", "Solo el titular acepta una invitación desde la App Nexo. Responde needs_owner."));
+          }
           let changed: RequestRow;
           let deliveredFields: string[] = [];
           let droppedFields: string[] = [];
@@ -569,26 +631,84 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
 
-      async connect(o, to) {
+      async connect(o, to, share) {
         const target = Address.safeParse(to);
         if (!target.success) throw new BrokerError("invalid_input", "La dirección no es válida.");
-        const view = await store.tx((tx) => submit(tx, o.userId, { to: target.data, tool: "connect", args: {} }));
+        const offer = share === undefined ? undefined : Sharing.safeParse(share);
+        if (offer && !offer.success) throw new BrokerError("invalid_input", "Lo que compartes no es válido.");
+        const args = offer ? { share: offer.data } : {};
+        const view = await store.tx((tx) => submit(tx, o.userId, { to: target.data, tool: "connect", args }));
         if (view instanceof BrokerError) throw view;
         return view;
       },
 
-      async friends(o) {
-        return store.tx((tx) => tx.listFriends(o.userId));
+      async contacts(o) {
+        return store.tx(async (tx) => {
+          const me = (await tx.getUser(o.userId))?.address;
+          const mine = await tx.listGrants(o.userId);
+          const contacts = await Promise.all((await tx.listFriends(o.userId)).map(async (address) => {
+            const other = await tx.getUserByAddress(address);
+            const theirs = other && me ? (await tx.listGrants(other.userId)).filter((grant) => grant.granteeAddress === me) : [];
+            return {
+              address,
+              gives: sharingOf(mine.filter((grant) => grant.granteeAddress === address)),
+              receives: sharingOf(theirs),
+            };
+          }));
+          const now = clock.now();
+          const open = (await tx.listOpenInvitations(o.userId)).filter((row) => row.expiresAt > now);
+          const invitation = (row: RequestRow, address: Address) => ({
+            requestId: row.id, address, offer: offerOf(row), expiresAt: row.expiresAt.toISOString(),
+          });
+          return {
+            contacts,
+            incoming: open.filter((row) => row.toUserId === o.userId).map((row) => invitation(row, row.fromAddress)),
+            outgoing: open.filter((row) => row.fromUserId === o.userId).map((row) => invitation(row, row.toAddress)),
+          };
+        });
+      },
+
+      async setSharing(o, contact, sharing) {
+        const address = Address.safeParse(contact);
+        const parsed = Sharing.safeParse(sharing);
+        if (!address.success || !parsed.success) throw new BrokerError("invalid_input", "Lo que compartes no es válido.");
+        await store.tx(async (tx) => {
+          if (!(await tx.listFriends(o.userId)).includes(address.data)) throw notFound();
+          await applySharing(tx, o.userId, address.data, parsed.data);
+          await cancelUnauthorized(tx, o.userId);
+        });
+      },
+
+      async answerInvitation(o, requestId, answer) {
+        const parsed = InvitationAnswer.safeParse(answer);
+        if (!parsed.success) throw new BrokerError("invalid_input", "La respuesta no es válida.");
+        const error = await store.tx(async (tx) => {
+          const row = await tx.getRequest(requestId, { toUserId: o.userId });
+          if (!row || row.tool !== "connect") throw notFound();
+          if (row.status !== "awaiting_agent" && row.status !== "awaiting_owner") throw closed();
+          const now = clock.now();
+          if (row.expiresAt <= now) return await closePending(tx, row, "expired", now) ? expired() : closed();
+          await closeInvitation(tx, row, parsed.data.accept, parsed.data.share, "owner");
+          record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: parsed.data.accept ? "accept" : "decline" } });
+        });
+        if (error) throw error;
       },
 
       async removeFriend(o, friend) {
         if (!Address.safeParse(friend).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
         await store.tx(async (tx) => {
-          if (!await tx.removeFriend(o.userId, friend)) return;
-          for (const grantId of await tx.revokeFriendGrants(o.userId, friend, clock.now())) {
-            record(tx, "broker.grant.revoked", { userId: o.userId, attrs: { grantId } });
+          const me = (await tx.getUser(o.userId))?.address;
+          const other = await tx.getUserByAddress(friend);
+          const sides = [{ userId: o.userId, address: friend }];
+          if (other && me) sides.push({ userId: other.userId, address: me });
+          sides.sort((a, b) => a.userId.localeCompare(b.userId));
+          let removed = false;
+          for (const { userId, address } of sides) {
+            removed = await tx.removeFriend(userId, address) || removed;
+            await applySharing(tx, userId, address, noSharing);
+            await cancelUnauthorized(tx, userId);
           }
-          await cancelUnauthorized(tx, o.userId);
+          if (removed) record(tx, "broker.contact.removed", { userId: o.userId });
         });
       },
 

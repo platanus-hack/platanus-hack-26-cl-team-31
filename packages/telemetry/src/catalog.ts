@@ -148,6 +148,8 @@ export const catalog = [
     attrs: { grantId: id(), tool: code(), fields: int().nonnegative() },
   }),
   defineEvent({ name: "broker.grant.revoked", kind: "policy", description: "El dueño revocó un permiso.", attrs: { grantId: id() } }),
+  defineEvent({ name: "broker.contact.connected", kind: "policy", description: "Dos titulares quedaron conectados al aceptar una invitación.", attrs: {} }),
+  defineEvent({ name: "broker.contact.removed", kind: "policy", description: "Un titular terminó una conexión en ambos sentidos.", attrs: {} }),
 
   defineEvent({
     name: "wake.attempt",
