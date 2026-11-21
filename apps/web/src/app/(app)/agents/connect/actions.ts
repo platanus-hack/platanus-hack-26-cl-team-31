@@ -6,6 +6,8 @@ import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getTelemetry } from "@/lib/telemetry";
+
 import { clients, type ClientKind, type ManualWakeKind } from "./clients";
 import { connectContext, listConnections } from "./connections";
 
@@ -38,7 +40,8 @@ export async function saveWake(kind: ManualWakeKind, agentId: string, _state: Sa
 
   try {
     await broker.setWake(owner, agentId, target.data);
-  } catch {
+  } catch (error) {
+    getTelemetry().error("action saveWake", error);
     return { error: "No se pudo guardar el aviso. Comprueba que el agente siga conectado." };
   }
 
@@ -59,7 +62,8 @@ export async function startPing(kind: ClientKind, agentId: string): Promise<Ping
       return { error: "Configura el aviso del agente antes de probarlo." };
     }
     return await broker.ping(owner, agentId);
-  } catch {
+  } catch (error) {
+    getTelemetry().error("action startPing", error);
     return { error: "No se pudo enviar la prueba. Intenta de nuevo." };
   }
 }

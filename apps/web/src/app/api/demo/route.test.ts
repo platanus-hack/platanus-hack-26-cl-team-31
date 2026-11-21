@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { runContactSession } from "@team-31/demo/contact-session";
+import { createTelemetry, offSink } from "@team-31/telemetry";
 import { GET, POST } from "./route";
 
 vi.mock("@team-31/demo/contact-session", () => ({
@@ -7,6 +8,10 @@ vi.mock("@team-31/demo/contact-session", () => ({
   reportContactError: vi.fn(() => "demo-error-id"),
   runContactSession: vi.fn(),
 }));
+
+// The web telemetry singleton reads this holder: tests never write to a database or stdout.
+(globalThis as unknown as { __nexoWebTelemetry: unknown }).__nexoWebTelemetry =
+  createTelemetry({ service: "web", sink: offSink(), heartbeatMs: 0, lifecycle: false });
 
 const origin = "http://localhost:3002";
 function request(person: string, from = origin) {
