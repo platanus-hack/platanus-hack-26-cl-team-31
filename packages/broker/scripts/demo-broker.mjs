@@ -5,27 +5,28 @@ import { createBroker, createMemoryStore } from "@team-31/broker";
 import { createOwnerRuntime, localReadTool } from "@team-31/broker/client";
 import { SharingRules, WakeNotice } from "@team-31/protocol";
 import { createWaker, verifyWebhookSignature } from "../../wake/dist/index.js";
-import { askBob } from "./bob-runtime.mjs";
+import { askContactOwner } from "./contact-runtime.mjs";
 
-export async function startDemoBroker(source) {
+export async function startDemoBroker(bobSource, janeSource) {
   const ana = { userId: "ana", agentId: "ana-bot", scopes: ["nexo:ask", "nexo:status"] };
-  const bob = { userId: "bob", agentId: "bob-bot", scopes: ["nexo:inbox", "nexo:reply"] };
   const addressDomain = "demo.local";
-  const to = "bob@" + addressDomain;
-  const secret = "whsec_" + randomBytes(32).toString("base64");
+  const contacts = [
+    { id: "bob", name: "Bob", source: bobSource },
+    { id: "jane", name: "Jane", source: janeSource },
+  ];
+  const addressBook = contacts.map(({ id, name }) => ({ name, address: `${id}@${addressDomain}` }));
   const broker = createBroker({
     store: createMemoryStore(), clock: { now: () => new Date() },
     config: { requestTtlSeconds: 120, wakeRetryDelaysMs: [], addressDomain },
     nonceKey: randomBytes(32), signingKey: generateKeyPairSync("ed25519").privateKey,
     waker: createWaker({ allowInsecure: true }), // Localhost development mode.
   });
-  const onWake = createOwnerRuntime(broker.agent, bob, [
-    localReadTool("interest_check", ({ interest }) => askBob(interest, source)),
-  ]);
-
+  const routes = new Map();
   const inFlight = new Map();
   async function receive(req, res) {
-    if (req.method !== "POST" || req.url !== "/agents/bob-bot/wake") return res.writeHead(404).end();
+    const target = routes.get(req.url);
+    if (req.method !== "POST" || !target) return res.writeHead(404).end();
+    const { name, secret, onWake } = target;
     let body = "";
     for await (const chunk of req) {
       body += chunk.toString();
@@ -42,9 +43,9 @@ export async function startDemoBroker(source) {
     if (id !== "evt_" + notice.requestId) return res.writeHead(400).end();
     res.writeHead(202).end();
     if (!inFlight.has(notice.requestId)) {
-      console.error("bob-bot recibió el webhook firmado:", notice.requestId);
+      console.error(`${name} recibió el webhook firmado:`, notice.requestId);
       const processing = onWake(notice).catch(() => {
-        console.error("Bob no completó la consulta. La solicitud sigue pendiente hasta su vencimiento.");
+        console.error(`${name} no completó la consulta. La solicitud sigue pendiente hasta su vencimiento.`);
       });
       inFlight.set(notice.requestId, processing);
     }
@@ -54,23 +55,41 @@ export async function startDemoBroker(source) {
   await once(receiver, "listening");
   try {
     await broker.owner.claimAddress(ana, "ana");
-    await broker.owner.claimAddress(bob, "bob");
-    await broker.owner.setRules(bob, SharingRules.parse({
-      circles: {}, grants: {}, people: { ["ana@" + addressDomain]: [{ tool: "interest_check", fields: ["matches"] }] },
-      defaultForUnknown: "deny",
-    }));
-    await broker.agent.connectWake(bob, {
-      kind: "standard_webhook", url: `http://127.0.0.1:${receiver.address().port}/agents/bob-bot/wake`, secret,
-    });
+    for (const { id, name, source } of contacts) {
+      const owner = { userId: id, agentId: id + "-bot", scopes: ["nexo:inbox", "nexo:reply"] };
+      const path = `/agents/${owner.agentId}/wake`;
+      const secret = "whsec_" + randomBytes(32).toString("base64");
+      const onWake = createOwnerRuntime(broker.agent, owner, [
+        localReadTool("interest_check", ({ interest }) => askContactOwner(name, interest, source)),
+      ]);
+      routes.set(path, { name, secret, onWake });
+      await broker.owner.claimAddress(owner, id);
+      await broker.owner.setRules(owner, SharingRules.parse({
+        circles: {}, grants: {}, people: { ["ana@" + addressDomain]: [{ tool: "interest_check", fields: ["matches"] }] },
+        defaultForUnknown: "deny",
+      }));
+      await broker.agent.connectWake(owner, {
+        kind: "standard_webhook", url: `http://127.0.0.1:${receiver.address().port}${path}`, secret,
+      });
+    }
+    // A concurrent ask can have its wake claimed by the preceding tick.
+    let dispatched = Promise.resolve();
+    function dispatch() {
+      const tick = dispatched.then(() => broker.tick(new Date()));
+      dispatched = tick.catch(() => {});
+      return tick;
+    }
     return {
-      async ask(tool, args) {
+      listContacts() { return addressBook; },
+      async ask(to, tool, args) {
+        if (!addressBook.some(contact => contact.address === to)) throw new Error("Contacto fuera de la agenda de Ana.");
         const request = await broker.agent.ask(ana, { to, tool, args });
         console.error("Ana → broker:", request.decision, request.requestId);
-        await broker.tick(new Date()); // HTTP 202 acknowledges the wake, not Bob's answer.
+        await dispatch(); // HTTP 202 acknowledges the wake, before the contact answers.
         return request;
       },
       async result(requestId) {
-        await broker.tick(new Date());
+        await dispatch();
         const current = await broker.agent.status(ana, requestId);
         const processing = inFlight.get(requestId);
         if (current.final || !processing) {
@@ -79,7 +98,7 @@ export async function startDemoBroker(source) {
         }
         await processing;
         inFlight.delete(requestId);
-        await broker.tick(new Date());
+        await dispatch();
         return broker.agent.status(ana, requestId);
       },
       close() { receiver.close(); },

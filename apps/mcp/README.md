@@ -59,26 +59,29 @@ Ana envía su pregunta al servidor a través de MCP. El servicio verifica la ide
 
 La lista de contactos empieza vacía. Guardar una dirección es unilateral. La disponibilidad sigue las reglas de la agenda y cada interés conserva su audiencia. Un catálogo vacío se devuelve tanto para una dirección desconocida como para una persona que no comparte información con el solicitante.
 
-### Cuando la respuesta necesita al runtime de Bob
+### Preguntar a los agentes de Bob y Jane
 
-La demo inicia una sesión de Claude Code para Ana y despierta a Bob cuando el broker autoriza la consulta. Ana usa `ask_bob` para comprobar un interés, `ask_bob_question` para enviar una pregunta abierta y `await_bob` para una solicitud pendiente. Bob recibe sólo `check_interest`, que lee el archivo elegido por su operador.
+Ana tiene dos contactos de prueba en esta demo. Cada uno tiene su propia identidad, firma de webhook, permiso para Ana y archivo privado de intereses.
 
-1. Prepara un archivo JSON privado de Bob con una lista de intereses. Por ejemplo, `["cerámica", "senderismo"]`. La ruta predeterminada es `.agents-local/bob-interests.json`.
-2. Desde la raíz, ejecuta `corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica?"`. Puedes indicar otra ruta como segundo argumento. Ejecuta el comando sin argumentos para conversar con Ana.
-3. Cambia los intereses en el archivo de Bob y repite la pregunta. Una lista vacía devuelve `matches: false`. Si falta el archivo, el resultado es `no_data`.
-4. Prueba una consulta privada con `corepack pnpm agents:runtime-demo "¿Cuál es el domicilio de Bob?"`. Bob sólo autorizó a Ana a comprobar un interés concreto. La operación `question` queda fuera de ese permiso. El broker devuelve `deny` de inmediato, sin encolar un webhook ni consultar datos de Bob. Puedes probar también «¿Cuáles son todos los intereses de Bob?» con el mismo resultado.
+1. Guarda `["cerámica"]` en `.agents-local/bob-interests.json` y `["astronomía"]` en `.agents-local/jane-interests.json`. Cada archivo es una lista JSON de textos.
+2. Con Claude Code autenticado, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica? ¿Qué tal Jane?"`. Puedes pasar las rutas de Bob y Jane, en ese orden, después de la pregunta. Sin argumentos se abre la sesión interactiva de Ana.
+3. Con esos datos, el broker devuelve `matches: true` para Bob y `matches: false` para Jane. Si falta el archivo de un contacto, ese contacto devuelve `no_data`. Prueba también «¿Cuál es el domicilio de Bob?»: el broker devuelve `deny` antes de enviar el webhook.
 
-Ana envía la operación `interest_check` a la dirección de Bob. El broker verifica la regla de Bob para Ana, encola el aviso y entrega un ID pendiente. El worker envía un webhook HTTP firmado al receptor local registrado para `bob-bot`. El receptor devuelve HTTP 202 y usa su identidad para buscar la solicitud en la bandeja. Claude Code ejecuta la lectura aprobada y devuelve el JSON observado. La herramienta compara el interés solicitado con la lista sin distinguir mayúsculas. La lista completa permanece en el equipo.
+El MCP de Ana ofrece `list_contacts` para descubrir nombres y direcciones, `ask_contact` para consultar una dirección y `await_contact` para recoger el resultado por ID. Por ejemplo:
 
-El broker comprueba titular, nonce, vigencia, esquema y campos autorizados antes de firmar el resultado. Ana lo obtiene con el ID de la solicitud. La última línea de la demo en modo comando muestra el resultado leído del broker. Si Bob falla antes de responder, la solicitud queda pendiente hasta vencer.
+```json
+{"contact":"jane@demo.local","query":{"interest":"cerámica"}}
+```
 
-Las dos sesiones usan el mismo login de Claude Code y distintas identidades de la demo. El receptor escucha en loopback en un puerto efímero. Esta prueba crea una regla inicial que permite a Ana consultar `matches` y mantiene la cola en memoria durante la sesión. La demo MCP de coordinación con PostgreSQL descrita arriba se ejecuta por separado.
+Las preguntas abiertas usan `query: {"text":"…"}`. El broker verifica el permiso del destinatario para la operación. Cuando autoriza un interés, envía un webhook firmado al agente de ese contacto. Su herramienta `check_interest` compara el tema con su archivo y entrega sólo `matches`. El broker valida la respuesta y la CLI muestra la dirección y el resultado de cada solicitud.
+
+La agenda y la cola de esta demo son efímeras. En el MCP de coordinación, `list_contacts` lee los contactos guardados por la identidad autenticada en PostgreSQL.
 
 ### Herramientas
 
 | Acción | Herramientas |
 |---|---|
-| Mis contactos y consultas permitidas | `contact_connect`, `contact_remove`, `agent_capabilities` |
+| Mis contactos y consultas permitidas | `list_contacts`, `contact_connect`, `contact_remove`, `agent_capabilities` |
 | Intereses visibles por persona o entre mis contactos | `agent_interests`, `contact_interest_search` |
 | Disponibilidad y relectura | `availability_check`, `request_get` |
 | Permisos y membresía del titular | `group_permission`, `group_leave` |
