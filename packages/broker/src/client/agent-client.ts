@@ -9,7 +9,9 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
   return {
     capabilities: (principal, to) => request(routes.agentCapabilities, principal, { query: { to } }),
     ask: (principal, body) => request(routes.agentAsk, principal, { body }),
-    inbox: async (principal) => (await request(routes.agentInbox, principal)).items,
+    inbox: async (principal, includeInvitations) => (await request(routes.agentInbox, principal, {
+      query: { includeInvitations: includeInvitations ? "true" : undefined },
+    })).items,
     reply: (principal, body) => request(routes.agentReply, principal, { body }),
     contacts: (principal) => request(routes.agentContacts, principal),
     status: (principal, id) => request(routes.agentStatus, principal, { params: { id } }),

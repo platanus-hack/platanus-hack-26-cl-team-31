@@ -16,6 +16,7 @@ import {
   contactTags,
   type TagPresets,
   ToolArgs,
+  ToolResultSchemas,
   ToolName,
   LocalPart,
   OwnerDecision,
@@ -47,7 +48,7 @@ import { createWorker } from "./worker.js";
 
 const connectionFields = fieldsOf("connect");
 const connectionGuidance =
-  "Cuéntale a tu titular quién quiere conectar. Solo tu titular acepta o rechaza desde la App Sideband: responde needs_owner.";
+  "Cuéntale a tu titular quién quiere conectar. Sin una orden de aceptar y las categorías que quiere compartir, responde needs_owner.";
 // The broker never reads the text of a question, so the recipient's agent keeps it on its category.
 const questionGuidance = "Responde solo lo que corresponde a esta categoría. Si la pregunta trata de otra cosa, responde declined.";
 
@@ -291,7 +292,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (sent) return toRequesterView(sent);
     const received = open.find((row) => row.toUserId === userId && row.fromAddress === to);
     if (!received) return null;
-    if (byAgent) return new BrokerError("invalid_input", "Esta persona ya te invitó. Tu titular la acepta desde la App Sideband.");
+    if (byAgent) return new BrokerError("invalid_input", "Esta persona ya te invitó. Revisa la invitación recibida.");
     await closeInvitation(tx, received, true, share, "owner");
     return "accepted";
   }
@@ -518,14 +519,16 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return ask(p.userId, input, { principal: p });
       },
 
-      async inbox(p) {
+      async inbox(p, includeInvitations = false) {
         requireScope(p, "sideband:inbox", "agent.inbox");
         return store.tx(async (tx) => {
           await ensureActiveAgentConnection(tx, p);
           const address = (await tx.getUser(p.userId))?.address;
           if (!address) return [];
           const now = clock.now();
-          return (await tx.listInbox(address))
+          const rows = await tx.listInbox(address);
+          if (includeInvitations) rows.push(...(await tx.listOwnerPending(address)).filter((row) => row.tool === "connect"));
+          return rows
             .filter((row) => row.toUserId === p.userId && (row.targetAgentId === undefined || row.targetAgentId === p.agentId) && row.expiresAt > now)
             .map((row) => toInboxItem(row, deriveNonce(nonceKey, row.id)));
         });
@@ -558,7 +561,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             });
             return error;
           }
-          if (row.status !== "awaiting_agent") return reject(closed());
+          const answeringInvitation = row.tool === "connect" && parsed.data.outcome === "answered";
+          if (row.status !== "awaiting_agent" && !(answeringInvitation && row.status === "awaiting_owner")) return reject(closed());
           if (row.expiresAt <= now) {
             const changed = await closePending(tx, row, "expired", now);
             return reject(changed ? expired() : closed());
@@ -566,8 +570,13 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (!hasNonce(nonceKey, row.id, nonce)) {
             return reject(new BrokerError("forbidden", "El nonce no coincide."));
           }
-          if (row.tool === "connect" && parsed.data.outcome === "answered") {
-            return reject(new BrokerError("invalid_input", "Solo el titular acepta una invitación desde la App Sideband. Responde needs_owner."));
+          if (answeringInvitation) {
+            if (!parsed.data.share || ToolResultSchemas.connect.safeParse(parsed.data.result).data?.accepted !== true) {
+              return reject(new BrokerError("invalid_input", "Para aceptar, incluye accepted: true y las categorías elegidas por tu titular."));
+            }
+            requireScope(p, "sideband:accept", "agent.reply.connect");
+          } else if (parsed.data.share !== undefined) {
+            return reject(new BrokerError("invalid_input", "Solo una aceptación lleva categorías para compartir."));
           }
           let response: Awaited<ReturnType<typeof prepareAgentReply>>;
           try {
@@ -578,6 +587,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           }
           const { changed, receipt, flags } = response;
           if (!await saveTransition(tx, row, changed)) return reject(closed());
+          if (answeringInvitation) await applyConnection(tx, changed, parsed.data.share);
           await recordTransition(tx, row, changed, "agent");
           if (flags.length > 0 || changed.droppedFields.length > 0) {
             record(tx, "broker.reply.sanitized", {

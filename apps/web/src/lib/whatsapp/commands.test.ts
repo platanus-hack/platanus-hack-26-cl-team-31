@@ -8,6 +8,7 @@ const pending = { requestId, to, tool: "question", final: false, decision: "pend
 
 function fixture(addresses = [to]) {
   const broker = {
+    answerInvitation: vi.fn(),
     ask: vi.fn().mockResolvedValue(pending),
     activity: vi.fn().mockResolvedValue([]),
     status: vi.fn().mockResolvedValue(pending),
@@ -15,6 +16,15 @@ function fixture(addresses = [to]) {
   };
   return { broker, report: vi.fn() };
 }
+
+it("acepta solo una invitación recibida y comparte solo lo que indicó el titular", async () => {
+  const { broker, report } = fixture();
+  broker.contacts.mockResolvedValue({ incoming: [{ address: to, requestId }], outgoing: [] });
+  await expect(runCommand(broker, owner, "acepta a Simón", report)).resolves.toContain("¿Qué quieres compartir?");
+  expect(broker.answerInvitation).not.toHaveBeenCalled();
+  await runCommand(broker, owner, "acepta a Simón y compártele solo disponibilidad", report);
+  expect(broker.answerInvitation).toHaveBeenCalledExactlyOnceWith(owner, requestId, { accept: true, share: ["availability"] });
+});
 
 it("envía la pregunta original con una dirección explícita, aunque no use un comando", async () => {
   const { broker, report } = fixture();

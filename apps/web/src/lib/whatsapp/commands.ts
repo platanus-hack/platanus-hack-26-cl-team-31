@@ -13,10 +13,38 @@ const notShared: Record<Category, string> = {
 
 export const askExample = "Pregunta a carla@sideband.app si puede jugar el sábado";
 const askHelp = `Prueba: «${askExample}», escribe «estado» para revisar tu última solicitud enviada o «contactos» para ver tu agenda.`;
-type WhatsAppBroker = Pick<OwnerPort, "ask" | "status" | "activity" | "contacts">;
+type WhatsAppBroker = Pick<OwnerPort, "ask" | "status" | "activity" | "contacts" | "answerInvitation">;
 
 const words = (text: string) =>
   text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").match(/[\p{L}\p{N}]+/gu)?.join(" ") ?? "";
+
+const sharingTerms = new Map<string, Category>([
+  ["disponibilidad", "availability"], ["disponibilidad horaria", "availability"], ["intereses", "interests"],
+  ["salud", "health"], ["preguntas abiertas", "general"], ["general", "general"],
+]);
+
+async function acceptInvitation(broker: WhatsAppBroker, owner: Owner, text: string) {
+  const help = "¿Qué quieres compartir? Escribe «acepta a nombre@sideband.app y compártele disponibilidad, intereses, salud, preguntas abiertas o nada», usando solo las opciones que elijas.";
+  const match = /^acepta a (\S+?)(?: y comp[aá]rtele (?:solo )?(.+?))?[.!]?$/iu.exec(text);
+  if (!match?.[1] || !match[2]) return help;
+  const terms = match[2].toLowerCase().split(/\s*,\s*|\s+y\s+/u);
+  const share: Category[] = [];
+  if (match[2].toLowerCase() !== "nada") {
+    for (const term of terms) {
+      const category = sharingTerms.get(term);
+      if (!category) return help;
+      if (!share.includes(category)) share.push(category);
+    }
+  }
+  const ref = match[1].toLowerCase();
+  const matches = (await broker.contacts(owner)).incoming.filter(({ address }) =>
+    ref.includes("@") ? address === ref : words(address.split("@")[0]!) === words(ref));
+  if (!matches.length) return "No encontré una invitación pendiente de esa persona. Revisa su dirección Sideband.";
+  if (matches.length !== 1) return "Hay más de una coincidencia. Repite el mensaje con la dirección Sideband completa.";
+  const invitation = matches[0]!;
+  await broker.answerInvitation(owner, invitation.requestId, { accept: true, share });
+  return `Aceptaste a ${invitation.address}. Le compartes: ${describeSharing(share)}.`;
+}
 
 async function resolveRecipient(broker: WhatsAppBroker, owner: Owner, text: string, reference: string) {
   const addresses = [...new Set((text.toLowerCase().match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}(?![\w-]|\.[\w.-])/g) ?? [])
@@ -96,6 +124,7 @@ export async function runCommand(
 
   if (status || /^¿?\s*ya respondi[oó]\s*\??$/i.test(text)) return readStatus(status?.[1]);
   if (/^\/?contactos$/i.test(text)) return listContacts();
+  if (/^acepta\b/iu.test(text)) return acceptInvitation(broker, owner, text);
   const match = /^(?:\/pregunta\s+|preg[uú]nta(?:le)?\s+a\s+)(\S+?)(?::\s*|\s+)(\S[\s\S]*)$/i.exec(text);
   const explicit = Address.safeParse(match?.[1]?.toLowerCase());
   const command = explicit.success && match?.[2] ? { to: explicit.data, question: match[2] } : undefined;

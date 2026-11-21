@@ -527,7 +527,7 @@ describe("solicitudes de conexión", () => {
     return { request, item };
   }
 
-  it("llega al agente, que no puede aceptar, y el titular acepta eligiendo qué comparte", async () => {
+  it("sin elección explícita el agente no acepta; el titular aún puede aceptar desde Contactos", async () => {
     const { request, item } = await invite();
     expect(request).toMatchObject({ final: false, waitingFor: "agent" });
     expect(item).toMatchObject({ from: "carla@sideband.app", tool: "connect", allowedFields: ["accepted"] });
@@ -552,6 +552,25 @@ describe("solicitudes de conexión", () => {
     expect(await broker.agent.ask(carla, availability)).toMatchObject({ final: false, waitingFor: "agent" });
     expect(await broker.agent.ask(carla, { to: "bruno@sideband.app", tool: "interest_check", args: { interest: "cerámica" } }))
       .toMatchObject({ final: true, decision: "deny" });
+  });
+
+  it("el agente acepta una invitación escalada con permiso delegado y categorías explícitas", async () => {
+    const { item, request } = await invite();
+    await broker.agent.reply(bruno, { ...item, outcome: "needs_owner" });
+    expect(await broker.agent.inbox(bruno)).toEqual([]);
+    const [pending] = await broker.agent.inbox(bruno, true);
+    expect(pending?.requestId).toBe(request.requestId);
+    const reply = { requestId: request.requestId, nonce: pending!.nonce, outcome: "answered" as const,
+      result: { accepted: true }, share: ["health"] as Sharing };
+    await expect(broker.agent.reply(bruno, reply)).rejects.toMatchObject({ code: "forbidden" });
+    const agent: Principal = { ...bruno, scopes: [...bruno.scopes, "sideband:accept"] };
+    await expect(broker.agent.reply({ ...agent, userId: carla.userId }, reply)).rejects.toMatchObject({ code: "not_found" });
+    await broker.agent.reply(agent, reply);
+    expect((await broker.owner.contacts(bruno)).contacts).toEqual([
+      { address: "carla@sideband.app", gives: ["health"], receives: basicSharing },
+    ]);
+    await expectFinal(carla, request.requestId, "allow", "answered", { accepted: true });
+    await expect(broker.agent.reply(agent, reply)).rejects.toMatchObject({ code: "conflict" });
   });
 
   it("no crea contactos ni permisos cuando el destinatario rechaza", async () => {

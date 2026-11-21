@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const Scope = z.enum(["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status"]);
+export const Scope = z.enum(["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status", "sideband:accept"]);
 export type Scope = z.infer<typeof Scope>;
 
 export const WAKE_SUBSCRIPTION_SCOPE = "sideband:inbox" satisfies Scope;

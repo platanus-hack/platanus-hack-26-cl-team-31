@@ -5,6 +5,7 @@ export const SCOPES = {
   "sideband:inbox": "Leer las solicitudes que te envían y administrar sus avisos",
   "sideband:reply": "Responder solicitudes según tus reglas",
   "sideband:status": "Ver las respuestas a tus preguntas",
+  "sideband:accept": "Aceptar invitaciones y compartir las categorías que elijas con ese contacto",
 } as const satisfies Record<Scope, string>;
 
 export function parseScopes(claim: unknown): Scope[] {
