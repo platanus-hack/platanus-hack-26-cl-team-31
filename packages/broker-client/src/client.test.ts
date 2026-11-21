@@ -225,16 +225,40 @@ it("implements the owner port, including optional queries, wrapper responses and
   expect(getOwnerToken.mock.calls).toEqual(Array.from({ length: replies.length }, () => [owner]));
 });
 
-it.each(ErrorCode.options)("returns BrokerError(%s) without upstream text", async (code) => {
-  const { ownerClient, requests } = await broker((response) => {
-    send(response, httpStatusOf(code), { error: { code, message: "owner-token-1" } });
+// La asimetría es el diseño: invalid_input habla del payload del propio llamador, las demás
+// denegaciones hablan del estado de otras personas y deben ser indistinguibles entre sí.
+it.each(ErrorCode.options.filter((code) => code !== "invalid_input"))(
+  "returns BrokerError(%s) without upstream text",
+  async (code) => {
+    const { ownerClient, requests } = await broker((response) => {
+      send(response, httpStatusOf(code), { error: { code, message: "owner-token-1" } });
+    });
+
+    const result = ownerClient.me(owner);
+    await expect(result).rejects.toBeInstanceOf(BrokerError);
+    await expect(result).rejects.toMatchObject({ code });
+    await expect(result).rejects.not.toThrow("owner-token-1");
+    expect(requests).toHaveLength(1);
+  },
+);
+
+it("keeps the specific reason the broker gave for invalid_input", async () => {
+  const message = "La respuesta no cumple el formato requerido. Revisa: result.";
+  const { ownerClient } = await broker((response) => {
+    send(response, 400, { error: { code: "invalid_input", message } });
   });
 
-  const result = ownerClient.me(owner);
-  await expect(result).rejects.toBeInstanceOf(BrokerError);
-  await expect(result).rejects.toMatchObject({ code });
-  await expect(result).rejects.not.toThrow("owner-token-1");
-  expect(requests).toHaveLength(1);
+  await expect(ownerClient.me(owner)).rejects.toMatchObject({ code: "invalid_input", message });
+});
+
+it("caps an oversized invalid_input reason instead of forwarding it whole", async () => {
+  const { ownerClient } = await broker((response) => {
+    send(response, 400, { error: { code: "invalid_input", message: "x".repeat(5_000) } });
+  });
+
+  await expect(ownerClient.me(owner)).rejects.toSatisfy(
+    (error: BrokerError) => error.code === "invalid_input" && error.message.length <= 300,
+  );
 });
 
 it("preserves an upstream error ID even when a response body cannot be decoded", async () => {
@@ -281,13 +305,15 @@ it("rejects invalid bodies, query values and path segments before signing or sen
   });
 
   await expect(agent.ask(principal, { ...askInput, to: "invalid" })).rejects.toMatchObject({
-    code: "invalid_input",
+    code: "invalid_input", message: expect.stringMatching(/Revisa: to\b/),
   });
   await expect(agent.reply(principal, { ...replyInput, outcome: "answered", result: () => "invalid" }))
     .rejects.toMatchObject({ code: "invalid_input" });
   const missingResult = { ...replyInput, outcome: "answered" } as unknown as ReplyInput;
   await expect(agent.reply(principal, missingResult)).rejects.toMatchObject({ code: "invalid_input" });
-  await expect(ownerClient.activity(owner, 0)).rejects.toMatchObject({ code: "invalid_input" });
+  await expect(ownerClient.activity(owner, 0)).rejects.toMatchObject({
+    code: "invalid_input", message: expect.stringMatching(/Revisa: limit\b/),
+  });
   await expect(ownerClient.revokeAgent(owner, "..")).rejects.toMatchObject({ code: "invalid_input" });
   expect(requests).toEqual([]);
   expect(getAgentToken).not.toHaveBeenCalled();

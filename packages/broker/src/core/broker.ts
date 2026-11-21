@@ -33,6 +33,7 @@ import {
   VaultDocumentQuery,
   VaultDocumentUpload,
   MAX_VAULT_DOCUMENT_BYTES,
+  invalidInputMessage,
   type VaultDocumentDownload,
   type VaultDocumentMetadata,
 } from "@team-31/protocol";
@@ -399,7 +400,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   async function ask(userId: string, input: unknown, origin: { principal?: Principal; channel?: ChannelName }) {
     const { principal, channel } = origin;
     const parsed = AskInput.safeParse(input);
-    if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
+    if (!parsed.success) {
+      throw new BrokerError("invalid_input", invalidInputMessage("La pregunta no cumple el formato de la herramienta.", parsed.error));
+    }
     if (principal && parsed.data.tool === "connect" && parsed.data.tags?.length) requireScope(principal, "changeTag");
     const view = await store.tx(async (tx) => {
       if (principal) await ensureActiveAgentConnection(tx, principal);
@@ -646,7 +649,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           telemetry?.emit("broker.reply.rejected", {
             userId: p.userId, agentId: p.agentId, attrs: { code: "schema" },
           });
-          throw new BrokerError("invalid_input", "La respuesta no cumple el formato requerido.");
+          throw new BrokerError("invalid_input", invalidInputMessage("La respuesta no cumple el formato requerido.", parsed.error));
         }
         const { requestId, nonce } = parsed.data;
         const result = await store.tx<ReplyReceipt | BrokerError>(async (tx) => {
