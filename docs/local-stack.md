@@ -34,6 +34,12 @@ Con el stack detenido, activa las credenciales de prueba y los avisos de loopbac
 pnpm with-env env MCP_DEV_AUTH=1 WAKE_ALLOW_INSECURE=1 REQUEST_TTL_SECONDS=20 WAKE_RETRY_DELAYS_MS=0,0 pnpm exec turbo run dev --filter @team-31/broker-service --filter @team-31/mcp --filter @team-31/web
 ```
 
+Desde otra terminal ejecuta el harness local. El [README de la suite](../e2e/README.md) documenta también el modo OAuth con usuarios de prueba.
+
+```sh
+pnpm with-env sh -c 'E2E_MCP_URL="$MCP_RESOURCE_URL" E2E_AUTH_MODE=dev pnpm --filter @team-31/e2e test'
+```
+
 Los valores de los tres servicios se describen en [broker](../apps/broker/.env.example), [MCP](../apps/mcp/.env.example) y [web](../apps/web/.env.example). Para restaurar la configuración normal, detén los procesos de prueba e inicia `pnpm dev`.
 
 Corre `pnpm lint`, `pnpm typecheck` y `pnpm test` desde la raíz. Los tests de Postgres usan la base de pruebas del worktree. `pnpm teardown` elimina los contenedores y datos del worktree cuando terminas.

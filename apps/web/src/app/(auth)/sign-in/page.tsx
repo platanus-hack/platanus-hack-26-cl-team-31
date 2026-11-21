@@ -6,6 +6,8 @@ import { getOAuthRequest } from "@/lib/auth-request";
 
 import { GoogleButton } from "./google-button";
 
+export const instant = false;
+
 export default async function SignInPage({ searchParams }: PageProps<"/sign-in">) {
   const params = await searchParams;
   const isOAuth = "client_id" in params || "sig" in params;
