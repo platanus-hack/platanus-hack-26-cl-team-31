@@ -75,6 +75,22 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.revokeAgent(c.get("web"), parseInput(route.params, c.req.param()).agentId);
     case "owner.connect":
       return owner.connect(c.get("web"), (await parseBody(c, route.body)).to);
+    case "owner.circles":
+      return { items: await owner.circles(c.get("web")) };
+    case "owner.createCircle":
+      return owner.createCircle(c.get("web"), (await parseBody(c, route.body)).name);
+    case "owner.deleteCircle":
+      return owner.deleteCircle(c.get("web"), parseInput(route.params, c.req.param()).id);
+    case "owner.inviteToCircle": {
+      const { id, address } = parseInput(route.params, c.req.param());
+      return owner.inviteToCircle(c.get("web"), id, address);
+    }
+    case "owner.joinCircle":
+      return owner.joinCircle(c.get("web"), parseInput(route.params, c.req.param()).id);
+    case "owner.removeFromCircle": {
+      const { id, address } = parseInput(route.params, c.req.param());
+      return owner.removeFromCircle(c.get("web"), id, address);
+    }
     case "owner.friends":
       return { items: await owner.friends(c.get("web")) };
     case "owner.removeFriend":

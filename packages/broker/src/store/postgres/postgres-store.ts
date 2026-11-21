@@ -2,7 +2,8 @@ import {
   ActivityEvent, Address, FinalOutcome, RequestStatus, ToolArgs, ToolName,
   ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
 } from "@team-31/protocol";
-import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { BrokerError } from "../../errors.js";
@@ -10,7 +11,9 @@ import type {
   AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
 import { createWakeCodec } from "./crypto.js";
-import { agentConnections, friends, grants, requestEvents, requests, users, wakeJobs } from "./schema.js";
+import {
+  agentConnections, circleMembers, circles, friends, grants, requestEvents, requests, users, wakeJobs,
+} from "./schema.js";
 
 export type PostgresStoreOptions = {
   databaseUrl: string;
@@ -214,6 +217,63 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         eq(grants.friendDefault, true), isNull(grants.revokedAt),
       )).returning({ id: grants.id });
       return revoked.map(({ id }) => id);
+    },
+
+    async insertCircle(row) {
+      await db.insert(circles).values(row);
+    },
+
+    async getCircle(id) {
+      const [row] = await db.select().from(circles).where(eq(circles.id, id));
+      return row ?? null;
+    },
+
+    async deleteCircle(id) {
+      await db.delete(circles).where(eq(circles.id, id));
+    },
+
+    async listCircles(address) {
+      const rows = await db.select({ circle: circles }).from(circles)
+        .innerJoin(circleMembers, eq(circleMembers.circleId, circles.id))
+        .where(eq(circleMembers.address, address)).orderBy(asc(circles.createdAt), asc(circles.id));
+      return rows.map(({ circle }) => circle);
+    },
+
+    async listCircleMembers(circleId) {
+      const rows = await db.select().from(circleMembers)
+        .where(eq(circleMembers.circleId, circleId)).orderBy(asc(circleMembers.address));
+      return rows.map((row) => ({
+        circleId: row.circleId, address: parseStored(Address, row.address), ...(row.joinedAt ? { joinedAt: row.joinedAt } : {}),
+      }));
+    },
+
+    async inviteCircleMember(circleId, address) {
+      await db.insert(circleMembers).values({ circleId, address }).onConflictDoNothing();
+    },
+
+    async joinCircle(circleId, address, at) {
+      const joined = await db.update(circleMembers).set({ joinedAt: at })
+        .where(and(eq(circleMembers.circleId, circleId), eq(circleMembers.address, address), isNull(circleMembers.joinedAt)))
+        .returning({ address: circleMembers.address });
+      return joined.length > 0;
+    },
+
+    async removeCircleMember(circleId, address) {
+      const removed = await db.delete(circleMembers)
+        .where(and(eq(circleMembers.circleId, circleId), eq(circleMembers.address, address)))
+        .returning({ address: circleMembers.address });
+      return removed.length > 0;
+    },
+
+    async shareCircle(a, b) {
+      const other = alias(circleMembers, "other");
+      const [shared] = await db.select({ circleId: circleMembers.circleId }).from(circleMembers)
+        .innerJoin(other, eq(other.circleId, circleMembers.circleId))
+        .where(and(
+          eq(circleMembers.address, a), isNotNull(circleMembers.joinedAt),
+          eq(other.address, b), isNotNull(other.joinedAt),
+        )).limit(1);
+      return shared !== undefined;
     },
 
     async insertRequest(row) {

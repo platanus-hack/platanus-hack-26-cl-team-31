@@ -29,6 +29,13 @@
       "when": 1795270079000,
       "tag": "0003_friends",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795270858851,
+      "tag": "0004_circles",
+      "breakpoints": true
     }
   ]
 }

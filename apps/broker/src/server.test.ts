@@ -182,6 +182,27 @@ describe("HTTP interno del broker", () => {
     });
   });
 
+  it("crea un círculo, invita, acepta y saca a un miembro", async () => {
+    const { broker } = fixture();
+    for (const userId of ["alice", "bruno"]) await broker.owner.claimAddress({ userId }, userId);
+    const app = createHttpServer({ broker, publicKeys });
+    const [alice, bruno] = await Promise.all([owner("alice"), owner("bruno")]);
+
+    const circle = await call(app, routes.ownerCreateCircle, { token: alice, body: { name: "Fútbol" } });
+    const member = `/v1/owner/circles/${circle.id}/members/bruno@nexo.app`;
+    await call(app, routes.ownerInviteToCircle, { token: alice, path: member });
+    await expectError(await request(app, routes.ownerInviteToCircle, { token: bruno, path: member }), 404, "not_found");
+    await call(app, routes.ownerJoinCircle, { token: bruno, path: `/v1/owner/circles/${circle.id}/join` });
+    expect((await call(app, routes.ownerCircles, { token: bruno })).items).toEqual([{
+      ...circle, members: [{ address: "alice@nexo.app", joined: true }, { address: "bruno@nexo.app", joined: true }],
+    }]);
+
+    await call(app, routes.ownerRemoveFromCircle, { token: bruno, path: member });
+    expect((await call(app, routes.ownerCircles, { token: bruno })).items).toEqual([]);
+    await call(app, routes.ownerDeleteCircle, { token: alice, path: `/v1/owner/circles/${circle.id}` });
+    expect((await call(app, routes.ownerCircles, { token: alice })).items).toEqual([]);
+  });
+
   it("recorre el contrato completo con JWT de servicio y completa ask, inbox, reply y status", async () => {
     const { broker, waker } = fixture();
     const app = createHttpServer({ broker, publicKeys });

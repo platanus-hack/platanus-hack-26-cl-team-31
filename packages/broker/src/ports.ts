@@ -3,6 +3,7 @@ import type {
   ActivityItem,
   AdminActor,
   Capability,
+  Circle,
   Grant,
   GrantInput,
   Address,
@@ -49,6 +50,16 @@ export interface OwnerPort {
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;
   revokeAgent(o: Owner, agentId: string): Promise<void>;
   connect(o: Owner, to: Address): Promise<RequesterView>;
+  // Circles the owner joined or is invited to.
+  circles(o: Owner): Promise<Circle[]>;
+  // The creator joins at once. Only the creator invites, removes others and deletes.
+  createCircle(o: Owner, name: string): Promise<Circle>;
+  deleteCircle(o: Owner, circleId: string): Promise<void>;
+  inviteToCircle(o: Owner, circleId: string, address: Address): Promise<void>;
+  // Accepts the owner's pending invitation.
+  joinCircle(o: Owner, circleId: string): Promise<void>;
+  // A member leaves with their own address. The creator removes any other address.
+  removeFromCircle(o: Owner, circleId: string, address: Address): Promise<void>;
   friends(o: Owner): Promise<Address[]>;
   removeFriend(o: Owner, friend: Address): Promise<void>;
 }

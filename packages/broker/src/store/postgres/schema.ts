@@ -48,6 +48,23 @@ export const friends = nexo.table("friends", {
   address: text("address").notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.address] })]);
 
+export const circles = nexo.table("circles", {
+  id: text("id").primaryKey(),
+  ownerUserId: text("owner_user_id").notNull().references(() => users.userId),
+  name: text("name").notNull(),
+  createdAt: time("created_at").notNull(),
+});
+
+export const circleMembers = nexo.table("circle_members", {
+  circleId: text("circle_id").notNull().references(() => circles.id, { onDelete: "cascade" }),
+  address: text("address").notNull(),
+  // Null while the invitation is pending.
+  joinedAt: time("joined_at"),
+}, (table) => [
+  primaryKey({ columns: [table.circleId, table.address] }),
+  index("circle_members_address_idx").on(table.address),
+]);
+
 export const requests = nexo.table("requests", {
   id: text("id").primaryKey(),
   fromAddress: text("from_address").notNull(),
