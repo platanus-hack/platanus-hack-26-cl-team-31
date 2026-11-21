@@ -98,6 +98,12 @@ export function createHttpServer(
       res.writeHead(404).end();
       return;
     }
+    if (req.headers.origin !== undefined && req.headers.origin !== resource.origin) {
+      res.writeHead(403, { "Content-Type": "application/json" }).end(JSON.stringify({
+        jsonrpc: "2.0", id: null, error: { code: -32000, message: "Origen no permitido." },
+      }));
+      return;
+    }
     if (req.method !== "POST") {
       res.writeHead(405, { Allow: "POST" }).end();
       return;

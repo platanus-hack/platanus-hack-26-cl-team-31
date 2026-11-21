@@ -68,6 +68,7 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
     method: "POST",
     headers: {
       Authorization: "Bearer dev:user:agent",
+      Origin: new URL(audience).origin,
       "Content-Type": "application/json",
       Accept: "application/json,text/event-stream",
     },
@@ -103,6 +104,18 @@ it("exige autenticación en cada POST y publica ambos documentos de descubrimien
     expect(result.status).toBe(405);
     expect(result.headers.get("allow")).toBe("POST");
   }
+});
+
+it("rechaza orígenes ajenos y opacos antes de conectar el agente", async () => {
+  const agent = testPort();
+  const origin = await listen(createHttpServer(options, agent));
+  for (const browserOrigin of ["https://other.example.test", "null"]) {
+    const response = await fetch(`${origin}/mcp`, {
+      method: "POST", headers: { Origin: browserOrigin, Authorization: "Bearer dev:user:agent" },
+    });
+    expect(response.status).toBe(403);
+  }
+  expect(agent.connect).not.toHaveBeenCalled();
 });
 
 it("rechaza el inicio del cliente cuando el titular tiene otro agente activo", async () => {
