@@ -13,7 +13,7 @@ export const clients = {
     description: "Conecta Sideband por HTTPS y recibe avisos en una rutina.",
     wakeKind: "grokbot_routine",
     trustLocation: "las instrucciones de la rutina de Grok Bot",
-    wakeInstruction: "Crea una rutina de webhook para Sideband. Cuando se dispare, consulta sideband_inbox y responde según el bloque de confianza.",
+    wakeInstruction: "Crea una rutina con disparador por webhook. Cuando llegue un aviso, consulta sideband_inbox usando este conector. Si la solicitud del aviso sigue pendiente, usa su requestId y nonce de la bandeja para responder con sideband_reply según el bloque de confianza. Para la prueba de conexión responde con no_data.",
   },
   openclaw: {
     name: "OpenClaw",

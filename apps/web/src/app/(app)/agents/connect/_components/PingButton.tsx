@@ -3,7 +3,7 @@
 import type { RequestStatus } from "@team-31/protocol";
 import { useActionState, useEffect, useState } from "react";
 
-import { Feedback, primaryButton, secondaryText, Status } from "../../../ui";
+import { button, Feedback, primaryButton, secondaryText, Status } from "../../../ui";
 import { readPingStatus, startPing } from "../actions";
 import type { ClientKind } from "../clients";
 import { CopyBox } from "./CopyBox";
@@ -25,8 +25,8 @@ type PingResult = {
   readError?: true | string;
 };
 
-export function PingButton({ agentId, kind, address }: { agentId: string; kind: ClientKind; address: string }) {
-  const [state, action, sending] = useActionState(startPing.bind(null, kind, agentId), {});
+export function PingButton({ agentId, kind, address, initialRequestId }: { agentId: string; kind: ClientKind; address: string; initialRequestId?: string }) {
+  const [state, action, sending] = useActionState(startPing.bind(null, kind, agentId), { requestId: initialRequestId });
   const [result, setResult] = useState<PingResult>();
   const requestId = state.requestId;
   const current = result?.requestId === requestId ? result : undefined;
@@ -70,7 +70,7 @@ export function PingButton({ agentId, kind, address }: { agentId: string; kind: 
   return (
     <div className="space-y-3">
       <form action={action}>
-        <button disabled={sending || waiting} className={primaryButton}>{sending ? "Enviando…" : "Probar"}</button>
+        <button disabled={sending || waiting} className={kind === "grokbot" ? button : primaryButton}>{sending ? "Enviando…" : "Probar"}</button>
       </form>
       <Feedback error={state.error} errorId={state.errorId} />
       <div role="status" className="space-y-2">
