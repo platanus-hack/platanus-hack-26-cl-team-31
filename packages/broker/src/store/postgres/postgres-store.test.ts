@@ -156,7 +156,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     const row = await makeRequest();
     const leaseUntil = new Date(now.getTime() + 60_000);
     const jobs: WakeJob[] = ["first", "second"].map((id) => ({
-      id, requestId: row.id, requestVersion: row.version, attempt: 1, runAt: now, state: "queued",
+      id, requestId: row.id, requestVersion: row.version, audience: "recipient", attempt: 1, runAt: now, state: "queued",
     }));
     await store.tx(async (tx) => {
       for (const job of jobs) await tx.enqueueWake(job);
@@ -245,8 +245,15 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM sideband.__drizzle_migrations");
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(8);
   });
+
+  // Removes what 0006_notify_origin adds, so a test can replay the migrations after an older one.
+  async function undoNotifyOrigin() {
+    await isolated.query("DROP TABLE sideband.channels");
+    await isolated.query("ALTER TABLE sideband.requests DROP COLUMN origin_channel");
+    await isolated.query("ALTER TABLE sideband.wake_jobs DROP COLUMN audience");
+  }
 
   it("reads a question stored before categories as an open question", async () => {
     await createParticipants();
@@ -260,6 +267,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       tool: "connect", args: { share: { availability: "slots", interests: false, questions: true } },
     });
     // Restore the grants table and the migration journal from before categories.
+    await undoNotifyOrigin();
     await isolated.query("DROP INDEX sideband.grants_live_idx");
     await isolated.query(`ALTER TABLE sideband.grants DROP COLUMN category, ADD COLUMN tool text NOT NULL,
       ADD COLUMN fields text[] NOT NULL, ADD COLUMN friend_default boolean DEFAULT false NOT NULL`);
@@ -299,6 +307,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       await tx.appendEvent({ requestId: notApproved.id, at: now, kind: "permission", status: "awaiting_owner" });
     });
     // Restore the legacy schema and migration journal while keeping the fixture rows.
+    await undoNotifyOrigin();
     await isolated.query("ALTER TABLE sideband.requests DROP COLUMN approved_once");
     await isolated.query("DROP TABLE sideband.contact_tags, sideband.tag_presets");
     await isolated.query("DROP TABLE sideband.circle_members, sideband.circles");

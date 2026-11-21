@@ -1,4 +1,4 @@
-import { RequestStatus } from "@team-31/protocol";
+import { ChannelName, RequestStatus } from "@team-31/protocol";
 import { sql } from "drizzle-orm";
 import {
   bigserial, boolean, check, customType, index, integer, jsonb, pgSchema,
@@ -9,6 +9,8 @@ export const sideband = pgSchema("sideband");
 const time = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 const wakeStates = ["queued", "running", "done"] as const;
+const wakeAudiences = ["recipient", "origin"] as const;
+const channelNames = ChannelName.options as [ChannelName, ...ChannelName[]];
 
 function values(options: readonly string[]) {
   return sql.join(options.map((option) => sql`${sql.raw("'" + option + "'")}`), sql`, `);
@@ -82,6 +84,7 @@ export const requests = sideband.table("requests", {
   fromUserId: text("from_user_id").references(() => users.userId),
   toUserId: text("to_user_id").references(() => users.userId),
   targetAgentId: text("target_agent_id"),
+  originChannel: text("origin_channel", { enum: channelNames }),
   tool: text("tool").notNull(),
   args: jsonb("args").notNull(),
   purpose: text("purpose"),
@@ -105,6 +108,7 @@ export const requests = sideband.table("requests", {
   version: integer("version").notNull(),
 }, (table) => [
   check("requests_status_check", sql`${table.status} in (${values(RequestStatus.options)})`),
+  check("requests_origin_channel_check", sql`${table.originChannel} in (${values(channelNames)})`),
   index("requests_to_address_status_idx").on(table.toAddress, table.status),
   index("requests_from_user_created_at_idx").on(table.fromUserId, table.createdAt.desc()),
   index("requests_to_user_created_at_idx").on(table.toUserId, table.createdAt.desc()),
@@ -125,12 +129,14 @@ export const wakeJobs = sideband.table("wake_jobs", {
   id: text("id").primaryKey(),
   requestId: text("request_id").notNull().references(() => requests.id),
   requestVersion: integer("request_version").notNull(),
+  audience: text("audience", { enum: wakeAudiences }).notNull().default("recipient"),
   attempt: integer("attempt").notNull(),
   runAt: time("run_at").notNull(),
   state: text("state", { enum: wakeStates }).notNull(),
   lastResult: jsonb("last_result"),
 }, (table) => [
   check("wake_jobs_state_check", sql`${table.state} in (${values(wakeStates)})`),
+  check("wake_jobs_audience_check", sql`${table.audience} in (${values(wakeAudiences)})`),
   index("wake_jobs_state_run_at_idx").on(table.state, table.runAt, table.id),
 ]);
 
@@ -148,4 +154,17 @@ export const agentConnections = sideband.table("agent_connections", {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.agentId] }),
   check("agent_connections_wake_secret_check", sql`(${table.wakeKind} = 'none') = (${table.wakeSecret} is null)`),
+]);
+
+export const channels = sideband.table("channels", {
+  userId: text("user_id").notNull().references(() => users.userId),
+  name: text("name", { enum: channelNames }).notNull(),
+  wakeKind: text("wake_kind").notNull(),
+  wakePublic: jsonb("wake_public").notNull(),
+  wakeSecret: bytea("wake_secret"),
+  createdAt: time("created_at").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.name] }),
+  check("channels_name_check", sql`${table.name} in (${values(channelNames)})`),
+  check("channels_wake_secret_check", sql`(${table.wakeKind} = 'none') = (${table.wakeSecret} is null)`),
 ]);

@@ -40,7 +40,8 @@ async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string
   await client.query(`GRANT USAGE ON SCHEMA sideband TO ${role}`);
   await client.query(`
     GRANT SELECT, INSERT, UPDATE ON
-      sideband.users, sideband.sharing_rules, sideband.grants, sideband.requests, sideband.wake_jobs, sideband.agent_connections
+      sideband.users, sideband.sharing_rules, sideband.grants, sideband.requests, sideband.wake_jobs, sideband.agent_connections,
+      sideband.channels
     TO ${role}
   `);
   await client.query(`GRANT SELECT, INSERT, DELETE ON sideband.friends TO ${role}`);

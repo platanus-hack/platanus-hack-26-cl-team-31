@@ -132,7 +132,8 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
     it("claims jobs once across workers and increments the attempt on retry", async () => {
       const row = await makeRequest();
       const base: WakeJob = {
-        id: randomUUID(), requestId: row.id, requestVersion: row.version, attempt: 1, runAt: now, state: "queued",
+        id: randomUUID(), requestId: row.id, requestVersion: row.version, audience: "recipient", attempt: 1, runAt: now,
+        state: "queued",
       };
       const later = new Date(now.getTime() + 10_000);
       const leaseUntil = new Date(now.getTime() + 60_000);
@@ -157,13 +158,42 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("keeps a request's origin channel and a notice's audience", async () => {
+      const row = await makeRequest({ originChannel: "whatsapp" });
+      const id = randomUUID();
+      await store.tx((tx) => tx.enqueueWake({
+        id, requestId: row.id, requestVersion: row.version + 1, audience: "origin", attempt: 1, runAt: now, state: "queued",
+      }));
+      await store.tx(async (tx) => {
+        expect(await tx.getRequest(row.id)).toMatchObject({ originChannel: "whatsapp" });
+        expect(await tx.getWakeForUpdate(row.id, row.version + 1)).toMatchObject({ id, audience: "origin" });
+      });
+      const plain = await makeRequest();
+      await store.tx(async (tx) => expect((await tx.getRequest(plain.id))?.originChannel).toBeUndefined());
+    });
+
+    it("stores one channel per owner and name, and replaces its wake target", async () => {
+      const webhook = { kind: "standard_webhook", url: "https://example.org/wake", secret: "whsec_c2VjcmV0LXNlY3JldC1zZWNyZXQ=" } as const;
+      await store.tx(async (tx) => {
+        expect(await tx.getChannel("alice", "whatsapp")).toBeNull();
+        await tx.putChannel({ userId: "carla", name: "whatsapp", wakeTarget: { kind: "none" }, createdAt: now });
+        await tx.putChannel({ userId: "carla", name: "whatsapp", wakeTarget: webhook, createdAt: now });
+      });
+      await store.tx(async (tx) => {
+        expect(await tx.getChannel("carla", "whatsapp")).toEqual({ userId: "carla", name: "whatsapp", wakeTarget: webhook, createdAt: now });
+        expect(await tx.getUser("carla")).toMatchObject({ userId: "carla" });
+      });
+    });
+
     it("recovers expired leases and rejects late results from the previous attempt", async () => {
       const row = await makeRequest();
       const id = randomUUID();
       const leaseUntil = new Date(now.getTime() + 60_000);
       const result = { ok: true, retryable: false, ms: 1 };
       const [first] = await store.tx(async (tx) => {
-        await tx.enqueueWake({ id, requestId: row.id, requestVersion: row.version, attempt: 1, runAt: now, state: "queued" });
+        await tx.enqueueWake({
+          id, requestId: row.id, requestVersion: row.version, audience: "recipient", attempt: 1, runAt: now, state: "queued",
+        });
         return tx.claimDueWakes(now, leaseUntil, 10);
       });
       expect(first).toMatchObject({ id, runAt: leaseUntil, attempt: 1, recovered: false });

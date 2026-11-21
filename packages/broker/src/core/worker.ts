@@ -1,6 +1,6 @@
-import { WAKE_EVENT, type WakeResult } from "@team-31/protocol";
+import { WAKE_EVENT, WAKE_UPDATE_EVENT, type WakeNotice, type WakeResult, type WakeTarget } from "@team-31/protocol";
 import type { BrokerDeps, TickReport } from "../ports.js";
-import type { AgentConnectionRow, RequestRow, StoreTx, WakeClaim, WakeJob } from "../store/store.js";
+import type { AgentConnectionRow, ChannelRow, RequestRow, StoreTx, WakeClaim, WakeJob } from "../store/store.js";
 
 const batchSize = 100;
 const wakeLeaseMs = 60_000;
@@ -22,10 +22,48 @@ async function recipient(tx: StoreTx, row: RequestRow): Promise<AgentConnectionR
       || a.agentId.localeCompare(b.agentId))[0];
 }
 
+async function origin(tx: StoreTx, row: RequestRow | null, job: WakeJob): Promise<ChannelRow | undefined> {
+  if (row?.version !== job.requestVersion || !row.fromUserId || !row.originChannel) return undefined;
+  return await tx.getChannel(row.fromUserId, row.originChannel) ?? undefined;
+}
+
 type ClosePending = (tx: StoreTx, row: RequestRow, status: "expired" | "delivery_failed", at: Date) => Promise<boolean>;
 type WorkerDeps = Pick<BrokerDeps, "store" | "waker" | "clock" | "telemetry"> & { wakeRetryDelaysMs: readonly number[] };
 
 export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs }: WorkerDeps, closePending: ClosePending) {
+  async function deliver(job: WakeClaim, target: WakeTarget, event: WakeNotice["event"],
+    owner: { userId: string; agentId?: string }): Promise<WakeResult> {
+    try {
+      const { ok, retryable, ms, status } = await waker.wake(target, { requestId: job.requestId, event }, {
+        attempt: job.attempt, final: wakeRetryDelaysMs[job.attempt] === undefined, ...owner,
+      });
+      // Adapters may return diagnostic text. Persist only structured metadata.
+      return { ok, retryable, ms, status };
+    } catch (error) {
+      telemetry?.error?.("wake.deliver", error, { requestId: job.requestId, ...owner });
+      return { ok: false, retryable: true, ms: 0 };
+    }
+  }
+
+  // Tells the channel a request came from that it changed. A failed notice never changes the request.
+  async function runOriginNotice(job: WakeClaim) {
+    const channel = await store.tx(async (tx) => origin(tx, await tx.getRequest(job.requestId), job));
+    if (job.runAt <= clock.now()) return;
+    const fields = { requestId: job.requestId, userId: channel?.userId };
+    if (job.recovered) telemetry?.emit("wake.lease_recovered", { ...fields, attrs: { attempt: job.attempt } });
+    const exhausted = job.recovered && job.attempt > Math.max(1, wakeRetryDelaysMs.length);
+    const result: WakeResult = exhausted ? { ok: false, retryable: false, ms: 0, detail: "lease_exhausted" }
+      : !channel || channel.wakeTarget.kind === "none" ? { ok: false, retryable: false, ms: 0, detail: "skipped" }
+      : await deliver(job, channel.wakeTarget, WAKE_UPDATE_EVENT, { userId: channel.userId });
+    const completedAt = clock.now();
+    const delay = result.retryable ? wakeRetryDelaysMs[job.attempt] : undefined;
+    const retryAt = delay === undefined ? null : new Date(completedAt.getTime() + delay);
+    const recorded = await store.tx((tx) => tx.recordWakeAttempt(job, completedAt, result, retryAt));
+    if (recorded && channel && !result.ok && !retryAt) {
+      telemetry?.emit("wake.exhausted", { ...fields, attrs: { kind: channel.wakeTarget.kind, attempts: job.attempt } });
+    }
+  }
+
   async function runWake(job: WakeClaim) {
     const candidate = await store.tx(async (tx) => {
       const row = await tx.getRequest(job.requestId);
@@ -45,19 +83,7 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
         result = { ok: false, retryable: false, ms: 0 };
       } else {
         tried = true;
-        try {
-          const { ok, retryable, ms, status } = await waker.wake(target.wakeTarget, {
-            requestId: job.requestId, event: WAKE_EVENT,
-          }, {
-            attempt: job.attempt, final: wakeRetryDelaysMs[job.attempt] === undefined,
-            userId: target.userId, agentId: target.agentId,
-          });
-          // Adapters may return diagnostic text. Persist only structured metadata.
-          result = { ok, retryable, ms, status };
-        } catch (error) {
-          telemetry?.error?.("wake.deliver", error, fields);
-          result = { ok: false, retryable: true, ms: 0 };
-        }
+        result = await deliver(job, target.wakeTarget, WAKE_EVENT, { userId: target.userId, agentId: target.agentId });
       }
     }
 
@@ -105,7 +131,7 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     const claimAt = clock.now();
     const leaseUntil = new Date(claimAt.getTime() + wakeLeaseMs);
     const jobs = await store.tx((tx) => tx.claimDueWakes(claimAt, leaseUntil, batchSize));
-    const results = await Promise.all(jobs.map(runWake));
+    const results = await Promise.all(jobs.map((job) => job.audience === "origin" ? runOriginNotice(job) : runWake(job)));
     for (const result of results) {
       if (result) report[result]++;
     }

@@ -63,6 +63,10 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query()).limit) };
     case "owner.ask":
       return owner.ask(c.get("web"), await parseBody(c, route.body));
+    case "owner.channelAsk":
+      return owner.ask(c.get("web"), await parseBody(c, route.body), parseInput(route.params, c.req.param()).name);
+    case "owner.setChannel":
+      return owner.setChannel(c.get("web"), parseInput(route.params, c.req.param()).name, await parseBody(c, route.body));
     case "owner.status":
       return owner.status(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "owner.decide":
@@ -120,6 +124,9 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
   }
 }
 
+// Ports that create a request share the ask rate-limit bucket.
+const askPorts: readonly (string | null)[] = ["agent.ask", "owner.ask", "owner.channelAsk"];
+
 // Correlates the http.request span with the request it touched (ids only, never the payload).
 function requestIdOf(c: HttpContext, result: unknown): string | undefined {
   const fromResult = typeof result === "object" && result !== null ? (result as { requestId?: unknown }).requestId : undefined;
@@ -146,7 +153,7 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
     app.on([route.method], [route.path], ...(route.iss ? [auth[route.iss]] : []), async (c: HttpContext) => {
       if (route.iss) {
         c.header("Cache-Control", "no-store");
-        const bucket = route.port === "agent.ask" || route.port === "owner.ask" ? "ask" : route.port === "agent.reply" ? "reply" : "other";
+        const bucket = askPorts.includes(route.port) ? "ask" : route.port === "agent.reply" ? "reply" : "other";
         const caller = route.iss === "admin" ? `admin:${c.get("admin").adminId}` : c.get(route.iss).userId;
         const blocked = await limiter.consume(caller, bucket);
         if (blocked) {

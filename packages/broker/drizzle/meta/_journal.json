@@ -50,6 +50,13 @@
       "when": 1795278137237,
       "tag": "0006_contact_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795279062126,
+      "tag": "0007_notify_origin",
+      "breakpoints": true
     }
   ]
 }

@@ -812,3 +812,67 @@ describe("círculos", () => {
     expect(await broker.owner.circles(bruno)).toHaveLength(1);
   });
 });
+
+describe("avisos al canal de origen", () => {
+  const channelHook: WakeTarget = { kind: "standard_webhook", url: "https://example.com/whatsapp", secret: "whsec_canal" };
+  const question: AskInput = { to: "bruno@sideband.app", tool: "question", args: { text: "¿Puedes el sábado?", category: "availability" } };
+
+  // Notices the worker sent to Alice's channel, in order.
+  function channelNotices() {
+    return wake.mock.calls.filter(([target]) => JSON.stringify(target) === JSON.stringify(channelHook)).map(([, notice]) => notice);
+  }
+
+  beforeEach(async () => {
+    await broker.owner.setChannel(alice, "whatsapp", channelHook);
+  });
+
+  it("avisa una sola vez al canal cuando el agente del destinatario responde", async () => {
+    const view = await broker.owner.ask(alice, question, "whatsapp");
+    await broker.tick(now);
+    expect(channelNotices()).toEqual([]);
+
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, view.requestId), outcome: "answered", result: { answer: "Sí, a las 10." } });
+    await broker.tick(now);
+    await broker.tick(now);
+    expect(channelNotices()).toEqual([{ requestId: view.requestId, event: "sideband.request.updated" }]);
+  });
+
+  it("avisa cuando la solicitud espera al titular del destinatario y otra vez cuando él responde", async () => {
+    const view = await broker.owner.ask(alice, question, "whatsapp");
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, view.requestId), outcome: "needs_owner" });
+    await broker.tick(now);
+    await broker.owner.decide(bruno, view.requestId, { kind: "answer", result: { answer: "Sí" } });
+    await broker.tick(now);
+    const updated = { requestId: view.requestId, event: "sideband.request.updated" };
+    expect(channelNotices()).toEqual([updated, updated]);
+  });
+
+  it("no avisa lo que se decidió al crear la solicitud ni lo que no vino de un canal", async () => {
+    const denied = await broker.owner.ask(carla, { ...question, to: "alice@sideband.app" }, "whatsapp");
+    expect(denied).toMatchObject({ final: true, decision: "deny" });
+    await broker.owner.setChannel(carla, "whatsapp", channelHook);
+    const plain = await broker.owner.ask(alice, question);
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, plain.requestId), outcome: "answered", result: { answer: "Sí" } });
+    await broker.tick(now);
+    expect(channelNotices()).toEqual([]);
+  });
+
+  it("reintenta un aviso fallido sin cambiar el resultado de la solicitud", async () => {
+    const view = await broker.owner.ask(alice, question, "whatsapp");
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, view.requestId), outcome: "answered", result: { answer: "Sí" } });
+    wake.mockResolvedValue({ ok: false, retryable: true, ms: 1 });
+    // One attempt plus one retry per configured delay after the first.
+    for (const delay of [0, 10_000, 30_000, 60_000]) {
+      advance(delay);
+      await broker.tick(now);
+    }
+    expect(channelNotices()).toHaveLength(3);
+    await expectFinal(alice, view.requestId, "allow", "answered", { answer: "Sí" });
+  });
+
+  it("rechaza un canal o un aviso inválido", async () => {
+    await expect(broker.owner.setChannel(alice, "sms" as "whatsapp", channelHook)).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(broker.owner.setChannel(alice, "whatsapp", { kind: "standard_webhook" } as WakeTarget))
+      .rejects.toMatchObject({ code: "invalid_input" });
+  });
+});

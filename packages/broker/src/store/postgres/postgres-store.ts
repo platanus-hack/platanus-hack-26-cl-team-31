@@ -1,5 +1,5 @@
 import {
-  ActivityEvent, Address, Category, FinalOutcome, RequestStatus, ToolArgs, ToolName, ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
+  ActivityEvent, Address, Category, ChannelName, FinalOutcome, RequestStatus, ToolArgs, ToolName, ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
   ContactTag, Sharing,
 } from "@team-31/protocol";
 import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
@@ -8,11 +8,11 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { BrokerError } from "../../errors.js";
 import type {
-  AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
+  AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
 import { createWakeCodec } from "./crypto.js";
 import {
-  agentConnections, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tagPresets, users, wakeJobs,
+  agentConnections, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tagPresets, users, wakeJobs,
 } from "./schema.js";
 
 export type PostgresStoreOptions = {
@@ -56,6 +56,7 @@ function readRequest(row: typeof requests.$inferSelect): RequestRow {
     fromAddress: parseStored(Address, row.fromAddress),
     toAddress: parseStored(Address, row.toAddress),
     targetAgentId: row.targetAgentId ?? undefined,
+    originChannel: row.originChannel === null ? undefined : parseStored(ChannelName, row.originChannel),
     args: parseStored<unknown>(ToolArgs[tool], row.args),
     purpose: row.purpose ?? undefined,
     status: parseStored(RequestStatus, row.status),
@@ -116,6 +117,21 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       verifiedAt: row.verifiedAt ?? undefined,
       lastWakeAt: row.lastWakeAt ?? undefined,
       revokedAt: row.revokedAt ?? undefined,
+    };
+  }
+
+  // The codec binds each secret to its owner and name. A channel cannot reuse an agent's secret.
+  function channelIdentity({ userId, name }: Pick<ChannelRow, "userId" | "name">) {
+    return { userId, agentId: `channel:${name}` };
+  }
+
+  function readChannel({ wakeKind, wakePublic, wakeSecret, ...row }: typeof channels.$inferSelect): ChannelRow {
+    const name = parseStored(ChannelName, row.name);
+    return {
+      userId: row.userId, name, createdAt: row.createdAt,
+      wakeTarget: codec.decode({
+        ...channelIdentity({ userId: row.userId, name }), wakeKind: parseStored(WakeKind, wakeKind), wakePublic, wakeSecret,
+      }),
     };
   }
 
@@ -431,6 +447,19 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
     },
 
     getAgentConnection,
+
+    async putChannel({ wakeTarget, ...row }) {
+      await ensureUser(row.userId, row.createdAt);
+      const configuration = codec.encode(wakeTarget, channelIdentity(row));
+      await db.insert(channels).values({ ...row, ...configuration }).onConflictDoUpdate({
+        target: [channels.userId, channels.name], set: configuration,
+      });
+    },
+
+    async getChannel(userId, name) {
+      const [row] = await db.select().from(channels).where(and(eq(channels.userId, userId), eq(channels.name, name)));
+      return row ? readChannel(row) : null;
+    },
   };
 }
 
