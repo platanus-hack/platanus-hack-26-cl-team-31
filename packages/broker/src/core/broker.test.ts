@@ -18,6 +18,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
 import { createOwnerRuntime, localReadTool } from "../client/runtime.js";
+import type { Store } from "../store/store.js";
 import { deriveNonce, verifyJson } from "./crypto.js";
 
 const principals: Record<"alice" | "bruno" | "carla", Principal> = {
@@ -415,6 +416,48 @@ describe("conexiones y prueba de aviso", () => {
     expect((await broker.owner.agents(bruno)).find(({ agentId }) => agentId === bruno.agentId)).toMatchObject({
       revokedAt: now.toISOString(), wakeKind: "standard_webhook",
     });
+  });
+
+  it("promueve a sondeo la conexión que lee su bandeja", async () => {
+    // Ningún CLI declara su canal: leer la bandeja *es* sondear, y el broker lo anota por él.
+    await broker.agent.inbox(bruno);
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ agentId: bruno.agentId, wakeKind: "polling" }]);
+    // Sólo la lectura de bandeja promueve: preguntar deja la conexión como estaba.
+    await askAvailability();
+    expect(await broker.owner.agents(alice)).toMatchObject([{ agentId: alice.agentId, wakeKind: "none" }]);
+  });
+
+  it("no degrada una conexión con canal push", async () => {
+    await broker.agent.connectWake(bruno, webhook);
+    await broker.agent.inbox(bruno);
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ wakeKind: "standard_webhook" }]);
+  });
+
+  it("es idempotente", async () => {
+    const writes: string[] = [];
+    const inner = deps.store;
+    const counted: Store = {
+      tx: (fn) => inner.tx((tx) => fn({
+        ...tx,
+        upsertAgentConnection: async (row) => { writes.push(row.wakeTarget.kind); await tx.upsertAgentConnection(row); },
+      })),
+    };
+    const counting = createBroker({ ...deps, store: counted });
+    await counting.agent.inbox(bruno);
+    await counting.agent.inbox(bruno);
+    // La segunda lectura no vuelve a escribir: la promoción sólo corre sobre una conexión sin canal.
+    expect(writes).toEqual(["polling"]);
+  });
+
+  it("una segunda respuesta a la misma solicitud recibe conflict", async () => {
+    const other: Principal = { ...bruno, agentId: "bruno-cli" };
+    const view = await askAvailability();
+    const first = await inboxItem(bruno, view.requestId);
+    const second = InboxItem.parse((await broker.agent.inbox(other)).find((item) => item.requestId === view.requestId));
+    await broker.agent.reply(bruno, { ...first, outcome: "no_data" });
+    await expect(broker.agent.reply(other, { ...second, outcome: "declined" })).rejects.toMatchObject({ code: "conflict" });
+    const events = await deps.store.tx((tx) => tx.listEvents([view.requestId]));
+    expect(events.filter(({ kind }) => kind === "delivery")).toHaveLength(1);
   });
 
   it("despacha a una conexión de sondeo sin entregarle un objetivo push", async () => {

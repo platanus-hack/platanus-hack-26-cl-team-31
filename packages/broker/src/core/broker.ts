@@ -37,7 +37,7 @@ import { BrokerError } from "../errors.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import { sanitizeReply } from "../sanitize/pipeline.js";
 import { SanitizeBlockedError, type SanitizeFlag } from "../sanitize/types.js";
-import type { CircleRow, GrantRow, RequestRow, StoreTx } from "../store/store.js";
+import type { AgentConnectionRow, CircleRow, GrantRow, RequestRow, StoreTx } from "../store/store.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
 import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
@@ -229,6 +229,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     }, () => record(tx, "broker.agent.connected", { userId, agentId, attrs: { kind: "none" } }));
     if (connection.revokedAt) throw notFound();
     return connection;
+  }
+
+  // Leer la bandeja *es* sondear: ningún CLI declara su canal, así que la primera lectura de una
+  // conexión sin canal la marca como destinataria de sondeo. Nunca degrada un canal push ya configurado,
+  // y repetir la lectura no vuelve a escribir. Va en el núcleo para que la obtenga todo cliente del AgentPort.
+  async function markPolling(tx: StoreTx, connection: AgentConnectionRow): Promise<void> {
+    if (connection.wakeTarget.kind !== "none") return;
+    await tx.upsertAgentConnection({ ...connection, wakeTarget: { kind: "polling" } });
   }
 
   async function applySharing(tx: StoreTx, userId: string, address: Address, sharing: Sharing): Promise<void> {
@@ -562,7 +570,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async inbox(p, includeInvitations = false) {
         requireScope(p, "sideband:inbox", "agent.inbox");
         return store.tx(async (tx) => {
-          await ensureActiveAgentConnection(tx, p);
+          await markPolling(tx, await ensureActiveAgentConnection(tx, p));
           const address = (await tx.getUser(p.userId))?.address;
           if (!address) return [];
           const now = clock.now();
