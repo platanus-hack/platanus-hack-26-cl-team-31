@@ -186,6 +186,7 @@ MCP y WhatsApp comparten `@team-31/message-flow`. LangGraph ejecuta las transici
 - `WHATSAPP_NOTICE_SECRET` (`whsec_…`, lo genera `pnpm bootstrap`) firma los avisos del broker a `/api/whatsapp/notice/<vínculo>`. Al confirmar el vínculo, web registra el canal `whatsapp` en el broker y la respuesta llega al teléfono sin `estado`. Fuera de la ventana de 24 horas de WhatsApp queda como entrega pendiente y sale con el siguiente mensaje del titular.
 - Vincula el teléfono desde `/agents/connect/whatsapp`. La identidad sigue siendo el titular de Better Auth y el broker comparte las solicitudes con MCP. Setup y prueba: [docs/whatsapp.md](docs/whatsapp.md).
 - Con `ANTHROPIC_API_KEY` en el proceso web, Claude interpreta texto libre después de verificar el vínculo. Sin esa variable siguen funcionando los comandos de texto.
+- `pnpm agents:cast:seed <tu dirección>` agrega a tu cuenta cinco contactos ficticios de `apps/demo/src/cast.json`, con lo que te comparte cada uno, su bóveda «Salud» y un agente con aviso en `/api/demo/cast-wake/<id>` que responde `interest_check` y `availability`. `/demo/elenco` muestra sus perfiles públicos, sus datos privados y quién puede pedir cada uno.
 
 ## Broker Sideband
 

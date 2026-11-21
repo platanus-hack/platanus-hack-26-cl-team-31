@@ -183,7 +183,7 @@ export function Dashboard() {
           {id === "eva" && <small>Externa</small>}
         </button>)}
       </div>
-      <p className="sidebar-note">Entorno local · Datos ficticios</p>
+      <p className="sidebar-note"><a href="/demo/elenco">Elenco de WhatsApp</a><br />Entorno local · Datos ficticios</p>
     </aside>
 
     <main className="main">
