@@ -52,22 +52,25 @@ export function createWhatsAppStore(db: Pool) {
     async confirm(userId: string, id: string) {
       return transaction(async (tx) => {
         const owner = await tx.query(`SELECT 1 FROM public."user" WHERE id = $1 AND "phoneNumber" IS NULL FOR UPDATE`, [userId]);
-        if (!owner.rowCount) return false;
+        if (!owner.rowCount) return;
         const { rows } = await tx.query<{ phone: string }>(`
           DELETE FROM whatsapp.pairing WHERE user_id = $1 AND id = $2 AND phone IS NOT NULL AND expires_at > now()
           RETURNING phone`, [userId, id]);
-        if (!rows[0]) return false;
-        await tx.query(`UPDATE public."user" SET "phoneNumber" = $2, whatsapp_linked_at = clock_timestamp()
-          WHERE id = $1`, [userId, rows[0].phone]);
-        return true;
+        if (!rows[0]) return;
+        const linked = await tx.query<{ link_id: string }>(`UPDATE public."user" SET "phoneNumber" = $2,
+            whatsapp_linked_at = clock_timestamp(), whatsapp_link_id = gen_random_uuid()
+          WHERE id = $1 RETURNING whatsapp_link_id AS link_id`, [userId, rows[0].phone]);
+        return linked.rows[0]!.link_id;
       });
     },
     async unlink(userId: string) {
       await transaction(async (tx) => {
         await tx.query(`SELECT 1 FROM public."user" WHERE id = $1 FOR UPDATE`, [userId]);
-        await tx.query(`UPDATE public."user" SET "phoneNumber" = NULL, whatsapp_linked_at = NULL
+        await tx.query(`UPDATE public."user" SET "phoneNumber" = NULL, whatsapp_linked_at = NULL,
+            whatsapp_link_id = NULL, whatsapp_last_inbound_at = NULL
           WHERE id = $1 AND whatsapp_linked_at IS NOT NULL`, [userId]);
         await tx.query(`DELETE FROM whatsapp.pairing WHERE user_id = $1`, [userId]);
+        await tx.query(`DELETE FROM whatsapp.pending_delivery WHERE user_id = $1`, [userId]);
       });
     },
     async claim(numberId: string, messageId: string) {
@@ -79,12 +82,39 @@ export function createWhatsAppStore(db: Pool) {
     },
     // Order disconnect and sensitive delivery: disconnect waits for work already holding this lock.
     async whileLinked(phone: string, timestamp: number, run: (userId: string | undefined) => Promise<void>) {
+      // Before the shared lock below: updating the row while holding it would deadlock with another
+      // message from the same phone holding the same lock.
+      await db.query(`UPDATE public."user" SET whatsapp_last_inbound_at = to_timestamp($2)
+        WHERE "phoneNumber" = $1 AND whatsapp_linked_at <= to_timestamp($2)
+          AND (whatsapp_last_inbound_at IS NULL OR whatsapp_last_inbound_at < to_timestamp($2))`, [phone, timestamp]);
       await transaction(async (tx) => {
         const { rows } = await tx.query<{ id: string }>(`
           SELECT id FROM public."user" WHERE "phoneNumber" = $1
             AND whatsapp_linked_at <= to_timestamp($2) FOR SHARE`, [phone, timestamp]);
         await run(rows[0]?.id);
       });
+    },
+    // Same ordering as whileLinked, for a broker notice addressed to the link in its URL.
+    async whileNotified(linkId: string, run: (link: { userId: string; phone: string; windowOpen: boolean } | undefined) => Promise<void>) {
+      await transaction(async (tx) => {
+        const { rows } = await tx.query<{ userId: string; phone: string; windowOpen: boolean }>(`
+          SELECT id AS "userId", "phoneNumber" AS phone,
+            coalesce(whatsapp_last_inbound_at > now() - interval '23 hours 55 minutes', false) AS "windowOpen"
+          FROM public."user" WHERE whatsapp_link_id = $1 AND whatsapp_linked_at IS NOT NULL FOR SHARE`, [linkId]);
+        await run(rows[0]);
+      });
+    },
+    async addPending(userId: string, requestId: string) {
+      await db.query(`INSERT INTO whatsapp.pending_delivery (user_id, request_id) VALUES ($1, $2)
+        ON CONFLICT DO NOTHING`, [userId, requestId]);
+    },
+    async pending(userId: string) {
+      const { rows } = await db.query<{ request_id: string }>(`
+        SELECT request_id FROM whatsapp.pending_delivery WHERE user_id = $1 ORDER BY created_at`, [userId]);
+      return rows.map((row) => row.request_id);
+    },
+    async clearPending(userId: string, requestId: string) {
+      await db.query(`DELETE FROM whatsapp.pending_delivery WHERE user_id = $1 AND request_id = $2`, [userId, requestId]);
     },
   };
 }

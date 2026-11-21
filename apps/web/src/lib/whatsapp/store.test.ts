@@ -37,9 +37,9 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
     const now = Math.ceil(Date.now() / 1000) + 2;
     await store.whileLinked(phone, now, run);
     expect(run).toHaveBeenLastCalledWith(undefined);
-    expect(await store.confirm("bob", candidate.id!)).toBe(false);
-    expect(await store.confirm("ana", candidate.id!)).toBe(true);
-    expect(await store.confirm("ana", candidate.id!)).toBe(false);
+    expect(await store.confirm("bob", candidate.id!)).toBeUndefined();
+    expect(await store.confirm("ana", candidate.id!)).toMatch(/^[a-f0-9-]{36}$/);
+    expect(await store.confirm("ana", candidate.id!)).toBeUndefined();
     expect((await store.state("ana"))?.linked).toBe(phone);
     await store.whileLinked(phone, now - 10, run);
     expect(run).toHaveBeenLastCalledWith(undefined);
@@ -54,6 +54,31 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
     expect(run).toHaveBeenLastCalledWith(undefined);
     await db.query(`UPDATE whatsapp.pairing SET expires_at = now() - interval '1 minute' WHERE user_id = 'bob'`);
     expect(await store.state("bob")).toMatchObject({ linked: null, id: null });
+  });
+
+  it("entrega avisos al vínculo vigente, abre la ventana con cada mensaje y guarda entregas pendientes", async () => {
+    const phone = "+56955550199";
+    await db.query(`INSERT INTO public."user" (id) VALUES ('carla')`);
+    expect(await store.detect((await store.start("carla"))!, phone)).toBe("carla");
+    const linkId = (await store.confirm("carla", (await store.state("carla"))!.id!))!;
+    const run = vi.fn();
+    await store.whileNotified(linkId, run);
+    expect(run).toHaveBeenLastCalledWith({ userId: "carla", phone, windowOpen: false });
+    await store.whileLinked(phone, Math.ceil(Date.now() / 1000) + 1, async () => {});
+    await store.whileNotified(linkId, run);
+    expect(run).toHaveBeenLastCalledWith({ userId: "carla", phone, windowOpen: true });
+
+    await store.addPending("carla", "request-1");
+    await store.addPending("carla", "request-1");
+    await store.addPending("carla", "request-2");
+    expect(await store.pending("carla")).toEqual(["request-1", "request-2"]);
+    await store.clearPending("carla", "request-1");
+    expect(await store.pending("carla")).toEqual(["request-2"]);
+
+    await store.unlink("carla");
+    await store.whileNotified(linkId, run);
+    expect(run).toHaveBeenLastCalledWith(undefined);
+    expect(await store.pending("carla")).toEqual([]);
   });
 
   it("registra una sola entrega ante reintentos concurrentes", async () => {
@@ -75,6 +100,7 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
       await dbOwner.query("SELECT phone FROM whatsapp.pairing");
       await dbOwner.query("INSERT INTO whatsapp.receipt VALUES ('render-test', now())");
       await dbOwner.query("DELETE FROM whatsapp.receipt WHERE id = 'render-test'");
+      await dbOwner.query("SELECT request_id FROM whatsapp.pending_delivery");
       const { rows } = await dbOwner.query("SELECT has_table_privilege('whatsapp.receipt', 'UPDATE') AS can_update");
       expect(rows[0]?.can_update).toBe(false);
     } finally {
