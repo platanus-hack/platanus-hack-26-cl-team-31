@@ -204,6 +204,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
       description: expect.stringContaining("allowedFields"),
       anyOf: expect.arrayContaining([expect.objectContaining({ properties: { answer: expect.anything() } })]),
     },
+    share: { description: expect.stringContaining("connect") },
   });
   expect((await bob.callTool({ name: "sideband_reply", arguments: { ...answer, result: JSON.stringify(answer.result) } })).isError).toBe(true);
 

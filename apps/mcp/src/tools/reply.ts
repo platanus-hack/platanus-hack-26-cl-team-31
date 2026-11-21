@@ -15,7 +15,15 @@ const result = z.union(Object.values(ToolResultSchemas)).describe(
   + '["available","freeSlots"] → {"available": true, "freeSlots": ["09:00-10:00"]}; ["accepted"] → {"accepted": true}.',
 );
 
-const inputSchema = ReplyArguments.extend({ result: result.optional() });
+// share sólo tiene sentido al aceptar una invitación connect, y el broker rechaza la respuesta
+// que lo trae en cualquier otro caso. El esquema no puede condicionarlo —la tool de la solicitud
+// no es un argumento de sideband_reply—, así que lo dice la descripción.
+const share = ReplyArguments.shape.share.describe(
+  "Solo al aceptar una invitación connect: las categorías que tu titular le comparte al contacto. "
+  + "Omítelo —ni siquiera como lista vacía— en cualquier otra respuesta; el broker la rechaza.",
+);
+
+const inputSchema = ReplyArguments.extend({ share, result: result.optional() });
 
 export function registerReply(server: McpServer, principal: Principal, agent: AgentPort, telemetry: ToolTelemetry) {
   server.registerTool("sideband_reply", {
