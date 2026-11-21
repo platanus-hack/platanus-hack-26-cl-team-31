@@ -1,4 +1,4 @@
-import { readIdentityToken } from "../../../../../../scripts/coordination-fixture.mjs";
+import { readIdentityToken } from "../../../../../../scripts/coordination-identity.mjs";
 import { checkContactRuntime, reportContactError, runContactSession } from "@team-31/demo/contact-session";
 import { resolve } from "node:path";
 import { IncompleteModelReply, readHistory, runDemoAgent, selectTools } from "../../../lib/demo-chat";
