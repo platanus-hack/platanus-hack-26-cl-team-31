@@ -199,32 +199,42 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
-    it("lists every category to any reader and opens a public one only for the holder's contacts", async () => {
+    it("lists every category to any reader and lets any Sideband user open a public one", async () => {
       const id = randomUUID();
       const stranger = "eva@sideband.app";
-      const listed = { id, name: "Viajes", visibility: "public", canRead: false };
+      const listed = { id, name: "Viajes", visibility: "public", canRead: true };
+      const entries = [{ label: "Destino", value: "Chiloé" }];
       await store.tx(async tx => {
         await tx.changeVault("bruno", id, { action: "create", name: "Viajes" });
         await tx.changeVault("bruno", id, { action: "put_entry", categoryId: id, label: "Destino", value: "Chiloé" });
         const catalog = (await tx.sharedVault(stranger, toAddress)).categories;
         expect(catalog.map(c => c.id).sort()).toEqual([...defaultVaultCategories.map(c => c.id), id].sort());
         expect(catalog.every(c => c.visibility === "private" && !c.canRead && !c.entries)).toBe(true);
+        expect(await tx.sharedVault(stranger, toAddress, id)).toEqual({ categories: [] });
         expect(await tx.changeVault("alice", id, { action: "set_visibility", categoryId: id, visibility: "public" })).toBe(false);
+
         await tx.changeVault("bruno", id, { action: "set_visibility", categoryId: id, visibility: "public" });
-        expect(created((await tx.sharedVault(fromAddress, toAddress)).categories)).toEqual([listed]);
-        expect(await tx.sharedVault(fromAddress, toAddress, id)).toEqual({ categories: [] });
-        await tx.addContact("bruno", fromAddress);
-        expect(created((await tx.sharedVault(fromAddress, toAddress)).categories)).toEqual([{ ...listed, canRead: true }]);
         expect(created((await tx.sharedVault(stranger, toAddress)).categories)).toEqual([listed]);
-        expect((await tx.sharedVault(fromAddress, toAddress, id)).categories[0]?.entries).toEqual([{ label: "Destino", value: "Chiloé" }]);
-        expect(await tx.vaultMembers("bruno", id)).toEqual([fromAddress]);
+        expect((await tx.sharedVault(stranger, toAddress, id)).categories).toEqual([{ ...listed, entries }]);
         expect(created((await tx.vaultCatalog("bruno")).categories)).toEqual([{ id, name: "Viajes", visibility: "public", tags: [] }]);
+        // The other categories of the holder stay closed to the same reader.
+        expect(readable(await tx.sharedVault(stranger, toAddress))).toEqual([{ id, name: "Viajes" }]);
+        expect(await tx.sharedVault(stranger, toAddress, "health")).toEqual({ categories: [] });
+
+        // The holder can still close a public category to one contact.
+        await tx.addContact("bruno", fromAddress);
+        expect(await tx.vaultMembers("bruno", id)).toEqual([fromAddress]);
         await tx.changeVault("bruno", id, { action: "set_member", categoryId: id, address: fromAddress, allowed: false });
         expect(readable(await tx.sharedVault(fromAddress, toAddress))).toEqual([]);
         expect(await tx.sharedVault(fromAddress, toAddress, id)).toEqual({ categories: [] });
+        expect(await tx.vaultMembers("bruno", id)).toEqual([]);
+
+        // Back to private, only the contact with an individual permission reads it.
         await tx.changeVault("bruno", id, { action: "set_member", categoryId: id, address: fromAddress, allowed: true });
         await tx.changeVault("bruno", id, { action: "set_visibility", categoryId: id, visibility: "private" });
         expect(readable(await tx.sharedVault(fromAddress, toAddress))).toEqual([{ id, name: "Viajes" }]);
+        expect(readable(await tx.sharedVault(stranger, toAddress))).toEqual([]);
+        expect(await tx.sharedVault(stranger, toAddress, id)).toEqual({ categories: [] });
       });
     });
 

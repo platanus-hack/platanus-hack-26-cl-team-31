@@ -19,7 +19,7 @@ export default async function VaultPage() {
           <ul className={`${card} divide-y divide-line`}>
             {categories.map((category) => <CategoryRow key={`${category.id}:${category.name}:${category.description ?? ""}:${category.visibility}:${category.tags.join()}:${category.entries.length}`} category={category} tags={tags} />)}
           </ul>
-          <p className="mt-3 px-1 text-xs text-muted">Cada categoría empieza privada: solo la leen las personas con las etiquetas que elijas, o todos tus contactos si la haces pública. El nombre y la descripción de tus categorías los ve cualquier usuario de Sideband, aunque no pueda leerlas.</p>
+          <p className="mt-3 px-1 text-xs text-muted">Cada categoría empieza privada: solo la leen las personas con las etiquetas que elijas. Si la haces pública, la lee cualquier usuario de Sideband. El nombre y la descripción de tus categorías los ve cualquier usuario de Sideband, aunque no pueda leerlas.</p>
         </>
       )}
     </div>

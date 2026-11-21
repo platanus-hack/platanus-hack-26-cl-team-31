@@ -1,5 +1,6 @@
 import { Address, defaultVaultCategories, type OwnerVault, type VaultCatalog, type VaultDocumentQuery } from "@team-31/protocol";
-import { and, DrizzleQueryError, eq, exists, inArray, sql } from "drizzle-orm";
+import { and, DrizzleQueryError, eq, inArray, sql, type SQLWrapper } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import { BrokerError } from "../../errors.js";
 import type { StoreTx } from "../store.js";
@@ -48,16 +49,21 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     return { categories };
   }
 
-  // Both the roster and the data read apply this predicate to a (category, accepted contact) pair.
-  // The individual decision wins. Without one, a public category or an allowed tag gives the read.
-  const canRead = sql<boolean>`coalesce(
-    (select ${r.allowed} from ${r} where ${r.owner} = ${c.owner} and ${r.id} = ${c.id} and ${r.address} = ${friends.address}),
-    ${c.visibility} = 'public' or exists(select 1 from ${p} join ${t} on ${t.userId} = ${p.owner} and ${t.tagId} = ${p.tagId}
-      where ${p.owner} = ${c.owner} and ${p.id} = ${c.id} and ${t.address} = ${friends.address}))`;
+  // The roster, the listing and the data read apply this one predicate to a (category, reader) pair.
+  // The holder's decision about a contact wins. Without one, a public category is read by any
+  // Sideband user and a private one by an accepted contact that carries an allowed tag.
+  // Aliased so the roster can join friends on the outside and still ask whether the reader is a contact.
+  const contact = alias(friends, "reader_contact");
+  const canRead = (reader: SQLWrapper) => sql<boolean>`coalesce(
+    (select ${r.allowed} from ${r} where ${r.owner} = ${c.owner} and ${r.id} = ${c.id} and ${r.address} = ${reader}),
+    ${c.visibility} = 'public' or exists(select 1 from ${p}
+      join ${t} on ${t.userId} = ${p.owner} and ${t.tagId} = ${p.tagId}
+      join ${friends} as ${sql.identifier("reader_contact")} on ${contact.userId} = ${t.userId} and ${contact.address} = ${t.address}
+      where ${p.owner} = ${c.owner} and ${p.id} = ${c.id} and ${t.address} = ${reader}))`;
 
   function memberRows(owner: string, categoryId?: string) {
     return db.select({ id: c.id, address: friends.address }).from(c)
-      .leftJoin(friends, and(eq(friends.userId, c.owner), canRead))
+      .leftJoin(friends, and(eq(friends.userId, c.owner), canRead(friends.address)))
       .where(and(eq(c.owner, owner), categoryId ? eq(c.id, categoryId) : undefined)).orderBy(friends.address);
   }
 
@@ -116,15 +122,16 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     },
     async sharedVault(reader, to, id) {
       // Authorization is part of the same SELECT that reads entries. A tag from an outgoing
-      // invitation is insufficient: the reader must also be an accepted contact.
+      // invitation is insufficient for a private category: the reader must also be an accepted contact.
       const owner = db.select({ owner: users.userId }).from(users).where(eq(users.address, to));
-      const readable = exists(db.select({ address: friends.address }).from(friends)
-        .where(and(eq(friends.userId, c.owner), eq(friends.address, reader), canRead)));
+      const readable = canRead(sql`${reader}`);
       const visible = and(inArray(c.owner, owner), readable);
       if (!id) {
         // The catalog is open to any Sideband user, so a holder who never opened the vault still shows the defaults.
         const [holder] = await db.select({ userId: users.userId }).from(users).where(eq(users.address, to));
         if (holder) await seedDefaults(holder.userId);
+        // Drizzle drops the table name from columns written directly in a single-table selection.
+        // Nesting the predicate keeps them qualified, which the correlated subqueries need.
         const rows = await db.select({ ...info, canRead: sql<boolean>`${readable}` }).from(c)
           .where(inArray(c.owner, owner)).orderBy(c.name, c.id);
         return { categories: rows.map(categoryInfo) };
@@ -175,10 +182,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     },
     async sharedVaultDocument(reader, to, query: VaultDocumentQuery) {
       const owner = db.select({ owner: users.userId }).from(users).where(eq(users.address, to));
-      const allowed = reader === to
-        ? sql<boolean>`true`
-        : exists(db.select({ address: friends.address }).from(friends)
-          .where(and(eq(friends.userId, c.owner), eq(friends.address, reader), canRead)));
+      const allowed = reader === to ? sql<boolean>`true` : canRead(sql`${reader}`);
       const [document] = await db.select({
         id: d.id, owner: d.owner, categoryId: d.categoryId, fileName: d.fileName, mimeType: d.mimeType,
         sizeBytes: d.sizeBytes, sha256: d.sha256, content: d.content, idempotencyKey: d.idempotencyKey, createdAt: d.createdAt,

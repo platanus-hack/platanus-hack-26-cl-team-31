@@ -40,10 +40,11 @@ function transaction(state: State): StoreTx {
   }
 
   function canRead(owner: string, c: OwnerVault["categories"][number], reader: Address) {
-    if (!state.contacts.get(owner)?.has(reader)) return false;
+    // An individual decision exists only for a contact, and it wins. A public category is read by any user.
     const rule = state.memberRules.get(pairKey(owner, c.id))?.get(reader);
     if (rule !== undefined) return rule;
-    return c.visibility === "public" || (state.contactTags.get(owner)?.get(reader) ?? []).some(tag => c.tags.includes(tag));
+    if (c.visibility === "public") return true;
+    return !!state.contacts.get(owner)?.has(reader) && (state.contactTags.get(owner)?.get(reader) ?? []).some(tag => c.tags.includes(tag));
   }
 
   function listRecipientRequests(address: Address, status: "awaiting_agent" | "awaiting_owner"): RequestRow[] {
