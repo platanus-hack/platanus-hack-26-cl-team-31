@@ -30,7 +30,9 @@ describe.skipIf(!testDatabaseUrl)("migración a etiquetas propias", () => {
     await cp(drizzleFolder, previous, { recursive: true });
     const journalPath = join(previous, "meta", "_journal.json");
     const journal = JSON.parse(await readFile(journalPath, "utf8")) as { entries: { tag: string }[] };
-    journal.entries = journal.entries.filter((entry) => entry.tag !== "0014_custom_tags");
+    const tagsIndex = journal.entries.findIndex((entry) => entry.tag === "0014_custom_tags");
+    expect(tagsIndex).toBeGreaterThan(0);
+    journal.entries = journal.entries.slice(0, tagsIndex);
     await writeFile(journalPath, JSON.stringify(journal));
   });
 
