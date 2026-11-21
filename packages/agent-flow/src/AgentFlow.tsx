@@ -13,12 +13,10 @@ import { EDGE_MS, LABEL_MS, PULSE_MS, scheduleLive, scheduleReplay } from "./sch
 import { activities, emptyFlowState, eventEndpoints, foldFlow, reduceFlow, resolveId, type ActorEntry, type Activity, type AppliedEvent, type FlowState } from "./state.js";
 import { css, statusColor, statusTone } from "./styles.js";
 
-export interface AgentFlowProps {
+type Playback = { mode: "replay"; loop?: boolean } | { mode: "live"; loop?: never };
+
+export type AgentFlowProps = Playback & {
   events: readonly FlowEvent[];
-  /** replay: los eventos son un escenario completo. live: la lista crece a medida que llegan. */
-  mode: "replay" | "live";
-  /** Repetición: vuelve a empezar al terminar. */
-  loop?: boolean;
   /** Nombre accesible del grafo. */
   title?: string;
   /** Contenido extra en la barra (p. ej. el estado de la conexión en vivo). */
@@ -49,7 +47,7 @@ export interface AgentFlowProps {
   eventActions?: (event: FlowEvent) => ReactNode;
   className?: string;
   style?: CSSProperties;
-}
+};
 
 type Selection = { kind: "actor"; id: string } | { kind: "event"; id: string } | { kind: "hub" } | null;
 
@@ -333,6 +331,14 @@ export function AgentFlow({
   }, [cssFull]);
   // ---------- Inspección del pasado ----------
   const indexOf = (id: string) => eventsRef.current.findIndex((e) => e.id === id);
+  const seekTo = (cursor: number, time: number) => {
+    const frame = foldFlow(eventsRef.current, scheduleRef.current, cursor, foldCache.current, 50, baseRef.current);
+    flowRef.current = frame;
+    cursorRef.current = cursor;
+    clockRef.current = time;
+    setFlow(frame);
+    setClock(time);
+  };
   const startInspect = (start: number, end: number, focus: Inspect["focus"]) => {
     const events = eventsRef.current;
     const times = scheduleRef.current;
@@ -349,12 +355,8 @@ export function AgentFlow({
     const until = times[end]! + LABEL_MS - 300;
     const next = { start, end, focus, until };
     inspectRef.current = next;
-    flowRef.current = foldFlow(events, times, start, foldCache.current, 50, baseRef.current);
-    cursorRef.current = start;
     // Con movimiento reducido se salta al estado final con un resaltado estático.
-    clockRef.current = reducedMotion ? until : times[start]! - 350;
-    setFlow(flowRef.current);
-    setClock(clockRef.current);
+    seekTo(start, reducedMotion ? until : times[start]! - 350);
     setInspect({ start, end, focus });
     setPending(Math.max(0, events.length - times.length));
   };
@@ -363,12 +365,8 @@ export function AgentFlow({
     if (!inspectRef.current || !saved) return;
     inspectRef.current = null;
     savedRef.current = null;
-    flowRef.current = foldFlow(eventsRef.current, scheduleRef.current, saved.cursor, foldCache.current, 50, baseRef.current);
-    cursorRef.current = saved.cursor;
-    clockRef.current = saved.clock;
+    seekTo(saved.cursor, saved.clock);
     if (mode === "live") scheduleLiveTail(eventsRef.current);
-    setFlow(flowRef.current);
-    setClock(clockRef.current);
     setInspect(null);
     setPending(0);
     setHistory(null);

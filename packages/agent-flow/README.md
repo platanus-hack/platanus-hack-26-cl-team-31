@@ -131,7 +131,7 @@ Qué se muestra: dirección Sideband y nombre del titular, etiqueta y canal del 
 
 ### Orden y duplicados
 
-- `createLiveFeed(mapper)` (`src/live.ts`) es la entrada del modo en vivo: descarta ids repetidos (reconexiones y relecturas del servidor) y retiene cada fila 700 ms para ordenarlas por el momento en que ocurrieron (inicio para spans) y luego por id. Un span del MCP que se escribió después que los eventos del broker que contiene se aplica en su lugar. El reloj de cada servicio solo influye dentro de esa ventana: un servicio desfasado no retiene a los demás.
+- `createLiveFeed(mapper)` (`src/live.ts`) es la entrada del modo en vivo: descarta ids repetidos (reconexiones y relecturas del servidor) y retiene cada fila hasta 700 ms para ordenarlas por el momento en que ocurrieron (inicio para spans) y luego por id. Un span del MCP que se escribió después que los eventos del broker que contiene se aplica en su lugar. El reloj de cada servicio solo influye dentro de esa ventana: un servicio desfasado no retiene a los demás.
 - El mapeo también descarta una fila repetida y tiene estado por `requestId`: recuerda el agente de cada lado para atribuir eventos que no traen `agentId` (cierres, rechazos). Con el resumen de la solicitud (`event: request` del stream) el destinatario se conoce desde el primer evento.
 - Si aun así un span llega tarde, `ask` sale de `broker.policy.evaluated` y el span MCP solo dibuja la pregunta si llegó primero; lo mismo para `reply` entre `status_changed` y `sideband_reply`.
 - En vivo el renderer separa los pasos al menos 320 ms para que cada pulso se vea; si se acumulan, acelera hasta alcanzarlos.

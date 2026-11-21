@@ -15,6 +15,17 @@ function record(name: string): TelemetryRecord {
 }
 
 describe("postgresSink: cola", () => {
+  it.each([0, -1, 0.5, NaN, Infinity])("rechaza el tamaño de lote inválido %s", (batchSize) => {
+    expect(() => postgresSink({ batchSize })).toThrow(/batchSize/);
+  });
+
+  it("comparte el cierre del pool entre llamadas simultáneas", async () => {
+    const sink = postgresSink({ connectionString: "postgres://localhost/unused" });
+    const closing = sink.close();
+    expect(sink.close()).toBe(closing);
+    await closing;
+  });
+
   it("con la cola llena descarta y cuenta dropped", async () => {
     const inserted: number[] = [];
     const pool: Queryable = {
