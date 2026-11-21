@@ -203,14 +203,13 @@ services:
           property: connectionString
 
   # Despliega los servicios de arriba cuando cambia `main` (infra/render/autodeploy.mjs).
-  # Lee el script de esta rama hasta que el PR llegue a main.
   - type: cron
     name: sideband-autodeploy
     runtime: node
     plan: starter
     region: oregon
     repo: https://github.com/platanus-hack/platanus-hack-26-cl-team-31
-    branch: chore/render-deploy
+    branch: main
     schedule: "*/5 * * * *"
     buildCommand: "true"
     startCommand: node infra/render/autodeploy.mjs
