@@ -14,6 +14,8 @@ import {
   RequesterView,
   ToolArgs,
   ToolResultSchemas,
+  VaultVisit,
+  VaultVisitsQuery,
   WAKE_EVENT,
   WakeNotice,
   WakeTarget,
@@ -211,4 +213,17 @@ describe("categories", () => {
     expect(AskInput.parse({ to, tool: "question", args: { text: "Hola" } }).args).toEqual({ text: "Hola", category: "general" });
     expect(AskInput.safeParse({ to, tool: "question", args: { text: "Hola", category: "finanzas" } }).success).toBe(false);
   });
+});
+
+it("conserva el id de una categoría borrada y acota el límite de visitas", () => {
+  const visit = VaultVisit.parse({
+    reader: "carla@sideband.app",
+    categoryId: "0b6b2c1e-0000-4000-8000-000000000001",
+    kind: "document",
+    at: "2026-11-21T15:00:00.000Z",
+  });
+  expect(visit.categoryName).toBeUndefined();
+  expect(VaultVisitsQuery.safeParse({ limit: 0 }).success).toBe(false);
+  expect(VaultVisitsQuery.safeParse({ limit: 201 }).success).toBe(false);
+  expect(VaultVisitsQuery.parse({ limit: "30" }).limit).toBe(30);
 });

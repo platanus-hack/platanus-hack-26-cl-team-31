@@ -23,6 +23,12 @@ it("validates the activity limit as a positive integer", () => {
   expect(routes.ownerActivity.query.safeParse({ limit: "0" }).success).toBe(false);
 });
 
+it("validates the vault visits limit as a bounded positive integer", () => {
+  expect(routes.agentVaultVisits.query.parse({ limit: "5" })).toEqual({ limit: 5 });
+  expect(routes.agentVaultVisits.query.safeParse({ limit: "0" }).success).toBe(false);
+  expect(routes.ownerVaultVisits.query.safeParse({ limit: "201" }).success).toBe(false);
+});
+
 it("requires a reason of 10 to 500 characters on admin mutations", () => {
   const body = routes.adminExpire.body;
   expect(body.safeParse({ reason: "Atascada por un aviso caído" }).success).toBe(true);

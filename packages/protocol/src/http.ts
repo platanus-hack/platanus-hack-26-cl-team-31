@@ -10,7 +10,7 @@ import { Owner } from "./principal.js";
 import { AskInput, type AskArguments, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
 import { ChannelName, WakeTarget } from "./wake.js";
 import {
-  TagChange, TagReceipt, TagsView, OwnerVault, VaultCatalog, VaultCatalogQuery, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult,
+  TagChange, TagReceipt, TagsView, OwnerVault, VaultCatalog, VaultCatalogQuery, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult, VaultVisits, VaultVisitsQuery,
   VaultChange, VaultReceipt, VaultDocumentDownload, VaultDocumentQuery, VaultDocumentMetadata, VaultDocumentUpload,
 } from "./vault.js";
 
@@ -54,6 +54,8 @@ export const routes = {
   ownerChangeVault: { method: "POST", path: "/v1/owner/vault", body: VaultChange, response: VaultReceipt, iss: "web", port: "owner.changeVault" },
   agentVaultCatalog: { method: "GET", path: "/v1/agent/vault", query: VaultCatalogQuery, response: VaultCatalog, iss: "mcp", port: "agent.vaultCatalog" },
   agentVaultMembers: { method: "GET", path: "/v1/agent/vault/members", query: VaultMembersQuery, response: VaultMembers, iss: "mcp", port: "agent.vaultMembers" },
+  agentVaultVisits: { method: "GET", path: "/v1/agent/vault/visits", query: VaultVisitsQuery, response: VaultVisits, iss: "mcp", port: "agent.vaultVisits" },
+  ownerVaultVisits: { method: "GET", path: "/v1/owner/vault/visits", query: VaultVisitsQuery, response: VaultVisits, iss: "web", port: "owner.vaultVisits" },
   agentChangeVault: { method: "POST", path: "/v1/agent/vault", body: VaultChange, response: VaultReceipt, iss: "mcp", port: "agent.changeVault" },
   agentQueryVault: { method: "POST", path: "/v1/agent/vault/query", body: VaultQuery, response: VaultResult, iss: "mcp", port: "agent.queryVault" },
   agentVaultUpload: { method: "POST", path: "/v1/agent/vault/documents", body: VaultDocumentUpload, response: VaultDocumentMetadata, iss: "mcp", port: "agent.uploadVaultDocument" },

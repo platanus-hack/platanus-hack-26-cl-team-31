@@ -10,6 +10,7 @@ export const agentScopes = {
   changeTag: "sideband:vault",
   vaultCatalog: "sideband:vault",
   vaultMembers: "sideband:vault",
+  vaultVisits: "sideband:vault",
   changeVault: "sideband:vault",
   uploadVaultDocument: "sideband:vault",
   searchPublicProfiles: "sideband:ask",

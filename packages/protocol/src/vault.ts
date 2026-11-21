@@ -50,6 +50,29 @@ export const OwnerVault = z.object({ categories: z.array(categorySharing.extend(
   members: VaultMembers.shape.members.optional(),
 })) });
 export type OwnerVault = z.infer<typeof OwnerVault>;
+// A visit is one authorized read of a holder's vault by someone else. `catalog` means the
+// reader learned a category exists, `entries` that they read its contents, and `document`
+// that they downloaded a file. The name is resolved when read, so a deleted category keeps
+// its history with the id alone.
+export const VaultVisitKind = z.enum(["catalog", "entries", "document"]);
+export type VaultVisitKind = z.infer<typeof VaultVisitKind>;
+export const VaultVisit = z.object({
+  reader: Address,
+  categoryId: categoryId.optional(),
+  categoryName: name.optional(),
+  kind: VaultVisitKind,
+  at: z.iso.datetime({ offset: true }),
+});
+export type VaultVisit = z.infer<typeof VaultVisit>;
+// `readers` counts distinct readers over the whole history, not over the returned page.
+export const VaultVisits = z.object({ visits: z.array(VaultVisit), readers: z.number().int().nonnegative() });
+export type VaultVisits = z.infer<typeof VaultVisits>;
+export const VaultVisitsQuery = z.strictObject({
+  categoryId: categoryId.optional(),
+  limit: z.coerce.number<string | number>().int().positive().max(200).optional(),
+});
+export type VaultVisitsQuery = z.infer<typeof VaultVisitsQuery>;
+
 export const VaultQuery = z.strictObject({ to: Address, categoryId: categoryId.optional() });
 export type VaultQuery = z.infer<typeof VaultQuery>;
 // Listing shows every category of the holder to any Sideband user, never its contents: canRead tells
