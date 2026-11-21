@@ -33,6 +33,7 @@ export function createBrokerAdminClient({ baseUrl, privateKey, fetch = globalThi
     try {
       response = await fetch(new URL(path, baseUrl), {
         method: "POST",
+        redirect: "error",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({ reason }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
