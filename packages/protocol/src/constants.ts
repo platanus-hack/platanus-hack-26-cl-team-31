@@ -8,6 +8,10 @@ export const ADDRESS_DOMAIN = "sideband.app";
 export const categoryNames = ["availability", "interests", "health", "general"] as const;
 export type Category = (typeof categoryNames)[number];
 
+export function sameSharing(a: readonly Category[], b: readonly Category[]): boolean {
+  return a.length === b.length && a.every((category) => b.includes(category));
+}
+
 // A category is what the information is about; a tool is how it is asked. A holder grants
 // categories, and a grant covers every tool and result field of its category.
 export const categories: Record<Category, { label: string; tools: readonly ToolName[] }> = {
