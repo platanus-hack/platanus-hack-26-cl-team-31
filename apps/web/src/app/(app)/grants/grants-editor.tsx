@@ -63,7 +63,7 @@ export function GrantsEditor({ grants }: { grants: Grant[] }) {
 
   return (
     <div className="space-y-8">
-      <form action={submit} className={`${card} space-y-4 p-5`}>
+      <form action={submit} onReset={(event) => event.preventDefault()} className={`${card} space-y-4 p-5`}>
         <h2 className="text-lg font-semibold">{permissions ? "Permisos de este amigo" : "Agregar un amigo"}</h2>
         <label className="block text-sm font-semibold">
           Dirección Nexo de tu amigo
