@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AgentPort } from "@team-31/broker-client";
 import {
-  agentScopes, TagChange, TagReceipt, TagsView, VaultCatalog, VaultChange, VaultMembers, VaultMembersQuery, VaultQuery,
+  agentScopes, TagChange, TagReceipt, TagsView, VaultCatalog, VaultCatalogQuery, VaultChange, VaultMembers, VaultMembersQuery, VaultQuery,
   VaultReceipt, VaultResult, VaultDocumentDownload, VaultDocumentMetadata, VaultDocumentQuery, VaultDocumentUpload,
   type Principal,
 } from "@team-31/protocol";
@@ -19,9 +19,9 @@ export function registerVault(server: McpServer, p: Principal, agent: AgentPort,
     inputSchema: z.object({ change: TagChange }), outputSchema: TagReceipt,
   }, ({ change }) => runTool(telemetry, p, { tool: "sideband_tag_change", scope: agentScopes.changeTag }, () => agent.changeTag(p, change)));
   server.registerTool("sideband_vault_catalog", {
-    description: "Lista tus categorías con nombre, ID, IDs de las etiquetas con permiso de lectura (tags). Para saber qué personas tienen acceso efectivo, incluidas las excepciones individuales, usa sideband_vault_members.",
-    inputSchema: z.object({}), outputSchema: VaultCatalog, annotations: { readOnlyHint: true },
-  }, () => runTool(telemetry, p, { tool: "sideband_vault_catalog", scope: agentScopes.vaultCatalog }, () => agent.vaultCatalog(p)));
+    description: "Lista las categorías de la bóveda de tu titular (sus «bóvedas») con nombre, descripción, ID e IDs de las etiquetas con permiso de lectura (tags). Con categoryId abre una sola: agrega sus datos guardados (entries) y los contactos que pueden leerla (members). Úsalo cuando tu titular pregunte qué bóvedas tiene, de qué tratan o qué guarda en una.",
+    inputSchema: VaultCatalogQuery, outputSchema: VaultCatalog, annotations: { readOnlyHint: true },
+  }, ({ categoryId }) => runTool(telemetry, p, { tool: "sideband_vault_catalog", scope: agentScopes.vaultCatalog }, () => agent.vaultCatalog(p, categoryId)));
   server.registerTool("sideband_vault_members", {
     description: "Lista todos los contactos que pueden leer una categoría propia, incluso por etiqueta. Obtén el ID con sideband_vault_catalog.",
     inputSchema: VaultMembersQuery, outputSchema: VaultMembers, annotations: { readOnlyHint: true },

@@ -157,8 +157,12 @@ it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de
   await broker.agent.changeVault(p, { action: "describe", categoryId, description: "Regalos que quiero." });
   expect((await broker.owner.vault(bruno)).categories.find(c => c.id === categoryId))
     .toMatchObject({ tags: [], entries: [{ label: "Regalo", value: "Cafetera" }] });
-  expect((await broker.agent.vaultCatalog(p)).categories.map(({ id, description }) => ({ id, described: !!description })))
+  expect((await broker.agent.vaultCatalog(p)).categories.map(({ id, description, entries }) => ({ id, described: !!description, entries })))
     .toEqual(expect.arrayContaining([{ id: "health", described: true }, { id: categoryId, described: true }]));
+  expect((await broker.agent.vaultCatalog(p, categoryId)).categories)
+    .toEqual([{ id: categoryId, name: "Deseos", description: "Regalos que quiero.", tags: [], entries: [{ label: "Regalo", value: "Cafetera" }], members: [] }]);
+  await expect(broker.agent.vaultCatalog(p, "interests")).resolves.toMatchObject({ categories: [{ name: "Intereses", entries: [] }] });
+  await expect(broker.agent.vaultCatalog(bruno, categoryId)).rejects.toMatchObject({ code: "forbidden" });
   for (const [recipient, tag] of [[alice, "friend"], [carla, "family"]] as const) {
     const invite = await broker.owner.connect(bruno, { to: `${recipient.userId}@sideband.app`, share: [], tags: [tag] });
     await broker.owner.answerInvitation(recipient, invite.requestId, { accept: true, share: [] });

@@ -10,7 +10,7 @@ import { Owner } from "./principal.js";
 import { AskInput, type AskArguments, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
 import { ChannelName, WakeTarget } from "./wake.js";
 import {
-  TagChange, TagReceipt, TagsView, OwnerVault, VaultCatalog, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult,
+  TagChange, TagReceipt, TagsView, OwnerVault, VaultCatalog, VaultCatalogQuery, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult,
   VaultChange, VaultReceipt, VaultDocumentDownload, VaultDocumentQuery, VaultDocumentMetadata, VaultDocumentUpload,
 } from "./vault.js";
 
@@ -52,7 +52,7 @@ export const routes = {
   ownerDeleteTag: { method: "DELETE", path: "/v1/owner/tags/:id", params: z.object({ id: TagId }), ...noContent, iss: "web", port: "owner.deleteTag" },
   ownerVault: { method: "GET", path: "/v1/owner/vault", response: OwnerVault, iss: "web", port: "owner.vault" },
   ownerChangeVault: { method: "POST", path: "/v1/owner/vault", body: VaultChange, response: VaultReceipt, iss: "web", port: "owner.changeVault" },
-  agentVaultCatalog: { method: "GET", path: "/v1/agent/vault", response: VaultCatalog, iss: "mcp", port: "agent.vaultCatalog" },
+  agentVaultCatalog: { method: "GET", path: "/v1/agent/vault", query: VaultCatalogQuery, response: VaultCatalog, iss: "mcp", port: "agent.vaultCatalog" },
   agentVaultMembers: { method: "GET", path: "/v1/agent/vault/members", query: VaultMembersQuery, response: VaultMembers, iss: "mcp", port: "agent.vaultMembers" },
   agentChangeVault: { method: "POST", path: "/v1/agent/vault", body: VaultChange, response: VaultReceipt, iss: "mcp", port: "agent.changeVault" },
   agentQueryVault: { method: "POST", path: "/v1/agent/vault/query", body: VaultQuery, response: VaultResult, iss: "mcp", port: "agent.queryVault" },

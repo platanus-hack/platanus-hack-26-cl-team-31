@@ -22,10 +22,15 @@ const contentBase64 = z.base64().max(maxBase64Length);
 export const VaultEntry = z.object({ label: name, value });
 export const VaultCategory = z.object({ id: categoryId, name, description: description.optional() });
 const categorySharing = VaultCategory.extend({ tags: z.array(TagId) });
-export const VaultCatalog = z.object({ categories: z.array(categorySharing) });
-export type VaultCatalog = z.infer<typeof VaultCatalog>;
 export const VaultMembersQuery = z.strictObject({ categoryId });
 export const VaultMembers = z.object({ members: z.array(Address) });
+// The holder's own catalog. Entries and members come only when a single category is requested.
+export const VaultCatalogQuery = z.strictObject({ categoryId: categoryId.optional() });
+export const VaultCatalog = z.object({ categories: z.array(categorySharing.extend({
+  entries: z.array(VaultEntry).optional(),
+  members: VaultMembers.shape.members.optional(),
+})) });
+export type VaultCatalog = z.infer<typeof VaultCatalog>;
 export const TagsView = z.object({ tags: z.array(Tag.extend({ members: z.array(Address) })) });
 export type TagsView = z.infer<typeof TagsView>;
 export const TagChange = z.discriminatedUnion("action", [

@@ -41,7 +41,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.updateTag(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
     case "owner.deleteTag": return owner.deleteTag(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "agent.connect": return agent.connect(c.get("mcp"));
-    case "agent.vaultCatalog": return agent.vaultCatalog(c.get("mcp"));
+    case "agent.vaultCatalog": return agent.vaultCatalog(c.get("mcp"), parseInput(route.query, c.req.query()).categoryId);
     case "agent.tags": return agent.tags(c.get("mcp"));
     case "agent.changeTag": return agent.changeTag(c.get("mcp"), await parseBody(c, route.body));
     case "agent.vaultMembers": return agent.vaultMembers(c.get("mcp"), parseInput(route.query, c.req.query()).categoryId);
