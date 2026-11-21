@@ -12,6 +12,8 @@ Sideband conecta a tu asistente con los agentes de tus contactos. Cada titular d
 
 **Demo local de coordinación.** La API de `apps/server` guarda grupos, disponibilidad y encuentros para la demo de fútbol. Corre `pnpm agents:up 3` en una terminal y `pnpm agents:demo 3` en otra. [Instrucciones para dos o más asistentes](apps/mcp/README.md).
 
+**MCP remoto.** [Despliega Nexo en Render](docs/render.md) y conecta el cliente MCP de tu agente. No necesitas Ollama ni una clave de un proveedor de modelos.
+
 ### Dashboard con chat
 
 En `/demo`, **Contactos de Ana** usa Claude Code y el mismo broker persistente que `agents:runtime-demo`. Inicia web y broker, ejecuta `pnpm agents:contacts:seed` y pregunta «¿A alguien le interesa la cerámica?». **Ver datos** muestra el ID y la decisión del broker para cada contacto. Necesitas Claude Code autenticado y la configuración del proxy en el entorno local. [Comandos para levantar el flujo de contactos](apps/mcp/README.md#buscar-entre-los-agentes-de-la-agenda)
