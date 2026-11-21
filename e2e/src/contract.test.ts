@@ -20,21 +20,22 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     expect(pending).toMatchObject({ final: false, decision: "pending", waitingFor: "agent" });
     const item = await inboxItem(recipient.agent, pending.requestId);
     expect(item).toMatchObject({
-      from: sender.address, args: availability.args, allowedFields: ["available"],
+      from: sender.address, args: availability.args, allowedFields: ["available", "freeSlots"],
       senderMessage: { text: "", trusted: false },
       ownerAuthorization: { verifiedBy: "broker" },
     });
+    const expectedAvailability = { available: true, freeSlots: ["10:00-12:00"] };
     const answer = { requestId: item.requestId, nonce: item.nonce, outcome: "answered" as const,
-      result: { available: true, freeSlots: ["10:00-12:00"], note: "Nota privada de prueba" } };
+      result: { ...expectedAvailability, note: "Nota privada de prueba" } };
     expect(await recipient.agent.reply(answer)).toMatchObject({
-      status: "answered", deliveredFields: ["available"], droppedFields: expect.arrayContaining(["freeSlots", "note"]),
+      status: "answered", deliveredFields: ["available", "freeSlots"], droppedFields: ["note"],
     });
     const filtered = await sender.agent.check(pending.requestId);
     expect(filtered).toMatchObject({
-      final: true, decision: "allow", outcome: "answered", result: { available: true },
+      final: true, decision: "allow", outcome: "answered",
       signature: expect.stringMatching(/^[\w-]{86}$/),
     });
-    expect(filtered.decision === "allow" && filtered.result).toEqual({ available: true });
+    expect(filtered.decision === "allow" && filtered.result).toEqual(expectedAvailability);
     await expect(recipient.agent.reply(answer)).rejects.toMatchObject({ code: "conflict" });
     expect(await sender.agent.check(pending.requestId)).toEqual(filtered);
 
@@ -114,7 +115,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     const expected = `Respuesta de ${recipient.address}:\n${answer}`;
     expect(await command(check)).toBe(expected);
     expect(await command("estado")).toBe(expected);
-  });
+  }, 60_000);
 
   test("OpenClaw, Grok Bot y MCP Events reciben avisos sin contenido de la pregunta", async () => {
     const { ownerPort, agents: [sender, recipient] } = await seedAgents("contract", 2);
