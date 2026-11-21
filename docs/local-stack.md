@@ -9,7 +9,7 @@ pnpm bootstrap
 pnpm dev
 ```
 
-El broker aplica la migración del esquema `nexo` en el arranque de desarrollo y escucha en loopback. Postgres, web y MCP usan sus puertos asignados al worktree. Los servicios de coordinación siguen disponibles mediante `pnpm agents:up`.
+`pnpm bootstrap` prepara el esquema `nexo` y el rol `nexo_broker`, que usa una contraseña local generada. El broker escucha en loopback. Postgres, web y MCP usan sus puertos asignados al worktree. Los servicios de coordinación siguen disponibles mediante `pnpm agents:up`.
 
 Para iniciar sesión con Google, configura `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` en `.env.local`. En la consola de tu cliente OAuth agrega como retorno el valor de `BETTER_AUTH_URL` seguido de `/api/auth/callback/google`. Con las credenciales de Google omitidas, puedes iniciar el stack, consultar metadata y usar clientes de prueba locales.
 

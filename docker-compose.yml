@@ -27,7 +27,7 @@ services:
       - .:/workspace:ro
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app
+      DATABASE_URL: postgresql://nexo_broker:${BROKER_DATABASE_PASSWORD:-}@postgres:5432/app
       BROKER_PORT: ${BROKER_PORT:-}
       BROKER_HOST: 0.0.0.0
       BROKER_SIGNING_KEY: ${BROKER_SIGNING_KEY:-}

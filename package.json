@@ -7,8 +7,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "bootstrap": "pnpm install && pnpm env:init && node infra/gen-keys.ts && pnpm infra:up && pnpm nexo:auth:migrate",
+    "bootstrap": "pnpm install && pnpm env:init && node infra/gen-keys.ts && pnpm infra:up && pnpm nexo:auth:migrate && pnpm nexo:broker:migrate",
     "nexo:auth:migrate": "pnpm build --filter @team-31/auth && ./scripts/with-env.sh pnpm --filter @team-31/web auth:migrate",
+    "nexo:broker:migrate": "pnpm build --filter @team-31/broker && ./scripts/with-env.sh pnpm --filter @team-31/broker-service db:prepare",
     "env:init": "./scripts/env-init.sh",
     "with-env": "./scripts/with-env.sh",
     "infra:up": "docker compose up -d --wait",

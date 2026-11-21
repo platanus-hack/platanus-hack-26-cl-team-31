@@ -5,12 +5,30 @@ import pg from "pg";
 
 export type PostgresMigrationOptions = {
   databaseUrl: string;
-  /** An existing, dedicated database role for the broker's runtime connection. */
+  /** A dedicated database role for the broker's runtime connection. */
   runtimeRole?: string;
+  /** When provided, provision a dedicated login with this password before granting access. */
+  runtimePassword?: string;
 };
 
 const migrationsFolder = fileURLToPath(new URL("../../../drizzle/", import.meta.url));
 const lockKey = "hashtext('nexo:broker:migrations')";
+
+async function provisionRuntimeLogin(client: pg.PoolClient, roleName: string, password: string) {
+  const role = pg.escapeIdentifier(roleName);
+  try {
+    await client.query(`CREATE ROLE ${role} LOGIN NOINHERIT`);
+  } catch (error) {
+    if (!["42710", "23505"].includes((error as { code?: string }).code ?? "")) throw error;
+  }
+  const { rows: [safe] } = await client.query<{ allowed: boolean }>(`
+    SELECT rolcanlogin AND NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)
+      AND NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member = pg_roles.oid) AS allowed
+    FROM pg_roles WHERE rolname = $1 AND rolname <> current_user
+  `, [roleName]);
+  if (!safe?.allowed) throw new Error("El broker requiere un rol de conexión dedicado y sin privilegios administrativos.");
+  await client.query(`ALTER ROLE ${role} PASSWORD ${pg.escapeLiteral(password)}`);
+}
 
 async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string) {
   const { rows: [session] } = await client.query<{ role: string }>("SELECT current_user AS role");
@@ -36,14 +54,18 @@ async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string
   }
 }
 
-export async function applyPostgresMigrations({ databaseUrl, runtimeRole }: PostgresMigrationOptions): Promise<void> {
+export async function applyPostgresMigrations({ databaseUrl, runtimeRole, runtimePassword }: PostgresMigrationOptions): Promise<void> {
   if (!databaseUrl) throw new Error("DATABASE_URL es obligatoria para aplicar las migraciones de Postgres.");
+  if (runtimePassword !== undefined && (!runtimeRole || !runtimePassword)) {
+    throw new Error("Indica un rol y una contraseña para provisionar la conexión del broker.");
+  }
   const pool = new pg.Pool({ connectionString: databaseUrl, max: 1 });
   try {
     const client = await pool.connect();
     try {
       // The lock covers the schema and migration journal check on all startup processes.
       await client.query(`SELECT pg_advisory_lock(${lockKey})`);
+      if (runtimeRole && runtimePassword !== undefined) await provisionRuntimeLogin(client, runtimeRole, runtimePassword);
       await migrate(drizzle(client), { migrationsFolder, migrationsSchema: "nexo" });
       if (runtimeRole !== undefined) await grantRuntimePrivileges(client, runtimeRole);
     } finally {
