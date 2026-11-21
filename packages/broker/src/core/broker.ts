@@ -180,7 +180,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (!address) return [];
           const now = clock.now();
           return (await tx.listInbox(address))
-            .filter((row) => row.toUserId === p.userId && (!row.targetAgentId || row.targetAgentId === p.agentId) && row.expiresAt > now)
+            .filter((row) => row.toUserId === p.userId && (row.targetAgentId === undefined || row.targetAgentId === p.agentId) && row.expiresAt > now)
             .map((row) => toInboxItem(row, deriveNonce(nonceKey, row.id)));
         });
       },
@@ -190,7 +190,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         const result = await store.tx<ReplyReceipt | BrokerError>(async (tx) => {
           const connection = await activeAgent(tx, p);
           const row = await tx.getRequest(input.requestId, { toUserId: p.userId });
-          if (!row || (row.targetAgentId && row.targetAgentId !== p.agentId)) return notFound();
+          if (!row || (row.targetAgentId !== undefined && row.targetAgentId !== p.agentId)) return notFound();
 
           const now = clock.now();
           async function reject(error: BrokerError): Promise<BrokerError> {
@@ -237,7 +237,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (!await saveTransition(tx, row, changed)) return reject(closed());
           await tx.appendEvent({ requestId: row.id, at: now, kind: "response", status: changed.status });
           if (changed.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
-          if (row.targetAgentId) await tx.upsertAgentConnection({ ...connection, verifiedAt: now });
+          if (row.targetAgentId !== undefined) await tx.upsertAgentConnection({ ...connection, verifiedAt: now });
           return { requestId: row.id, status: changed.status, deliveredFields, droppedFields };
         });
         // Returning the error inside tx commits the expiry and any authorized audit event.

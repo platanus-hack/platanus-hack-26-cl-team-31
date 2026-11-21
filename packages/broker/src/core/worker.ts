@@ -9,8 +9,8 @@ function actionable(row: RequestRow | null, job: WakeJob, now: Date): row is Req
 }
 
 async function recipient(tx: StoreTx, row: RequestRow): Promise<AgentConnectionRow | undefined> {
-  if (!row.toUserId) return undefined;
-  if (row.targetAgentId) {
+  if (row.toUserId === null) return undefined;
+  if (row.targetAgentId !== undefined) {
     const connection = await tx.getAgentConnection(row.toUserId, row.targetAgentId);
     return connection && !connection.revokedAt ? connection : undefined;
   }
