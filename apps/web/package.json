@@ -5,12 +5,17 @@
   "scripts": {
     "dev": "next dev -p ${WEB_PORT:-3000}",
     "build": "next build",
+    "auth:migrate": "node scripts/migrate-auth.mjs",
     "start": "next start -p ${WEB_PORT:-3000}",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
+    "@better-auth/oauth-provider": "1.7.18",
+    "@team-31/auth": "workspace:*",
+    "@team-31/broker": "workspace:*",
+    "better-auth": "1.7.18",
     "next": "16.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0"
