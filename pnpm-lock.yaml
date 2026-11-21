@@ -205,12 +205,12 @@ importers:
       '@team-31/broker':
         specifier: workspace:*
         version: link:../../packages/broker
-      '@team-31/broker-service':
-        specifier: workspace:*
-        version: link:../broker
       '@team-31/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@team-31/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
       '@team-31/wake':
         specifier: workspace:*
         version: link:../../packages/wake
@@ -220,6 +220,10 @@ importers:
       zod:
         specifier: 4.6.7
         version: 4.6.7
+    devDependencies:
+      '@team-31/broker-service':
+        specifier: workspace:*
+        version: link:../broker
 
   apps/mcp:
     dependencies:

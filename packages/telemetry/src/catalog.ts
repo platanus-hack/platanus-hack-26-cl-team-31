@@ -131,6 +131,12 @@ export const catalog = [
   defineEvent({ name: "wake.exhausted", kind: "wake", level: "warn", description: "Se agotaron los intentos de aviso.", attrs: { kind: code(), attempts: int() } }),
 
   defineEvent({
+    name: "demo.contact.seeded",
+    kind: "lifecycle",
+    description: "Preparación de una identidad ficticia para el broker local de Contactos de Ana.",
+    attrs: { action: z.enum(["rules", "address", "wake"]) },
+  }),
+  defineEvent({
     name: "coordination.tool.call",
     kind: "tool",
     description: "Llamada a una tool del servidor de coordinación.",

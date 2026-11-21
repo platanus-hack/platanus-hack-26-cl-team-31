@@ -10,7 +10,7 @@ Track: 🔗 Multiplayer
 
 ### Dashboard con chat
 
-En `/demo`, **Contactos de Ana** usa el mismo runtime de Claude Code que `agents:runtime-demo`. Con PostgreSQL activo, ejecuta `pnpm agents:seed`, inicia `pnpm dev --filter @team-31/web` y pregunta «¿A alguien le interesa la cerámica?». **Ver datos** muestra el ID y la decisión del broker para cada contacto. Necesitas Claude Code autenticado y la configuración del proxy en el entorno local.
+En `/demo`, **Contactos de Ana** usa Claude Code y el mismo broker persistente que `agents:runtime-demo`. Inicia web y broker, ejecuta `pnpm agents:contacts:seed` y pregunta «¿A alguien le interesa la cerámica?». **Ver datos** muestra el ID y la decisión del broker para cada contacto. Necesitas Claude Code autenticado y la configuración del proxy en el entorno local. [Comandos para levantar el flujo de contactos](apps/mcp/README.md#buscar-entre-los-agentes-de-la-agenda)
 
 Selecciona **Fútbol del sábado** para usar el chat de coordinación con Ollama.
 

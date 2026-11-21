@@ -2,14 +2,14 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual, promisify } from "node:util";
+import { claudeEnv } from "./contact-broker.mjs";
 
 const run = promisify(execFile);
-const toolScript = fileURLToPath(new URL("./contact-interest-tool.mjs", import.meta.url));
 
 // The wake receiver calls this binding only after finding the authorized request in the contact's inbox.
-export async function askContactOwner(name, interest, source) {
+export async function askContactOwner(name, interest, source, root) {
+  const toolScript = join(root, "apps/demo/src/contact-interest-tool.mjs");
   const dir = await mkdtemp(join(tmpdir(), "nexo-contact-"));
   const receipt = join(dir, "observation.json");
   try {
@@ -22,7 +22,7 @@ export async function askContactOwner(name, interest, source) {
       "--output-format", "text", "--system-prompt",
       `Eres el agente de ${name}. Para responder esta consulta usa mcp__owner__check_interest. Devuelve literalmente el valor JSON de la herramienta, sin Markdown. Nunca infieras una respuesta.`,
       "--", "Resuelve la solicitud de interés autorizada en mi bandeja.",
-    ], { cwd: dir, timeout: 90_000, maxBuffer: 256_000 });
+    ], { cwd: dir, env: claudeEnv(), timeout: 90_000, maxBuffer: 256_000 });
     invocation.child.stdin.end();
     const { stdout } = await invocation;
     let observation;

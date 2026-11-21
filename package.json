@@ -26,7 +26,8 @@
     "agents:up": "bash scripts/agents-up.sh",
     "agents:demo": "node apps/mcp/scripts/demo.mjs",
     "agents:seed": "./scripts/with-env.sh node apps/server/scripts/schema.mjs && ./scripts/with-env.sh node apps/server/scripts/seed.mjs",
-    "agents:runtime-demo": "node \"$npm_execpath\" --filter @team-31/demo... build && node apps/demo/src/runtime-demo.mjs"
+    "agents:contacts:seed": "node \"$npm_execpath\" agents:seed && node \"$npm_execpath\" --filter-prod @team-31/demo... --filter @team-31/ops build && ./scripts/with-env.sh node packages/ops/dist/cli.js && ./scripts/with-env.sh node apps/demo/src/seed-contact-broker.mjs",
+    "agents:runtime-demo": "node \"$npm_execpath\" --filter-prod @team-31/demo... build && node apps/demo/src/runtime-demo.mjs"
   },
   "devDependencies": {
     "turbo": "^2.11.13",

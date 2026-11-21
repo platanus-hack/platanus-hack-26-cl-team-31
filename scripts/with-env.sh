@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Ejecuta un comando con .env y .env.local de la raíz exportados.
 set -euo pipefail
-ROOT="$(git rev-parse --show-toplevel)"
+ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 if [ "${1:-}" = "--optional-env" ]; then
   shift
 elif [ ! -f "$ROOT/.env" ]; then

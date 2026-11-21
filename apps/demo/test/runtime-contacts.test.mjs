@@ -1,40 +1,103 @@
-import { expect, it, vi } from "vitest";
-import { startDemoBroker } from "../src/demo-broker.mjs";
-import { askContactOwner } from "../src/contact-runtime.mjs";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, it, onTestFinished, vi } from "vitest";
+import { configureBroker, isolatedDatabase, listenForWakes, startBroker } from "./contact-stack.mjs";
 
 vi.mock("../src/contact-runtime.mjs", () => ({
-  askContactOwner: vi.fn(async (_name, _interest, source) => ({ matches: source === "bob-fixture" })),
+  askContactOwner: vi.fn(async (_name, interest, source) => {
+    const interests = JSON.parse(await readFile(source, "utf8"));
+    return { matches: interests.includes(interest) };
+  }),
 }));
 
-it("resuelve el mismo interés por contacto y mantiene separadas las respuestas simultáneas", async () => {
-  const demo = await startDemoBroker([
-    { id: "bob", name: "Bob", source: "bob-fixture", allowsInterest: true },
-    { id: "jane", name: "Jane", source: "jane-fixture", allowsInterest: true },
-    { id: "luz", name: "Luz", source: "luz-fixture", allowsInterest: false },
-  ]);
-  try {
-    const contacts = demo.listContacts();
-    expect(contacts).toEqual([
-      { name: "Bob", address: "bob@nexo.app" },
-      { name: "Jane", address: "jane@nexo.app" },
-      { name: "Luz", address: "luz@nexo.app" },
-    ]);
-    const responses = await Promise.all(contacts.map(async ({ address }) => {
-      const { requestId } = await demo.ask(address, "interest_check", { interest: "cerámica" });
-      return demo.result(requestId);
-    }));
-    expect(responses[0]).toMatchObject({ to: contacts[0].address, decision: "allow", result: { matches: true } });
-    expect(responses[1]).toMatchObject({ to: contacts[1].address, decision: "allow", result: { matches: false } });
-    expect(responses[2]).toMatchObject({ to: contacts[2].address, decision: "deny" });
-    expect(responses[0].requestId).not.toBe(responses[1].requestId);
+const contacts = [
+  { id: "bob", name: "Bob" },
+  { id: "jane", name: "Jane" },
+  { id: "luz", name: "Luz" },
+];
 
-    const denied = await demo.ask(contacts[1].address, "question", { text: "¿Cuál es tu domicilio?" });
-    expect(denied.decision).toBe("deny");
-    await expect(demo.ask("eva@nexo.app", "interest_check", { interest: "cerámica" })).rejects.toThrow(/agenda/);
-    expect(askContactOwner).toHaveBeenCalledTimes(2);
-    expect(askContactOwner).toHaveBeenCalledWith("Jane", "cerámica", "jane-fixture");
-    expect(askContactOwner).toHaveBeenCalledWith("Bob", "cerámica", "bob-fixture");
-  } finally {
-    demo.close();
+it("expone solamente la agenda de Ana y rechaza otra dirección antes de pedirle datos al broker", async () => {
+  vi.stubEnv("TELEMETRY_SINK", "off");
+  onTestFinished(() => vi.unstubAllEnvs());
+  const { createContactQueries } = await import("../src/contact-broker.mjs");
+  const agent = { ask: vi.fn() };
+  const session = createContactQueries(contacts, { agent });
+  expect(session.listContacts()).toEqual([
+    { name: "Bob", address: "demo-bob@nexo.app" },
+    { name: "Jane", address: "demo-jane@nexo.app" },
+    { name: "Luz", address: "demo-luz@nexo.app" },
+  ]);
+  await expect(session.ask("demo-eva@nexo.app", "interest_check", { interest: "cerámica" })).rejects.toThrow(/agenda/);
+  expect(agent.ask).not.toHaveBeenCalled();
+});
+
+it.skipIf(!process.env.TEST_DATABASE_URL)("comparte solicitudes entre sesiones, respeta los permisos y recupera las respuestas después de reiniciar el broker", async () => {
+  const cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => vi.unstubAllEnvs());
+  onTestFinished(() => cleanup.disposeAsync());
+  vi.stubEnv("TELEMETRY_SINK", "off");
+  vi.stubEnv("NODE_ENV", "development");
+  const db = await isolatedDatabase(cleanup);
+  for (const file of ["01-core.sql", "04-demo-profiles.sql"]) {
+    await db.query(await readFile(new URL("../../server/sql/" + file, import.meta.url), "utf8"));
   }
-}, 30_000);
+  const root = await mkdtemp(join(tmpdir(), "nexo-contact-test-"));
+  cleanup.defer(() => rm(root, { recursive: true, force: true }));
+  const fixtureId = randomUUID();
+  const local = join(root, ".agents-local");
+  const overrides = join(local, "contact-sessions", fixtureId);
+  await mkdir(overrides, { recursive: true });
+  for (const { id, name } of [{ id: "ana", name: "Ana" }, ...contacts]) {
+    const readers = ["bob", "jane"].includes(id) ? ["ana"] : [];
+    await db.query("INSERT INTO people(id, token_hash) VALUES ($1, $1)", [id]);
+    await db.query("INSERT INTO demo_profiles(person_id, display_name, interest_readers) VALUES ($1,$2,$3)", [id, name, readers]);
+    await writeFile(join(local, id + "-interests.json"), JSON.stringify(id === "bob" ? ["cerámica"] : []));
+  }
+  await writeFile(join(overrides, "bob.json"), "[]");
+
+  await configureBroker();
+  const { contactAddress, createContactQueries } = await import("../src/contact-broker.mjs");
+  const { seedContactBroker } = await import("../src/seed-contact-broker.mjs");
+  const { handleContactWake } = await import("../src/contact-wake.mjs");
+  const { notices, errors } = await listenForWakes(cleanup, handleContactWake, root);
+  const stop = await startBroker(cleanup);
+  await seedContactBroker();
+
+  const first = createContactQueries(contacts);
+  const second = createContactQueries(contacts.map(contact => ({ ...contact, override: contact.id === "bob" })), { fixtureId });
+  const interest = { interest: "cerámica" };
+  const bob = contactAddress("bob");
+  const jane = contactAddress("jane");
+  const [regular, overridden, other, privateQuestion, blocked] = await Promise.all([
+    first.ask(bob, "interest_check", interest),
+    second.ask(bob, "interest_check", interest),
+    second.ask(jane, "interest_check", interest),
+    first.ask(bob, "question", { text: "¿Cuál es tu domicilio?" }),
+    first.ask(contactAddress("luz"), "interest_check", interest),
+  ]);
+  expect(regular.requestId).not.toBe(overridden.requestId);
+  expect(privateQuestion.decision).toBe("deny");
+  expect(blocked.decision).toBe("deny");
+  const answers = await Promise.all([second.result(regular.requestId), first.result(overridden.requestId), first.result(other.requestId)]);
+  expect(answers).toMatchObject([
+    { to: bob, decision: "allow", result: { matches: true } },
+    { to: bob, decision: "allow", result: { matches: false } },
+    { to: jane, decision: "allow", result: { matches: false } },
+  ]);
+  expect(errors).toEqual([]);
+  expect(notices).toHaveLength(3);
+  expect(notices).toEqual(expect.arrayContaining([
+    { id: "bob", requestId: regular.requestId }, { id: "bob", requestId: overridden.requestId },
+    { id: "jane", requestId: other.requestId },
+  ]));
+  const deniedJobs = await db.query("SELECT request_id FROM nexo.wake_jobs WHERE request_id = ANY($1)", [[privateQuestion.requestId, blocked.requestId]]);
+  expect(deniedJobs.rows).toEqual([]);
+
+  await stop();
+  await startBroker(cleanup);
+  const reopened = createContactQueries(contacts);
+  expect(await reopened.result(regular.requestId)).toEqual(answers[0]);
+  expect(await reopened.result(privateQuestion.requestId)).toEqual(privateQuestion);
+}, 40_000);

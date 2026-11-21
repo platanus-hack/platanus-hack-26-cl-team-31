@@ -125,6 +125,7 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `wake.attempt` | wake | kind, attempt, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
 | `coordination.tool.call` | tool | tool, outcome |
+| `demo.contact.seeded` | lifecycle | action (`rules`, `address` o `wake`), userId y agentId de la identidad ficticia |
 | `error` | error | operation, type, issues, frames |
 | `admin.login` / `admin.logout` / `admin.reveal` / `admin.action` / `admin.token.created` / `admin.token.revoked` / `admin.mcp.call` | admin | action, target, tool |
 
