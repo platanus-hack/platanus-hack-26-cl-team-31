@@ -567,6 +567,36 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     expect(await queries.error("x'; DROP TABLE ops.events; --")).toBeNull()
   })
 
+  it("pagina eventos, desempata spans y busca el último error por ID numérico", async () => {
+    // A ambos lados de una potencia de diez y fuera del rango exacto de Number.
+    const ids = ["9999999999999999", "10000000000000000", "10000000000000001"]
+    const errorId = randomUUID()
+    const traceId = randomUUID().replaceAll("-", "")
+    await db.query(
+      `INSERT INTO ops.events (id, at, service, instance, kind, name, level, error_id, trace_id)
+       SELECT id, now(), 'broker', 'test', 'error', 'error', 'error', $2, $3
+       FROM unnest($1::bigint[]) AS id`,
+      [ids, errorId, traceId]
+    )
+    try {
+      const tail = await queries.events(EventFilters.parse({ traceId, afterId: "0", limit: 1 }))
+      expect(tail.map((event) => event.id)).toEqual([ids[0]])
+      const next = await queries.events(EventFilters.parse({ traceId, afterId: tail[0]!.id, limit: 2 }))
+      expect(next.map((event) => event.id)).toEqual(ids.slice(1))
+
+      const latest = await queries.events(EventFilters.parse({ traceId, limit: 1 }))
+      expect(latest.map((event) => event.id)).toEqual([ids[2]])
+      const older = await queries.events(EventFilters.parse({ traceId, beforeId: latest[0]!.id, limit: 1 }))
+      expect(older.map((event) => event.id)).toEqual([ids[1]])
+
+      expect((await queries.error(errorId))?.id).toBe(ids[2])
+      expect((await queries.trace(traceId))?.spans.map((span) => span.spanId))
+        .toEqual(ids.map((id) => `event:${id}`))
+    } finally {
+      await db.query("DELETE FROM ops.events WHERE error_id = $1", [errorId])
+    }
+  })
+
   it("users y user unen persona, identidad OAuth, reglas, agentes y solicitudes", async () => {
     const users = page(UserSummary).parse(
       await queries.users(UserFilters.parse({}))

@@ -88,7 +88,7 @@ const REQUEST_COLUMNS = `id, tool, from_address, to_address, status, outcome, ru
   target_agent_id, answered_by_agent_id, wake_attempts, last_wake_ok, created_at, expires_at,
   closed_at, duration_ms, stuck, created_at::text AS cursor_at`
 
-const EVENT_COLUMNS = `id::text AS id, at, service, kind, name, level, trace_id, span_id,
+const EVENT_COLUMNS = `id::text AS event_id, at, service, kind, name, level, trace_id, span_id,
   parent_span_id, request_id, user_id, agent_id, duration_ms, status, error_id::text AS error_id, attrs`
 
 const WAKE_COLUMNS =
@@ -140,7 +140,7 @@ function toRequestSummary(row: Row): RequestSummary {
 
 function toTelemetryEvent(row: Row): TelemetryEvent {
   return TelemetryEvent.parse({
-    id: row.id,
+    id: row.event_id,
     at: iso(row.at as Time),
     service: row.service,
     kind: row.kind,
