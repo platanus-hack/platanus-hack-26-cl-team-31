@@ -5,7 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { BrokerError } from "../errors.js";
-import type { RedactInput, Redactor } from "./redact.js";
+import type { RedactInput, Redactor } from "./types.js";
 
 export const DEFAULT_REDACTOR_MODEL = "claude-opus-5-5";
 

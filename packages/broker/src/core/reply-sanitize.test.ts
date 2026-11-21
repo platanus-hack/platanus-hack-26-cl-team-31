@@ -2,8 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { RequesterView, type Principal } from "@team-31/protocol";
 import { createTelemetry, memorySink, type MemorySink } from "@team-31/telemetry";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
-import type { Redactor } from "../sanitize/redact.js";
+import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps, type Redactor } from "../index.js";
 import { deriveNonce } from "./crypto.js";
 
 // Every agent reply passes through sanitizeReply inside broker.agent.reply before it is stored or delivered.

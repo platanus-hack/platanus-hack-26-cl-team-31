@@ -1,21 +1,6 @@
 import { BrokerError } from "../errors.js";
 import { containsHint, skeletonTokens } from "./text.js";
-import { addFlags, asRecord, type Stage } from "./types.js";
-
-export type RedactInput = {
-  text: string;
-  allowedFields: readonly string[];
-  guidance: string;
-  privateHints: readonly string[];
-};
-
-/**
- * Rewrites free text so it only says what the owner allows. Implementations may be fallible
- * (e.g. an LLM); the pipeline always re-validates their output and runs leak-guard afterwards.
- */
-export interface Redactor {
-  redact(input: RedactInput): Promise<{ text: string }>;
-}
+import { addFlags, asRecord, type Redactor, type Stage } from "./types.js";
 
 /** Default: returns the text unchanged. */
 export const identityRedactor: Redactor = {

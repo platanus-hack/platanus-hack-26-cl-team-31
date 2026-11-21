@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { BrokerError } from "../errors.js";
-import { REDACTED, createFakeRedactor, identityRedactor, redact, type Redactor } from "./redact.js";
+import { REDACTED, createFakeRedactor, identityRedactor, redact } from "./redact.js";
 import { ctxFor, stateOf } from "./test-helpers.js";
+import type { Redactor } from "./types.js";
 
 describe("identityRedactor", () => {
   it("returns the text unchanged", async () => {
