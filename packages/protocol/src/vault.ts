@@ -7,11 +7,15 @@ const categoryId = z.uuid();
 const value = z.union([z.string().trim().min(1).max(2000), z.number(), z.boolean()]);
 export const VaultEntry = z.object({ label: name, value });
 export const VaultCategory = z.object({ id: categoryId, name });
-export const VaultCatalog = z.object({ categories: z.array(VaultCategory) });
+const groupId = z.uuid();
+const categorySharing = VaultCategory.extend({
+  groups: z.array(ContactTag),
+  contactGroups: z.array(z.object({ id: groupId, name })),
+});
+export const VaultCatalog = z.object({ categories: z.array(categorySharing) });
 export type VaultCatalog = z.infer<typeof VaultCatalog>;
 export const VaultMembersQuery = z.strictObject({ categoryId });
 export const VaultMembers = z.object({ members: z.array(Address) });
-const groupId = z.uuid();
 export const ContactGroups = z.object({ groups: z.array(z.object({ id: groupId, name, members: z.array(Address) })) });
 export type ContactGroups = z.infer<typeof ContactGroups>;
 export const ContactGroupChange = z.discriminatedUnion("action", [
@@ -22,9 +26,8 @@ export const ContactGroupChange = z.discriminatedUnion("action", [
 ]);
 export type ContactGroupChange = z.infer<typeof ContactGroupChange>;
 export const ContactGroupReceipt = z.object({ groupId });
-export const OwnerVault = z.object({ categories: z.array(VaultCategory.extend({
-  groups: z.array(ContactTag), entries: z.array(VaultEntry),
-  contactGroups: z.array(z.object({ id: groupId, name })).optional(),
+export const OwnerVault = z.object({ categories: z.array(categorySharing.partial({ contactGroups: true }).extend({
+  entries: z.array(VaultEntry),
 })) });
 export type OwnerVault = z.infer<typeof OwnerVault>;
 export const VaultQuery = z.strictObject({ to: Address, categoryId: categoryId.optional() });

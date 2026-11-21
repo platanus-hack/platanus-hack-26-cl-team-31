@@ -77,7 +77,8 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.changeVault("alice", second, { action: "set_group", categoryId: second, group: "family", allowed: true });
 
         expect(await tx.vaultCatalog("alice")).toEqual({ categories: [
-          { id: first, name: "Agenda" }, { id: second, name: "Salud" },
+          { id: first, name: "Agenda", groups: [], contactGroups: [] },
+          { id: second, name: "Salud", groups: ["family"], contactGroups: [] },
         ] });
         expect(await tx.ownerVault("alice")).toEqual({ categories: [
           { id: first, name: "Agenda", entries: [{ label: "Días", value: 2 }], groups: [] },
@@ -149,6 +150,9 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.contactGroups("alice")).toEqual({ groups: [] });
         expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
         await tx.changeVault("bruno", categoryId, share);
+        expect(await tx.vaultCatalog("bruno")).toEqual({ categories: [
+          { id: categoryId, name: "Privada", groups: [], contactGroups: [{ id: groupId, name: "Instituciones" }] },
+        ] });
         expect(await tx.sharedVault(fromAddress, toAddress)).toEqual({ categories: [{ id: categoryId, name: "Privada" }] });
         expect((await tx.sharedVault(fromAddress, toAddress, categoryId)).categories[0]?.entries).toEqual([{ label: "Dato", value: "Prueba" }]);
         expect(await tx.sharedVault("eva@sideband.app", toAddress, categoryId)).toEqual({ categories: [] });
@@ -161,6 +165,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
         await tx.changeContactGroup("bruno", groupId, add);
         await tx.changeContactGroup("bruno", groupId, { action: "delete", groupId });
+        expect((await tx.vaultCatalog("bruno")).categories[0]?.contactGroups).toEqual([]);
         expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
         expect(await tx.contactGroups("bruno")).toEqual({ groups: [] });
         expect((await tx.ownerVault("bruno")).categories[0]).toMatchObject({ entries: [{ label: "Dato", value: "Prueba" }] });

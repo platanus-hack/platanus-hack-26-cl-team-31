@@ -14,7 +14,7 @@ export function registerVault(server: McpServer, p: Principal, agent: AgentPort,
     inputSchema: z.object({ change: ContactGroupChange }), outputSchema: ContactGroupReceipt,
   }, ({ change }) => runTool(telemetry, p, { tool: "sideband_contact_group_change", scope: "sideband:vault" }, () => agent.changeContactGroup(p, change)));
   server.registerTool("sideband_vault_catalog", {
-    description: "Lista nombres e IDs de tus propias categorías para administrarlas por orden de tu titular.",
+    description: "Lista tus categorías con nombre, ID, etiquetas autorizadas (groups) y grupos privados con permiso de lectura (contactGroups). Para saber qué personas tienen acceso efectivo, incluidas las excepciones individuales, usa sideband_vault_members.",
     inputSchema: z.object({}), outputSchema: VaultCatalog, annotations: { readOnlyHint: true },
   }, () => runTool(telemetry, p, { tool: "sideband_vault_catalog", scope: "sideband:vault" }, () => agent.vaultCatalog(p)));
   server.registerTool("sideband_vault_members", {
