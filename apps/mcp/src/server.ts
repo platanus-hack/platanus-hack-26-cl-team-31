@@ -8,6 +8,7 @@ import { registerAsk } from "./tools/ask.js";
 import { registerInbox } from "./tools/inbox.js";
 import { registerReply } from "./tools/reply.js";
 import { registerCheck } from "./tools/check.js";
+import { registerContacts } from "./tools/contacts.js";
 
 export function createServer(principal: Principal, agentPort: AgentPort, telemetry: Telemetry): McpServer {
   const server = new McpServer({ name: "sideband", version: "0.1.0" }, { instructions });
@@ -15,6 +16,7 @@ export function createServer(principal: Principal, agentPort: AgentPort, telemet
   registerInbox(server, principal, agentPort, telemetry);
   registerReply(server, principal, agentPort, telemetry);
   registerCheck(server, principal, agentPort, telemetry);
+  registerContacts(server, principal, agentPort, telemetry);
   registerEvents(server, principal, agentPort, telemetry);
   return server;
 }

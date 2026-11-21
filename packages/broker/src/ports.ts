@@ -8,6 +8,7 @@ import type {
   GrantInput,
   Address,
   AgentConnection,
+  AgentContacts,
   AskInput,
   ContactsView,
   InboxItem,
@@ -32,6 +33,8 @@ export interface AgentPort {
   inbox(p: Principal): Promise<InboxItem[]>;
   reply(p: Principal, input: ReplyInput): Promise<ReplyReceipt>;
   status(p: Principal, requestId: string): Promise<RequesterView>;
+  // The caller's contacts and joined circles, so its agent knows whom it can ask.
+  contacts(p: Principal): Promise<AgentContacts>;
   connectWake(p: Principal, target: WakeTarget): Promise<AgentConnection>;
   disconnectWake(p: Principal, subscriptionId: string): Promise<void>;
 }

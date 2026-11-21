@@ -11,6 +11,7 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
     ask: (principal, body) => request(routes.agentAsk, principal, { body }),
     inbox: async (principal) => (await request(routes.agentInbox, principal)).items,
     reply: (principal, body) => request(routes.agentReply, principal, { body }),
+    contacts: (principal) => request(routes.agentContacts, principal),
     status: (principal, id) => request(routes.agentStatus, principal, { params: { id } }),
     connectWake: (principal, body) => request(routes.agentConnectWake, principal, { body }),
     disconnectWake: (principal, subscriptionId) =>

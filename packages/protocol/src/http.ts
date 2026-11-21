@@ -3,7 +3,7 @@ import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
 import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
-import { ActivityItem, AgentConnection, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem } from "./owner.js";
+import { ActivityItem, AgentConnection, AgentContacts, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem } from "./owner.js";
 import { Sharing } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
@@ -43,6 +43,13 @@ export const routes = {
     response: ReplyReceipt,
     iss: "mcp",
     port: "agent.reply",
+  },
+  agentContacts: {
+    method: "GET",
+    path: "/v1/agent/contacts",
+    response: AgentContacts,
+    iss: "mcp",
+    port: "agent.contacts",
   },
   agentStatus: {
     method: "GET",
