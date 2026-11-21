@@ -209,4 +209,18 @@ describe("servidor OAuth de Better Auth con Postgres", () => {
       expect(decodeJwt(rotated.access_token)).toMatchObject({ iss: issuer, aud: audience, sub: userId, azp: client.client_id });
     }
   });
+
+  it("no deja que un cliente se asigne un teléfono", async () => {
+    const headers = new Headers(sessionHeaders);
+    headers.set("Origin", baseUrl);
+    headers.set("Content-Type", "application/json");
+    const update = await fetch(`${issuer}/update-user`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ phoneNumber: "+56900000000" }),
+    });
+    expect(update.status).toBe(400);
+    const { rows } = await admin!.query(`SELECT "phoneNumber" FROM ${schema}."user" WHERE id = $1`, [userId]);
+    expect(rows).toEqual([{ phoneNumber: null }]);
+  });
 });
