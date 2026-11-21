@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { grants, groupAllowed, isFree, personId, readAvailability } from "./availability.js";
+import { grants, groupAllowed, personId, readMeetingFreeSlots } from "./availability.js";
 import { defineTool } from "./tool.js";
 
 type Status = "collecting" | "no_shared_slot" | "proposed" | "declined" | "confirmed";
@@ -45,15 +45,8 @@ function view(meeting: Meeting) {
 }
 
 async function answerFromCalendar(db: PoolClient, meeting: MeetingRow, me: string) {
-  const freeSlots: string[] = [];
-  for (const date of meeting.slots) {
-    const slot = date.toISOString();
-    const available = me === meeting.organizer
-      ? await isFree(db, me, slot, meeting.minutes)
-      : await readAvailability(db, meeting.organizer, me, meeting.group_id, slot, meeting.minutes);
-    if (available === null) return false;
-    if (available) freeSlots.push(slot);
-  }
+  const freeSlots = await readMeetingFreeSlots(db, meeting.organizer, me, meeting.group_id, meeting.slots, meeting.minutes);
+  if (freeSlots === null) return false;
   await db.query(`UPDATE meeting_participants SET free_slots = $3
     WHERE meeting_id = $1 AND person_id = $2 AND free_slots IS NULL`, [meeting.id, me, freeSlots]);
   return true;
