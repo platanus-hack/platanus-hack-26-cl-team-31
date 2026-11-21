@@ -11,6 +11,19 @@ El número de WhatsApp personal se vincula a la misma cuenta que autoriza el MCP
 
 En despliegues con un rol web separado (`nexo_web_runtime`), provisiona el rol antes de `auth:migrate` o vuelve a ejecutar la migración después de crearlo. En el servicio que recibe el webhook, un `POST /api/kapso/webhook` sin firma debe responder `401` si Kapso quedó habilitado. Si responde `404`, verifica que el despliegue incluya la ruta y que el proceso web esté recibiendo las cuatro variables `KAPSO_*` con el formato indicado.
 
+## Validar la respuesta localmente sin WhatsApp
+
+1. Desde un worktree de prueba con Node 24, pnpm 10 y Docker, ejecuta `pnpm bootstrap`.
+2. Levanta MCP y broker y deja abierta esa terminal.
+
+   ```sh
+   pnpm with-env env MCP_DEV_AUTH=1 pnpm exec turbo run dev --filter @team-31/mcp --filter @team-31/broker-service
+   ```
+
+3. En otra terminal del mismo worktree, ejecuta `pnpm test:whatsapp`. Debe pasar la prueba «WhatsApp recupera por estado la respuesta del segundo agente».
+
+La prueba crea dos cuentas locales, concede el permiso de pregunta y ejecuta el mismo comando que procesa el webhook. Comprueba el estado pendiente, toma la solicitud de la bandeja MCP del destinatario, responde y verifica que tanto `estado <ID>` como `estado` devuelvan el texto exacto. Usa el broker HTTP y PostgreSQL del worktree. El vínculo telefónico y el transporte de Kapso se prueban por separado.
+
 ## Probar con dos cuentas
 
 1. Con sesión iniciada, abre **Agentes → Conectar con Sideband → WhatsApp**. Genera y envía el código de **Sideband**. Vuelve a la web y confirma que el número detectado sea el tuyo.

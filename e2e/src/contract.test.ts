@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { WAKE_EVENT } from "@team-31/protocol";
 import { describe, expect, onTestFinished, test } from "vitest";
+import { runCommand } from "../../apps/web/src/lib/whatsapp/commands.js";
 import { startFakeReceivers } from "./fake-receivers.js";
 import { enabled, grantTo, inboxItem, seedAgents } from "./fixtures.js";
 
@@ -85,6 +86,32 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
       final: true, decision: "deny", signature: expect.stringMatching(/^[\w-]{86}$/),
     });
   }, 60_000);
+
+  test("WhatsApp recupera por estado la respuesta del segundo agente", async () => {
+    const { ownerPort, agents: [sender, recipient] } = await seedAgents("contract", 2);
+    if (!sender || !recipient) throw new Error("Faltan agentes de prueba.");
+    await grantTo(ownerPort, recipient.owner, [sender.address], "question", ["answer"]);
+
+    // Use the same command handler as the signed webhook, with no call to Kapso.
+    const command = (text: string) => runCommand(ownerPort, sender.owner, text, () => {});
+    const question = "¿Puedes jugar el sábado?";
+    const acknowledgement = await command(`Pregunta a ${recipient.address} ${question}`);
+    const followUp = /^(estado (\S+))$/m.exec(acknowledgement);
+    if (!followUp?.[1] || !followUp[2]) throw new Error("Falta el comando de estado en el acuse de WhatsApp.");
+    const [, check, requestId] = followUp;
+    const item = await inboxItem(recipient.agent, requestId);
+    expect(item.senderMessage.text).toBe(question);
+    expect(await command(check)).toContain("pendiente de respuesta");
+
+    const answer = "Sí, puedo jugar a las diez.";
+    expect(await recipient.agent.reply({
+      requestId: item.requestId, nonce: item.nonce, outcome: "answered", result: { answer },
+    })).toMatchObject({ status: "answered", deliveredFields: ["answer"] });
+    expect(await sender.agent.check(item.requestId)).toMatchObject({ decision: "allow", result: { answer } });
+    const expected = `Respuesta de ${recipient.address}:\n${answer}\n\nSolicitud: ${item.requestId}`;
+    expect(await command(check)).toBe(expected);
+    expect(await command("estado")).toBe(expected);
+  });
 
   test("OpenClaw, Grok Bot y MCP Events reciben avisos sin contenido de la pregunta", async () => {
     const { ownerPort, agents: [sender, recipient] } = await seedAgents("contract", 2);
