@@ -4,9 +4,10 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { fixtureArgs, group, minutes, slots } from "../../../scripts/coordination-fixture.mjs";
+import { fixtureArgs, group, minutes, outsider, slots } from "../../../scripts/coordination-fixture.mjs";
 
-const { people, configDir } = fixtureArgs(process.argv.slice(2));
+const { people: participants, configDir } = fixtureArgs(process.argv.slice(2));
+const people = participants.map(person => person.id);
 const sessions = new Map();
 
 async function call(person, name, args = {}) {
@@ -16,7 +17,7 @@ async function call(person, name, args = {}) {
 }
 
 try {
-  for (const person of [...people, "eva"]) {
+  for (const person of [...people, outsider.id]) {
     const config = JSON.parse(await readFile(join(configDir, `${person}.json`), "utf8"));
     const client = new Client({ name: `demo-${person}`, version: "1.0.0" });
     sessions.set(person, client);
@@ -33,8 +34,8 @@ try {
   assert.equal(free.status, "available", "El demo requiere que Bob comparta disponibilidad con el grupo futbol.");
   const busy = await call(organizer, "availability_check", { ...args, slot: slots[0] });
   assert.equal(busy.status, "busy");
-  assert.equal((await call("eva", "availability_check", args)).status, "not_shareable");
-  const impersonation = await sessions.get("eva").callTool({
+  assert.equal((await call(outsider.id, "availability_check", args)).status, "not_shareable");
+  const impersonation = await sessions.get(outsider.id).callTool({
     name: "availability_check", arguments: { ...args, actor: organizer },
   });
   assert.equal(impersonation.isError, true);
@@ -47,7 +48,7 @@ try {
   try {
     const { entries } = await call(organizer, "interest_search", publication);
     assert.ok(entries.some(entry => entry.person === publisher));
-    assert.deepEqual((await call("eva", "interest_search", publication)).entries, []);
+    assert.deepEqual((await call(outsider.id, "interest_search", publication)).entries, []);
     console.log(`Ana encuentra a ${publisher} al buscar su interés en fútbol. Eva queda fuera de la audiencia.`);
   } finally {
     await call(publisher, "interest_withdraw", publication);
