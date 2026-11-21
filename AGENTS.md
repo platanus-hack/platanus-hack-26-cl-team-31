@@ -55,7 +55,7 @@ Ctrl+C detiene la API del host y `pnpm infra:down` detiene PostgreSQL conservand
 
 ## Consultas resueltas por el runtime del titular
 
-Ejecuta `corepack pnpm agents:runtime-demo` para probar los dos modos del broker Nexo. Ana descubre el contrato de Bob, lee su perfil publicado y pregunta por un interés. La segunda consulta queda pendiente hasta que el proceso de Bob recibe un aviso y ejecuta su conector local. La demo usa IPC y un almacén efímero. El recorrido MCP con PostgreSQL se prueba por separado con `pnpm agents:demo`.
+Con Claude Code autenticado y un arreglo JSON de intereses de Bob en `.agents-local/bob-interests.json`, ejecuta `corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica?"`. Dos sesiones de Claude usan identidades distintas de Nexo. El broker autoriza la operación y envía un webhook firmado a Bob. Su herramienta consulta su archivo privado y el broker valida la respuesta para Ana. La cola de esta demo es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md) para usar otro archivo o abrir a Ana en modo interactivo.
 
 ## Comandos
 

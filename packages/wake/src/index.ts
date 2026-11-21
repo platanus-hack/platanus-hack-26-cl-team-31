@@ -59,3 +59,5 @@ export function createWaker({ allowInsecure }: { allowInsecure: boolean }): Wake
     },
   };
 }
+
+export { verify as verifyWebhookSignature } from "./standard-webhooks.js";
