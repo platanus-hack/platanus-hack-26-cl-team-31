@@ -1,6 +1,24 @@
-# Coordinar asistentes en local
+# MCP de Nexo
 
-## Probar dos identidades
+El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `nexo_ask`, `nexo_inbox`, `nexo_reply` y `nexo_check`. El evento `nexo.request.created` se suscribe por webhook y entrega solo el `requestId`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
+
+## Arranque local
+
+1. Ejecuta `pnpm bootstrap` para generar `.env` con `MCP_PORT`, `MCP_RESOURCE_URL`, `AUTH_ISSUER` y `AUTH_JWKS_URL`. Si tu emisor o recurso público usa otro origen, configura esas URL en `.env.local`.
+2. Configura `BROKER_URL` con la URL interna del broker y `MCP_SERVICE_PRIVATE_KEY` con su JWK privada Ed25519 en `.env.local`. La JWK pública correspondiente se registra como `mcp` en `SERVICE_JWT_PUBLIC_KEYS` del broker.
+3. Ejecuta `pnpm build --filter @team-31/mcp^...` para compilar los paquetes compartidos y `pnpm dev --filter @team-31/mcp` para iniciar el servidor.
+
+`GET /healthz` devuelve `{"ok":true}`. El descubrimiento OAuth está disponible en `/.well-known/oauth-protected-resource` y `/.well-known/oauth-protected-resource/mcp`. El servidor escucha en `127.0.0.1` por defecto. Puedes elegir otra interfaz con `MCP_HOST`.
+
+Si prefieres Compose, compila con `pnpm build --filter @team-31/mcp` y usa `docker compose --env-file .env --env-file .env.local --profile nexo up -d mcp` con el puerto del host libre. Para ese comando, `AUTH_JWKS_URL` y `BROKER_URL` deben ser alcanzables desde el contenedor. Usa el nombre del servicio Compose o, para procesos en el host de Docker Desktop, `host.docker.internal` y el puerto de su worktree. Mantén `AUTH_ISSUER` y `MCP_RESOURCE_URL` con las URL públicas usadas por los clientes. Para detener solo el MCP en Docker, usa `docker compose --profile nexo stop mcp`.
+
+## Modo de desarrollo
+
+`MCP_DEV_AUTH=1` habilita `Authorization: Bearer dev:<userId>:<agentId>` con los cuatro scopes de Nexo. Para usar stdio en desarrollo, añade `NEXO_DEV_USER_ID` y `NEXO_DEV_AGENT_ID` a `.env.local`, compila con `pnpm build --filter @team-31/mcp` y ejecuta `pnpm with-env pnpm --filter @team-31/mcp start --stdio`. La conexión al broker conserva el JWT de servicio. `MCP_DEV_AUTH=1` aborta el arranque con `NODE_ENV=production`.
+
+## Coordinar asistentes en local
+
+### Probar dos identidades
 
 Desde la raíz del repo, con Docker corriendo, usa Node 24 y pnpm 10. Si usas nvm, ejecuta `nvm use` y `corepack enable pnpm` una vez.
 
@@ -12,7 +30,7 @@ Puedes editar las personas, sus permisos iniciales y los bloques ocupados en [lo
 
 El sábado ficticio es el **28 de noviembre de 2026**. Ana ve a Bob ocupado a las 16:00 y disponible a las 18:00 de Santiago. Eva, externa al grupo `futbol`, recibe `not_shareable`. El guion publica y retira un interés, revoca y restablece el permiso de Bob, y prueba las bandejas por persona. La última aceptación confirma el encuentro y muestra su ID. Cada corrida crea una propuesta nueva en PostgreSQL.
 
-## Hablar con Ana y Bob en Claude Code
+### Hablar con Ana y Bob en Claude Code
 
 Con la API abierta, inicia estos comandos en **dos terminales distintas** desde la raíz. Cada sesión carga una sola identidad y usa las herramientas del MCP de coordinación. Claude Code requiere su propia sesión iniciada.
 
@@ -31,7 +49,7 @@ claude --strict-mcp-config --mcp-config .agents-local/bob.json --tools ""
 
 La bandeja se consulta cuando activas la sesión. Los agentes comparten una API HTTP que verifica la credencial, y el broker comprueba membresía y permisos antes de leer disponibilidad y entregar el resultado. La decisión de asistir se registra por participante. Los archivos de configuración son privados del usuario local y dan acceso a la identidad que contienen.
 
-## Herramientas
+### Herramientas
 
 | Acción | Herramientas |
 |---|---|
@@ -43,4 +61,4 @@ La bandeja se consulta cuando activas la sesión. Los agentes comparten una API 
 
 Puedes escribir los nombres de participantes como `Bob` o `bob`. Sólo se entrega la proyección de disponibilidad. La agenda ficticia y los hashes de las credenciales se guardan en la base del worktree. Volver a correr el seed conserva permisos revocados y salidas del grupo.
 
-El MCP original de diagnóstico sigue disponible con `pnpm --filter @team-31/mcp inspect` cuando se inicia sin las dos variables de coordinación.
+Los clientes generados por `agents:seed` eligen este adaptador stdio al pasar su `AGENT_TOKEN` y `COORDINATION_API_URL`.
