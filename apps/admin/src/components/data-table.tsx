@@ -37,6 +37,8 @@ declare module "@tanstack/react-table" {
   }
 }
 
+const EMPTY_ROWS: never[] = []
+
 export function DataTable<TData>({
   columns,
   data,
@@ -63,7 +65,8 @@ export function DataTable<TData>({
 }) {
   const [sorting, setSorting] = React.useState<SortingState>(initialSorting)
   const table = useReactTable({
-    data: data ?? [],
+    data: data ?? EMPTY_ROWS,
+    autoResetPageIndex: false,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
