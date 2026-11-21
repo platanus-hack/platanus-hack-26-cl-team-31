@@ -7,10 +7,12 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
+      "@team-31/source": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./scenario": {
       "types": "./src/scenario.ts",
+      "@team-31/source": "./src/scenario.ts",
       "default": "./dist/scenario.js"
     }
   },
