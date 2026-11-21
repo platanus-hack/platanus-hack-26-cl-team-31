@@ -8,6 +8,7 @@
     "auth:migrate": "node scripts/migrate-auth.mjs",
     "start": "next start -p ${WEB_PORT:-3000}",
     "lint": "eslint",
+    "test": "vitest run",
     "typecheck": "next typegen && tsc --noEmit",
     "clean": "rm -rf .next .turbo node_modules"
   },

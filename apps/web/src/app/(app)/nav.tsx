@@ -8,6 +8,7 @@ const links = [
   { href: "/rules", label: "Reglas" },
   { href: "/agents", label: "Agentes" },
   { href: "/activity", label: "Actividad" },
+  { href: "/cable", label: "El cable" },
 ];
 
 export function Navigation() {
