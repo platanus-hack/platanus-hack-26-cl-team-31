@@ -1,0 +1,397 @@
+// Único mapeo de la telemetría de Sideband (catálogo de @team-31/telemetry, filas de ops.events
+// ya redactadas) al modelo FlowEvent. Lo usan el modo en vivo del admin y el escenario de la landing.
+//
+// Solo lee atributos de una lista blanca por evento. Cualquier otro atributo se ignora, así que un
+// campo nuevo del catálogo nunca llega a la vista sin pasar por aquí.
+import { BROKER, type FlowActor, type FlowEvent, type FlowMeta, type FlowOwner, type FlowStatus } from "./model.js";
+
+type Scalar = string | number | boolean | null;
+
+/** Forma mínima de un evento de ops.events (compatible con TelemetryEvent del admin). */
+export interface TelemetryRow {
+  id: string;
+  at: string | number;
+  service: string;
+  name: string;
+  requestId?: string | null;
+  userId?: string | null;
+  agentId?: string | null;
+  traceId?: string | null;
+  durationMs?: number | null;
+  status?: string | null;
+  attrs: Record<string, Scalar | undefined>;
+}
+
+export interface DirectoryUser {
+  userId: string;
+  address?: string | null;
+  displayName?: string | null;
+}
+
+export interface DirectoryAgent {
+  agentId: string;
+  userId?: string | null;
+  label?: string | null;
+  /** WakeKind del agente (mcp_events, openclaw_hooks…) o un canal (whatsapp). */
+  kind?: string | null;
+  /** Conexión revocada: no entra en la foto inicial de la red. */
+  revokedAt?: string | null;
+}
+
+/** Lo que el admin expone de una solicitud (RequestSummary): direcciones e ids, sin contenido. */
+export interface DirectoryRequest {
+  id: string;
+  fromAddress: string;
+  toAddress: string;
+  targetAgentId?: string | null;
+  answeredByAgentId?: string | null;
+}
+
+export interface FlowDirectory {
+  add(entries: { users?: DirectoryUser[]; agents?: DirectoryAgent[]; requests?: DirectoryRequest[] }): void;
+  user(userId: string): DirectoryUser | undefined;
+  address(address: string): DirectoryUser | undefined;
+  agent(agentId: string): DirectoryAgent | undefined;
+  request(requestId: string): DirectoryRequest | undefined;
+  /** Todo lo conocido, en orden de alta (para la foto inicial de la red). */
+  list(): { users: DirectoryUser[]; agents: DirectoryAgent[] };
+}
+
+export function createFlowDirectory(initial?: Parameters<FlowDirectory["add"]>[0]): FlowDirectory {
+  const users = new Map<string, DirectoryUser>();
+  const addresses = new Map<string, DirectoryUser>();
+  const agents = new Map<string, DirectoryAgent>();
+  const requests = new Map<string, DirectoryRequest>();
+  const directory: FlowDirectory = {
+    add(entries) {
+      for (const user of entries.users ?? []) {
+        users.set(user.userId, user);
+        if (user.address) addresses.set(user.address, user);
+      }
+      for (const agent of entries.agents ?? []) agents.set(agent.agentId, agent);
+      for (const request of entries.requests ?? []) requests.set(request.id, request);
+    },
+    user: (id) => users.get(id),
+    address: (address) => addresses.get(address),
+    agent: (id) => agents.get(id),
+    request: (id) => requests.get(id),
+    list: () => ({ users: [...users.values()], agents: [...agents.values()] }),
+  };
+  if (initial) directory.add(initial);
+  return directory;
+}
+
+const channelLabels: Record<string, string> = {
+  mcp_events: "MCP",
+  openclaw_hooks: "OpenClaw",
+  grokbot_routine: "Grok Bot",
+  standard_webhook: "Webhook",
+  whatsapp: "WhatsApp",
+  none: "Agente",
+};
+
+export const channelLabel = (kind?: string | null) => (kind ? (channelLabels[kind] ?? kind) : undefined);
+
+/** Eventos del catálogo que el mapeo convierte en pasos; el resto se ignora. */
+export const flowEventNames: ReadonlySet<string> = new Set([
+  "broker.policy.evaluated",
+  "broker.request.created",
+  "broker.request.status_changed",
+  "broker.request.closed",
+  "broker.reply.rejected",
+  "broker.reply.sanitized",
+  "broker.owner.decided",
+  "wake.attempt",
+  "wake.exhausted",
+  "mcp.tool.call",
+  "coordination.tool.call",
+  "whatsapp.link",
+]);
+
+const askTools = new Set(["sideband_ask", "ask_contact"]);
+const checkTools = new Set(["sideband_check", "await_contact"]);
+// Spans: `at` es el final; el paso empezó durationMs antes.
+const spans = new Set(["mcp.tool.call", "coordination.tool.call", "wake.attempt"]);
+
+const str = (value: Scalar | undefined) => (typeof value === "string" && value.length > 0 ? value : undefined);
+const num = (value: Scalar | undefined) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+const codes = (value: Scalar | undefined) => str(value)?.split(",").filter(Boolean);
+const short = (id: string) => (id.length > 10 ? `${id.slice(0, 8)}…` : id);
+
+const outcomeStatus: Record<string, FlowStatus> = {
+  answered: "delivered",
+  no_data: "delivered",
+  declined: "denied",
+  denied: "denied",
+  expired: "expired",
+  delivery_failed: "failed",
+};
+const decisionStatus: Record<string, FlowStatus> = {
+  approve_once: "allowed",
+  answer: "allowed",
+  accept: "allowed",
+  deny: "denied",
+  decline: "denied",
+};
+
+interface RequestContext {
+  requesterAgent?: string;
+  requesterUser?: string;
+  recipientAgent?: string;
+  recipientUser?: string;
+  asked?: boolean;
+  replied?: boolean;
+}
+
+export interface TelemetryMapper {
+  /** Convierte una fila en 0..n pasos. Con estado: recuerda los agentes de cada solicitud. */
+  map(row: TelemetryRow): FlowEvent[];
+  /**
+   * Foto inicial de la red desde el directorio: un `joined` (snapshot) por agente no revocado y uno
+   * provisional por titular con dirección y sin agentes. Va antes de los eventos en vivo.
+   */
+  snapshot(at: number): FlowEvent[];
+}
+
+export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper {
+  const contexts = new Map<string, RequestContext>();
+
+  const ownerOfAddress = (address: string): FlowOwner => {
+    const user = directory.address(address);
+    return { key: address, label: user?.displayName || address };
+  };
+  const ownerOfUser = (userId: string): FlowOwner => {
+    const user = directory.user(userId);
+    if (user?.address) return { key: user.address, label: user.displayName || user.address };
+    return { key: `user:${userId}`, label: user?.displayName || short(userId) };
+  };
+  const unknownOwner: FlowOwner = { key: "unknown", label: "Sin identificar" };
+
+  const agentActor = (agentId: string, fallback: FlowOwner): FlowActor => {
+    const agent = directory.agent(agentId);
+    const owner = agent?.userId ? ownerOfUser(agent.userId) : fallback;
+    const channel = channelLabel(agent?.kind);
+    return { id: `agent:${agentId}`, role: "agent", label: agent?.label || channel || "Agente", owner, ...(channel ? { channel } : {}) };
+  };
+  const placeholder = (owner: FlowOwner): FlowActor => ({ id: `agent@${owner.key}`, role: "agent", label: "Agente", owner, placeholder: true });
+  const human = (owner: FlowOwner): FlowActor => ({ id: `owner@${owner.key}`, role: "owner", label: "Titular", owner });
+  // Agentes ya vistos: su primera llamada al MCP cuenta como entrada a la red.
+  const seen = new Set<string>();
+  const whatsappActor = (userId: string): FlowActor => {
+    const owner = ownerOfUser(userId);
+    const linked = directory.list().agents.find((a) => a.userId === userId && a.kind === "whatsapp" && !a.revokedAt);
+    return linked ? agentActor(linked.agentId, owner) : { id: `whatsapp@${owner.key}`, role: "agent", label: "WhatsApp", owner, channel: "WhatsApp" };
+  };
+
+  function context(requestId: string | undefined): RequestContext {
+    if (!requestId) return {};
+    let ctx = contexts.get(requestId);
+    if (!ctx) {
+      ctx = {};
+      contexts.set(requestId, ctx);
+      // Acota la memoria en sesiones largas del admin.
+      if (contexts.size > 2_000) contexts.delete(contexts.keys().next().value as string);
+    }
+    return ctx;
+  }
+
+  function requesterOwner(requestId: string | undefined, ctx: RequestContext): FlowOwner {
+    const request = requestId ? directory.request(requestId) : undefined;
+    if (request) return ownerOfAddress(request.fromAddress);
+    return ctx.requesterUser ? ownerOfUser(ctx.requesterUser) : unknownOwner;
+  }
+  function recipientOwner(requestId: string | undefined, ctx: RequestContext): FlowOwner {
+    const request = requestId ? directory.request(requestId) : undefined;
+    if (request) return ownerOfAddress(request.toAddress);
+    return ctx.recipientUser ? ownerOfUser(ctx.recipientUser) : unknownOwner;
+  }
+  function requester(requestId: string | undefined, ctx: RequestContext): FlowActor {
+    const owner = requesterOwner(requestId, ctx);
+    return ctx.requesterAgent ? agentActor(ctx.requesterAgent, owner) : placeholder(owner);
+  }
+  function recipient(requestId: string | undefined, ctx: RequestContext): FlowActor {
+    const owner = recipientOwner(requestId, ctx);
+    const request = requestId ? directory.request(requestId) : undefined;
+    const agentId = ctx.recipientAgent ?? request?.answeredByAgentId ?? request?.targetAgentId ?? undefined;
+    return agentId ? agentActor(agentId, owner) : placeholder(owner);
+  }
+
+  return {
+    map(row) {
+      const { attrs } = row;
+      const requestId = row.requestId ?? undefined;
+      const ctx = context(requestId);
+      const end = typeof row.at === "number" ? row.at : Date.parse(row.at);
+      const duration = row.durationMs ?? undefined;
+      const at = spans.has(row.name) && duration ? end - duration : end;
+      const out: FlowEvent[] = [];
+      const push = (event: Omit<FlowEvent, "id" | "at" | "requestId" | "traceId">) => {
+        for (const end of [event.from, event.to]) if (end !== BROKER && end.role === "agent" && !end.placeholder) seen.add(end.id);
+        out.push({
+          id: out.length === 0 ? row.id : `${row.id}:${out.length}`,
+          at: at + out.length, // conserva el orden dentro de una misma fila
+          ...(requestId ? { requestId } : {}),
+          ...(row.traceId ? { traceId: row.traceId } : {}),
+          ...event,
+          meta: { service: row.service, ...(duration !== undefined ? { latencyMs: Math.round(duration) } : {}), ...event.meta },
+        });
+      };
+
+      switch (row.name) {
+        case "broker.policy.evaluated": {
+          if (row.userId) ctx.requesterUser = row.userId;
+          if (row.agentId) ctx.requesterAgent = row.agentId;
+          const tool = str(attrs.tool);
+          const category = str(attrs.category);
+          const decision = str(attrs.decision);
+          if (!ctx.asked) {
+            ctx.asked = true;
+            push({ step: "ask", status: "pending", from: requester(requestId, ctx), to: BROKER, meta: { tool, category } });
+          }
+          const status: FlowStatus = decision === "allow" ? "allowed" : decision === "ask_owner" ? "escalated" : "denied";
+          push({ step: "policy", status, from: BROKER, to: BROKER, meta: { tool, category, decision, rule: str(attrs.rule) } });
+          break;
+        }
+        case "broker.request.created": {
+          if (!ctx.requesterUser && row.userId) ctx.requesterUser = row.userId;
+          if (row.agentId) ctx.requesterAgent = row.agentId;
+          const target = str(attrs.targetAgentId);
+          if (target) ctx.recipientAgent = target;
+          push({ step: "request", status: "ok", from: BROKER, to: BROKER, meta: { tool: str(attrs.tool), rule: str(attrs.rule) } });
+          break;
+        }
+        case "coordination.tool.call":
+        case "mcp.tool.call": {
+          const tool = str(attrs.tool) ?? "tool";
+          // El MCP de la demo (ask_contact, await_contact) emite coordination.tool.call; las demás
+          // tools de coordinación no pasan por el broker.
+          if (row.name === "coordination.tool.call" && !askTools.has(tool) && !checkTools.has(tool)) break;
+          const outcome = str(attrs.outcome);
+          const failed: FlowStatus | undefined = outcome === "denied" ? "denied" : outcome === "error" ? "failed" : undefined;
+          if (askTools.has(tool)) {
+            if (row.userId) ctx.requesterUser ??= row.userId;
+            if (row.agentId) ctx.requesterAgent ??= row.agentId;
+            // El span termina después de los eventos del broker: si la política ya dibujó la pregunta, no se repite.
+            if (ctx.asked) break;
+            ctx.asked = Boolean(requestId);
+            push({ step: "ask", status: failed ?? "pending", from: requester(requestId, ctx), to: BROKER, meta: { tool } });
+            break;
+          }
+          const self = row.agentId
+            ? agentActor(row.agentId, row.userId ? ownerOfUser(row.userId) : unknownOwner)
+            : placeholder(row.userId ? ownerOfUser(row.userId) : unknownOwner);
+          if (row.agentId && !seen.has(self.id)) {
+            seen.add(self.id);
+            push({ step: "joined", status: "ok", from: self, to: self, meta: {} });
+          }
+          if (tool === "sideband_reply") {
+            if (row.agentId) ctx.recipientAgent ??= row.agentId;
+            if (ctx.replied) break;
+            push({ step: "reply", status: failed ?? "ok", from: self, to: BROKER, meta: { tool } });
+            break;
+          }
+          const step = checkTools.has(tool) ? "check" : tool === "sideband_inbox" ? "inbox" : "tool";
+          push({ step, status: failed ?? "ok", from: self, to: BROKER, meta: { tool } });
+          break;
+        }
+        case "whatsapp.link": {
+          const action = str(attrs.action);
+          if (!row.userId || (action !== "confirmed" && action !== "unlinked")) break;
+          const actor = whatsappActor(row.userId);
+          push({ step: action === "confirmed" ? "joined" : "left", status: action === "confirmed" ? "ok" : "expired", from: actor, to: actor, meta: {} });
+          break;
+        }
+        case "wake.attempt": {
+          if (row.agentId) ctx.recipientAgent = row.agentId;
+          if (row.userId) ctx.recipientUser = row.userId;
+          const ok = attrs.ok === true;
+          push({
+            step: "wake",
+            status: ok ? "ok" : "failed",
+            from: BROKER,
+            to: recipient(requestId, ctx),
+            meta: { attempt: num(attrs.attempt), httpStatus: num(attrs.httpStatus), code: str(attrs.code) },
+          });
+          break;
+        }
+        case "wake.exhausted": {
+          if (row.agentId) ctx.recipientAgent = row.agentId;
+          push({ step: "wake", status: "failed", from: BROKER, to: recipient(requestId, ctx), meta: { attempt: num(attrs.attempts), code: "exhausted" } });
+          break;
+        }
+        case "broker.request.status_changed": {
+          const from = str(attrs.from);
+          const to = str(attrs.to);
+          if (attrs.by !== "agent" || from !== "awaiting_agent") break;
+          if (!ctx.replied) {
+            ctx.replied = true;
+            push({ step: "reply", status: "ok", from: recipient(requestId, ctx), to: BROKER, meta: { outcome: to, by: "agent" } });
+          }
+          if (to === "awaiting_owner") {
+            push({ step: "escalated", status: "escalated", from: BROKER, to: human(recipientOwner(requestId, ctx)), meta: { outcome: to } });
+          }
+          break;
+        }
+        case "broker.reply.rejected": {
+          const code = str(attrs.code);
+          const status: FlowStatus = code === "leak_blocked" ? "blocked" : code === "expired" ? "expired" : "failed";
+          push({ step: "reply_blocked", status, from: recipient(requestId, ctx), to: BROKER, meta: { code, flags: codes(attrs.flags) } });
+          break;
+        }
+        case "broker.reply.sanitized": {
+          push({ step: "sanitized", status: "sanitized", from: BROKER, to: BROKER, meta: { flags: codes(attrs.flags), fieldsDropped: codes(attrs.dropped) } });
+          break;
+        }
+        case "broker.owner.decided": {
+          if (row.userId) ctx.recipientUser ??= row.userId;
+          const decision = str(attrs.decision);
+          push({
+            step: "owner_decided",
+            status: (decision && decisionStatus[decision]) || "ok",
+            from: human(recipientOwner(requestId, ctx)),
+            to: BROKER,
+            meta: { decision },
+          });
+          break;
+        }
+        case "broker.request.closed": {
+          const outcome = str(attrs.outcome);
+          push({
+            step: "delivered",
+            status: (outcome && outcomeStatus[outcome]) || "ok",
+            from: BROKER,
+            to: requester(requestId, ctx),
+            meta: { outcome, escalated: typeof attrs.escalated === "boolean" ? attrs.escalated : undefined },
+          });
+          break;
+        }
+        default:
+          break;
+      }
+      return out.map(stripUndefined);
+    },
+    snapshot(at) {
+      const { users, agents } = directory.list();
+      const out: FlowEvent[] = [];
+      const add = (actor: FlowActor) => {
+        seen.add(actor.id);
+        out.push({ id: `snapshot:${actor.id}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: { snapshot: true } });
+      };
+      for (const user of users) {
+        const own = agents.filter((a) => a.userId === user.userId && !a.revokedAt);
+        const owner = ownerOfUser(user.userId);
+        if (own.length === 0) {
+          if (user.address) add(placeholder(owner));
+          continue;
+        }
+        for (const agent of own) add(agentActor(agent.agentId, owner));
+      }
+      return out;
+    },
+  };
+}
+
+function stripUndefined(event: FlowEvent): FlowEvent {
+  const meta = Object.fromEntries(Object.entries(event.meta).filter(([, value]) => value !== undefined)) as FlowMeta;
+  return { ...event, meta };
+}

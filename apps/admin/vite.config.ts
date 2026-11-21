@@ -11,6 +11,8 @@ const apiTarget = `http://127.0.0.1:${process.env.ADMIN_API_PORT ?? "4450"}`
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
+    // @team-31/agent-flow trae react como peer: una sola copia de React para toda la SPA.
+    dedupe: ["react", "react-dom"],
     alias: {
       "@": resolve(import.meta.dirname, "./src"),
       "@shared": resolve(import.meta.dirname, "./shared"),

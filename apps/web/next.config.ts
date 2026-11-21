@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Solo /embed/* se puede enmarcar desde otro origen (presentaciones con iframe). No hay otra cabecera
+  // de enmarcado en la app, así que el resto conserva el comportamiento por defecto.
+  async headers() {
+    return [{ source: "/embed/:path*", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors *" }] }];
+  },
   async redirects() {
     return ["/rules", "/grants", "/friends"].map((source) => ({ source, destination: "/contacts", permanent: false }));
   },

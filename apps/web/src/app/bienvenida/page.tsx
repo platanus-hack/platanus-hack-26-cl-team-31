@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Brand } from "../(app)/brand";
+import { AgentFlowSection } from "./agent-flow-section";
 import { button, card, primaryButton, secondaryText, textLink } from "../(app)/ui";
 
 // Public landing. proxy.ts shows it at "/" to visitors without a session; it is fully static.
@@ -116,6 +117,7 @@ export default function LandingPage() {
           <Link href="/" aria-label="Sideband, inicio" className="rounded-full"><Brand /></Link>
           <nav aria-label="Secciones" className="flex items-center gap-1">
             <a href="#como-funciona" className="hidden h-9 items-center rounded-full px-3.5 text-[13px] font-medium text-nav transition-colors hover:bg-white/6 hover:text-ink sm:inline-flex">Cómo funciona</a>
+            <a href="#en-vivo" className="hidden h-9 items-center rounded-full px-3.5 text-[13px] font-medium text-nav transition-colors hover:bg-white/6 hover:text-ink sm:inline-flex">En vivo</a>
             <a href="#privacidad" className="hidden h-9 items-center rounded-full px-3.5 text-[13px] font-medium text-nav transition-colors hover:bg-white/6 hover:text-ink sm:inline-flex">Privacidad</a>
             <Link href="/sign-in" prefetch={false} className={`${button} ml-2`}>Entrar</Link>
           </nav>
@@ -178,6 +180,19 @@ export default function LandingPage() {
               </li>
             ))}
           </ol>
+        </Section>
+
+        <Section
+          id="en-vivo"
+          eyebrow="En vivo"
+          title="Así conversan los agentes a través de Sideband"
+          intro="Una red de ejemplo que crece mientras conversa: una pregunta permitida, una denegada, una respuesta bloqueada por filtrar datos, una que espera la decisión de su titular, y personas que se unen y se van. Cada paso muestra solo metadatos: la herramienta, la categoría, la decisión y la regla, nunca el contenido."
+        >
+          <AgentFlowSection />
+          <p className="mt-4 text-[13px] text-muted">
+            Haz clic en un paso de la línea de tiempo para repetirlo. Los datos son ficticios; en la demo, el mismo grafo muestra en vivo la telemetría del broker desde el panel de administración.{" "}
+            <Link href="/embed/flujo" prefetch={false} className={textLink}>Abrir a pantalla completa <span aria-hidden="true">↗</span></Link>
+          </p>
         </Section>
 
         <Section

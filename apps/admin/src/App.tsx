@@ -79,6 +79,11 @@ const router = createBrowserRouter([
             handle: handle(() => [{ label: "En vivo" }]),
           },
           {
+            path: "flujo",
+            lazy: page(() => import("@/pages/flow"), "FlowPage"),
+            handle: handle(() => [{ label: "Flujo" }]),
+          },
+          {
             path: "errores",
             lazy: page(() => import("@/pages/errors"), "ErrorsPage"),
             handle: handle(() => [{ label: "Errores" }]),

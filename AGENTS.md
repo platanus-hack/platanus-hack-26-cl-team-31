@@ -15,6 +15,7 @@ El MVP conserva MCP, server y broker como servicios separados, con bóvedas aloj
 | `packages/protocol`, `packages/auth`, `packages/wake` | `protocol` define herramientas, grants y mensajes. `auth` implementa OAuth y JWT de servicio. `wake` envía avisos a agentes. | Conservar y reutilizar desde los servicios y sus clientes. |
 | `apps/admin`, `packages/telemetry`, `packages/ops` | Panel y MCP de administración, instrumentación y esquema operativo de PostgreSQL. | Conservar para seguir las solicitudes por `requestId`. |
 | `apps/redteam` | Harness red team / blue team del broker: catálogo de ataques contra cada guardrail (`política`, `stillAuthorized`, sanitize, nonce, firma, avisos, telemetría) con veredictos `contained`/`known_gap`. Corre contra el núcleo real en memoria y, con `pnpm --filter @team-31/redteam live`, contra el broker HTTP del worktree. Un `known_gap` que deje de fugarse hace fallar el test: mover el caso a `contained` y celebrar. | Conservar como pruebas de seguridad continuas; los gaps documentados son la deuda a cerrar. |
+| `packages/agent-flow` | Visualizador del flujo entre agentes y de la red (React, sin dependencias) y el único mapeo de la telemetría a `FlowEvent`. Lo usan la landing, `/embed/flujo` y la página **Flujo** del admin. | Conservar. Guía: [docs/agent-flow.md](docs/agent-flow.md). |
 | `apps/demo` | Ejecuta Contactos de Ana desde la CLI y el dashboard. Ambos llaman al broker del worktree. Web aloja el receptor de avisos de los contactos en desarrollo. | Conservar el escenario y los datos de prueba. Los grants y las solicitudes ya se mantienen en el broker persistente. |
 | `infra/`, `scripts/`, `packages/typescript-config`, `e2e/` | Preparación del entorno, comandos de desarrollo y ensayos, configuración TypeScript y pruebas del stack. | Conservar como soporte. Para probar OAuth, web, MCP y broker juntos, usar el [guion de scripts/demo](docs/demo.md). |
 
@@ -240,6 +241,13 @@ Todos los servicios están instrumentados (ADM-07). Al tocar uno, extiende su te
 | coordinación | `apps/server/src/http.ts` | `http.request`, `coordination.tool.call`, `auth.token.rejected`, `error` |
 
 Las llamadas internas al broker usan `tracedFetch` (opción `fetch` de `createAgentClient`/`createOwnerClient`), así que una solicitud por el MCP deja en `ops.events` spans de `mcp` y `broker` con el mismo `trace_id` y `request_id` (prueba en `e2e/src/trace.test.ts`, que no requiere el stack).
+
+## Visualizador del flujo (`packages/agent-flow`)
+
+- Repetición pública en la landing (sección **En vivo**) y en `/embed/flujo` (iframe con `?autoplay&loop&speed&controls&panels&presence&owners`). Solo `/embed/*` envía `Content-Security-Policy: frame-ancestors *` (`apps/web/next.config.ts`).
+- Modo en vivo en el admin, página **Flujo** (`/flujo`): reutiliza `/api/admin/live`, `users`, `agents` y `requests/:id` con la sesión de admin. No hay endpoint público en vivo.
+- Un evento nuevo del catálogo que deba verse en el grafo se agrega en `packages/agent-flow/src/telemetry.ts` (mapeo y lista blanca de atributos) con su prueba. Contrato de datos, presencia y pendientes del modo en vivo: [README del paquete](packages/agent-flow/README.md). Guía de presentación: [docs/agent-flow.md](docs/agent-flow.md).
+- `pnpm --filter @team-31/agent-flow test|typecheck|build`. Sin variables de entorno nuevas.
 
 ## Admin y observabilidad
 
