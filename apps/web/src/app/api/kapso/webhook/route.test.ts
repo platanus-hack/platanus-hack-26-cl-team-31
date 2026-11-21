@@ -100,8 +100,8 @@ it("crea y consulta como el titular vinculado; desvinculado no puede consultar",
 it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pregunta inventada", async () => {
   linkedUser = "user-a";
   vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
-  const question = "¿Simón apaña a un café en una hora?";
-  const to = "simon.oyaneder@sideband.app";
+  const question = "¿Adolfo tiene disponibilidad para un café hoy?";
+  const to = "adolfo.villalobos@sideband.app";
   broker.contacts.mockResolvedValue({ contacts: [{ address: to }] });
   broker.ask.mockResolvedValue({ requestId, to, tool: "question", decision: "pending", waitingFor: "agent" });
   send.mockImplementation((url, init) => {
@@ -111,7 +111,7 @@ it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pre
       expect(init.body).not.toContain(to);
       return Promise.resolve(Response.json({
         type: "message", role: "assistant", stop_reason: "end_turn",
-        content: [{ type: "text", text: JSON.stringify({ action: "ask", recipient: "Simón" }) }],
+        content: [{ type: "text", text: JSON.stringify({ action: "ask", recipient: "Adolfo", category: "availability" }) }],
       }));
     }
     return Promise.resolve(new Response(null, { status: 200 }));
@@ -120,7 +120,7 @@ it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pre
   expect((await POST(inbound(question))).status).toBe(200);
   await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
   expect(broker.contacts).toHaveBeenCalledWith({ userId: "user-a" });
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question, category: "general" } });
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question, category: "availability" } });
   expect(JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body).toContain("pendiente de respuesta");
 });
 

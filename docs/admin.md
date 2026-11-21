@@ -139,7 +139,7 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `whatsapp.link` | auth | action |
 | `whatsapp.request` | tool | action, decision, tool |
 | `whatsapp.send` | http | — |
-| `whatsapp.interpret` | http | action |
+| `whatsapp.interpret` | http | action, category |
 | `demo.contact.seeded` | lifecycle | action (`rules`, `address` o `wake`), userId y agentId de la identidad ficticia |
 | `error` | error | operation, type, issues, frames |
 | `admin.login` / `admin.logout` / `admin.reveal` / `admin.action` / `admin.token.created` / `admin.token.revoked` / `admin.mcp.call` | admin | action, target, tool |

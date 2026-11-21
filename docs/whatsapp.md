@@ -35,4 +35,6 @@ Para habilitar texto libre, configura `ANTHROPIC_API_KEY` en el **proceso web**.
 
 Con Claude habilitado, prueba también «¿Carla puede jugar el sábado?», usando un nombre que coincida con una sola dirección en tus contactos, y luego «¿Y qué dijo Carla?». Si hay varias coincidencias, indica la dirección completa. «¿Ya me respondió?» sin destinatario busca la última solicitud enviada desde tu cuenta.
 
-El MVP admite mensajes de texto para enviar preguntas abiertas y consultar solicitudes, no un chat con memoria, adjuntos o notificaciones proactivas. Los duplicados de Kapso no vuelven a ejecutar la consulta. El envío de la respuesta es de mejor esfuerzo en segundo plano: si falla o el proceso se reinicia, pide `estado` antes de reenviar una pregunta.
+Con Claude habilitado, Sideband elige la categoría según el tema de la pregunta. Por ejemplo, «¿Adolfo tiene disponibilidad para un café hoy?» usa **Disponibilidad horaria** sin inventar una hora. Si Claude no identifica una sola categoría, Sideband pide reformular en vez de enviar la pregunta. Sin Claude, `Pregunta a …` sigue usando **Preguntas abiertas**.
+
+El MVP admite mensajes de texto para enviar preguntas y consultar solicitudes, no un chat con memoria, adjuntos o notificaciones proactivas. Los duplicados de Kapso no vuelven a ejecutar la consulta. El envío de la respuesta es de mejor esfuerzo en segundo plano: si falla o el proceso se reinicia, pide `estado` antes de reenviar una pregunta.

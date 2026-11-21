@@ -71,7 +71,7 @@ export async function POST(request: Request) {
                   telemetry.emit("whatsapp.request", { requestId, attrs: { action, decision: view.decision, tool: view.tool } });
                 }, interpret && ((text) => telemetry.span("whatsapp.interpret", {}, async (span) => {
                   const intent = await interpret(text);
-                  span.set({ action: intent.action });
+                  span.set({ action: intent.action, category: intent.action === "ask" ? intent.category ?? undefined : undefined });
                   return intent;
                 })));
               } catch (error) {
