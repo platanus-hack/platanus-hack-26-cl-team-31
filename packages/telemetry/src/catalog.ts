@@ -91,6 +91,19 @@ export const catalog = [
   }),
 
   defineEvent({
+    name: "whatsapp.link", kind: "auth", description: "Estado del vínculo de WhatsApp, sin números ni códigos.",
+    attrs: { action: z.enum(["started", "detected", "invalid_code", "confirmed", "unlinked"]) },
+  }),
+  defineEvent({
+    name: "whatsapp.request", kind: "tool", description: "Solicitud de Nexo creada o consultada por WhatsApp.",
+    attrs: { action: z.enum(["ask", "status"]), decision: code(), tool: code() },
+  }),
+  defineEvent({
+    name: "whatsapp.send", kind: "http", description: "Envío de una respuesta por Kapso, sin el contenido ni el destinatario.",
+    attrs: {},
+  }),
+
+  defineEvent({
     name: "mcp.tool.call",
     kind: "tool",
     description: "Llamada a una tool del MCP de Nexo.",

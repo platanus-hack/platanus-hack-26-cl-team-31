@@ -41,6 +41,8 @@ export interface OwnerPort {
   revokeGrant(o: Owner, grantId: string): Promise<void>;
   pending(o: Owner): Promise<OwnerPendingItem[]>;
   activity(o: Owner, limit?: number): Promise<ActivityItem[]>;
+  ask(o: Owner, input: AskInput): Promise<RequesterView>;
+  status(o: Owner, requestId: string): Promise<RequesterView>;
   decide(o: Owner, requestId: string, decision: OwnerDecision): Promise<void>;
   agents(o: Owner): Promise<AgentConnection[]>;
   setWake(o: Owner, agentId: string, target: WakeTarget): Promise<void>;

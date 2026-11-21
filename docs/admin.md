@@ -70,6 +70,7 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 | `ops.v_agent_connections` | `nexo.agent_connections` | user_id, agent_id, label, wake_kind, wake_host, verified_at, last_wake_at, revoked_at, created_at | Solo el host de la URL. Nunca `wake_secret`. |
 | `ops.v_users` | `nexo.users` + `nexo.sharing_rules` | user_id, address, display_name, created_at, rules | |
 | `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions, has_phone_number | Sin tokens de sesión. Del teléfono solo se ve si existe, nunca el número. `user.id` es el mismo `user_id` de `nexo.users`. |
+| `ops.v_whatsapp` | Better Auth y esquema `whatsapp` (migración de web antes de ops) | linked_accounts, active_pairings, inbound_receipts | Solo recuentos. En Eventos, filtra por `whatsapp.link`, `whatsapp.request` o `whatsapp.send` para seguir el flujo. |
 | `ops.v_oauth_clients` | `public."oauthClient"`, `"oauthAccessToken"`, `"oauthRefreshToken"` | client_id, name, user_id, redirect_hosts, created_at, last_token_at, active_tokens | Sin `client_secret` ni tokens. Token activo: sin revocar y sin vencer (access o refresh). |
 | `ops.v_oauth_grants` | mismas tablas OAuth | user_id, client_id, client_name, last_token_at, active_tokens | Clientes que autorizó cada persona (los del registro dinámico no tienen dueño). Alimenta `UserDetail.identity.oauthClients`. |
 | `ops.v_events` | `ops.events` | todas | Ya viene redactada. |
@@ -127,6 +128,9 @@ const fetchWithTrace = tracedFetch(telemetry) // agrega traceparent a llamadas i
 | `wake.attempt` | wake | kind, attempt, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
 | `coordination.tool.call` | tool | tool, outcome |
+| `whatsapp.link` | auth | action |
+| `whatsapp.request` | tool | action, decision, tool |
+| `whatsapp.send` | http | — |
 | `demo.contact.seeded` | lifecycle | action (`rules`, `address` o `wake`), userId y agentId de la identidad ficticia |
 | `error` | error | operation, type, issues, frames |
 | `admin.login` / `admin.logout` / `admin.reveal` / `admin.action` / `admin.token.created` / `admin.token.revoked` / `admin.mcp.call` | admin | action, target, tool |

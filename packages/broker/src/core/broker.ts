@@ -204,6 +204,56 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     }
   }
 
+  async function ask(userId: string, input: unknown, principal?: Principal) {
+    const parsed = AskInput.safeParse(input);
+    if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
+    const { to, tool, args, purpose } = parsed.data;
+    const view = await store.tx(async (tx) => {
+      if (principal) await activeAgent(tx, principal);
+      const from = (await tx.getUser(userId))?.address;
+      if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
+      if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
+      const recipient = await tx.getUserByAddress(to);
+      const now = clock.now();
+      let row = await initialRequest({
+        fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
+      }, now);
+      const grant = recipient && await tx.getGrant(recipient.userId, from, tool);
+      // Stable rule code for telemetry: `rule` and `decisionReason` are display text.
+      const ruleCode = grant ? "grant" : recipient ? "no_grant" : "no_recipient";
+      record(tx, "broker.policy.evaluated", {
+        requestId: row.id, userId, agentId: principal?.agentId,
+        attrs: { tool, decision: grant ? "allow" : "deny", rule: ruleCode },
+      });
+      if (grant) {
+        const rule = `Permiso para ${tool}: ${grant.fields.join(", ")}`;
+        row = { ...row, status: "awaiting_agent", allowedFields: grant.fields, rule };
+      } else {
+        const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
+        row = await finalize({ ...row, decisionReason }, "denied", now);
+      }
+      await recordNew(tx, row, now, ruleCode, principal?.agentId);
+      return toRequesterView(row);
+    });
+    if (view instanceof BrokerError) throw view;
+    return view;
+  }
+
+  async function status(userId: string, id: string, principal?: Principal) {
+    const view = await store.tx(async (tx) => {
+      if (principal) await activeAgent(tx, principal);
+      const row = await tx.getRequest(id, { fromUserId: userId });
+      if (!row) return notFound();
+      if (row.status === "answered" && row.answeredByAgentId && row.toUserId &&
+          !await stillAuthorized(tx, row, row.toUserId)) {
+        return toRequesterView(await finalize(row, "denied", clock.now()));
+      }
+      return toRequesterView(row);
+    });
+    if (view instanceof BrokerError) throw view;
+    return view;
+  }
+
   return {
     agent: {
       async capabilities(p, to) {
@@ -220,38 +270,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       async ask(p, input) {
         requireScope(p, "nexo:ask", "agent.ask");
-        const parsed = AskInput.safeParse(input);
-        if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
-        const { to, tool, args, purpose } = parsed.data;
-        const view = await store.tx(async (tx) => {
-          await activeAgent(tx, p);
-          const from = (await tx.getUser(p.userId))?.address;
-          if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
-          if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
-          const recipient = await tx.getUserByAddress(to);
-          const now = clock.now();
-          let row = await initialRequest({
-            fromUserId: p.userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
-          }, now);
-          const grant = recipient && await tx.getGrant(recipient.userId, from, tool);
-          // Stable rule code for telemetry: `rule` and `decisionReason` are display text.
-          const ruleCode = grant ? "grant" : recipient ? "no_grant" : "no_recipient";
-          record(tx, "broker.policy.evaluated", {
-            requestId: row.id, userId: p.userId, agentId: p.agentId,
-            attrs: { tool, decision: grant ? "allow" : "deny", rule: ruleCode },
-          });
-          if (grant) {
-            const rule = `Permiso para ${tool}: ${grant.fields.join(", ")}`;
-            row = { ...row, status: "awaiting_agent", allowedFields: grant.fields, rule };
-          } else {
-            const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
-            row = await finalize({ ...row, decisionReason }, "denied", now);
-          }
-          await recordNew(tx, row, now, ruleCode, p.agentId);
-          return toRequesterView(row);
-        });
-        if (view instanceof BrokerError) throw view;
-        return view;
+        return ask(p.userId, input, p);
       },
 
       async inbox(p) {
@@ -334,18 +353,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       async status(p, id) {
         requireScope(p, "nexo:status", "agent.status");
-        const view = await store.tx(async (tx) => {
-          await activeAgent(tx, p);
-          const row = await tx.getRequest(id, { fromUserId: p.userId });
-          if (!row) return notFound();
-          if (row.status === "answered" && row.answeredByAgentId && row.toUserId &&
-              !await stillAuthorized(tx, row, row.toUserId)) {
-            return toRequesterView(await finalize(row, "denied", clock.now()));
-          }
-          return toRequesterView(row);
-        });
-        if (view instanceof BrokerError) throw view;
-        return view;
+        return status(p.userId, id, p);
       },
 
       async connectWake(p, target) {
@@ -379,6 +387,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     },
 
     owner: {
+      ask: (o, input) => ask(o.userId, input),
+      status: (o, id) => status(o.userId, id),
+
       async me(o) {
         return store.tx(async (tx) => {
           const user = await tx.getUser(o.userId);

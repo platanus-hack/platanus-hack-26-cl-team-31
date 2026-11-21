@@ -16,6 +16,8 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     pending: async (owner) => (await request(routes.ownerPending, owner)).items,
     activity: async (owner, limit) =>
       (await request(routes.ownerActivity, owner, { query: { limit } })).items,
+    ask: (owner, body) => request(routes.ownerAsk, owner, { body }),
+    status: (owner, id) => request(routes.ownerStatus, owner, { params: { id } }),
     decide: (owner, id, body) => request(routes.ownerDecide, owner, { params: { id }, body }),
     agents: async (owner) => (await request(routes.ownerAgents, owner)).items,
     setWake: (owner, agentId, body) =>

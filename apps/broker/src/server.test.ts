@@ -99,6 +99,38 @@ afterEach(() => {
 });
 
 describe("HTTP interno del broker", () => {
+  it("comparte por MCP las solicitudes del titular, sin saltarse los permisos", async () => {
+    const { broker, waker } = fixture();
+    const app = createHttpServer({ broker, publicKeys });
+    const [alice, bruno, aliceBot, brunoBot] = await Promise.all([
+      owner("alice"), owner("bruno"), agent("alice"), agent("bruno"),
+    ]);
+    await call(app, routes.ownerClaimAddress, { token: alice, body: { localPart: "alice" } });
+    await call(app, routes.ownerClaimAddress, { token: bruno, body: { localPart: "bruno" } });
+    await expectError(await request(app, routes.ownerAsk, { token: aliceBot, body: question }), 401, "unauthorized");
+    const denied = await call(app, routes.ownerAsk, { token: alice, body: { ...question, userId: "bruno" } });
+    expect(denied).toMatchObject({ decision: "deny", final: true, signature: expect.any(String) });
+    expect(denied).not.toHaveProperty("decisionReason");
+    await broker.tick(new Date());
+    expect(waker.wake).not.toHaveBeenCalled();
+
+    await call(app, routes.ownerSetGrant, { token: bruno, body: { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] } });
+    const asked = await call(app, routes.ownerAsk, { token: alice, body: question });
+    expect(asked).toMatchObject({ decision: "pending", waitingFor: "agent" });
+    expect((await call(app, routes.ownerActivity, { token: alice })).items).toContainEqual(expect.objectContaining({
+      requestId: asked.requestId, from: "alice@nexo.app", direction: "sent",
+    }));
+    const ownerPath = `/v1/owner/requests/${asked.requestId}`;
+    await expectError(await request(app, routes.ownerStatus, { token: bruno, path: ownerPath }), 404, "not_found");
+    const { items: [item] } = await call(app, routes.agentInbox, { token: brunoBot });
+    await call(app, routes.agentReply, { token: brunoBot, body: {
+      requestId: item!.requestId, nonce: item!.nonce, outcome: "answered", result: { answer: "Sí" },
+    } });
+    const result = await call(app, routes.ownerStatus, { token: alice, path: ownerPath });
+    expect(result).toMatchObject({ decision: "allow", result: { answer: "Sí" } });
+    expect(await call(app, routes.agentStatus, { token: aliceBot, path: `/v1/agent/requests/${asked.requestId}` })).toEqual(result);
+  });
+
   it("crea, lista y revoca un grant del titular", async () => {
     const app = createHttpServer({ broker: fixture().broker, publicKeys });
     const [bruno, alice] = await Promise.all([owner("bruno"), owner("alice")]);

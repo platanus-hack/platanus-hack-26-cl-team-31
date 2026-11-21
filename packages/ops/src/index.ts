@@ -41,6 +41,7 @@ export async function applyOpsMigrations({ databaseUrl }: { databaseUrl: string 
       "SELECT to_regprocedure('ops.refresh_views()') IS NOT NULL AS exists",
     );
     if (refresh?.exists) await client.query("SELECT ops.refresh_views()");
+    await client.query("SELECT ops.refresh_whatsapp_view()");
   } finally {
     await client.query(`SELECT pg_advisory_unlock(${LOCK})`).catch(() => undefined);
     await client.end();

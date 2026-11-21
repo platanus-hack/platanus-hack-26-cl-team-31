@@ -59,6 +59,10 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return { items: await owner.pending(c.get("web")) };
     case "owner.activity":
       return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query()).limit) };
+    case "owner.ask":
+      return owner.ask(c.get("web"), await parseBody(c, route.body));
+    case "owner.status":
+      return owner.status(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "owner.decide":
       return owner.decide(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
     case "owner.agents":
@@ -106,7 +110,7 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
     app.on([route.method], [route.path], ...(route.iss ? [auth[route.iss]] : []), async (c: HttpContext) => {
       if (route.iss) {
         c.header("Cache-Control", "no-store");
-        const bucket = route.port === "agent.ask" ? "ask" : route.port === "agent.reply" ? "reply" : "other";
+        const bucket = route.port === "agent.ask" || route.port === "owner.ask" ? "ask" : route.port === "agent.reply" ? "reply" : "other";
         const caller = route.iss === "admin" ? `admin:${c.get("admin").adminId}` : c.get(route.iss).userId;
         const blocked = await limiter.consume(caller, bucket);
         if (blocked) {
