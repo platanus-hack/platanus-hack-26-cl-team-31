@@ -97,3 +97,7 @@ Si agregas un servicio (Redis, cola, etc.), una app que expone un puerto, o una 
 4. **Actualiza este AGENTS.md** (tabla de puertos, sección del servicio, comandos). Si no está aquí, el próximo agente no sabrá levantarlo.
 
 Instrucciones específicas de cada app viven en `apps/<app>/AGENTS.md` o `README.md`.
+
+## Render
+
+El [Blueprint de Render](render.yaml) reutiliza web, MCP y broker sin modificar los puertos del stack local. Solo Next escucha en `PORT`; MCP y broker usan sus puertos internos en loopback. Consulta [el despliegue del MCP](docs/render.md) para configurar OAuth y verificar el endpoint.

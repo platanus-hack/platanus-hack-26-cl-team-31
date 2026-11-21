@@ -8,6 +8,8 @@ Track: 🔗 Multiplayer
 
 **Demo local de coordinación.** Corre `pnpm agents:up 3` en una terminal y `pnpm agents:demo 3` en otra. [Instrucciones para dos o más asistentes](apps/mcp/README.md).
 
+**MCP remoto.** [Despliega Nexo en Render](docs/render.md) y conecta el cliente MCP de tu agente. No necesitas Ollama ni una clave de un proveedor de modelos.
+
 ### Dashboard con chat
 
 Con Node 24, pnpm 10 y Docker, ejecuta `pnpm agents:up 3` y deja la API abierta. Luego levanta Ollama con **una** de estas opciones:
