@@ -4,7 +4,10 @@ const nextConfig: NextConfig = {
   async headers() {
     const key = "Content-Security-Policy";
     return [
-      { source: "/:path*", headers: [{ key, value: "frame-ancestors 'none'" }] },
+      { source: "/:path*", headers: [
+        { key, value: "frame-ancestors 'none'" },
+        { key: "Content-Security-Policy-Report-Only", value: "script-src 'self'; object-src 'none'; base-uri 'self'; report-uri /api/csp-report" },
+      ] },
       // Next aplica la última coincidencia: solo la repetición pública admite iframe.
       { source: "/embed/flujo", headers: [{ key, value: "frame-ancestors *" }] },
     ];

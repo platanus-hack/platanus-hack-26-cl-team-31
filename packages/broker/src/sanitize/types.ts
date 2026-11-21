@@ -19,6 +19,7 @@ export type FlagCode =
   | "leak_private_hint"
   | "leak_canary"
   | "leak_email"
+  | "leak_handle"
   | "leak_phone"
   | "leak_url"
   | "leak_sender_echo"
