@@ -41,7 +41,7 @@ async function seedPerson(db, { id, membership, busySlots = [] }, token) {
 const { people, configDir } = fixtureArgs(process.argv.slice(2));
 const { DATABASE_URL, COORDINATION_API_URL } = process.env;
 if (!DATABASE_URL || !COORDINATION_API_URL) throw new Error("Ejecuta el seed con pnpm with-env.");
-const adapter = fileURLToPath(new URL("../../mcp/dist/index.js", import.meta.url));
+const adapter = fileURLToPath(new URL("../dist/mcp.js", import.meta.url));
 await mkdir(configDir, { recursive: true, mode: 0o700 });
 const db = new pg.Client({ connectionString: DATABASE_URL });
 await db.connect();
