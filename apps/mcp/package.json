@@ -1,0 +1,27 @@
+{
+  "name": "@team-31/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "team-31-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "inspect": "pnpm build && npx @modelcontextprotocol/inspector node dist/index.js",
+    "clean": "rm -rf dist .turbo node_modules"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@team-31/typescript-config": "workspace:*",
+    "@types/node": "^24",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}
