@@ -7,6 +7,7 @@ export const allFields: Record<ToolName, string[]> = {
   question: ["answer"],
   interest_check: ["matches"],
   connect: ["accepted"],
+  vault_access: ["accepted"],
 };
 
 export function ctxFor(tool: ToolName, overrides: Partial<SanitizeContext> = {}): SanitizeContext {

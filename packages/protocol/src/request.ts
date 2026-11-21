@@ -11,6 +11,7 @@ export function withToolArgs<Shape extends z.ZodRawShape>(shape: Shape) {
     z.object({ ...shape, tool: z.literal("availability"), args: ToolArgs.availability }),
     z.object({ ...shape, tool: z.literal("question"), args: ToolArgs.question }),
     z.object({ ...shape, tool: z.literal("connect"), args: ToolArgs.connect }),
+    z.object({ ...shape, tool: z.literal("vault_access"), args: ToolArgs.vault_access }),
   ]);
 }
 
@@ -19,6 +20,7 @@ const askVariants = withToolArgs({ to: Address, purpose: z.string().max(200).opt
 export const AskInput = z.discriminatedUnion("tool", [
   askVariants[0], askVariants[1], askVariants[2], askVariants[3],
   askVariants[4].extend({ groupId: z.uuid().nullable().optional() }),
+  askVariants[5],
 ]);
 export type AskInput = z.infer<typeof AskInput>;
 export type AskArguments = z.input<typeof AskInput>;
@@ -57,7 +59,7 @@ function answeredWith<T extends ToolName>(tool: T) {
 }
 const answeredView = z.discriminatedUnion("tool", [
   answeredWith("profile"), answeredWith("availability"), answeredWith("interest_check"),
-  answeredWith("question"), answeredWith("connect"),
+  answeredWith("question"), answeredWith("connect"), answeredWith("vault_access"),
 ]);
 
 export const RequesterView = z.discriminatedUnion("decision", [

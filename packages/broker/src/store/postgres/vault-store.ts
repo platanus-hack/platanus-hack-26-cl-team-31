@@ -23,7 +23,10 @@ async function insertWithParents(db: Tx, insert: (tx: Tx) => Promise<unknown>) {
 }
 
 export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "contactGroups" | "changeContactGroup"> {
-  async function vaultCatalog(owner: string): Promise<VaultCatalog> {
+  // Serialize name resolution (including an absent name) with category creation, rename and deletion.
+  const lockNames = (owner: string) => db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}, 417))`);
+  async function vaultCatalog(owner: string, forNameResolution = false): Promise<VaultCatalog> {
+    if (forNameResolution) await lockNames(owner);
     const rows = await db.select({ id: c.id, name: c.name }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
     const categories: VaultCatalog["categories"] = rows.map(row => ({ ...row, groups: [], contactGroups: [] }));
     if (!categories.length) return { categories };
@@ -44,22 +47,29 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     exists(select 1 from ${gp} join ${m} on ${m.owner} = ${gp.owner} and ${m.groupId} = ${gp.groupId}
       where ${gp.owner} = ${c.owner} and ${gp.id} = ${c.id} and ${m.address} = ${friends.address}))`;
 
+  function memberRows(owner: string, categoryId?: string) {
+    return db.select({ id: c.id, address: friends.address }).from(c)
+      .leftJoin(friends, and(eq(friends.userId, c.owner), canRead))
+      .where(and(eq(c.owner, owner), categoryId ? eq(c.id, categoryId) : undefined)).orderBy(friends.address);
+  }
+
   return {
     async vaultMembers(owner, categoryId) {
-      const rows = await db.select({ address: friends.address }).from(c)
-        .leftJoin(friends, and(eq(friends.userId, c.owner), canRead))
-        .where(and(eq(c.owner, owner), eq(c.id, categoryId))).orderBy(friends.address);
+      const rows = await memberRows(owner, categoryId);
       return rows.length ? rows.flatMap(({ address }) => address ? [Address.parse(address)] : []) : null;
     },
     vaultCatalog,
     async ownerVault(owner) {
       const catalog = await vaultCatalog(owner);
       const categories: OwnerVault["categories"] = catalog.categories.map(({ contactGroups, ...category }) => ({
-        ...category, ...(contactGroups.length ? { contactGroups } : {}), entries: [],
+        ...category, ...(contactGroups.length ? { contactGroups } : {}), entries: [], members: [],
       }));
       if (!categories.length) return { categories };
 
       const byId = new Map(categories.map(category => [category.id, category]));
+      for (const { id, address } of await memberRows(owner)) {
+        if (address) byId.get(id)?.members?.push(Address.parse(address));
+      }
       const entries = await db.select({ id: e.id, label: e.label, value: e.value }).from(e).where(eq(e.owner, owner)).orderBy(e.label);
       for (const { id, label, value } of entries) byId.get(id)?.entries.push({ label, value });
       return { categories };
@@ -91,6 +101,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       return true;
     },
     async changeVault(owner, id, change) {
+      if (change.action === "create" || change.action === "rename" || change.action === "delete") await lockNames(owner);
       const category = and(eq(c.owner, owner), eq(c.id, id));
       if (change.action === "create") {
         await db.insert(c).values({ owner, id, name: change.name });

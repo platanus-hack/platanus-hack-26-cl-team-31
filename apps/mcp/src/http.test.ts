@@ -188,6 +188,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
     ["sideband_network_users", true], ["sideband_contact_groups", true], ["sideband_contact_group_change", undefined],
     ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
+    ["sideband_vault_request_access", undefined],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
   expect(tools[0]?.inputSchema).toMatchObject({

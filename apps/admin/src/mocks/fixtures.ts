@@ -235,6 +235,7 @@ const fieldsByTool: Record<ToolName, string[]> = {
   question: ["answer"],
   interest_check: ["matches"],
   connect: ["accepted"],
+  vault_access: ["accepted"],
 }
 const argsKeysByTool: Record<ToolName, string[]> = {
   profile: [],
@@ -242,6 +243,7 @@ const argsKeysByTool: Record<ToolName, string[]> = {
   question: ["text"],
   interest_check: ["interest"],
   connect: [],
+  vault_access: ["categoryName"],
 }
 
 type StatusPlan = { status: RequestStatus; count: number }
@@ -300,6 +302,8 @@ function samplePayload(tool: ToolName, status: RequestStatus) {
         purpose: "Armar un taller",
         result: answered ? { matches: true } : null,
       }
+    case "vault_access":
+      return { args: { categoryName: "Agenda" }, purpose: null, result: answered ? { accepted: true } : null }
     case "connect":
       return {
         args: {},

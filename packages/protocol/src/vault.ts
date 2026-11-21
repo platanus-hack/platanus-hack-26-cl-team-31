@@ -28,6 +28,7 @@ export type ContactGroupChange = z.infer<typeof ContactGroupChange>;
 export const ContactGroupReceipt = z.object({ groupId });
 export const OwnerVault = z.object({ categories: z.array(categorySharing.partial({ contactGroups: true }).extend({
   entries: z.array(VaultEntry),
+  members: VaultMembers.shape.members.optional(),
 })) });
 export type OwnerVault = z.infer<typeof OwnerVault>;
 export const VaultQuery = z.strictObject({ to: Address, categoryId: categoryId.optional() });

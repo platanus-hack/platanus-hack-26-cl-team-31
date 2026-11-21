@@ -300,20 +300,23 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       originChannel: channel, senderGroupId,
     }, now);
     const invitation = recipient && tool === "connect";
+    const accessRequest = tool === "vault_access" && recipient && (await tx.listContactAddresses(recipient.userId)).includes(from);
     const category = categoryOf(tool, args);
     // The request keeps separate display text.
-    const ruleCode = invitation ? "connection_request"
+    const ruleCode = accessRequest ? "vault_access_request" : invitation ? "connection_request"
       : !recipient ? "no_recipient"
       : category ? await sharingRule(tx, recipient.userId, to, from, category) : "no_grant";
     const allowed = ruleCode === "grant" || ruleCode === "circle";
     record(tx, "broker.policy.evaluated", {
       requestId: row.id, userId, ...(agentId ? { agentId } : {}),
-      attrs: { tool, ...(category ? { category } : {}), decision: invitation || allowed ? "allow" : "deny", rule: ruleCode },
+      attrs: { tool, ...(category ? { category } : {}), decision: accessRequest || invitation || allowed ? "allow" : "deny", rule: ruleCode },
     });
     if (crossedInvitationAccepted) {
       row = await finalize({
         ...row, status: "awaiting_agent", allowedFields: connectionFields, rule: "Invitación mutua",
       }, "answered", now, { accepted: true });
+    } else if (accessRequest) {
+      row = { ...row, status: "awaiting_owner", rule: "Solicitud de lectura de la bóveda" };
     } else if (invitation) {
       row = {
         ...row, status: "awaiting_agent", allowedFields: connectionFields,
@@ -814,7 +817,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (!parsed.success) throw new BrokerError("invalid_input", "La decisión no cumple el formato requerido.");
           const decision = parsed.data;
           let changed: RequestRow;
-          if (decision.kind === "approve_once") {
+          if (decision.kind === "grant_vault_read") {
+            if (row.tool !== "vault_access") throw new BrokerError("invalid_input", "Esta solicitud no pide acceso a la bóveda.");
+            changed = await finalize(transition(row, "answered"), "answered", now, { accepted: true });
+          } else if (row.tool === "vault_access" && decision.kind !== "deny") {
+            throw new BrokerError("invalid_input", "Elige conceder lectura o rechazar.");
+          } else if (decision.kind === "approve_once") {
             changed = approveOnce(row);
           } else if (decision.kind === "deny") {
             changed = await finalize(transition(row, "declined"), "declined", now);
@@ -822,6 +830,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             changed = await finalize(transition(row, "answered"), "answered", now, parseResult(row.tool, decision.result));
           }
           if (!await saveTransition(tx, row, changed)) throw closed();
+          if (decision.kind === "grant_vault_read") {
+            const { categoryName } = ToolArgs.vault_access.parse(row.args);
+            const { categories } = await tx.vaultCatalog(o.userId, true);
+            const matches = categories.filter(c => c.name.toLowerCase() === categoryName.toLowerCase());
+            if (matches.length > 1) throw new BrokerError("conflict", "Hay varias categorías con ese nombre. Distingue sus nombres antes de aceptar.");
+            const categoryId = matches[0]?.id ?? (await changeVault(tx, o.userId, { action: "create", name: categoryName })).categoryId;
+            await changeVault(tx, o.userId, { action: "set_member", categoryId, address: row.fromAddress, allowed: true });
+          }
           await applyConnection(tx, changed);
           record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: decision.kind } });
           await recordTransitionAndScheduleOriginWake(tx, row, changed, "owner");

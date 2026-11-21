@@ -68,6 +68,31 @@ function advance(ms: number): void {
   now = new Date(now.getTime() + ms);
 }
 
+it("solo el titular concede lectura individual; rechazar no crea ni modifica categorías", async () => {
+  const input = { to: availability.to, tool: "vault_access", args: { categoryName: "Plan de salud" } } as const;
+  expect(await broker.agent.ask(alice, input)).toMatchObject({ decision: "deny" });
+  const invite = await broker.agent.ask(alice, { to: availability.to, tool: "connect", args: {} });
+  await broker.owner.answerInvitation(bruno, invite.requestId, { accept: true });
+  const declined = await broker.agent.ask(alice, input);
+  expect(declined).toMatchObject({ waitingFor: "owner" });
+  expect(await broker.agent.inbox(bruno, true)).toEqual([]);
+  await broker.owner.decide(bruno, declined.requestId, { kind: "deny" });
+  expect(await broker.owner.vault(bruno)).toEqual({ categories: [] });
+  const pending = await broker.agent.ask(alice, input);
+  const grant = { kind: "grant_vault_read" } as const;
+  await expect(broker.owner.decide(alice, pending.requestId, grant)).rejects.toMatchObject({ code: "not_found" });
+  await expect(broker.owner.decide(bruno, pending.requestId, { kind: "approve_once" })).rejects.toMatchObject({ code: "invalid_input" });
+  expect(await broker.agent.queryVault(alice, { to: input.to })).toEqual({ categories: [] });
+  await broker.owner.decide(bruno, pending.requestId, grant);
+  const { categories: visible } = await broker.agent.queryVault(alice, { to: input.to });
+  expect(visible).toEqual([{ id: expect.any(String), name: input.args.categoryName }]);
+  const existing = await broker.agent.ask(alice, input);
+  await broker.owner.decide(bruno, existing.requestId, grant);
+  expect((await broker.agent.queryVault(alice, { to: input.to })).categories).toEqual(visible);
+  expect(await broker.agent.queryVault(carla, { to: input.to })).toEqual({ categories: [] });
+  await expect(broker.owner.decide(bruno, pending.requestId, grant)).rejects.toMatchObject({ code: "conflict" });
+});
+
 it("mantiene privado el grupo de la invitación y activa su permiso solo al aceptar", async () => {
   const p: Principal = { ...alice, scopes: [...alice.scopes, "sideband:vault"] };
   const { groupId } = await broker.agent.changeContactGroup(p, { action: "create", name: "Isapres" });

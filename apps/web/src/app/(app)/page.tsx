@@ -45,6 +45,7 @@ export default async function HomePage() {
                     <p className="mt-2 text-xs text-muted">Vence el <Stamp value={item.expiresAt} /></p>
                     {slot && <p className="mt-3 text-sm text-body">{slot.date} · {slot.start} ({slot.timezone}) · {slot.durationMinutes} min</p>}
                     {interest && <p className="mt-3 break-words text-sm text-body">Interés consultado · {interest}</p>}
+                    {item.tool === "vault_access" && <p className="mt-3 break-words text-sm text-body">Pide leer tu categoría <strong>{item.args.categoryName}</strong>. Si aceptas, podrá leer sus datos actuales y futuros. Si no existe, se creará vacía.</p>}
                     <div className="mt-3 rounded-xl stage p-3 text-sm">
                       <p className="font-medium text-muted">Mensaje de un tercero</p>
                       {item.senderMessage.text || item.senderMessage.purpose ? (
