@@ -140,7 +140,9 @@ services:
       BROKER_URL: ${BROKER_URL:-}
       MCP_SERVICE_PRIVATE_KEY: ${MCP_SERVICE_PRIVATE_KEY:-}
       MCP_DEV_AUTH: ${MCP_DEV_AUTH:-0}
-      # El MCP no tiene base propia: escribe su telemetría en el Postgres del stack.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MESSAGE_FLOW_MODEL: ${MESSAGE_FLOW_MODEL:-}
+      MESSAGE_FLOW_DATABASE_URL: ${MESSAGE_FLOW_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/app}
       TELEMETRY_SINK: ${TELEMETRY_SINK:-}
       TELEMETRY_DATABASE_URL: ${TELEMETRY_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/app}
     ports:

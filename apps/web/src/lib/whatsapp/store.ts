@@ -3,9 +3,16 @@ import { Pool, type PoolClient } from "pg";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 
-export function createWhatsAppStore(db: Pool) {
-  async function transaction<T>(run: (client: PoolClient) => Promise<T>) {
-    const client = await db.connect();
+export function createWhatsAppStore(db: Pool, linkLocks: Pool = db) {
+  async function claim(conn: Pool | PoolClient, numberId: string, messageId: string) {
+    await conn.query("DELETE FROM whatsapp.receipt WHERE expires_at <= now()");
+    const { rowCount } = await conn.query(`
+      INSERT INTO whatsapp.receipt (id, expires_at) VALUES ($1, now() + interval '2 days')
+      ON CONFLICT DO NOTHING`, [digest(`${numberId}:${messageId}`)]);
+    return rowCount === 1;
+  }
+  async function transaction<T>(run: (client: PoolClient) => Promise<T>, pool = db) {
+    const client = await pool.connect();
     let broken = false;
     try {
       await client.query("BEGIN");
@@ -73,26 +80,26 @@ export function createWhatsAppStore(db: Pool) {
         await tx.query(`DELETE FROM whatsapp.pending_delivery WHERE user_id = $1`, [userId]);
       });
     },
-    async claim(numberId: string, messageId: string) {
-      await db.query("DELETE FROM whatsapp.receipt WHERE expires_at <= now()");
-      const { rowCount } = await db.query(`
-        INSERT INTO whatsapp.receipt (id, expires_at) VALUES ($1, now() + interval '2 days')
-        ON CONFLICT DO NOTHING`, [digest(`${numberId}:${messageId}`)]);
-      return rowCount === 1;
-    },
+    claim: (numberId: string, messageId: string) => claim(db, numberId, messageId),
     // Order disconnect and sensitive delivery: disconnect waits for work already holding this lock.
-    async whileLinked(phone: string, timestamp: number, run: (userId: string | undefined) => Promise<void>) {
+    async whileLinked(phone: string, timestamp: number,
+      run: (userId: string | undefined, linkId: string | undefined) => Promise<void>,
+      delivery?: { numberId: string; messageId: string },
+    ) {
       // Before the shared lock below: updating the row while holding it would deadlock with another
       // message from the same phone holding the same lock.
       await db.query(`UPDATE public."user" SET whatsapp_last_inbound_at = to_timestamp($2)
         WHERE "phoneNumber" = $1 AND whatsapp_linked_at <= to_timestamp($2)
           AND (whatsapp_last_inbound_at IS NULL OR whatsapp_last_inbound_at < to_timestamp($2))`, [phone, timestamp]);
       await transaction(async (tx) => {
-        const { rows } = await tx.query<{ id: string }>(`
-          SELECT id FROM public."user" WHERE "phoneNumber" = $1
+        // Keep revocation ordered even when a batch takes several broker round trips.
+        await tx.query("SET LOCAL idle_in_transaction_session_timeout = 0");
+        if (delivery && !await claim(tx, delivery.numberId, delivery.messageId)) return;
+        const { rows } = await tx.query<{ id: string; link_id: string | null }>(`
+          SELECT id, whatsapp_link_id AS link_id FROM public."user" WHERE "phoneNumber" = $1
             AND whatsapp_linked_at <= to_timestamp($2) FOR SHARE`, [phone, timestamp]);
-        await run(rows[0]?.id);
-      });
+        await run(rows[0]?.id, rows[0]?.link_id ?? undefined);
+      }, linkLocks);
     },
     // Links confirmed before broker notices existed have no notice id. The owner's next message
     // issues one, and only one concurrent message gets it back.
@@ -111,7 +118,7 @@ export function createWhatsAppStore(db: Pool) {
             coalesce(whatsapp_last_inbound_at > now() - interval '23 hours 55 minutes', false) AS "windowOpen"
           FROM public."user" WHERE whatsapp_link_id = $1 AND whatsapp_linked_at IS NOT NULL FOR SHARE`, [linkId]);
         await run(rows[0]);
-      });
+      }, linkLocks);
     },
     async addPending(userId: string, requestId: string) {
       await db.query(`INSERT INTO whatsapp.pending_delivery (user_id, request_id) VALUES ($1, $2)

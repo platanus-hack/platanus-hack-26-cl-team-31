@@ -4,11 +4,12 @@ import { readWebhookBody } from "@team-31/wake";
 import { ownerClient } from "../../../../lib/broker";
 import { getTelemetry, observeRoute } from "../../../../lib/telemetry";
 import { setChannel } from "../../../../lib/whatsapp/channel";
-import { claudeInterpreter } from "../../../../lib/whatsapp/claude";
-import { runCommand } from "../../../../lib/whatsapp/commands";
+import { whatsappMessage } from "../../../../lib/whatsapp/message";
+import type { RequesterView } from "@team-31/protocol";
+import { isConversationInput, runCommand } from "../../../../lib/whatsapp/commands";
 import { noticeText } from "../../../../lib/whatsapp/delivery";
 import { config, inboundEvent, noticeTarget, parseMessage, sendText, validSignature } from "../../../../lib/whatsapp/kapso";
-import { whatsappStore } from "../../../../lib/whatsapp/runtime";
+import { whatsappStore, whatsappMessageRuntime } from "../../../../lib/whatsapp/runtime";
 
 const route = "/api/kapso/webhook";
 
@@ -39,61 +40,64 @@ export async function POST(request: Request) {
       const message = parseMessage(json, kapso.numberId);
       if (!message) return reply(204);
       const store = whatsappStore();
-      if (!await store.claim(kapso.numberId, message.id)) return reply(200);
+      const linking = /^VINCULAR\b/i.test(message.text);
+      // For routed messages Kapso receives its ACK after the turn and outbound send commit.
+      const routed = !linking && isConversationInput(message.text) && !!process.env.ANTHROPIC_API_KEY?.trim();
 
-      after(async () => {
+      const deliver = async () => {
         const send = (text: string, userId?: string) => telemetry.span("whatsapp.send", { userId }, () =>
           sendText(kapso, message.phone, text));
-        try {
-          if (/^VINCULAR\b/i.test(message.text)) {
-            const code = /^VINCULAR\s+([a-f\d]{32})$/i.exec(message.text)?.[1];
-            const userId = code ? await store.detect(code.toLowerCase(), message.phone) : undefined;
-            telemetry.emit("whatsapp.link", { userId, attrs: { action: userId ? "detected" : "invalid_code" } });
-            await send(userId
-              ? "Número detectado. Vuelve a Sideband para confirmar el vínculo."
-              : "Código usado, incorrecto o vencido. Genera otro desde Sideband.", userId);
-            return;
-          }
-          // Outside whileLinked: updating the row while holding its shared lock would deadlock.
-          const unregistered = await store.assignLinkId(message.phone);
-          const target = unregistered && noticeTarget(unregistered.linkId);
-          if (target) await setChannel(unregistered.userId, target);
-          await store.whileLinked(message.phone, message.timestamp, async (userId) => {
-            if (!userId) return send(`Vincula tu WhatsApp desde Sideband: ${kapso.connectUrl}`);
-            await telemetry.context({ userId }, async () => {
-              // Replies that missed the 24-hour window go out first, now that the owner wrote again.
-              for (const pendingId of await store.pending(userId)) {
-                const view = await ownerClient().status({ userId }, pendingId);
-                const text = noticeText(view);
-                if (text) await send(text, userId);
-                await store.clearPending(userId, pendingId);
-                telemetry.emit("whatsapp.delivery", { requestId: pendingId, attrs: { state: "flushed", decision: view.decision } });
-              }
-              let requestId: string | undefined;
-              let answer: string;
-              try {
-                const interpret = claudeInterpreter();
-                answer = await runCommand(ownerClient(), { userId }, message.text, (action, view) => {
-                  requestId = view.requestId;
-                  telemetry.emit("whatsapp.request", { requestId, attrs: { action, decision: view.decision, tool: view.tool } });
-                }, interpret && ((text) => telemetry.span("whatsapp.interpret", {}, async (span) => {
-                  const intent = await interpret(text);
-                  span.set({ action: intent.action, category: intent.action === "ask" ? intent.category ?? undefined : undefined });
-                  return intent;
-                })));
-              } catch (error) {
-                const errorId = telemetry.error("whatsapp.command", error);
-                answer = error instanceof BrokerError && error.code === "rate_limited"
-                  ? "Llegaste al límite de solicitudes. Intenta en un momento."
-                  : `No pude completar la consulta. Revisa «estado» antes de reenviarla. Referencia: ${errorId}`;
-              }
-              await telemetry.context({ requestId }, () => send(answer, userId));
-            });
-          });
-        } catch (error) {
-          telemetry.error("whatsapp.delivery", error);
+        if (linking) {
+          const code = /^VINCULAR\s+([a-f\d]{32})$/i.exec(message.text)?.[1];
+          const userId = code ? await store.detect(code.toLowerCase(), message.phone) : undefined;
+          telemetry.emit("whatsapp.link", { userId, attrs: { action: userId ? "detected" : "invalid_code" } });
+          await send(userId
+            ? "Número detectado. Vuelve a Sideband para confirmar el vínculo."
+            : "Código usado, incorrecto o vencido. Genera otro desde Sideband.", userId);
+          return;
         }
-      });
+        // Outside whileLinked: updating the row while holding its shared lock would deadlock.
+        const unregistered = await store.assignLinkId(message.phone);
+        const target = unregistered && noticeTarget(unregistered.linkId);
+        if (target) await setChannel(unregistered.userId, target);
+        await store.whileLinked(message.phone, message.timestamp, async (userId, linkId) => {
+          if (!userId) return send(`Vincula tu WhatsApp desde Sideband: ${kapso.connectUrl}`);
+          await telemetry.context({ userId }, async () => {
+            // Replies that missed the 24-hour window go out first, now that the owner wrote again.
+            for (const pendingId of await store.pending(userId)) {
+              const view = await ownerClient().status({ userId }, pendingId);
+              const text = noticeText(view);
+              if (text) await send(text, userId);
+              await store.clearPending(userId, pendingId);
+              telemetry.emit("whatsapp.delivery", { requestId: pendingId, attrs: { state: "flushed", decision: view.decision } });
+            }
+            let requestId: string | undefined;
+            let answer: string;
+            try {
+              const owner = { userId };
+              const broker = ownerClient();
+              const flow = routed ? whatsappMessageRuntime() : undefined;
+              const onResult = (action: "ask" | "status", view: RequesterView) => {
+                requestId = view.requestId;
+                telemetry.emit("whatsapp.request", { requestId, attrs: { action, decision: view.decision, tool: view.tool } });
+              };
+              answer = await runCommand(broker, owner, message.text, onResult,
+                flow && linkId ? whatsappMessage(flow, broker, owner, linkId, message, onResult) : undefined);
+            } catch (error) {
+              if (routed && (!(error instanceof BrokerError) || error.code === "internal" || error.code === "rate_limited")) throw error;
+              const errorId = telemetry.error("whatsapp.command", error);
+              answer = error instanceof BrokerError && error.code === "rate_limited"
+                ? "Llegaste al límite de solicitudes. Intenta en un momento."
+                : `No pude completar la consulta. Revisa «estado» antes de reenviarla. Referencia: ${errorId}`;
+            }
+            await telemetry.context({ requestId }, () => send(answer, userId));
+          });
+        }, routed ? { numberId: kapso.numberId, messageId: message.id } : undefined);
+      };
+      if (routed) await deliver();
+      else if (await store.claim(kapso.numberId, message.id)) {
+        after(() => deliver().catch(error => { telemetry.error("whatsapp.delivery", error); }));
+      }
       return reply(200);
     } catch (error) {
       return reply(503, telemetry.error(route, error));

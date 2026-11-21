@@ -5,11 +5,11 @@ import type { Telemetry } from "@team-31/telemetry";
 
 export type ToolTelemetry = Pick<Telemetry, "span" | "emit" | "error" | "identify">;
 
-export function toolError(code: ErrorCode, message: string): CallToolResult {
+export function toolError(code: ErrorCode, message: string, errorId?: string): CallToolResult {
   return {
     isError: true,
     content: [{ type: "text", text: message }],
-    structuredContent: { ok: false, error: { code, message } },
+    structuredContent: { ok: false, error: { code, message, ...(errorId && { errorId }) } },
   };
 }
 
@@ -51,9 +51,10 @@ export async function runTool(
       if (error instanceof BrokerError && error.code !== "internal") {
         return finish(error.code === "forbidden" ? "denied" : "error", toolError(error.code, error.message));
       }
-      span.setErrorId(telemetry.error(`mcp.tool.call ${call.tool}`, error));
-      if (error instanceof BrokerError) return finish("error", toolError(error.code, error.message), true);
-      return finish("error", toolError("internal", "No se pudo completar la operación."), true);
+      const errorId = telemetry.error(`mcp.tool.call ${call.tool}`, error);
+      span.setErrorId(errorId);
+      if (error instanceof BrokerError) return finish("error", toolError(error.code, error.message, errorId), true);
+      return finish("error", toolError("internal", "No se pudo completar la operación.", errorId), true);
     }
   });
 }

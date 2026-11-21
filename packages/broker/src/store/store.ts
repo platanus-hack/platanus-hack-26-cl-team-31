@@ -1,13 +1,14 @@
 import type {
-  ActivityEvent,
+  ActivityEvent, AgentContacts, Contact,
   OwnerVault, VaultCatalog, VaultChange, VaultResult,
   Address,
   Category,
   ChannelName,
   ContactTag,
   FinalOutcome,
+  RequiredRelation,
   RequestStatus,
-  PublicAgent,
+  PublicAgent, PublicProfile,
   Sharing,
   ToolName,
   ToolResult,
@@ -53,6 +54,13 @@ export type RequestRow = {
   expiresAt: Date;
   closedAt?: Date;
   version: number;
+};
+
+export type AskReceipt = {
+  keyHash: string;
+  inputHash: string;
+  requestId: string;
+  waitingFor: "owner" | "agent" | null;
 };
 
 export type RequestEvent = {
@@ -123,6 +131,7 @@ export interface StoreTx {
   contactGroups(owner: string): Promise<ContactGroups>;
   changeContactGroup(owner: string, id: string, change: ContactGroupChange): Promise<boolean>;
   sharedVault(reader: Address, to: Address, categoryId?: string): Promise<VaultResult>;
+  searchPublicProfiles(query: string): Promise<PublicProfile[]>;
   getUser(userId: string): Promise<UserRow | null>;
   getUserByAddress(address: Address): Promise<UserRow | null>;
   // Creates a user if needed and fails with conflict if either address is occupied.
@@ -137,6 +146,8 @@ export interface StoreTx {
   // False when the grantor has no live grant with that id.
   revokeGrant(id: string, grantorUserId: string, at: Date): Promise<boolean>;
 
+  listContacts(userId: string): Promise<Contact[]>;
+  listJoinedCircles(userId: string): Promise<AgentContacts["circles"]>;
   listFriends(userId: string): Promise<Address[]>;
   // True when this transaction creates a new membership.
   addFriend(userId: string, address: Address): Promise<boolean>;
@@ -164,6 +175,12 @@ export interface StoreTx {
   removeCircleMember(circleId: string, address: Address): Promise<boolean>;
   // True when both addresses have joined the same circle.
   shareCircle(a: Address, b: Address): Promise<boolean>;
+
+  // Preserve a matching relationship until the transaction commits.
+  lockRequiredRelation(userId: string, from: Address, to: Address, relation: RequiredRelation): Promise<boolean>;
+  // Serializes this key even before the first receipt exists.
+  lockAskReceipt(keyHash: string): Promise<AskReceipt | null>;
+  insertAskReceipt(receipt: AskReceipt): Promise<void>;
 
   insertRequest(row: RequestRow): Promise<void>;
   getRequest(

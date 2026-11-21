@@ -76,6 +76,7 @@ export type ActivityItem = z.infer<typeof ActivityItem>;
 
 export const Contact = z.object({
   address: Address,
+  displayName: z.string().optional(),
   tag: ContactTag.optional(),
   gives: Sharing,
   receives: Sharing,
@@ -98,9 +99,16 @@ export const ContactsView = z.object({
 });
 export type ContactsView = z.infer<typeof ContactsView>;
 
+export const PublicProfile = z.object({ address: Address, displayName: z.string(), headline: z.string().optional() });
+export type PublicProfile = z.infer<typeof PublicProfile>;
+export const ProfileSearch = z.object({ query: z.string().trim().min(2).max(100).refine(value => !value.includes("\0")) });
+
 export const AgentContacts = z.object({
-  contacts: z.array(z.object({ address: Address, tag: ContactTag.optional(), theyShare: Sharing, youShare: Sharing })),
-  circles: z.array(z.object({ name: z.string(), members: z.array(Address) })),
+  contacts: z.array(z.object({ address: Address, displayName: z.string().optional(), tag: ContactTag.optional(), theyShare: Sharing, youShare: Sharing })),
+  circles: z.array(z.object({
+    id: z.string().optional(), name: z.string(), members: z.array(Address),
+    memberNames: z.record(Address, z.string()).optional(),
+  })),
 });
 export type AgentContacts = z.infer<typeof AgentContacts>;
 

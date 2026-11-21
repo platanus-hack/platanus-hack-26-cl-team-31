@@ -303,6 +303,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     )
     expect(rows.map((row) => row.relname)).toEqual([
       "v_agent_connections",
+      "v_ask_receipts",
       "v_channels",
       "v_circles",
       "v_contact_tags",
@@ -310,6 +311,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       "v_errors",
       "v_events",
       "v_identities",
+      "v_message_turns",
       "v_oauth_clients",
       "v_oauth_grants",
       "v_quota_windows",
@@ -333,10 +335,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       .filter((row) => row.role === "sideband_admin_ro")
       .map((row) => row.view)
     expect(reveal).toEqual(["v_request_payloads"])
-    expect(readOnly).not.toContain("v_request_payloads")
-    expect(readOnly).not.toContain("events")
-    expect(readOnly).toContain("v_vault_contact_group_summary")
-    expect(readOnly).toHaveLength(18)
+    expect(readOnly).toEqual(rows.map((row) => row.relname).filter((name) => name !== "v_request_payloads"))
     const audit = await db.query<{ table: string }>(
       `SELECT table_name AS table FROM information_schema.role_table_grants
        WHERE table_schema = 'admin' AND grantee = 'sideband_admin_ro' AND privilege_type = 'SELECT'`

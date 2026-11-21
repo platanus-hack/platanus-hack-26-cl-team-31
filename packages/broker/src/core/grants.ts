@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { basicSharing, Category, categoryOf, type Address, type Sharing } from "@team-31/protocol";
 import type { BrokerDeps } from "../ports.js";
-import type { GrantRow, RequestRow, StoreTx } from "../store/store.js";
+import type { RequestRow, StoreTx } from "../store/store.js";
 import type { RecordEvent } from "./events.js";
 
 // A stable rule code for telemetry, independent of the display text.
@@ -16,11 +16,6 @@ export async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: st
   if (row.tool === "connect" || row.fromUserId === null || row.approvedOnce) return true;
   const category = categoryOf(row.tool, row.args);
   return category !== undefined && await sharingRule(tx, toUserId, row.toAddress, row.fromAddress, category) !== "no_grant";
-}
-
-// In catalog order, so the answer does not depend on how the store sorts grants.
-export function categoriesOf(grants: GrantRow[]): Sharing {
-  return Category.options.filter((category) => grants.some((grant) => grant.category === category));
 }
 
 export function createGrantWriter(clock: BrokerDeps["clock"], record: RecordEvent) {

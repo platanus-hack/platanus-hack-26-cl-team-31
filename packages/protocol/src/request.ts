@@ -2,9 +2,17 @@ import { z } from "zod";
 import { Address } from "./address.js";
 import { Category } from "./categories.js";
 import { ToolArgs, ToolName, ToolResult, ToolResultSchemas } from "./tools.js";
-import { Sharing } from "./sharing.js";
+import { ContactTag, Sharing } from "./sharing.js";
+
+export const RequiredRelation = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("contact"), tag: ContactTag.optional() }),
+  z.strictObject({ kind: z.literal("circle"), circleId: z.uuid() }),
+]);
+export type RequiredRelation = z.infer<typeof RequiredRelation>;
 
 const askBase = z.object({
+  idempotencyKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9_.:-]+$/).optional(),
+  requireRelation: RequiredRelation.optional(),
   to: Address,
   purpose: z.string().max(200).optional(),
 });

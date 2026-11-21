@@ -172,6 +172,10 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 - Usa `pnpm dev --filter @team-31/mcp` para iniciar solo MCP. Escucha en loopback por defecto y expone `GET /healthz`.
 - La [guía del MCP](apps/mcp/README.md) cubre stdio de desarrollo y el perfil Compose `sideband`.
 
+## Mensajes en lenguaje natural
+
+MCP y WhatsApp comparten `@team-31/message-flow`. LangGraph ejecuta las transiciones, LangChain usa la API de Claude para interpretar texto y el broker valida cada operación. Con `ANTHROPIC_API_KEY` en cada proceso se habilita la entrada conversacional del canal. `MESSAGE_FLOW_MODEL` elige el modelo y `MESSAGE_FLOW_DATABASE_URL` permite usar credenciales dedicadas para la base de turnos (por defecto `DATABASE_URL`). Migrar broker y ops antes de activar los canales. Ver [flujos, pruebas y despliegue](docs/message-routing.md).
+
 ## WhatsApp Sideband
 
 - Web recibe los avisos firmados de Kapso en `/api/kapso/webhook`, en el puerto web existente. Configura `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WHATSAPP_NUMBER` y `KAPSO_WEBHOOK_SECRET` solo en web; aplica `pnpm sideband:auth:migrate` en un worktree existente.

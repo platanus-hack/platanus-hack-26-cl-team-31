@@ -51,6 +51,48 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("proyecta únicamente grants vivos de cada contacto y miembros aceptados en los círculos propios", async () => {
+      const carla = "carla@sideband.app";
+      const others = "otros@sideband.app";
+      const circleId = randomUUID();
+      await store.tx(async tx => {
+        await tx.createAddress("carla", carla);
+        await tx.addFriend("alice", toAddress);
+        await tx.setContactTag("alice", toAddress, "family");
+        await tx.putGrant(grantTo(toAddress));
+        await tx.putGrant({ ...grantTo(toAddress), category: "availability" });
+        await tx.putGrant({ ...grantTo(fromAddress), grantorUserId: "bruno", category: "interests" });
+        const revoked = await tx.putGrant({ ...grantTo(fromAddress), grantorUserId: "bruno" });
+        await tx.revokeGrant(revoked.id, "bruno", now);
+        await tx.putGrant({ ...grantTo(carla), grantorUserId: "bruno", category: "health" });
+        await tx.putGrant({ ...grantTo(fromAddress), grantorUserId: "carla", category: "health" });
+        expect(await tx.listContacts("alice")).toEqual([{
+          address: toAddress, tag: "family", gives: ["availability", "general"], receives: ["interests"],
+        }]);
+        await tx.insertCircle({ id: circleId, ownerUserId: "alice", name: "Fútbol", createdAt: now });
+        for (const address of [fromAddress, toAddress, carla, others]) await tx.inviteCircleMember(circleId, address);
+        await tx.joinCircle(circleId, fromAddress, now);
+        expect(await tx.listJoinedCircles("alice")).toEqual([{ id: circleId, name: "Fútbol", members: [] }]);
+        await tx.joinCircle(circleId, carla, now);
+        expect(await tx.listJoinedCircles("alice")).toEqual([{ id: circleId, name: "Fútbol", members: [carla] }]);
+        expect(await tx.listJoinedCircles("bruno")).toEqual([]);
+      });
+    });
+
+    it("busca direcciones literalmente y prioriza coincidencias exactas antes del límite público", async () => {
+      await store.tx(async tx => {
+        for (let n = 1; n <= 26; n++) await tx.createAddress("match" + n, `a-ana-${n}@sideband.app`);
+        await tx.createAddress("exact", "ana@sideband.app");
+        await tx.createAddress("literal", "ana_x@sideband.app");
+        const profiles = await tx.searchPublicProfiles("Ana");
+        expect(profiles).toHaveLength(25);
+        expect(profiles[0]).toEqual({ address: "ana@sideband.app", displayName: "ana" });
+        expect(await tx.searchPublicProfiles("ANA_X@SIDEBAND.APP")).toEqual([{ address: "ana_x@sideband.app", displayName: "ana_x" }]);
+        expect(await tx.searchPublicProfiles("_x")).toHaveLength(1);
+        expect(await tx.searchPublicProfiles("%_")).toEqual([]);
+      });
+    });
+
     it("keeps owner catalogs metadata-only and attaches contents to the right owner and category", async () => {
       const first = randomUUID();
       const second = randomUUID();

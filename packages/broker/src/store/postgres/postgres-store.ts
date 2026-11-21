@@ -10,10 +10,11 @@ import { activeAgentConflict, BrokerError } from "../../errors.js";
 import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
+import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit } from "../directory.js";
 import { createWakeCodec } from "./crypto.js";
 import { vaultStore } from "./vault-store.js";
 import {
-  agentConnections, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tagPresets, users, wakeJobs,
+  agentConnections, askReceipts, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tagPresets, users, wakeJobs,
 } from "./schema.js";
 
 export type PostgresStoreOptions = {
@@ -146,6 +147,25 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
   return {
     ...vaultStore(db),
+    async searchPublicProfiles(query) {
+      const term = normalizeSearch(query);
+      const address = Address.safeParse(term);
+      // Address lookups use the unique index. Other queries match literal substrings and
+      // rank name or handle matches first, even when the result limit is reached.
+      const name = sql`lower(regexp_replace(normalize(coalesce(${users.displayName}, ''), NFD), ${"[\u0300-\u036f]"}, '', 'g'))`;
+      const handle = sql`split_part(${users.address}, '@', 1)`;
+      const rows = address.success
+        ? await db.select({ address: users.address, displayName: users.displayName }).from(users).where(eq(users.address, address.data))
+        : await db.select({ address: users.address, displayName: users.displayName }).from(users)
+          .where(and(isNotNull(users.address), or(sql`strpos(${users.address}, ${term}) > 0`, sql`strpos(${name}, ${term}) > 0`)))
+          .orderBy(sql`case when ${handle} = ${term} or ${name} = ${term} then 0
+                            when starts_with(${handle}, ${term}) or starts_with(${name}, ${term}) then 1 else 2 end`,
+            sql`${users.address} collate "C"`).limit(publicProfileLimit);
+      return rows.map(row => {
+        const address = parseStored(Address, row.address);
+        return { address, displayName: row.displayName || address.split("@")[0]! };
+      });
+    },
     async getUser(userId) {
       const [row] = await db.select().from(users).where(eq(users.userId, userId));
       return row ? readUser(row) : null;
@@ -202,6 +222,39 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         .where(and(eq(grants.id, id), eq(grants.grantorUserId, grantorUserId), isNull(grants.revokedAt)))
         .returning({ id: grants.id });
       return revoked.length > 0;
+    },
+
+    async listContacts(userId) {
+      const { rows } = await db.execute<{
+        address: string; name: string | null; tag: string | null; gives: string[]; receives: string[];
+      }>(sql`
+        SELECT f.address, other.display_name AS name, t.tag,
+          ARRAY(SELECT category FROM sideband.grants g
+                WHERE g.grantor_user_id = f.user_id AND g.grantee_address = f.address AND g.revoked_at IS NULL) AS gives,
+          ARRAY(SELECT category FROM sideband.grants g
+                WHERE g.grantor_user_id = other.user_id AND g.grantee_address = me.address AND g.revoked_at IS NULL) AS receives
+        FROM sideband.friends f
+        JOIN sideband.users me ON me.user_id = f.user_id AND me.address IS NOT NULL
+        LEFT JOIN sideband.users other ON other.address = f.address
+        LEFT JOIN sideband.contact_tags t ON (t.user_id, t.address) = (f.user_id, f.address)
+        WHERE f.user_id = ${userId}
+        ORDER BY f.address COLLATE "C"`);
+      return rows.map(directoryContact);
+    },
+
+    async listJoinedCircles(userId) {
+      const { rows } = await db.execute<{
+        id: string; circleName: string; address: string | null; memberName: string | null;
+      }>(sql`
+        SELECT c.id, c.name AS "circleName", m.address, u.display_name AS "memberName"
+        FROM sideband.users me
+        JOIN sideband.circle_members mine ON mine.address = me.address AND mine.joined_at IS NOT NULL
+        JOIN sideband.circles c ON c.id = mine.circle_id
+        LEFT JOIN sideband.circle_members m ON m.circle_id = c.id AND m.joined_at IS NOT NULL AND m.address <> me.address
+        LEFT JOIN sideband.users u ON u.address = m.address
+        WHERE me.user_id = ${userId}
+        ORDER BY c.created_at, c.id, m.address COLLATE "C"`);
+      return directoryCircles(rows);
     },
 
     async listFriends(userId) {
@@ -302,6 +355,32 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         .returning({ address: circleMembers.address });
       return removed.length > 0;
     },
+
+    async lockRequiredRelation(userId, from, to, relation) {
+      if (relation.kind === "circle") {
+        const members = await db.select({ address: circleMembers.address }).from(circleMembers).where(and(
+          eq(circleMembers.circleId, relation.circleId), inArray(circleMembers.address, [from, to]),
+          isNotNull(circleMembers.joinedAt),
+        )).orderBy(asc(circleMembers.address)).for("share");
+        return members.length === 2;
+      }
+      const filter = and(eq(friends.userId, userId), eq(friends.address, to));
+      const [contact] = await db.select({ address: friends.address }).from(friends).where(filter).for("share");
+      if (!contact || !relation.tag) return Boolean(contact);
+      const [tag] = await db.select({ tag: contactTags.tag }).from(contactTags).where(and(
+        eq(contactTags.userId, userId), eq(contactTags.address, to), eq(contactTags.tag, relation.tag),
+      )).for("share");
+      return Boolean(tag);
+    },
+
+    async lockAskReceipt(keyHash) {
+      // Separate statements give the waiter a fresh READ COMMITTED snapshot after acquiring the lock.
+      await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"ask:" + keyHash}, 0))`);
+      const [receipt] = await db.select().from(askReceipts).where(eq(askReceipts.keyHash, keyHash));
+      return receipt ?? null;
+    },
+
+    async insertAskReceipt(receipt) { await db.insert(askReceipts).values(receipt); },
 
     async shareCircle(a, b) {
       const other = alias(circleMembers, "other");

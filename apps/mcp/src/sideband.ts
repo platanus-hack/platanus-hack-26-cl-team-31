@@ -1,6 +1,7 @@
 import { once } from "node:events";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createAgentClient } from "@team-31/broker/client";
+import { createMessageRuntime } from "@team-31/message-flow/runtime";
 import { Scope } from "@team-31/protocol";
 import { tracedFetch } from "@team-31/telemetry";
 import { z } from "zod";
@@ -27,9 +28,10 @@ export async function startSideband(stdio: boolean, devAuth: boolean) {
   const oauth = stdio ? null : readOAuthConfig(process.env);
   // Created after validating the configuration: emits service.started and the heartbeat.
   const telemetry = createMcpTelemetry(stdio);
+  const messages = createMessageRuntime(telemetry);
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
-      void telemetry.shutdown().finally(() => process.exit());
+      void Promise.all([telemetry.shutdown(), messages?.close()]).finally(() => process.exit());
     });
   }
   const agent = createAgentClient({ baseUrl, getServiceToken, fetch: tracedFetch(telemetry) });
@@ -41,12 +43,12 @@ export async function startSideband(stdio: boolean, devAuth: boolean) {
       scopes: [...Scope.options],
     };
     await agent.connect(principal);
-    await createServer(principal, agent, telemetry).connect(new StdioServerTransport());
+    await createServer(principal, agent, telemetry, messages?.handleMessage).connect(new StdioServerTransport());
     console.error("[sideband-mcp] Listo en stdio.");
     return;
   }
 
-  const server = createHttpServer({ ...oauth, devAuth }, agent, telemetry);
+  const server = createHttpServer({ ...oauth, devAuth }, agent, telemetry, messages?.handleMessage);
   const port = readEnv("MCP_PORT", z.string().regex(/^\d+$/).pipe(z.coerce.number<string>().int().min(1).max(65535)));
   server.listen(port, process.env.MCP_HOST || "127.0.0.1");
   try {

@@ -3,13 +3,24 @@ import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
 import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
-import { ActivityItem, AgentConnection, AgentContacts, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent } from "./owner.js";
+import { ActivityItem, AgentConnection, AgentContacts, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent, PublicProfile, ProfileSearch } from "./owner.js";
 import { ContactTag, Sharing } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
 import { ChannelName, WakeTarget } from "./wake.js";
 import { ContactGroupChange, ContactGroupReceipt, ContactGroups, OwnerVault, VaultCatalog, VaultQuery, VaultResult, VaultChange, VaultReceipt } from "./vault.js";
+
+// A pre-routing broker accepts an unwrapped AskInput and would strip unfamiliar optional
+// fields. The envelope makes old replicas reject conditional sends before any side effect.
+const AskBody = z.union([z.strictObject({ checked: AskInput }), AskInput]);
+type AskBody = z.infer<typeof AskBody>;
+export function encodeAsk(input: AskInput): AskBody {
+  return input.requireRelation || input.idempotencyKey ? { checked: input } : input;
+}
+export function decodeAsk(body: AskBody): AskInput {
+  return "checked" in body ? body.checked : body;
+}
 
 const requestParams = z.object({ id: z.string() });
 const agentParams = z.object({ agentId: z.string() });
@@ -34,7 +45,7 @@ export const routes = {
   agentAsk: {
     method: "POST",
     path: "/v1/agent/ask",
-    body: AskInput,
+    body: AskBody,
     response: RequesterViewSchema,
     iss: "mcp",
     port: "agent.ask",
@@ -55,6 +66,10 @@ export const routes = {
     iss: "mcp",
     port: "agent.reply",
   },
+  agentSearchPublicProfiles: { method: "POST", path: "/v1/agent/profiles/search", body: ProfileSearch, response: z.object({ items: z.array(PublicProfile) }), iss: "mcp", port: "agent.searchPublicProfiles" },
+  ownerSearchPublicProfiles: { method: "POST", path: "/v1/owner/profiles/search", body: ProfileSearch, response: z.object({ items: z.array(PublicProfile) }), iss: "web", port: "owner.searchPublicProfiles" },
+  ownerDirectory: { method: "GET", path: "/v1/owner/contact-directory", response: AgentContacts, iss: "web", port: "owner.directory" },
+  ownerQueryVault: { method: "POST", path: "/v1/owner/vault/query", body: VaultQuery, response: VaultResult, iss: "web", port: "owner.queryVault" },
   agentContacts: {
     method: "GET",
     path: "/v1/agent/contacts",
@@ -140,11 +155,11 @@ export const routes = {
     port: "owner.activity",
   },
   ownerAsk: {
-    method: "POST", path: "/v1/owner/requests", body: AskInput,
+    method: "POST", path: "/v1/owner/requests", body: AskBody,
     response: RequesterViewSchema, iss: "web", port: "owner.ask",
   },
   ownerChannelAsk: {
-    method: "POST", path: "/v1/owner/channels/:name/requests", params: channelParams, body: AskInput,
+    method: "POST", path: "/v1/owner/channels/:name/requests", params: channelParams, body: AskBody,
     response: RequesterViewSchema, iss: "web", port: "owner.channelAsk",
   },
   ownerSetChannel: {

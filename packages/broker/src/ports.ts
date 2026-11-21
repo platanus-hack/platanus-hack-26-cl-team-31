@@ -9,7 +9,7 @@ import type {
   GrantInput,
   Address,
   AgentConnection,
-  PublicAgent,
+  PublicAgent, PublicProfile,
   AgentContacts,
   AskInput,
   ChannelName,
@@ -33,6 +33,7 @@ import type { SanitizeContext } from "./sanitize/types.js";
 import type { Store } from "./store/store.js";
 
 export interface AgentPort {
+  searchPublicProfiles(p: Principal, query: string): Promise<PublicProfile[]>;
   connect(p: Principal): Promise<void>;
   contactGroups(p: Principal): Promise<ContactGroups>;
   changeContactGroup(p: Principal, input: ContactGroupChange): Promise<{ groupId: string }>;
@@ -51,6 +52,9 @@ export interface AgentPort {
 }
 
 export interface OwnerPort {
+  searchPublicProfiles(o: Owner, query: string): Promise<PublicProfile[]>;
+  directory(o: Owner): Promise<AgentContacts>;
+  queryVault(o: Owner, query: VaultQuery): Promise<VaultResult>;
   vault(o: Owner): Promise<OwnerVault>;
   changeVault(o: Owner, change: VaultChange): Promise<VaultReceipt>;
   me(o: Owner): Promise<{ userId: string; address?: Address; displayName?: string }>;

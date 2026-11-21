@@ -26,36 +26,6 @@ it("acepta solo una invitación recibida y comparte solo lo que indicó el titul
   expect(broker.answerInvitation).toHaveBeenCalledExactlyOnceWith(owner, requestId, { accept: true, share: ["availability"] });
 });
 
-it("envía la pregunta original con una dirección explícita, aunque no use un comando", async () => {
-  const { broker, report } = fixture();
-  const text = "simon@sideband.app puede ir a tomar café en una hora?";
-  await runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: to, category: "availability" }));
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } }, "whatsapp");
-  expect(broker.contacts).not.toHaveBeenCalled();
-});
-
-it("no consulta al broker si hay dos coincidencias o Claude devuelve una dirección que no se escribió", async () => {
-  const { broker, report } = fixture([to, "simon.otro@sideband.app"]);
-  const text = "¿Simón apaña a un café?";
-  await expect(runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: "Simón", category: "availability" })))
-    .resolves.toContain("No pude identificar");
-  await expect(runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: to, category: "availability" })))
-    .resolves.toContain("No pude identificar");
-  expect(broker.ask).not.toHaveBeenCalled();
-});
-
-it("un seguimiento solo lee solicitudes enviadas y no manda otra pregunta", async () => {
-  const { broker, report } = fixture();
-  broker.activity.mockResolvedValue([
-    { direction: "received", to, requestId: "incoming" },
-    { direction: "sent", to: "ana@sideband.app", requestId: "other-contact" },
-    { direction: "sent", to, requestId },
-  ]);
-  await runCommand(broker, owner, "¿Y qué dijo Simón?", report, async () => ({ action: "status", recipient: "Simón", category: null }));
-  expect(broker.status).toHaveBeenCalledExactlyOnceWith(owner, requestId);
-  expect(broker.ask).not.toHaveBeenCalled();
-});
-
 it("mantiene las preguntas explícitas sin Claude y los comandos de estado no usan el modelo", async () => {
   const { broker, report } = fixture();
   const interpret = vi.fn();
@@ -68,32 +38,15 @@ it("mantiene las preguntas explícitas sin Claude y los comandos de estado no us
   expect(broker.status).toHaveBeenCalledOnce();
 });
 
-it("clasifica preguntas explícitas sin dejar que el modelo cambie la dirección ni reintentar si se deniega", async () => {
-  const { broker, report } = fixture();
-  const text = "si puede juntarse hoy";
-  broker.ask.mockResolvedValue({ ...pending, decision: "deny", final: true });
-  broker.contacts.mockResolvedValue({ contacts: [{ address: to, gives: [], receives: ["availability"] }] });
-  const result = await runCommand(broker, owner, `Pregunta a ${to} ${text}`, report,
-    async () => ({ action: "ask", recipient: "otro@sideband.app", category: "availability" }));
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } }, "whatsapp");
-  expect(result).toBe(`No se pudo obtener una respuesta de ${to}.`);
-});
-
-it("pide reformular una pregunta con varias categorías sin enviar nada", async () => {
-  const { broker, report } = fixture();
-  const result = await runCommand(broker, owner, `¿${to} está libre hoy y le gusta el café?`, report,
-    async () => ({ action: "ask", recipient: to, category: null }));
-  expect(result).toContain("Reformula");
-  expect(broker.ask).not.toHaveBeenCalled();
-});
-
 it("lista los contactos con lo que cada uno comparte, con o sin Claude", async () => {
   const { broker, report } = fixture();
   broker.contacts.mockResolvedValue({ contacts: [
     { address: to, gives: ["general"], receives: ["availability", "interests"] },
     { address: "ana@sideband.app", gives: [], receives: [] },
   ] });
-  const interpret = vi.fn().mockResolvedValue({ action: "contacts", recipient: null, category: null });
+  const interpret = vi.fn().mockResolvedValue({ kind: "contacts", data: { contacts: [
+    { address: to, theyShare: ["availability", "interests"] }, { address: "ana@sideband.app", theyShare: [] },
+  ], circles: [] } });
   const reply = await runCommand(broker, owner, "dime qué amigos tengo", report, interpret);
   expect(reply).toContain(`• ${to}: te comparte Disponibilidad horaria · Intereses`);
   expect(reply).toContain("• ana@sideband.app: te comparte Nada");
@@ -112,10 +65,19 @@ it("explica una denegación con lo que el contacto no comparte, según la agenda
   const { broker, report } = fixture();
   broker.ask.mockResolvedValue({ ...pending, decision: "deny", final: true });
   broker.contacts.mockResolvedValue({ contacts: [{ address: to, gives: [], receives: ["availability", "interests"] }] });
-  const health = async () => ({ action: "ask" as const, recipient: to, category: "health" as const });
-  await expect(runCommand(broker, owner, `${to} tiene sangre O negativo?`, report, health))
-    .resolves.toBe(`${to} no te comparte su información de salud.`);
+  await expect(runCommand(broker, owner, `Pregunta a ${to} qué quiere contar`, report))
+    .resolves.toBe(`${to} no te comparte respuestas a preguntas abiertas.`);
   broker.contacts.mockResolvedValue({ contacts: [] });
-  await expect(runCommand(broker, owner, `${to} tiene sangre O negativo?`, report, health))
+  await expect(runCommand(broker, owner, `Pregunta a ${to} qué quiere contar`, report))
     .resolves.toBe(`${to} no está entre tus contactos.`);
+});
+
+it("muestra las opciones de una aclaración sin entregar el identificador opaco al teléfono", async () => {
+  const { broker, report } = fixture();
+  const flow = vi.fn().mockResolvedValue({ kind: "clarification", question: "¿Cuál Ana?", continuationId: "private",
+    choices: [{ label: "Ana P.", value: "ref1" }, { label: "Ana V.", value: "ref2" }] });
+  const text = "¿Le gusta el café a mi amiga Ana?";
+  await expect(runCommand(broker, owner, text, report, flow)).resolves.toBe("¿Cuál Ana?\n1. Ana P.\n2. Ana V.");
+  expect(flow).toHaveBeenCalledExactlyOnceWith(text);
+  expect(broker.ask).not.toHaveBeenCalled();
 });

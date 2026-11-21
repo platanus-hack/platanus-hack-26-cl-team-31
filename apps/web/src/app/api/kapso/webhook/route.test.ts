@@ -3,13 +3,14 @@ import { after } from "next/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { POST } from "./route";
 
-const { store, broker } = vi.hoisted(() => ({
+const { store, broker, flow, runtime } = vi.hoisted(() => ({
   store: { claim: vi.fn(), detect: vi.fn(), whileLinked: vi.fn(), pending: vi.fn(), clearPending: vi.fn(), assignLinkId: vi.fn() },
-  broker: { ask: vi.fn(), status: vi.fn(), activity: vi.fn(), contacts: vi.fn(), setChannel: vi.fn() },
+  flow: { latestContinuation: vi.fn(), handleMessage: vi.fn() }, runtime: vi.fn(),
+  broker: { directory: vi.fn(), queryVault: vi.fn(), searchPublicProfiles: vi.fn(), ask: vi.fn(), status: vi.fn(), activity: vi.fn(), contacts: vi.fn(), setChannel: vi.fn() },
 }));
 vi.mock("next/server", () => ({ after: vi.fn() }));
 vi.hoisted(() => vi.stubEnv("TELEMETRY_SINK", "off"));
-vi.mock("../../../../lib/whatsapp/runtime", () => ({ whatsappStore: () => store }));
+vi.mock("../../../../lib/whatsapp/runtime", () => ({ whatsappStore: () => store, whatsappMessageRuntime: runtime }));
 vi.mock("../../../../lib/broker", () => ({ ownerClient: () => broker }));
 
 const phone = "56955550123";
@@ -45,7 +46,7 @@ beforeEach(() => {
   linkedUser = undefined;
   store.claim.mockResolvedValue(true);
   store.pending.mockResolvedValue([]);
-  store.whileLinked.mockImplementation((_phone, _timestamp, callback) => callback(linkedUser));
+  store.whileLinked.mockImplementation((_phone, _timestamp, callback) => callback(linkedUser, linkedUser && "link-1"));
 });
 
 afterEach(() => {
@@ -113,41 +114,83 @@ it("envía primero las respuestas que quedaron fuera de la ventana de 24 horas",
   expect(store.clearPending).toHaveBeenCalledWith("user-a", requestId);
 });
 
-it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pregunta inventada", async () => {
+it("reanuda el turno del vínculo verificado, delega al titular y mantiene la entrega por WhatsApp", async () => {
   linkedUser = "user-a";
-  vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
-  const question = "¿Adolfo tiene disponibilidad para un café hoy?";
+  vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+  runtime.mockReturnValue(flow);
+  const question = "¿A mi amiga Adolfo le interesa el café?";
   const to = "adolfo.villalobos@sideband.app";
-  broker.contacts.mockResolvedValue({ contacts: [{ address: to }] });
-  broker.ask.mockResolvedValue({ requestId, to, tool: "question", decision: "pending", waitingFor: "agent" });
-  send.mockImplementation((url, init) => {
-    if (String(url).startsWith("https://api.anthropic.com/")) {
-      const payload = JSON.parse(init.body);
-      expect(payload.messages).toEqual([{ role: "user", content: question }]);
-      expect(init.body).not.toContain(to);
-      return Promise.resolve(Response.json({
-        type: "message", role: "assistant", stop_reason: "end_turn",
-        content: [{ type: "text", text: JSON.stringify({ action: "ask", recipient: "Adolfo", category: "availability" }) }],
-      }));
-    }
-    return Promise.resolve(new Response(null, { status: 200 }));
+  const input = { to, tool: "interest_check", args: { interest: "café" }, idempotencyKey: "turn-1", requireRelation: { kind: "contact", tag: "friend" } };
+  const owner = { userId: linkedUser };
+  flow.latestContinuation.mockResolvedValue("saved-turn");
+  flow.handleMessage.mockImplementation(async (context, message) => {
+    expect(message).toEqual({ text: question, continuationId: "saved-turn" });
+    expect(context).toMatchObject({ userId: linkedUser, binding: "whatsapp:link-1", deliveryId: "wamid.demo" });
+    await context.ops.contacts();
+    expect(await context.ops.recentSent()).toEqual([{ requestId, to }]);
+    return { kind: "requests", items: [await context.ops.ask(input)], unconfirmedCount: 0, continuationId: "next" };
   });
-
+  broker.activity.mockResolvedValue([{ direction: "received" }, { direction: "sent", requestId, to }]);
+  broker.ask.mockResolvedValue({ requestId, to, tool: "interest_check", decision: "pending", waitingFor: "agent" });
   expect((await POST(inbound(question))).status).toBe(200);
-  await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
-  expect(broker.contacts).toHaveBeenCalledWith({ userId: "user-a" });
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question, category: "availability" } }, "whatsapp");
+  expect(after).not.toHaveBeenCalled();
+  expect(flow.latestContinuation).toHaveBeenCalledWith(linkedUser, "whatsapp:link-1", "clarify");
+  expect(broker.directory).toHaveBeenCalledWith(owner);
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, input, "whatsapp");
   expect(JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body).toBe(`Le pregunté a ${to}. Te aviso apenas responda.`);
+});
+
+it("reintenta un lote pendiente solo al recibir continuar", async () => {
+  linkedUser = "user-a";
+  vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+  runtime.mockReturnValue(flow);
+  flow.latestContinuation.mockResolvedValue("partial");
+  flow.handleMessage.mockResolvedValue({ kind: "requests", unconfirmedCount: 2, items: [], continuationId: "partial" });
+  await POST(inbound("continuar"));
+  expect(after).not.toHaveBeenCalled();
+  expect(flow.latestContinuation).toHaveBeenCalledWith(linkedUser, "whatsapp:link-1", "dispatch");
+  expect(flow.handleMessage).toHaveBeenCalledWith(expect.anything(), { text: "continuar", continuationId: "partial" });
+  expect(JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body).toContain("2 envíos");
+});
+
+it("entrega una lista de perfiles grande sin truncar nombres en el límite de WhatsApp", async () => {
+  linkedUser = "user-a";
+  vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+  runtime.mockReturnValue(flow);
+  const profiles = Array.from({ length: 100 }, (_, i) => ({
+    displayName: `Persona ${i}`, address: `persona${i}@sideband.app`, headline: "Taller de cerámica",
+  }));
+  flow.handleMessage.mockResolvedValue({ kind: "profiles", items: profiles });
+  expect((await POST(inbound("Busca perfiles públicos del taller"))).status).toBe(200);
+  const parts = send.mock.calls.map(([, init]) => JSON.parse(init.body).text.body as string);
+  expect(parts.length).toBeGreaterThan(1);
+  expect(parts.every(part => part.length <= 4096)).toBe(true);
+  expect(parts.join("")).toBe(profiles.map(p => `${p.displayName} (${p.address}) — ${p.headline}`).join("\n"));
 });
 
 it("no comparte con Claude los mensajes de números sin vínculo", async () => {
   vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
   expect((await POST(inbound("¿Simón puede juntarse ahora?"))).status).toBe(200);
-  await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
+  expect(after).not.toHaveBeenCalled();
+  expect(runtime).not.toHaveBeenCalled();
   expect(send).toHaveBeenCalledOnce();
   expect(String(send.mock.calls[0]?.[0])).toContain("api.kapso.ai");
   expect(broker.contacts).not.toHaveBeenCalled();
   expect(broker.ask).not.toHaveBeenCalled();
+});
+
+it("deja reintentable un error del proveedor sin acusar recibo antes de terminar", async () => {
+  linkedUser = "user-a";
+  vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+  runtime.mockReturnValue(flow);
+  flow.handleMessage.mockRejectedValueOnce(new Error("temporarily unavailable"));
+  const response = await POST(inbound("¿A mi amiga le gusta la cerámica?"));
+  expect(response.status).toBe(503);
+  expect(response.headers.get("X-Error-Id")).toBeTruthy();
+  expect(store.whileLinked.mock.calls[0]?.[3]).toEqual({ numberId: "12345", messageId: "wamid.demo" });
+  expect(store.claim).not.toHaveBeenCalled();
+  expect(send).not.toHaveBeenCalled();
+  expect(after).not.toHaveBeenCalled();
 });
 
 it("registra el canal de un vínculo anterior a los avisos con el primer mensaje", async () => {

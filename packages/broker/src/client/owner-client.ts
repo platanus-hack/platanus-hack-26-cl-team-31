@@ -1,5 +1,5 @@
 import { Owner } from "@team-31/protocol";
-import { routes } from "@team-31/protocol/http";
+import { encodeAsk, routes } from "@team-31/protocol/http";
 import type { OwnerPort } from "../ports.js";
 import { createHttpClient, type ClientOptions } from "./http.js";
 
@@ -7,6 +7,9 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
   const request = createHttpClient(options, Owner);
 
   return {
+    searchPublicProfiles: async (o, query) => (await request(routes.ownerSearchPublicProfiles, o, { body: { query } })).items,
+    directory: o => request(routes.ownerDirectory, o),
+    queryVault: (o, body) => request(routes.ownerQueryVault, o, { body }),
     vault: (o) => request(routes.ownerVault, o),
     changeVault: (o, body) => request(routes.ownerChangeVault, o, { body }),
     me: (owner) => request(routes.ownerMe, owner),
@@ -19,8 +22,8 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     activity: async (owner, limit) =>
       (await request(routes.ownerActivity, owner, { query: { limit } })).items,
     ask: (owner, body, channel) => channel
-      ? request(routes.ownerChannelAsk, owner, { params: { name: channel }, body })
-      : request(routes.ownerAsk, owner, { body }),
+      ? request(routes.ownerChannelAsk, owner, { params: { name: channel }, body: encodeAsk(body) })
+      : request(routes.ownerAsk, owner, { body: encodeAsk(body) }),
     status: (owner, id) => request(routes.ownerStatus, owner, { params: { id } }),
     decide: (owner, id, body) => request(routes.ownerDecide, owner, { params: { id }, body }),
     agentDirectory: async (owner) => (await request(routes.ownerAgentDirectory, owner)).items,

@@ -45,6 +45,9 @@ async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string
     TO ${role}
   `);
   await client.query(`GRANT SELECT, INSERT, DELETE ON sideband.friends TO ${role}`);
+  // PostgreSQL requires an UPDATE column privilege for the guarded SELECT ... FOR SHARE.
+  await client.query(`GRANT UPDATE (address) ON sideband.friends TO ${role}`);
+  await client.query(`GRANT SELECT, INSERT ON sideband.ask_receipts TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.quota_windows TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.vault_categories, sideband.vault_entries, sideband.vault_permissions TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, DELETE ON

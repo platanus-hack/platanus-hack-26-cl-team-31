@@ -1,6 +1,6 @@
 import { BrokerError, type BrokerCore } from "@team-31/broker";
 import { ErrorBody, httpStatusOf } from "@team-31/protocol";
-import { routes } from "@team-31/protocol/http";
+import { decodeAsk, routes } from "@team-31/protocol/http";
 import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
 import { honoTelemetry } from "@team-31/telemetry/hono";
 import { Hono, type Context } from "hono";
@@ -40,11 +40,17 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "agent.capabilities":
       return agent.capabilities(c.get("mcp"), parseInput(route.query, c.req.query()).to);
     case "agent.ask":
-      return agent.ask(c.get("mcp"), await parseBody(c, route.body));
+      return agent.ask(c.get("mcp"), decodeAsk(await parseBody(c, route.body)));
     case "agent.inbox":
       return { items: await agent.inbox(c.get("mcp"), parseInput(route.query, c.req.query()).includeInvitations === "true") };
     case "agent.reply":
       return agent.reply(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.searchPublicProfiles":
+      return { items: await agent.searchPublicProfiles(c.get("mcp"), (await parseBody(c, route.body)).query) };
+    case "owner.searchPublicProfiles":
+      return { items: await owner.searchPublicProfiles(c.get("web"), (await parseBody(c, route.body)).query) };
+    case "owner.directory": return owner.directory(c.get("web"));
+    case "owner.queryVault": return owner.queryVault(c.get("web"), await parseBody(c, route.body));
     case "agent.contacts":
       return agent.contacts(c.get("mcp"));
     case "agent.status":
@@ -68,9 +74,9 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.activity":
       return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query()).limit) };
     case "owner.ask":
-      return owner.ask(c.get("web"), await parseBody(c, route.body));
+      return owner.ask(c.get("web"), decodeAsk(await parseBody(c, route.body)));
     case "owner.channelAsk":
-      return owner.ask(c.get("web"), await parseBody(c, route.body), parseInput(route.params, c.req.param()).name);
+      return owner.ask(c.get("web"), decodeAsk(await parseBody(c, route.body)), parseInput(route.params, c.req.param()).name);
     case "owner.setChannel":
       return owner.setChannel(c.get("web"), parseInput(route.params, c.req.param()).name, await parseBody(c, route.body));
     case "owner.status":

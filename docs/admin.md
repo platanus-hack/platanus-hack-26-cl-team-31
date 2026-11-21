@@ -63,6 +63,7 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 
 | Vista | Fuente | Columnas | Redacción |
 | --- | --- | --- | --- |
+| `ops.v_ask_receipts` | `sideband.ask_receipts` | request_id, receipt_count | El detalle de solicitud devuelve el conteo en `idempotentReceipts`. `broker.ask.receipt` registra creación, repetición y conflicto. `broker.ask.relation_checked` identifica las comprobaciones de contacto o círculo. |
 | `ops.v_requests` | `sideband.requests` + `sideband.wake_jobs` | id, tool, from_address, to_address, from_user_id, to_user_id, status, outcome, rule, escalated, target_agent_id, answered_by_agent_id, allowed_fields, dropped_fields, decision_reason, internal_reason, args_keys, result_keys, has_purpose, response_signed, created_at, expires_at, closed_at, duration_ms, stuck, wake_attempts, last_wake_ok, origin_channel | Sin `args`, `result`, `purpose`, firmas ni nonce. Solo las llaves de args y result. |
 | `ops.v_request_payloads` | `sideband.requests` | id, args, purpose, result | **Solo** rol `sideband_admin_reveal`. Se usa únicamente en `POST /requests/:id/reveal`. |
 | `ops.v_request_events` | `sideband.request_events` | request_id, id, at, kind, status, code | `detail` se reduce a status y code. |
@@ -123,6 +124,11 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | `auth.scope.denied` | auth | scope, operation |
 | `web.invite.progress` | lifecycle | step (`opened`, `sign_in`, `claim_address`, `address_claimed` o `connect`) |
 | `web.agent.ping` | lifecycle | stage (`started` o `finished`), outcome, verified |
+| `message.interpret`, `message.interpreted` | http, tool | duración de la interpretación y acción elegida |
+| `message.recipients.resolved` | tool | ámbito y cantidad de direcciones |
+| `message.turn.saved`, `message.turn.completed` | lifecycle | fase guardada y tipo de respuesta |
+| `broker.profiles.searched` | tool | cantidad de perfiles públicos |
+| `broker.ask.receipt`, `broker.ask.relation_checked` | lifecycle, policy | creación, repetición o conflicto del recibo y resultado de la condición relacional |
 | `mcp.tool.call` | tool | tool, outcome (`ok` \| `error` \| `denied`) |
 | `broker.policy.evaluated` | policy | tool, decision (`allow` \| `deny` \| `ask_owner`), rule |
 | `broker.request.created` | lifecycle | tool, rule, targetAgentId |
@@ -419,3 +425,5 @@ El admin detecta el modo una vez por pool con `pg_has_role(current_user, rol, 'S
 La ficha del titular incluye `vault`: cantidades de categorías, datos y permisos en `ops.v_vault_summary`. Los eventos `broker.vault.changed` y `broker.vault.queried` registran cambios y consultas sin nombres de categorías, etiquetas de datos ni valores.
 
 La ficha también incluye `vaultContactGroups`: cantidades de grupos privados, membresías y permisos en `ops.v_vault_contact_group_summary`. No expone nombres de grupos, direcciones ni datos de la bóveda. `broker.vault.changed` registra las acciones sobre grupos con el prefijo `contact_group_` y los permisos de categoría con `set_contact_group`.
+
+Los turnos conversacionales se siguen con `message.turn.completed` y `message.recipients.resolved`. `AdminQueries.overview` expone `awaitingClarifications`. La vista `ops.v_message_turns` muestra identidad, fase, desenlace y vigencia de los turnos sin continuación consumida.
