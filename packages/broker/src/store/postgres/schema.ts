@@ -23,6 +23,11 @@ export const users = sideband.table("users", {
   createdAt: time("created_at").notNull().defaultNow(),
 });
 
+export const quotaWindows = sideband.table("quota_windows", {
+  userId: text("user_id").notNull(), bucket: text("bucket").notNull(),
+  count: integer("count").notNull(), resetAt: time("reset_at").notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.bucket] }), index("quota_expiry_idx").on(t.resetAt)]);
+
 export const vaultCategories = sideband.table("vault_categories", {
   owner: text("owner_id").notNull().references(() => users.userId),
   id: text("category_id").notNull(),

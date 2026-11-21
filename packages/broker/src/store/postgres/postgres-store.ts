@@ -23,6 +23,7 @@ export type PostgresStoreOptions = {
 };
 
 export interface PostgresStore extends Store {
+  consumeQuota(userId: string, bucket: string, limit: number): Promise<{ retryAfter: number } | undefined>;
   close(): Promise<void>;
 }
 
@@ -389,7 +390,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       return jobs.map((job) => {
         const recovered = job.state === "running";
         return {
-          ...readWake(job), state: "running", runAt: leaseUntil, recovered,
+          ...readWake(job), state: "running", runAt: leaseUntil, recovered, dueAt: job.runAt,
           attempt: job.attempt + Number(recovered),
         };
       });
@@ -475,7 +476,27 @@ export function createPostgresStore({ databaseUrl, secretsKey }: PostgresStoreOp
   pool.on("error", () => {});
   const db = drizzle(pool);
   let closed: Promise<void> | undefined;
+  let nextQuotaCleanup = 0;
   return {
+    async consumeQuota(userId, bucket, limit) {
+      if (Date.now() >= nextQuotaCleanup) {
+        nextQuotaCleanup = Date.now() + 60_000;
+        await pool.query(`DELETE FROM sideband.quota_windows WHERE (user_id, bucket) IN
+          (SELECT user_id, bucket FROM sideband.quota_windows WHERE reset_at <= now()
+           ORDER BY reset_at LIMIT 1000 FOR UPDATE SKIP LOCKED)`);
+      }
+      // Both replicas serialize on the same key. Use the DB clock for the whole window.
+      const { rows: [row] } = await pool.query<{ retry: number }>(`
+        INSERT INTO sideband.quota_windows AS w (user_id, bucket, count, reset_at)
+        VALUES ($1, $2, 1, statement_timestamp() + interval '1 minute')
+        ON CONFLICT (user_id, bucket) DO UPDATE SET
+          count = CASE WHEN w.reset_at <= statement_timestamp() THEN 1 ELSE least(w.count + 1, $3::int + 1) END,
+          reset_at = CASE WHEN w.reset_at <= statement_timestamp() THEN excluded.reset_at ELSE w.reset_at END
+        RETURNING CASE WHEN count > $3::int THEN greatest(1, ceil(extract(epoch FROM reset_at - statement_timestamp()))::int)
+                       ELSE 0 END AS retry`, [userId, bucket, limit]);
+      if (!row) throw new BrokerError("internal", "No se pudo verificar la cuota.");
+      return row.retry ? { retryAfter: row.retry } : undefined;
+    },
     async tx(fn) {
       try {
         return await db.transaction((tx) => fn(transaction(tx, codec)));

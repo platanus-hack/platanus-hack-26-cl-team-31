@@ -218,7 +218,7 @@ export const catalog = [
     name: "wake.attempt",
     kind: "wake",
     description: "Intento de aviso a un agente.",
-    attrs: { kind: code(), attempt: int(), ok: bool(), httpStatus: int(), code: code() },
+    attrs: { kind: code(), attempt: int(), queueWaitMs: int(), ok: bool(), httpStatus: int(), code: code() },
   }),
   defineEvent({ name: "wake.exhausted", kind: "wake", level: "warn", description: "Se agotaron los intentos de aviso.", attrs: { kind: code(), attempts: int() } }),
   defineEvent({ name: "wake.lease_recovered", kind: "wake", level: "warn", description: "El worker retomó un aviso cuya concesión venció.", attrs: { attempt: int() } }),

@@ -299,10 +299,11 @@ function transaction(state: State): StoreTx {
         .sort((a, b) => a.runAt.getTime() - b.runAt.getTime() || a.id.localeCompare(b.id)).slice(0, limit);
       return jobs.map((job) => {
         const recovered = job.state === "running";
+        const dueAt = job.runAt;
         job.state = "running";
         job.runAt = structuredClone(leaseUntil);
         if (recovered) job.attempt++;
-        return structuredClone({ ...job, state: "running", recovered });
+        return structuredClone({ ...job, state: "running", recovered, dueAt });
       });
     },
     async recordWakeAttempt(claim, now, result, nextRunAt) {

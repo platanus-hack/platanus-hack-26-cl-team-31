@@ -77,7 +77,7 @@ export type WakeJob = {
   lastResult?: WakeResult;
 };
 
-export type WakeClaim = WakeJob & { state: "running"; recovered: boolean };
+export type WakeClaim = WakeJob & { state: "running"; recovered: boolean; dueAt: Date };
 
 export type AgentConnectionRow = {
   userId: string;

@@ -36,6 +36,7 @@ export function fakeQueries(overrides: Partial<AdminQueries> = {}): AdminQueries
       wakes: [],
       errors: { total: 0, top: [] },
       rateLimited: 0,
+      activeQuotaWindows: 0,
     }),
     services: async () => [{ service: "broker", instance: "host:1", version: "1.0.0", lastSeenAt: at, state: "up" }],
     requests: async () => ({ items: [], nextCursor: null }),

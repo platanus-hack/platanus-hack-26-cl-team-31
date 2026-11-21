@@ -17,7 +17,7 @@ import {
 } from "@team-31/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
-import { createOwnerRuntime, localReadTool } from "../client/runtime.js";
+import { createOwnerRuntime, localQuestionSource, localReadTool } from "../client/runtime.js";
 import { deriveNonce, verifyJson } from "./crypto.js";
 
 const principals: Record<"alice" | "bruno" | "carla", Principal> = {
@@ -65,6 +65,20 @@ beforeEach(async () => {
 function advance(ms: number): void {
   now = new Date(now.getTime() + ms);
 }
+
+it("reclama solo avisos que puede iniciar y entrega los restantes en el próximo tick", async () => {
+  await broker.agent.connectWake(bruno, webhook);
+  for (let i = 0; i < 10; i++) await askAvailability();
+  let resolve!: () => void;
+  const promise = new Promise<void>(done => { resolve = done; });
+  wake.mockImplementation(async () => { await promise; return { ok: true, retryable: false, ms: 1 }; });
+  const first = broker.tick(now);
+  try {
+    await vi.waitFor(() => expect(wake).toHaveBeenCalledTimes(8));
+  } finally { resolve(); }
+  expect(await first).toMatchObject({ wakesOk: 8 });
+  expect(await broker.tick(now)).toMatchObject({ wakesOk: 2 });
+});
 
 it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de otro grupo", async () => {
   const p: Principal = { ...bruno, scopes: ["sideband:vault"] };
@@ -331,7 +345,7 @@ describe("cierre y avisos", () => {
     expect(wake.mock.calls).toEqual([1, 2, 3].map((attempt) => [
       webhook,
       { requestId: view.requestId, event: WAKE_EVENT },
-      { attempt, final: attempt === 3, userId: bruno.userId, agentId: bruno.agentId },
+      { attempt, queueWaitMs: 0, final: attempt === 3, userId: bruno.userId, agentId: bruno.agentId },
     ]));
     expect((await broker.owner.agents(bruno))[0]).toMatchObject({ lastWakeAt: now.toISOString(), wakeKind: "standard_webhook" });
     expect(JSON.stringify(await broker.owner.activity(bruno))).not.toContain("diagnóstico sensible");
@@ -481,6 +495,24 @@ describe("ejecución en el runtime del titular", () => {
     await broker.owner.revokeGrant(bruno, health.id);
     expect(await broker.agent.status(alice, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
     expect(await broker.agent.ask(alice, availability)).toMatchObject({ final: false, waitingFor: "agent" });
+  });
+
+  it("una pregunta solo lee respuestas preparadas en la fuente autorizada", async () => {
+    await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "interests" });
+    const interests = vi.fn(async () => new Map([["¿Qué te gusta?", "Cerámica"]]));
+    const health = vi.fn(async () => new Map([["¿Alguna alergia?", "Dato privado"]]));
+    const run = createOwnerRuntime(broker.agent, bruno, [
+      localQuestionSource("health", health), localQuestionSource("interests", interests),
+    ]);
+    for (const [text, outcome] of [["¿Alguna alergia?", "no_data"], ["¿Qué te gusta?", "answered"]] as const) {
+      const request = await broker.agent.ask(alice, { to: availability.to, tool: "question", args: { text, category: "interests" } });
+      await run(notice(request.requestId));
+      const view = await broker.agent.status(alice, request.requestId);
+      expect(view).toMatchObject({ outcome, ...(outcome === "answered" && { result: { answer: "Cerámica" } }) });
+      expect(JSON.stringify(view)).not.toContain("Dato privado");
+    }
+    expect(interests).toHaveBeenCalledWith("alice@sideband.app");
+    expect(health).not.toHaveBeenCalled();
   });
 
   it("ofrece los permisos del titular junto con la invitación a conectar", async () => {

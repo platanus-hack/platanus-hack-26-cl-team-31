@@ -147,6 +147,7 @@ export const Overview = z.object({
     top: z.array(z.lazy(() => ErrorGroup)),
   }),
   rateLimited: z.number(),
+  activeQuotaWindows: z.number(),
 })
 export type Overview = z.infer<typeof Overview>
 

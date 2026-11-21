@@ -1,6 +1,6 @@
 // Runs in the owner's process. The only network dependency is their authenticated broker client.
 import {
-  ToolArgs, ToolResultSchemas, toolExecution, WakeNotice, type InboxItem, type Principal, type RuntimeTool,
+  ToolArgs, ToolResultSchemas, toolExecution, WakeNotice, type Category, type InboxItem, type Principal, type RuntimeTool,
 } from "@team-31/protocol";
 import type { AgentPort } from "../ports.js";
 import { filterResult } from "../policy/index.js";
@@ -13,11 +13,11 @@ type ReadContext = Pick<InboxItem, "from" | "allowedFields" | "ownerAuthorizatio
   purpose?: string;
 };
 
-export function localReadTool<K extends RuntimeTool>(
+export function localReadTool<K extends Exclude<RuntimeTool, "question">>(
   name: K,
   read: (args: Args<K>, context: ReadContext) => Promise<Result<K> | null>,
 ) {
-  if (toolExecution[name] !== "owner_runtime") throw new Error("La herramienta debe estar en el contrato del runtime.");
+  if (String(name) === "question" || toolExecution[name] !== "owner_runtime") throw new Error("La herramienta requiere un conector autorizado.");
   return {
     name,
     async execute(input: unknown, context: ReadContext) {
@@ -28,10 +28,26 @@ export function localReadTool<K extends RuntimeTool>(
   };
 }
 
+// A category reader is selected before the question text is used. Its only input is
+// the authenticated requester, never a sender-supplied path, selector or free-text query.
+// Only exact answers prepared by the owner can leave this binding.
+export function localQuestionSource(category: Category, read: (from: InboxItem["from"]) => Promise<ReadonlyMap<string, string>>) {
+  return {
+    name: "question" as const,
+    category,
+    async execute(input: unknown, context: ReadContext) {
+      const args = ToolArgs.question.parse(input);
+      if (category !== context.ownerAuthorization.category || args.category !== category) return null;
+      const answer = (await read(context.from)).get(args.text);
+      return answer === undefined ? null : ToolResultSchemas.question.parse({ answer });
+    },
+  };
+}
+
 export function createOwnerRuntime(
   agent: Pick<AgentPort, "inbox" | "reply">,
   principal: Principal,
-  approved: ReturnType<typeof localReadTool>[],
+  approved: (ReturnType<typeof localReadTool> | ReturnType<typeof localQuestionSource>)[],
 ) {
   const active = new Set<string>();
   return async function onWake(notice: unknown) {
@@ -41,7 +57,8 @@ export function createOwnerRuntime(
     try {
       const item = (await agent.inbox(principal)).find(entry => entry.requestId === requestId);
       if (!item || Date.parse(item.expiresAt) <= Date.now()) return;
-      const binding = approved.find(tool => tool.name === item.tool);
+      const binding = approved.find(tool => tool.name === item.tool &&
+        (tool.name !== "question" || tool.category === item.ownerAuthorization.category));
       const reply = { requestId, nonce: item.nonce };
       // A grant must cover the required result before the connector may read private data.
       const hasRequiredFields = Object.entries(ToolResultSchemas[item.tool].shape)

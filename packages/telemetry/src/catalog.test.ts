@@ -47,7 +47,7 @@ describe("catálogo", () => {
 
   it("se serializa para admin://schema", () => {
     const entry = describeCatalog().find((event) => event.name === "wake.attempt");
-    expect(entry).toMatchObject({ kind: "wake", attrs: ["kind", "attempt", "ok", "httpStatus", "code"] });
+    expect(entry).toMatchObject({ kind: "wake", attrs: ["kind", "attempt", "queueWaitMs", "ok", "httpStatus", "code"] });
     expect(JSON.parse(JSON.stringify(describeCatalog()))).toHaveLength(catalog.length);
   });
 });
