@@ -502,6 +502,14 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
       expect(sent[0]).toEqual({ event: "reset", id: "100", data: { cursor: "100" } })
     })
 
+    it("un admin que se está apagando rechaza streams nuevos con Connection: close", async () => {
+      const cookie = await login("viewer@test.cl")
+      const response = await buildApp({ live: { shutdown: AbortSignal.abort() } }).request("/api/admin/flow/live", { headers: { cookie } })
+      expect(response.status).toBe(502)
+      expect(response.headers.get("connection")).toBe("close")
+      expect((await response.json()).error.code).toBe("upstream")
+    })
+
     it("limita las conexiones por admin y registra apertura y cierre", async () => {
       const table = eventTable([event("1", "broker.request.created")])
       const cookie = await login("viewer@test.cl")

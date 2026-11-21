@@ -76,6 +76,12 @@ export async function liveStream(
     shutdown,
   }: LiveOptions = {},
 ) {
+  // Un proceso que se está apagando (deploy, reinicio) sigue atendiendo las conexiones keep-alive
+  // que ya tenía: rechazar con Connection: close obliga al navegador a reconectar en uno nuevo.
+  if (shutdown?.aborted) {
+    c.header("Connection", "close")
+    throw new AdminHttpError("upstream", "El admin se está reiniciando. Vuelve a conectar.")
+  }
   const open = slots.get(spec.principalId) ?? 0
   if (open >= maxStreams) {
     throw new AdminHttpError("rate_limited", `Ya tienes ${maxStreams} conexiones en vivo abiertas.`, { retryAfter: 5 })

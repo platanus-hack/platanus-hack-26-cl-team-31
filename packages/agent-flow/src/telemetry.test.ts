@@ -175,8 +175,10 @@ describe("presence mapping", () => {
         { agentId: "old", userId: "u1", label: "Viejo", kind: "mcp_events", revokedAt: "2026-01-01T00:00:00Z" },
       ],
     });
+    dir.add({ users: [{ userId: "u5", address: "vera@sideband.app" }], agents: [{ agentId: "v1", userId: "u5", revokedAt: "2026-11-21T00:00:00Z" }] });
     const mapper = createTelemetryMapper(dir);
     const snapshot = mapper.snapshot(5);
+    // Vera solo tenía un agente revocado: ya salió, no vuelve como provisional.
     expect(snapshot.map((e) => `${e.step}:${actor(e.from)}`)).toEqual(["joined:agent:a1", "joined:agent@luz@sideband.app"]);
     expect(snapshot.every((e) => e.meta.snapshot)).toBe(true);
     // a1 ya estaba en la foto: su llamada no repite la entrada.
@@ -263,6 +265,11 @@ describe("live edge cases", () => {
     expect(isFlowRow(row("coordination.tool.call", { attrs: { tool: "ask_contact" } }))).toBe(true);
     expect(isFlowRow(row("coordination.tool.call", { attrs: { tool: "meeting_propose" } }))).toBe(false);
     expect(isFlowRow(row("http.request"))).toBe(false);
+    // El acuse del receptor de avisos de la demo no es un segundo aviso.
+    const ack = row("wake.attempt", { service: "coordination", agentId: "b1", attrs: { ok: true, code: "accepted", httpStatus: 202 } });
+    expect(isFlowRow(ack)).toBe(false);
+    expect(createTelemetryMapper(directory()).map(ack)).toEqual([]);
+    expect(isFlowRow(row("wake.attempt", { attrs: { ok: true } }))).toBe(true);
     // Cada evento que se mapea declara sus atributos.
     for (const name of flowEventNames) expect(flowAttrKeys[name], name).toBeDefined();
   });

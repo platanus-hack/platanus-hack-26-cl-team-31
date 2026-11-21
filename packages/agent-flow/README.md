@@ -125,7 +125,7 @@ Señales:
 | primer paso de un agente que no estaba (p. ej. `mcp.tool.call`) | `joined` y luego el paso |
 | `mapper.reconcile(at)` tras refrescar el directorio | `left` por cada presente que ahora figura revocado y `joined` por cada agente nuevo (cubre señales perdidas mientras el stream estuvo caído) |
 
-**Regla de salida.** Alguien está en la red mientras tiene una dirección (titular) o una conexión no revocada (agente). Sale solo con una revocación, un `unlinked` o un refresco que lo trae revocado. La inactividad no es una salida: un agente sin pasos se ve como pasivo. `mapper.takeUnknown()` devuelve los usuarios y agentes que aparecieron sin estar en el directorio para que el host lo refresque.
+**Regla de salida.** Un agente está en la red mientras su conexión no esté revocada (un titular con dirección que nunca conectó un agente aparece en la foto como agente provisional; uno cuyos agentes se revocaron, no). Sale solo con una revocación, un `unlinked` o un refresco que lo trae revocado. La inactividad no es una salida: un agente sin pasos se ve como pasivo. `mapper.takeUnknown()` devuelve los usuarios y agentes que aparecieron sin estar en el directorio para que el host lo refresque.
 
 Qué se muestra: dirección Sideband y nombre del titular, etiqueta y canal del agente (lo mismo que ya ven los admins en Personas y Agentes). Nunca tokens, ids de cliente OAuth ni números de teléfono.
 

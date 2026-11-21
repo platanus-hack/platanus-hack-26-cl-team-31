@@ -134,9 +134,17 @@ export const flowAttrKeys: Readonly<Record<string, readonly string[]>> = {
 const askTools = new Set(["sideband_ask", "ask_contact"]);
 const checkTools = new Set(["sideband_check", "await_contact"]);
 
-/** true si la fila produce algún paso. Las tools de coordinación que no pasan por el broker no cuentan. */
-export function isFlowRow(row: Pick<TelemetryRow, "name" | "attrs">): boolean {
+// Servicios que reciben avisos (receptores de prueba de web y de la demo): su wake.attempt es el
+// acuse del receptor, no el intento del broker, y dibujarlo duplicaría el aviso.
+const receiverServices = new Set(["coordination", "web"]);
+
+/**
+ * true si la fila produce algún paso. Las tools de coordinación que no pasan por el broker y el
+ * acuse de un receptor de avisos no cuentan.
+ */
+export function isFlowRow(row: Pick<TelemetryRow, "name" | "attrs" | "service">): boolean {
   if (!flowEventNames.has(row.name)) return false;
+  if (row.name === "wake.attempt" && receiverServices.has(row.service)) return false;
   if (row.name !== "coordination.tool.call") return true;
   const tool = row.attrs.tool;
   return typeof tool === "string" && (askTools.has(tool) || checkTools.has(tool));
@@ -296,7 +304,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
 
   return {
     map(row) {
-      if (mappedRows.has(row.id)) return [];
+      if (mappedRows.has(row.id) || !isFlowRow(row)) return [];
       mappedRows.add(row.id);
       if (mappedRows.size > SEEN_ROWS) mappedRows.delete(mappedRows.values().next().value as string);
       const { attrs } = row;
@@ -481,7 +489,8 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
         const own = agents.filter((a) => a.userId === user.userId && !a.revokedAt);
         const owner = ownerOfUser(user.userId);
         if (own.length === 0) {
-          if (user.address) add(placeholder(owner));
+          // Un titular cuyos agentes se revocaron ya salió de la red: no vuelve como provisional.
+          if (user.address && !agents.some((a) => a.userId === user.userId)) add(placeholder(owner));
           continue;
         }
         for (const agent of own) add(agentActor(agent.agentId, owner));
