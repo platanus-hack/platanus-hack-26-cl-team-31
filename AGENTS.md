@@ -9,7 +9,7 @@ Varios devs/agentes trabajan en paralelo, cada uno en su propio worktree. Cada w
 ```bash
 git worktree add ../team-31-<nombre> -b <rama>   # fuera del repo, no anidado
 cd ../team-31-<nombre>
-pnpm bootstrap      # install + genera .env (slot/puertos) + levanta Postgres
+pnpm bootstrap      # instala, asigna un slot, prepara llaves y esquema OAuth, y levanta Postgres
 pnpm dev            # todas las apps; una sola: pnpm dev --filter @team-31/web
 ```
 
@@ -41,20 +41,20 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 
 ## Identidad Nexo
 
-- OAuth en web usa `DATABASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y `MCP_RESOURCE_URL`. El origen local `BETTER_AUTH_URL` se genera a partir de `WEB_PORT`. Prepara el esquema OAuth con `pnpm with-env pnpm --filter @team-31/web auth:migrate` después de compilar los paquetes compartidos. Sus pruebas usan `TEST_DATABASE_URL` y credenciales ficticias de Google.
+- OAuth en web usa `DATABASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` y `MCP_RESOURCE_URL`. El origen local `BETTER_AUTH_URL` se genera a partir de `WEB_PORT`. `pnpm bootstrap` prepara el esquema OAuth y genera las llaves faltantes en `.env.local`. Google se habilita al configurar `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`. Sus pruebas usan `TEST_DATABASE_URL`. Consulta [Stack local de Nexo](docs/local-stack.md).
 - El MCP remoto verifica los access tokens con `AUTH_ISSUER`, `AUTH_JWKS_URL` y `MCP_RESOURCE_URL`. `MCP_DEV_AUTH=1` habilita tokens de desarrollo fuera de producción.
 - MCP y web firman JWT para el broker con `MCP_SERVICE_PRIVATE_KEY` y `WEB_SERVICE_PRIVATE_KEY` respectivamente. Web usa `BROKER_URL` para consultar la dirección Nexo. El broker verifica con `SERVICE_JWT_PUBLIC_KEYS` (JSON con las claves JWK públicas `mcp` y `web`).
 
 ## MCP Nexo
 
 - `pnpm env:init` genera `MCP_RESOURCE_URL` con el puerto del worktree, y `AUTH_ISSUER` y `AUTH_JWKS_URL` con el puerto web. Ajusta los valores en `.env.local` si cambias el origen público.
-- Con `BROKER_URL` y `MCP_SERVICE_PRIVATE_KEY` configuradas, usa `pnpm build --filter @team-31/mcp^...` y `pnpm dev --filter @team-31/mcp`. El MCP escucha en loopback por defecto y expone `GET /healthz`.
+- Usa `pnpm dev --filter @team-31/mcp` para iniciar solo MCP. Escucha en loopback por defecto y expone `GET /healthz`.
 - La [guía del MCP](apps/mcp/README.md) cubre stdio de desarrollo y el perfil Compose `nexo`.
 
 ## Broker Nexo
 
-- Después de `pnpm bootstrap`, configura los secretos en `.env.local` y ejecuta `pnpm dev --filter @team-31/broker-service`. `pnpm env:init` actualiza worktrees existentes y genera `BROKER_PORT` y `BROKER_URL`.
-- Configura `BROKER_SIGNING_KEY` (JWK privada Ed25519), `NONCE_KEY` (32 bytes en base64), `SERVICE_JWT_PUBLIC_KEYS` (JWK públicas `mcp` y `web`) y `WAKE_SECRETS_KEY` (32 bytes en base64, requerida con `DATABASE_URL`). Conserva las claves entre reinicios. Configura `REQUEST_TTL_SECONDS` o `WAKE_RETRY_DELAYS_MS` para probar plazos y reintentos más cortos.
+- Después de `pnpm bootstrap`, inicia solo el broker con `pnpm dev --filter @team-31/broker-service`. `pnpm env:init` actualiza worktrees existentes y genera `BROKER_PORT` y `BROKER_URL`.
+- Conserva en `.env.local` las llaves que generó `pnpm bootstrap`. Configura `REQUEST_TTL_SECONDS` o `WAKE_RETRY_DELAYS_MS` para probar plazos y reintentos más cortos.
 - `BROKER_HOST` usa `127.0.0.1` por defecto. Para correrlo en Docker, compila con `pnpm build --filter @team-31/broker-service` y ejecuta `docker compose --env-file .env --env-file .env.local --profile nexo up -d broker`. Compose solo publica el puerto en loopback.
 - `WAKE_ALLOW_INSECURE=1` permite avisos HTTP locales durante el desarrollo. Consulta [la guía del broker](apps/broker/README.md) para los detalles de Postgres, los avisos y el stream de actividad.
 
@@ -75,6 +75,8 @@ Con Claude Code autenticado y un arreglo JSON de intereses de Bob en `.agents-lo
 ## Comandos
 
 `pnpm dev` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm typecheck`. Antes de dar algo por listo: `pnpm lint && pnpm typecheck` (y `pnpm test` si aplica).
+
+Las validaciones del plan se ejecutan en el worktree local. El repo prescinde de workflows de GitHub Actions.
 
 ## ⚠️ Al agregar infra o configuración nueva
 

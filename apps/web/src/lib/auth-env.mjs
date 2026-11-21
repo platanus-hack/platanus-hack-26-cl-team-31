@@ -6,15 +6,17 @@ function required(name) {
   return value;
 }
 
+export function getGoogleOptions() {
+  if (!process.env.GOOGLE_CLIENT_ID?.trim() && !process.env.GOOGLE_CLIENT_SECRET?.trim()) return undefined;
+  return { clientId: required("GOOGLE_CLIENT_ID"), clientSecret: required("GOOGLE_CLIENT_SECRET") };
+}
+
 export function getAuthOptions() {
   return {
     databaseUrl: required("DATABASE_URL"),
     baseUrl: required("BETTER_AUTH_URL"),
     secret: required("BETTER_AUTH_SECRET"),
-    google: {
-      clientId: required("GOOGLE_CLIENT_ID"),
-      clientSecret: required("GOOGLE_CLIENT_SECRET"),
-    },
+    google: getGoogleOptions(),
     mcpResource: required("MCP_RESOURCE_URL"),
   };
 }
