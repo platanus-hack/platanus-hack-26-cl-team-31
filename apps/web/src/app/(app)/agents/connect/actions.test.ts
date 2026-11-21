@@ -20,8 +20,8 @@ const at = "2026-11-21T12:00:00Z";
 function ping(status: RequestStatus, events: ActivityEvent[]): ActivityItem {
   return {
     requestId: "ping-1",
-    from: "system@nexo.app",
-    to: "ana@nexo.app",
+    from: "system@sideband.app",
+    to: "ana@sideband.app",
     tool: "question",
     direction: "received",
     createdAt: at,
@@ -59,7 +59,7 @@ describe("readPingStatus", () => {
   it("does not treat a regular answered request as a connection test", async () => {
     activity.mockResolvedValue([{
       ...ping("answered", [{ kind: "response", status: "answered", at }]),
-      from: "contacto@nexo.app",
+      from: "contacto@sideband.app",
     }]);
 
     expect(await readPingStatus("ping-1")).toBeUndefined();

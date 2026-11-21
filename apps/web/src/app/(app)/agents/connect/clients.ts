@@ -3,17 +3,17 @@ import { WAKE_EVENT } from "@team-31/protocol";
 export const clients = {
   dot: {
     name: "Dot",
-    description: "Conecta Nexo como plugin de ChatGPT y activa los eventos MCP.",
+    description: "Conecta Sideband como plugin de ChatGPT y activa los eventos MCP.",
     wakeKind: "mcp_events",
     trustLocation: "las instrucciones personalizadas del Dot",
-    wakeInstruction: `Suscríbete al evento ${WAKE_EVENT} de Nexo. Cuando llegue un aviso, consulta nexo_inbox y responde según el bloque de confianza.`,
+    wakeInstruction: `Suscríbete al evento ${WAKE_EVENT} de Sideband. Cuando llegue un aviso, consulta sideband_inbox y responde según el bloque de confianza.`,
   },
   grokbot: {
     name: "Grok Bot",
-    description: "Conecta Nexo por HTTPS y recibe avisos en una rutina.",
+    description: "Conecta Sideband por HTTPS y recibe avisos en una rutina.",
     wakeKind: "grokbot_routine",
     trustLocation: "las instrucciones de la rutina de Grok Bot",
-    wakeInstruction: "Crea una rutina de webhook para Nexo. Cuando se dispare, consulta nexo_inbox y responde según el bloque de confianza.",
+    wakeInstruction: "Crea una rutina de webhook para Sideband. Cuando se dispare, consulta sideband_inbox y responde según el bloque de confianza.",
   },
   openclaw: {
     name: "OpenClaw",

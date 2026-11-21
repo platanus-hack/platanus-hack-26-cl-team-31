@@ -12,7 +12,7 @@ export type PostgresMigrationOptions = {
 };
 
 const migrationsFolder = fileURLToPath(new URL("../../../drizzle/", import.meta.url));
-const lockKey = "hashtext('nexo:broker:migrations')";
+const lockKey = "hashtext('sideband:broker:migrations')";
 
 async function provisionRuntimeLogin(client: pg.PoolClient, roleName: string, password: string) {
   const role = pg.escapeIdentifier(roleName);
@@ -37,17 +37,17 @@ async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string
   }
   const role = pg.escapeIdentifier(runtimeRole);
   await client.query("BEGIN");
-  await client.query(`GRANT USAGE ON SCHEMA nexo TO ${role}`);
+  await client.query(`GRANT USAGE ON SCHEMA sideband TO ${role}`);
   await client.query(`
     GRANT SELECT, INSERT, UPDATE ON
-      nexo.users, nexo.sharing_rules, nexo.grants, nexo.requests, nexo.wake_jobs, nexo.agent_connections
+      sideband.users, sideband.sharing_rules, sideband.grants, sideband.requests, sideband.wake_jobs, sideband.agent_connections
     TO ${role}
   `);
-  await client.query(`GRANT SELECT, INSERT, DELETE ON nexo.friends TO ${role}`);
-  await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON nexo.circles, nexo.circle_members TO ${role}`);
-  await client.query(`REVOKE UPDATE, DELETE, TRUNCATE ON nexo.request_events FROM ${role}`);
-  await client.query(`GRANT SELECT, INSERT ON nexo.request_events TO ${role}`);
-  await client.query(`GRANT USAGE ON SEQUENCE nexo.request_events_id_seq TO ${role}`);
+  await client.query(`GRANT SELECT, INSERT, DELETE ON sideband.friends TO ${role}`);
+  await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.circles, sideband.circle_members TO ${role}`);
+  await client.query(`REVOKE UPDATE, DELETE, TRUNCATE ON sideband.request_events FROM ${role}`);
+  await client.query(`GRANT SELECT, INSERT ON sideband.request_events TO ${role}`);
+  await client.query(`GRANT USAGE ON SEQUENCE sideband.request_events_id_seq TO ${role}`);
   await client.query("COMMIT");
 }
 
@@ -63,7 +63,7 @@ export async function applyPostgresMigrations({ databaseUrl, runtimeRole, runtim
       // The lock covers the schema and migration journal check on all startup processes.
       await client.query(`SELECT pg_advisory_lock(${lockKey})`);
       if (runtimeRole && runtimePassword !== undefined) await provisionRuntimeLogin(client, runtimeRole, runtimePassword);
-      await migrate(drizzle(client), { migrationsFolder, migrationsSchema: "nexo" });
+      await migrate(drizzle(client), { migrationsFolder, migrationsSchema: "sideband" });
       if (runtimeRole !== undefined) await grantRuntimePrivileges(client, runtimeRole);
     } finally {
       // Closing the dedicated migration session rolls back unfinished grants and releases its lock.

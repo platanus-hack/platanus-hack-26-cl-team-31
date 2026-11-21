@@ -5,7 +5,7 @@ export function Brand({ className = "" }: { className?: string }) {
         <path d="M12 2v20M2 12h20M5 5l14 14M19 5 5 19" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         <circle cx="12" cy="12" r="2.4" fill="currentColor" />
       </svg>
-      Nexo
+      Sideband
     </span>
   );
 }

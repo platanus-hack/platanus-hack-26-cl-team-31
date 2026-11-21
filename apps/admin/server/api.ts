@@ -94,7 +94,7 @@ export function clientIp(c: Context, trustProxy: boolean): string | null {
 
 function errorResponse(c: Context, error: unknown, telemetry: Pick<Telemetry, "error" | "emit">) {
   if (error instanceof AdminHttpError) {
-    if (error.code === "unauthorized") c.header("WWW-Authenticate", 'Cookie realm="nexo-admin"')
+    if (error.code === "unauthorized") c.header("WWW-Authenticate", 'Cookie realm="sideband-admin"')
     if (error.retryAfter) c.header("Retry-After", String(error.retryAfter))
     if (error.code === "rate_limited") {
       telemetry.emit("http.rate_limited", { attrs: { route: c.req.routePath, bucket: c.req.path.endsWith("/reveal") ? "reveal" : "login" } })
@@ -134,7 +134,7 @@ export function createAdminApi(deps: AdminApiDeps) {
     const role = roleOf(response.user.email)
     if (!role) {
       telemetry.emit("auth.token.rejected", { attrs: { issuer: "admin_session", reason: "not_allowed" } })
-      throw new AdminHttpError("forbidden", "Este correo no tiene acceso al admin de Nexo.")
+      throw new AdminHttpError("forbidden", "Este correo no tiene acceso al admin de Sideband.")
     }
     return {
       id: response.user.id,
@@ -297,7 +297,7 @@ export function createAdminApi(deps: AdminApiDeps) {
     }))
   }
 
-  // Dev login: sesión de dev@nexo.local como operator. Solo existe con ADMIN_DEV_AUTH=1, que
+  // Dev login: sesión de dev@sideband.local como operator. Solo existe con ADMIN_DEV_AUTH=1, que
   // env.ts prohíbe en producción. GET le dice a la SPA si debe mostrar «Entrar como dev».
   if (deps.devAuth) {
     api.get("/api/admin/dev-login", async (c) => {

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const ADDRESS_DOMAIN = "sideband.app";
+
 const localPartPattern = "[a-z0-9][a-z0-9._-]{1,30}";
 
 export const LocalPart = z.string().regex(new RegExp(`^${localPartPattern}$`));

@@ -16,7 +16,7 @@ export function toolError(code: ErrorCode, message: string): CallToolResult {
 type Outcome = "ok" | "error" | "denied";
 
 /**
- * Runs a Nexo tool inside the span mcp.tool.call (tool and outcome, never args or result).
+ * Runs a Sideband tool inside the span mcp.tool.call (tool and outcome, never args or result).
  * The span is the parent of the call to the broker, which continues the same trace.
  */
 export async function runTool(
@@ -40,7 +40,7 @@ export async function runTool(
 
     if (!principal.scopes.includes(call.scope)) {
       telemetry.emit("auth.scope.denied", { attrs: { scope: call.scope, operation: call.tool } });
-      return finish("denied", toolError("forbidden", "Tu conexión no tiene permiso para esto; vuelve a autorizar en la App Nexo"));
+      return finish("denied", toolError("forbidden", "Tu conexión no tiene permiso para esto; vuelve a autorizar en la App Sideband"));
     }
 
     try {

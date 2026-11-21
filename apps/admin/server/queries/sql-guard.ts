@@ -1,6 +1,6 @@
 // Reglas de AdminQueries.sql(): un solo SELECT/WITH sobre ops.v_* (docs/admin.md, ADM-02).
 // Es una defensa en profundidad: lo que realmente impide escribir o leer tablas privadas es la
-// transacción READ ONLY, el rol nexo_admin_ro y el protocolo extendido (una sola sentencia).
+// transacción READ ONLY, el rol sideband_admin_ro y el protocolo extendido (una sola sentencia).
 import { AdminQueryError } from "../../shared/queries.js"
 
 export const SQL_MAX_ROWS = 200

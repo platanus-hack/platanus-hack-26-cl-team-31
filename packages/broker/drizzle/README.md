@@ -1,6 +1,6 @@
 # Postgres del broker
 
-Aplica las migraciones con `applyPostgresMigrations({ databaseUrl })` antes de abrir el Store. La función usa el schema `nexo`, registra las migraciones aplicadas y serializa ejecuciones concurrentes en la base. Incluye este directorio junto con `dist/` cuando empaquetes el servicio.
+Aplica las migraciones con `applyPostgresMigrations({ databaseUrl })` antes de abrir el Store. La función usa el schema `sideband`, registra las migraciones aplicadas y serializa ejecuciones concurrentes en la base. Incluye este directorio junto con `dist/` cuando empaquetes el servicio.
 
 En instalaciones con roles separados, crea el rol del broker y aplica las migraciones con el rol dueño del schema mediante `applyPostgresMigrations({ databaseUrl, runtimeRole })`. La función otorga los permisos que el Store necesita. Conecta el Store con la URL del rol de ejecución, sin permisos de DDL ni membresía en el rol dueño. El rol de ejecución puede insertar y leer eventos. El trigger también impide modificaciones y borrados con el usuario local de Docker.
 

@@ -28,7 +28,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)("reanuda una seed en conflicto sin con
     await db.query("DELETE FROM demo_profiles WHERE person_id = 'zoe'");
     await expect(Promise.all([seedContactBroker(), seedContactBroker()])).resolves.toEqual([2, 2]);
     const grants = await owner.grants(bob);
-    expect(grants).toEqual([expect.objectContaining({ grantee: "demo-ana@nexo.app", tool: "interest_check", fields: ["matches"] })]);
+    expect(grants).toEqual([expect.objectContaining({ grantee: "demo-ana@sideband.app", tool: "interest_check", fields: ["matches"] })]);
     expect(await owner.agents(bob)).toEqual([expect.objectContaining({ agentId: bob.agentId, wakeKind: "standard_webhook" })]);
 
     await owner.revokeGrant(bob, grants[0].id);

@@ -1,6 +1,6 @@
 import { cn } from "cn"
 
-// Marca de Nexo: dos nodos unidos, en el color primario del tema.
+// Marca de Sideband: dos nodos unidos, en el color primario del tema.
 export function BrandMark({ className }: { className?: string }) {
   return (
     <span

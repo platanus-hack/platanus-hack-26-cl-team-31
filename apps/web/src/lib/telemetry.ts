@@ -4,12 +4,12 @@
 import { createTelemetry, type SpanHandle, type Telemetry } from "@team-31/telemetry";
 import { headers } from "next/headers";
 
-const holder = globalThis as unknown as { __nexoWebTelemetry?: Telemetry };
+const holder = globalThis as unknown as { __sidebandWebTelemetry?: Telemetry };
 
 /** One instance per server process, also across dev reloads (emits service.started once). */
 export function getTelemetry(): Telemetry {
-  holder.__nexoWebTelemetry ??= createTelemetry({ service: "web", version: process.env.npm_package_version });
-  return holder.__nexoWebTelemetry;
+  holder.__sidebandWebTelemetry ??= createTelemetry({ service: "web", version: process.env.npm_package_version });
+  return holder.__sidebandWebTelemetry;
 }
 
 /**

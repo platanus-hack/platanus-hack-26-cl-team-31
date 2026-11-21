@@ -4,9 +4,9 @@
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "nexo.agent_connections": {
+    "sideband.agent_connections": {
       "name": "agent_connections",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -75,7 +75,7 @@
           "name": "agent_connections_user_id_users_user_id_fk",
           "tableFrom": "agent_connections",
           "tableTo": "users",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "user_id"
           ],
@@ -100,14 +100,14 @@
       "checkConstraints": {
         "agent_connections_wake_secret_check": {
           "name": "agent_connections_wake_secret_check",
-          "value": "(\"nexo\".\"agent_connections\".\"wake_kind\" = 'none') = (\"nexo\".\"agent_connections\".\"wake_secret\" is null)"
+          "value": "(\"sideband\".\"agent_connections\".\"wake_kind\" = 'none') = (\"sideband\".\"agent_connections\".\"wake_secret\" is null)"
         }
       },
       "isRLSEnabled": false
     },
-    "nexo.circle_members": {
+    "sideband.circle_members": {
       "name": "circle_members",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "circle_id": {
           "name": "circle_id",
@@ -150,7 +150,7 @@
           "name": "circle_members_circle_id_circles_id_fk",
           "tableFrom": "circle_members",
           "tableTo": "circles",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "circle_id"
           ],
@@ -175,9 +175,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "nexo.circles": {
+    "sideband.circles": {
       "name": "circles",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "id": {
           "name": "id",
@@ -210,7 +210,7 @@
           "name": "circles_owner_user_id_users_user_id_fk",
           "tableFrom": "circles",
           "tableTo": "users",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "owner_user_id"
           ],
@@ -227,9 +227,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "nexo.friends": {
+    "sideband.friends": {
       "name": "friends",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -250,7 +250,7 @@
           "name": "friends_user_id_users_user_id_fk",
           "tableFrom": "friends",
           "tableTo": "users",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "user_id"
           ],
@@ -275,9 +275,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "nexo.grants": {
+    "sideband.grants": {
       "name": "grants",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "id": {
           "name": "id",
@@ -353,7 +353,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"nexo\".\"grants\".\"revoked_at\" is null",
+          "where": "\"sideband\".\"grants\".\"revoked_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -364,7 +364,7 @@
           "name": "grants_grantor_user_id_users_user_id_fk",
           "tableFrom": "grants",
           "tableTo": "users",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "grantor_user_id"
           ],
@@ -381,9 +381,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "nexo.request_events": {
+    "sideband.request_events": {
       "name": "request_events",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "id": {
           "name": "id",
@@ -444,7 +444,7 @@
           "name": "request_events_request_id_requests_id_fk",
           "tableFrom": "request_events",
           "tableTo": "requests",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "request_id"
           ],
@@ -461,9 +461,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "nexo.requests": {
+    "sideband.requests": {
       "name": "requests",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "id": {
           "name": "id",
@@ -719,7 +719,7 @@
           "name": "requests_from_user_id_users_user_id_fk",
           "tableFrom": "requests",
           "tableTo": "users",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "from_user_id"
           ],
@@ -733,7 +733,7 @@
           "name": "requests_to_user_id_users_user_id_fk",
           "tableFrom": "requests",
           "tableTo": "users",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "to_user_id"
           ],
@@ -750,14 +750,14 @@
       "checkConstraints": {
         "requests_status_check": {
           "name": "requests_status_check",
-          "value": "\"nexo\".\"requests\".\"status\" in ('awaiting_agent', 'awaiting_owner', 'answered', 'no_data', 'declined', 'denied', 'expired', 'delivery_failed')"
+          "value": "\"sideband\".\"requests\".\"status\" in ('awaiting_agent', 'awaiting_owner', 'answered', 'no_data', 'declined', 'denied', 'expired', 'delivery_failed')"
         }
       },
       "isRLSEnabled": false
     },
-    "nexo.sharing_rules": {
+    "sideband.sharing_rules": {
       "name": "sharing_rules",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -785,7 +785,7 @@
           "name": "sharing_rules_user_id_users_user_id_fk",
           "tableFrom": "sharing_rules",
           "tableTo": "users",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "user_id"
           ],
@@ -802,9 +802,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "nexo.users": {
+    "sideband.users": {
       "name": "users",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -848,9 +848,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "nexo.wake_jobs": {
+    "sideband.wake_jobs": {
       "name": "wake_jobs",
-      "schema": "nexo",
+      "schema": "sideband",
       "columns": {
         "id": {
           "name": "id",
@@ -929,7 +929,7 @@
           "name": "wake_jobs_request_id_requests_id_fk",
           "tableFrom": "wake_jobs",
           "tableTo": "requests",
-          "schemaTo": "nexo",
+          "schemaTo": "sideband",
           "columnsFrom": [
             "request_id"
           ],
@@ -946,7 +946,7 @@
       "checkConstraints": {
         "wake_jobs_state_check": {
           "name": "wake_jobs_state_check",
-          "value": "\"nexo\".\"wake_jobs\".\"state\" in ('queued', 'running', 'done')"
+          "value": "\"sideband\".\"wake_jobs\".\"state\" in ('queued', 'running', 'done')"
         }
       },
       "isRLSEnabled": false
@@ -954,7 +954,7 @@
   },
   "enums": {},
   "schemas": {
-    "nexo": "nexo"
+    "sideband": "sideband"
   },
   "sequences": {},
   "roles": {},

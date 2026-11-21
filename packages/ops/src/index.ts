@@ -7,7 +7,7 @@ import pg from "pg";
 // sola vez, en orden, dentro de una transacción y con un candado consultivo.
 // Ver docs/admin.md#datos.
 const sqlFolder = fileURLToPath(new URL("../sql/", import.meta.url));
-const LOCK = "hashtext('nexo:ops:migrations')";
+const LOCK = "hashtext('sideband:ops:migrations')";
 
 export async function applyOpsMigrations({ databaseUrl }: { databaseUrl: string }): Promise<string[]> {
   if (!databaseUrl) throw new Error("DATABASE_URL es obligatoria para aplicar las migraciones de ops.");

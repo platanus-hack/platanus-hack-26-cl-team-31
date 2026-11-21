@@ -132,7 +132,7 @@ function CreateTokenDialog() {
 
   const origin = typeof window === "undefined" ? "" : window.location.origin
   const command = created
-    ? `claude mcp add --transport http nexo-admin "${origin}/mcp" --header "Authorization: Bearer ${created.token}"`
+    ? `claude mcp add --transport http sideband-admin "${origin}/mcp" --header "Authorization: Bearer ${created.token}"`
     : ""
 
   return (
@@ -203,7 +203,7 @@ function CreateTokenDialog() {
             <DialogHeader>
               <DialogTitle>Crear token MCP</DialogTitle>
               <DialogDescription>
-                Token personal nxa_ para conectar Claude Code o Codex al MCP de
+                Token personal sba_ para conectar Claude Code o Codex al MCP de
                 administración.
               </DialogDescription>
             </DialogHeader>
@@ -473,7 +473,7 @@ export function TokensPage() {
     <Page>
       <PageHeader
         title="Tokens MCP"
-        description="Tokens personales nxa_ para que Claude Code o Codex consulten el MCP de administración. Solo lectura y auditados."
+        description="Tokens personales sba_ para que Claude Code o Codex consulten el MCP de administración. Solo lectura y auditados."
         actions={<CreateTokenDialog />}
       />
       {query.isError ? (

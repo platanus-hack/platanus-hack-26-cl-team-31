@@ -32,9 +32,9 @@ describe("filterResult", () => {
     {
       label: "permite omitir un campo opcional",
       tool: "profile",
-      raw: { displayName: "Nexo" },
+      raw: { displayName: "Sideband" },
       allowedFields: ["displayName", "headline"],
-      expected: { result: { displayName: "Nexo" }, delivered: ["displayName"], dropped: [] },
+      expected: { result: { displayName: "Sideband" }, delivered: ["displayName"], dropped: [] },
     },
     {
       label: "conserva la respuesta de texto sin alterar su contenido",

@@ -69,32 +69,32 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
     expect(await applyOpsMigrations({ databaseUrl })).toEqual([]);
     expect(await views()).toEqual(["v_errors", "v_events", "v_service_health"]);
     const { rows } = await db.query<{ rolname: string; rolcanlogin: boolean }>(
-      "SELECT rolname, rolcanlogin FROM pg_roles WHERE rolname LIKE 'nexo\\_%' ORDER BY 1",
+      "SELECT rolname, rolcanlogin FROM pg_roles WHERE rolname LIKE 'sideband\\_%' ORDER BY 1",
     );
     expect(rows).toEqual(
       expect.arrayContaining([
-        { rolname: "nexo_admin_reveal", rolcanlogin: false },
-        { rolname: "nexo_admin_ro", rolcanlogin: false },
-        { rolname: "nexo_telemetry_writer", rolcanlogin: false },
+        { rolname: "sideband_admin_reveal", rolcanlogin: false },
+        { rolname: "sideband_admin_ro", rolcanlogin: false },
+        { rolname: "sideband_telemetry_writer", rolcanlogin: false },
       ]),
     );
   });
 
-  it("nexo_telemetry_writer solo inserta y nexo_admin_ro solo lee las vistas", async () => {
-    await asRole("nexo_telemetry_writer", `
+  it("sideband_telemetry_writer solo inserta y sideband_admin_ro solo lee las vistas", async () => {
+    await asRole("sideband_telemetry_writer", `
       INSERT INTO ops.events (service, instance, kind, name) VALUES ('broker', 'host:1', 'lifecycle', 'service.heartbeat')
     `);
-    await expect(asRole("nexo_telemetry_writer", "SELECT * FROM ops.events")).rejects.toMatchObject({ code: "42501" });
-    await expect(asRole("nexo_telemetry_writer", "DELETE FROM ops.events")).rejects.toMatchObject({ code: "42501" });
-    await expect(asRole("nexo_admin_ro", "SELECT * FROM ops.events")).rejects.toMatchObject({ code: "42501" });
-    await expect(asRole("nexo_admin_ro", "SELECT ops.prune_events('1 day')")).rejects.toMatchObject({ code: "42501" });
-    await expect(asRole("nexo_admin_ro", "SELECT ops.refresh_views()")).rejects.toMatchObject({ code: "42501" });
+    await expect(asRole("sideband_telemetry_writer", "SELECT * FROM ops.events")).rejects.toMatchObject({ code: "42501" });
+    await expect(asRole("sideband_telemetry_writer", "DELETE FROM ops.events")).rejects.toMatchObject({ code: "42501" });
+    await expect(asRole("sideband_admin_ro", "SELECT * FROM ops.events")).rejects.toMatchObject({ code: "42501" });
+    await expect(asRole("sideband_admin_ro", "SELECT ops.prune_events('1 day')")).rejects.toMatchObject({ code: "42501" });
+    await expect(asRole("sideband_admin_ro", "SELECT ops.refresh_views()")).rejects.toMatchObject({ code: "42501" });
     // asRole revierte su transacción: el latido visible se inserta con el dueño.
     await db.query(
       "INSERT INTO ops.events (service, instance, kind, name) VALUES ('broker', 'host:1', 'lifecycle', 'service.heartbeat')",
     );
     const health = await asRole<{ service: string; state: string }>(
-      "nexo_admin_ro",
+      "sideband_admin_ro",
       "SELECT service, state FROM ops.v_service_health",
     );
     expect(health).toEqual([{ service: "broker", state: "up" }]);
@@ -113,19 +113,19 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
     `);
     const { rows } = await db.query<{ created: string[] }>("SELECT ops.refresh_views() AS created");
     expect(rows[0]?.created).toContain("v_coordination_people");
-    const people = await asRole("nexo_admin_ro", "SELECT * FROM ops.v_coordination_people");
+    const people = await asRole("sideband_admin_ro", "SELECT * FROM ops.v_coordination_people");
     expect(people).toEqual([{ person_id: "ana", groups: ["g1", "g2"], can_ask: ["g1", "g2"], can_share: ["g2"] }]);
   });
 
-  it("da a nexo_admin_ro SELECT solo en admin.audit cuando el servidor admin la crea", async () => {
+  it("da a sideband_admin_ro SELECT solo en admin.audit cuando el servidor admin la crea", async () => {
     await db.query(`
       CREATE SCHEMA admin;
       CREATE TABLE admin.audit (id uuid PRIMARY KEY, at timestamptz NOT NULL DEFAULT now(), action text NOT NULL);
       CREATE TABLE admin.tokens (id uuid PRIMARY KEY, token_hash text NOT NULL);
     `);
     await db.query("SELECT ops.refresh_views()");
-    expect(await asRole("nexo_admin_ro", "SELECT * FROM admin.audit")).toEqual([]);
-    await expect(asRole("nexo_admin_ro", "SELECT * FROM admin.tokens")).rejects.toMatchObject({ code: "42501" });
+    expect(await asRole("sideband_admin_ro", "SELECT * FROM admin.audit")).toEqual([]);
+    await expect(asRole("sideband_admin_ro", "SELECT * FROM admin.tokens")).rejects.toMatchObject({ code: "42501" });
   });
 
   it("expone solo recuentos de WhatsApp cuando el esquema web aparece después", async () => {
@@ -138,9 +138,9 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       INSERT INTO whatsapp.pairing VALUES (now() - interval '1 minute'), (now() + interval '1 minute');
     `);
     await applyOpsMigrations({ databaseUrl });
-    expect(await asRole("nexo_admin_ro", "SELECT * FROM ops.v_whatsapp"))
+    expect(await asRole("sideband_admin_ro", "SELECT * FROM ops.v_whatsapp"))
       .toEqual([{ linked_accounts: "1", active_pairings: "1", inbound_receipts: "0" }]);
-    await expect(asRole("nexo_admin_ro", "SELECT * FROM whatsapp.pairing")).rejects.toMatchObject({ code: "42501" });
+    await expect(asRole("sideband_admin_ro", "SELECT * FROM whatsapp.pairing")).rejects.toMatchObject({ code: "42501" });
   });
 
   it("prune_events borra solo lo más viejo que la retención", async () => {

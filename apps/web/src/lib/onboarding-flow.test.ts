@@ -68,7 +68,7 @@ describe("registrarse desde una invitación", () => {
 
   it("omite el alta cuando el titular ya tiene sesión y dirección", async () => {
     mocks.getSession.mockResolvedValue({ user: { id: "recipient" } });
-    mocks.getAddress.mockResolvedValue("destinatario@nexo.app");
+    mocks.getAddress.mockResolvedValue("destinatario@sideband.app");
 
     await expect(SignInPage(invitation())).rejects.toThrow("/sign-in/complete?from=invite");
     await expect(CompleteSignIn(invitation())).rejects.toThrow("/agents/connect");
@@ -93,7 +93,7 @@ describe("registrarse desde una invitación", () => {
   it.each([undefined, ["invite"], "https://example.test"])(
     "conserva el acceso normal cuando el origen es %j",
     async (from) => {
-      mocks.getAddress.mockResolvedValue("titular@nexo.app");
+      mocks.getAddress.mockResolvedValue("titular@sideband.app");
       await expect(CompleteSignIn(pageProps({ from }))).rejects.toThrow(/^\/$/);
     },
   );

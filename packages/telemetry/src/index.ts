@@ -1,4 +1,4 @@
-// @team-31/telemetry: telemetría de Nexo con catálogo tipado (docs/admin.md#3).
+// @team-31/telemetry: telemetría de Sideband con catálogo tipado (docs/admin.md#3).
 // El middleware de Hono vive en "@team-31/telemetry/hono" para que los servicios sin Hono
 // no necesiten la dependencia.
 export {

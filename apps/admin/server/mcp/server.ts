@@ -75,7 +75,7 @@ async function callTool<I extends z.ZodObject, O extends z.ZodObject>(
 }
 
 export function createAdminMcpServer(principal: TokenPrincipal, deps: AdminMcpDeps, telemetry: Telemetry): McpServer {
-  const server = new McpServer({ name: "nexo-admin", version: ADMIN_MCP_VERSION }, { instructions })
+  const server = new McpServer({ name: "sideband-admin", version: ADMIN_MCP_VERSION }, { instructions })
 
   registerAdminTools(deps.queries, <I extends z.ZodObject, O extends z.ZodObject>(spec: AdminTool<I, O>) => {
     const handle = (args: z.output<I>) => callTool(principal, deps, spec, args, telemetry)

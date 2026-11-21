@@ -106,7 +106,7 @@ export function AppSidebar() {
               <NavLink to="/" onClick={() => setOpenMobile(false)}>
                 <BrandMark />
                 <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate font-semibold">Nexo Admin</span>
+                  <span className="truncate font-semibold">Sideband Admin</span>
                   <span className="truncate text-xs text-muted-foreground">
                     Observabilidad
                   </span>

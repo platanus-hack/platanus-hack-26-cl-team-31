@@ -1,6 +1,7 @@
 import { createPrivateKey } from "node:crypto";
 import { createBroker, createMemoryStore } from "@team-31/broker";
 import { createPostgresStore } from "@team-31/broker/postgres";
+import { ADDRESS_DOMAIN } from "@team-31/protocol";
 import { createWaker } from "@team-31/wake";
 import type { BrokerEnv } from "./env.js";
 import type { BrokerServiceTelemetry } from "./telemetry.js";
@@ -29,7 +30,7 @@ export function composeBroker(env: BrokerEnv, telemetry?: Pick<BrokerServiceTele
       requestTtlSeconds: env.REQUEST_TTL_SECONDS,
       // The initial job is due immediately. The core indexes retries by one-based attempt.
       wakeRetryDelaysMs: [0, ...env.WAKE_RETRY_DELAYS_MS],
-      addressDomain: "nexo.app",
+      addressDomain: ADDRESS_DOMAIN,
     },
     ...(telemetry ? { telemetry: telemetry.shared } : {}),
   });

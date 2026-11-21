@@ -21,8 +21,8 @@ export function InviteForm() {
         <p className="text-sm text-muted">Si acepta, quedan conectados y esa persona elige qué te comparte.</p>
       </div>
       <div className="flex flex-wrap items-start gap-2">
-        <label htmlFor="invite-to" className="sr-only">Dirección Nexo</label>
-        <input id="invite-to" name="to" required placeholder="nombre@nexo.app" autoCapitalize="none" autoComplete="off"
+        <label htmlFor="invite-to" className="sr-only">Dirección Sideband</label>
+        <input id="invite-to" name="to" required placeholder="nombre@sideband.app" autoCapitalize="none" autoComplete="off"
           spellCheck={false} className={`${input} min-w-48 flex-1`} />
         <button className={primaryButton} disabled={pending}>{pending ? "Enviando…" : "Enviar invitación"}</button>
       </div>

@@ -82,11 +82,11 @@ describe("honoTelemetry + tracedFetch", () => {
   it("usa el patrón y no la ruta cruda, e ignora /healthz", async () => {
     const { broker, brokerSink } = twoServices();
     await broker.request("/healthz");
-    await broker.request("/v1/users/ana@nexo.cl/secret?token=x");
+    await broker.request("/v1/users/ana@sideband.cl/secret?token=x");
     const spans = brokerSink.find("http.request");
     expect(spans).toHaveLength(1);
     expect(spans[0]!.attrs).toMatchObject({ route: "unmatched", status: 404, bucket: "4xx" });
-    expect(JSON.stringify(brokerSink.records)).not.toContain("ana@nexo.cl");
+    expect(JSON.stringify(brokerSink.records)).not.toContain("ana@sideband.cl");
   });
 
   it("tracedFetch no agrega nada fuera de una traza ni pisa un traceparent explícito", async () => {

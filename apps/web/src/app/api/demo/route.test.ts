@@ -10,7 +10,7 @@ vi.mock("@team-31/demo/contact-session", () => ({
 }));
 
 // The web telemetry singleton reads this holder: tests never write to a database or stdout.
-(globalThis as unknown as { __nexoWebTelemetry: unknown }).__nexoWebTelemetry =
+(globalThis as unknown as { __sidebandWebTelemetry: unknown }).__sidebandWebTelemetry =
   createTelemetry({ service: "web", sink: offSink(), heartbeatMs: 0, lifecycle: false });
 
 const origin = "http://localhost:3002";
@@ -31,7 +31,7 @@ it("permite consultar el runtime de Ana aunque los servicios del chat de fútbol
   const status = await GET(new Request(origin + "/api/demo?mode=contacts", { headers: { host: "localhost:3002" } }));
   expect(await status.json()).toEqual({ contacts: true });
   const result = { text: "Bob confirmó.", traces: [
-    { tool: "interest_check", input: { contact: "bob@nexo.app" }, data: { requestId: "id", decision: "allow", result: { matches: true } } },
+    { tool: "interest_check", input: { contact: "bob@sideband.app" }, data: { requestId: "id", decision: "allow", result: { matches: true } } },
   ] };
   vi.mocked(runContactSession).mockResolvedValue(result);
   expect(await (await POST(request("ana"))).json()).toEqual(result);

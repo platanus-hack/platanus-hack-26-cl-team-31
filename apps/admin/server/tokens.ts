@@ -1,13 +1,12 @@
 import { createHash, randomBytes } from "node:crypto"
 import type pg from "pg"
 import { z } from "zod"
-import { AdminToken, AdminTokenScope, CreateAdminToken } from "../shared/contract.js"
+import { ADMIN_TOKEN_PREFIX, AdminToken, AdminTokenScope, CreateAdminToken } from "../shared/contract.js"
 import type { TokenPrincipal } from "./mcp/types.js"
 
-// Tokens personales nxa_ para el MCP de administración. Solo se guarda sha256(token).
+// Tokens personales sba_ para el MCP de administración. Solo se guarda sha256(token).
 // Ver docs/admin.md#4-sesiones-y-acceso.
 
-const TOKEN_PREFIX = "nxa_"
 const PREFIX_LENGTH = 12
 const TOUCH_INTERVAL_MS = 60_000
 const DAY_MS = 86_400_000
@@ -58,7 +57,7 @@ export function createPgTokenStore(pool: pg.Pool, now: () => number = Date.now):
   return {
     async create(input, createdBy) {
       const { name, ttlDays, scopes } = CreateAdminToken.parse(input)
-      const token = `${TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`
+      const token = `${ADMIN_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`
       const { rows } = await pool.query<TokenRow>(
         `INSERT INTO admin.tokens (name, token_hash, prefix, scopes, created_by, created_at, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${COLUMNS}`,
@@ -83,7 +82,7 @@ export function createPgTokenStore(pool: pg.Pool, now: () => number = Date.now):
 
     async authenticate(bearer) {
       const token = bearer.replace(/^Bearer\s+/i, "").trim()
-      if (!token.startsWith(TOKEN_PREFIX) || token.length > 100) return null
+      if (!token.startsWith(ADMIN_TOKEN_PREFIX) || token.length > 100) return null
       const at = new Date(now())
       const { rows } = await pool.query<TokenRow>(
         `SELECT ${COLUMNS} FROM admin.tokens WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2`,

@@ -14,13 +14,13 @@ vi.mock("../../../../lib/broker", () => ({
 
 // The web singleton (lib/telemetry) reads this holder: tests write to memory, never to a database.
 const sink = memorySink();
-(globalThis as unknown as { __nexoWebTelemetry: unknown }).__nexoWebTelemetry =
+(globalThis as unknown as { __sidebandWebTelemetry: unknown }).__sidebandWebTelemetry =
   createTelemetry({ service: "web", sink, heartbeatMs: 0, lifecycle: false });
 
 const activity = {
   requestId: "request-123",
-  from: "ana@nexo.app",
-  to: "bob@nexo.app",
+  from: "ana@sideband.app",
+  to: "bob@sideband.app",
   tool: "question",
   status: "no_data",
   createdAt: "2026-11-21T12:00:00Z",

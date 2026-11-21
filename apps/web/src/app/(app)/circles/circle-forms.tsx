@@ -27,8 +27,8 @@ export function InviteMember({ circleId, circleName }: { circleId: string; circl
   return (
     <form action={submit} className="space-y-2">
       <div className="flex flex-wrap items-start gap-2">
-        <input name="address" required placeholder="nombre@nexo.app" autoCapitalize="none" spellCheck={false}
-          aria-label={`Dirección Nexo para invitar a ${circleName}`} className={`${input} min-w-48 flex-1`} />
+        <input name="address" required placeholder="nombre@sideband.app" autoCapitalize="none" spellCheck={false}
+          aria-label={`Dirección Sideband para invitar a ${circleName}`} className={`${input} min-w-48 flex-1`} />
         <button className={primaryButton} disabled={pending}>{pending ? "Invitando…" : "Invitar"}</button>
       </div>
       <Feedback {...state} />

@@ -5,7 +5,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, ListToolsResultSchema } 
 
 // One stdio process per principal. Tool arguments cannot select a credential or endpoint.
 function coordinationServer(base: string, token: string) {
-  const server = new Server({name: "team-31-mcp", version: "0.1.0"}, {capabilities: {tools: {}}});
+  const server = new Server({name: "sideband-coordination", version: "0.1.0"}, {capabilities: {tools: {}}});
   async function call(path: string, args?: unknown) {
     const response = await fetch(new URL(path, base), {
       method: args === undefined ? "GET" : "POST",

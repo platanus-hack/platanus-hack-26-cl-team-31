@@ -41,7 +41,7 @@ export interface AdminQueries {
   error(errorId: string): Promise<TelemetryEvent | null>
 
   users(filters: z.infer<typeof UserFilters>): Promise<Page<UserSummary>>
-  // Acepta user id o dirección Nexo.
+  // Acepta user id o dirección Sideband.
   user(idOrAddress: string): Promise<UserDetail | null>
   agents(filters: z.infer<typeof AgentFilters>): Promise<AgentRow[]>
   wakeQueue(state?: WakeJobRow["state"]): Promise<WakeJobRow[]>

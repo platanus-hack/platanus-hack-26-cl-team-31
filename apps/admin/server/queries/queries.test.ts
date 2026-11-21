@@ -142,8 +142,8 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     const base = {
       fromUserId: "alice",
       toUserId: "bruno",
-      fromAddress: "alice@nexo.app" as const,
-      toAddress: "bruno@nexo.app" as const,
+      fromAddress: "alice@sideband.app" as const,
+      toAddress: "bruno@sideband.app" as const,
       tool: "question" as const,
       args: { text: SECRET_QUESTION },
       purpose: SECRET_PURPOSE,
@@ -156,15 +156,15 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       version: 0,
     }
     await store.tx(async (tx) => {
-      await tx.createAddress("alice", "alice@nexo.app")
-      await tx.createAddress("bruno", "bruno@nexo.app")
+      await tx.createAddress("alice", "alice@sideband.app")
+      await tx.createAddress("bruno", "bruno@sideband.app")
       await tx.upsertAgentConnection({
         userId: "bruno",
         agentId: "main",
         label: "Agente de Bruno",
         wakeTarget: {
           kind: "standard_webhook",
-          url: "https://user:pass@hooks.example.com:8443/nexo?token=no-filtrar",
+          url: "https://user:pass@hooks.example.com:8443/sideband?token=no-filtrar",
           secret: WAKE_SECRET,
         },
         verifiedAt: minutesAgo(60),
@@ -251,8 +251,8 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
 
     // Better Auth: identidad, sesión y un cliente OAuth con token activo.
     // The broker no longer writes sharing rules. ops.v_users still shows the stored ones.
-    await db.query(`INSERT INTO nexo.sharing_rules (user_id, rules) VALUES ('bruno', $1)`, [
-      { circles: { friends: ["alice@nexo.app"] } },
+    await db.query(`INSERT INTO sideband.sharing_rules (user_id, rules) VALUES ('bruno', $1)`, [
+      { circles: { friends: ["alice@sideband.app"] } },
     ])
     await db.query(
       `INSERT INTO public."user" (id, name, email, "emailVerified") VALUES
@@ -271,7 +271,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     )
     await db.query(
       `INSERT INTO public."oauthAccessToken" (id, token, "clientId", "userId", "expiresAt", "createdAt", scopes)
-       VALUES ('t1', $1, 'client-claude', 'alice', now() + interval '1 hour', now(), '["nexo:ask"]')`,
+       VALUES ('t1', $1, 'client-claude', 'alice', now() + interval '1 hour', now(), '["sideband:ask"]')`,
       [ACCESS_TOKEN]
     )
 
@@ -304,9 +304,9 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     )
     await db.query(
       `INSERT INTO admin.audit (id, actor_type, actor_id, actor_label, action, target, reason, ip, meta)
-       VALUES ($1, 'admin', 'adm_1', 'dev@nexo.local', 'reveal', $2, 'Depurando un reporte del usuario', '127.0.0.1',
+       VALUES ($1, 'admin', 'adm_1', 'dev@sideband.local', 'reveal', $2, 'Depurando un reporte del usuario', '127.0.0.1',
                '{"interno": true}'),
-              ($3, 'token', 'tok_1', 'nxa_abcd1234', 'mcp.call', NULL, NULL, NULL, '{}')`,
+              ($3, 'token', 'tok_1', 'sba_abcd1234', 'mcp.call', NULL, NULL, NULL, '{}')`,
       [randomUUID(), ids.answered, randomUUID()]
     )
   }
@@ -333,13 +333,13 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     ])
     const grants = await db.query<{ role: string; view: string }>(
       `SELECT grantee AS role, table_name AS view FROM information_schema.role_table_grants
-       WHERE table_schema = 'ops' AND grantee LIKE 'nexo\\_%' AND privilege_type = 'SELECT' ORDER BY 1, 2`
+       WHERE table_schema = 'ops' AND grantee LIKE 'sideband\\_%' AND privilege_type = 'SELECT' ORDER BY 1, 2`
     )
     const reveal = grants.rows
-      .filter((row) => row.role === "nexo_admin_reveal")
+      .filter((row) => row.role === "sideband_admin_reveal")
       .map((row) => row.view)
     const readOnly = grants.rows
-      .filter((row) => row.role === "nexo_admin_ro")
+      .filter((row) => row.role === "sideband_admin_ro")
       .map((row) => row.view)
     expect(reveal).toEqual(["v_request_payloads"])
     expect(readOnly).not.toContain("v_request_payloads")
@@ -347,12 +347,12 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     expect(readOnly).toHaveLength(13)
     const audit = await db.query<{ table: string }>(
       `SELECT table_name AS table FROM information_schema.role_table_grants
-       WHERE table_schema = 'admin' AND grantee = 'nexo_admin_ro' AND privilege_type = 'SELECT'`
+       WHERE table_schema = 'admin' AND grantee = 'sideband_admin_ro' AND privilege_type = 'SELECT'`
     )
     expect(audit.rows).toEqual([{ table: "audit" }])
   })
 
-  it("nexo_admin_ro no lee las tablas ni el payload; nexo_admin_reveal solo el payload", async () => {
+  it("sideband_admin_ro no lee las tablas ni el payload; sideband_admin_reveal solo el payload", async () => {
     const client = await db.connect()
     const denied = async (role: string, sql: string) => {
       await client.query("BEGIN READ ONLY")
@@ -364,14 +364,14 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       }
     }
     try {
-      await denied("nexo_admin_ro", "SELECT * FROM nexo.requests")
-      await denied("nexo_admin_ro", "SELECT * FROM ops.v_request_payloads")
-      await denied("nexo_admin_ro", "SELECT * FROM ops.events")
-      await denied("nexo_admin_ro", 'SELECT * FROM public."user"')
-      await denied("nexo_admin_ro", "SELECT * FROM admin.tokens")
-      await denied("nexo_admin_reveal", "SELECT * FROM ops.v_requests")
-      await denied("nexo_admin_reveal", "SELECT * FROM nexo.requests")
-      await denied("nexo_telemetry_writer", "SELECT * FROM ops.events")
+      await denied("sideband_admin_ro", "SELECT * FROM sideband.requests")
+      await denied("sideband_admin_ro", "SELECT * FROM ops.v_request_payloads")
+      await denied("sideband_admin_ro", "SELECT * FROM ops.events")
+      await denied("sideband_admin_ro", 'SELECT * FROM public."user"')
+      await denied("sideband_admin_ro", "SELECT * FROM admin.tokens")
+      await denied("sideband_admin_reveal", "SELECT * FROM ops.v_requests")
+      await denied("sideband_admin_reveal", "SELECT * FROM sideband.requests")
+      await denied("sideband_telemetry_writer", "SELECT * FROM ops.events")
     } finally {
       client.release()
     }
@@ -444,7 +444,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       (await queries.requests(parse({ status: ["answered"] }))).items
     ).toHaveLength(1)
     expect(
-      (await queries.requests(parse({ address: "BRUNO@nexo.app" }))).items
+      (await queries.requests(parse({ address: "BRUNO@sideband.app" }))).items
     ).toHaveLength(3)
     expect(
       (await queries.requests(parse({ q: "req_ans" }))).items.map(
@@ -592,7 +592,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       [...firstPage.items, ...nextPage.items].map((user) => user.userId).sort()
     ).toEqual(["alice", "bruno"])
 
-    const alice = UserDetail.parse(await queries.user("alice@nexo.app"))
+    const alice = UserDetail.parse(await queries.user("alice@sideband.app"))
     expect(alice.summary).toMatchObject({
       userId: "alice",
       sent24h: 3,
@@ -615,7 +615,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
 
     const bruno = UserDetail.parse(await queries.user("bruno"))
     expect(bruno.rules).toMatchObject({
-      circles: { friends: ["alice@nexo.app"] },
+      circles: { friends: ["alice@sideband.app"] },
     })
     expect(bruno.agents).toEqual([
       expect.objectContaining({
@@ -623,7 +623,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
         wakeHost: "hooks.example.com",
       }),
     ])
-    expect(await queries.user("nadie@nexo.app")).toBeNull()
+    expect(await queries.user("nadie@sideband.app")).toBeNull()
 
     const serialized = JSON.stringify([alice, bruno])
     for (const secret of [
@@ -671,7 +671,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
 
     await db.query(
       `INSERT INTO admin.audit (actor_type, actor_id, actor_label, action)
-       SELECT 'token', 'tok_2', 'nxa_efgh5678', 'mcp:admin_overview' FROM generate_series(1, 58)`
+       SELECT 'token', 'tok_2', 'sba_efgh5678', 'mcp:admin_overview' FROM generate_series(1, 58)`
     )
     const first = page(AuditEntry).parse(await queries.audit())
     expect(first.items).toHaveLength(50)
@@ -710,7 +710,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
 
     it("rechaza escrituras, varias sentencias y el payload", async () => {
       await expectInvalid(queries.sql("DELETE FROM ops.events"))
-      await expectInvalid(queries.sql("delete from nexo.requests where true"))
+      await expectInvalid(queries.sql("delete from sideband.requests where true"))
       await expectInvalid(queries.sql("SELECT 1; DELETE FROM ops.events"))
       await expectInvalid(queries.sql("SELECT 1; SELECT 2"))
       await expectInvalid(queries.sql("SELECT 1 /* sin cerrar"))
@@ -723,7 +723,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
         queries.sql("SELECT query_to_xml('SELECT 1', true, true, '')")
       )
       // Llega a Postgres, pero el rol no tiene permiso.
-      await expectInvalid(queries.sql("SELECT args FROM nexo.requests"))
+      await expectInvalid(queries.sql("SELECT args FROM sideband.requests"))
       await expectInvalid(queries.sql("SELECT * FROM ops.events"))
       // Escritura disfrazada dentro de un WITH: la transacción es READ ONLY.
       await expectInvalid(
@@ -748,7 +748,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     }, 10_000)
   })
 
-  it("createPgRevealer devuelve el payload real con nexo_admin_reveal", async () => {
+  it("createPgRevealer devuelve el payload real con sideband_admin_reveal", async () => {
     expect(await revealer.reveal(ids.answered)).toEqual({
       args: { text: SECRET_QUESTION },
       purpose: SECRET_PURPOSE,

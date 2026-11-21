@@ -2,7 +2,7 @@
 import * as React from "react"
 import { Window } from "@shared/contract"
 
-const STORAGE_KEY = "nexo-admin-window"
+const STORAGE_KEY = "sideband-admin-window"
 
 export const windowLabel: Record<Window, string> = {
   "15m": "15 min",

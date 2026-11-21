@@ -1,6 +1,6 @@
-# Admin y observabilidad de Nexo
+# Admin y observabilidad de Sideband
 
-Objetivo: depurar producción viendo todo lo que pasa por debajo, desde un **panel** (humanos) y desde un **MCP de administración** (agentes), sin romper la privacidad que Nexo promete a sus usuarios.
+Objetivo: depurar producción viendo todo lo que pasa por debajo, desde un **panel** (humanos) y desde un **MCP de administración** (agentes), sin romper la privacidad que Sideband promete a sus usuarios.
 
 Contrato de código (fuente de verdad, no lo cambies sin actualizar este documento):
 
@@ -13,7 +13,7 @@ Contrato de código (fuente de verdad, no lo cambies sin actualizar este documen
 
 ```mermaid
 flowchart LR
-  subgraph prod[Servicios Nexo]
+  subgraph prod[Servicios Sideband]
     WEB[apps/web]
     MCP[apps/mcp]
     BRK[apps/broker<br/>HTTP + worker]
@@ -22,7 +22,7 @@ flowchart LR
   TEL[[@team-31/telemetry<br/>emit · span · error]]
   WEB & MCP & BRK & CO -- eventos validados por catálogo --> TEL
   TEL -- INSERT por lotes --> EV[(ops.events)]
-  BRK -- tablas propias --> NX[(nexo.*)]
+  BRK -- tablas propias --> NX[(sideband.*)]
   WEB -- Better Auth --> AU[(public.user/session/oauth*)]
   CO --> CT[(people, memberships…)]
   subgraph views[esquema ops · vistas redactadas]
@@ -36,10 +36,10 @@ flowchart LR
     Q{{AdminQueries}}
   end
   SPA -- cookie de sesión --> API
-  AG[Claude Code / Codex] -- Bearer nxa_ --> AMCP
+  AG[Claude Code / Codex] -- Bearer sba_ --> AMCP
   API --> Q
   AMCP --> Q
-  Q -- READ ONLY + SET ROLE nexo_admin_ro --> V
+  Q -- READ ONLY + SET ROLE sideband_admin_ro --> V
   API -- JWT de servicio iss=admin --> BRK
 ```
 
@@ -47,8 +47,8 @@ Decisiones (Philosophy of Software Design):
 
 | Decisión | Por qué |
 | --- | --- |
-| **Lecturas por vistas `ops.v_*`**, no por las tablas | Las vistas son la interfaz pública de los datos. Las tablas siguen siendo privadas de cada módulo: si el broker cambia `nexo.requests`, actualiza la vista en el mismo PR y el admin no se entera. La redacción ocurre en la fuente (sin secretos ni texto libre). |
-| **Escrituras siempre por el broker** (`AdminPort`) | El broker es dueño de la invariante «toda solicitud termina en exactamente un estado final». El admin nunca hace `UPDATE` en `nexo.*`. |
+| **Lecturas por vistas `ops.v_*`**, no por las tablas | Las vistas son la interfaz pública de los datos. Las tablas siguen siendo privadas de cada módulo: si el broker cambia `sideband.requests`, actualiza la vista en el mismo PR y el admin no se entera. La redacción ocurre en la fuente (sin secretos ni texto libre). |
+| **Escrituras siempre por el broker** (`AdminPort`) | El broker es dueño de la invariante «toda solicitud termina en exactamente un estado final». El admin nunca hace `UPDATE` en `sideband.*`. |
 | **Un módulo de lectura, dos adaptadores** | `AdminQueries` concentra el SQL. La API HTTP y el MCP son adaptadores delgados: validan entrada, autentican, auditan y llaman a la interfaz. |
 | **Telemetría con catálogo tipado** | Cada evento se declara una vez con su esquema zod. `emit()` descarta atributos no declarados, así que nadie puede filtrar un token o un texto libre por accidente. Nunca lanza: la observabilidad no tumba el request. |
 | **Postgres como almacén de telemetría** | Ya existe, se consulta con SQL desde el panel y el MCP, y alcanza para el volumen de la hackatón. El catálogo es compatible con OTLP para exportar después. |
@@ -63,14 +63,14 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 
 | Vista | Fuente | Columnas | Redacción |
 | --- | --- | --- | --- |
-| `ops.v_requests` | `nexo.requests` + `nexo.wake_jobs` | id, tool, from_address, to_address, from_user_id, to_user_id, status, outcome, rule, escalated, target_agent_id, answered_by_agent_id, allowed_fields, dropped_fields, decision_reason, internal_reason, args_keys, result_keys, has_purpose, response_signed, created_at, expires_at, closed_at, duration_ms, stuck, wake_attempts, last_wake_ok | Sin `args`, `result`, `purpose`, firmas ni nonce. Solo las llaves de args y result. |
-| `ops.v_request_payloads` | `nexo.requests` | id, args, purpose, result | **Solo** rol `nexo_admin_reveal`. Se usa únicamente en `POST /requests/:id/reveal`. |
-| `ops.v_request_events` | `nexo.request_events` | request_id, id, at, kind, status, code | `detail` se reduce a status y code. |
-| `ops.v_wake_jobs` | `nexo.wake_jobs` + conexión | id, request_id, attempt, state, run_at, kind, ok, http_status, code, latency_ms, user_id, agent_id | Sin cuerpo de respuesta. `code` es `ok`, `retryable`, `failed` o un código `[a-z_]` del adaptador.  Cuando el estado es `running`, `run_at` indica cuándo vence la concesión. |
-| `ops.v_agent_connections` | `nexo.agent_connections` | user_id, agent_id, label, wake_kind, wake_host, verified_at, last_wake_at, revoked_at, created_at | Solo el host de la URL. Nunca `wake_secret`. |
-| `ops.v_users` | `nexo.users` + `nexo.sharing_rules` | user_id, address, display_name, created_at, rules | |
-| `ops.v_circles` | `nexo.circles` + `nexo.circle_members` | circle_id, name, owner_user_id, created_at, members, invitations | Sin las direcciones de los miembros |
-| `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions, has_phone_number | Sin tokens de sesión. Del teléfono solo se ve si existe, nunca el número. `user.id` es el mismo `user_id` de `nexo.users`. |
+| `ops.v_requests` | `sideband.requests` + `sideband.wake_jobs` | id, tool, from_address, to_address, from_user_id, to_user_id, status, outcome, rule, escalated, target_agent_id, answered_by_agent_id, allowed_fields, dropped_fields, decision_reason, internal_reason, args_keys, result_keys, has_purpose, response_signed, created_at, expires_at, closed_at, duration_ms, stuck, wake_attempts, last_wake_ok | Sin `args`, `result`, `purpose`, firmas ni nonce. Solo las llaves de args y result. |
+| `ops.v_request_payloads` | `sideband.requests` | id, args, purpose, result | **Solo** rol `sideband_admin_reveal`. Se usa únicamente en `POST /requests/:id/reveal`. |
+| `ops.v_request_events` | `sideband.request_events` | request_id, id, at, kind, status, code | `detail` se reduce a status y code. |
+| `ops.v_wake_jobs` | `sideband.wake_jobs` + conexión | id, request_id, attempt, state, run_at, kind, ok, http_status, code, latency_ms, user_id, agent_id | Sin cuerpo de respuesta. `code` es `ok`, `retryable`, `failed` o un código `[a-z_]` del adaptador.  Cuando el estado es `running`, `run_at` indica cuándo vence la concesión. |
+| `ops.v_agent_connections` | `sideband.agent_connections` | user_id, agent_id, label, wake_kind, wake_host, verified_at, last_wake_at, revoked_at, created_at | Solo el host de la URL. Nunca `wake_secret`. |
+| `ops.v_users` | `sideband.users` + `sideband.sharing_rules` | user_id, address, display_name, created_at, rules | |
+| `ops.v_circles` | `sideband.circles` + `sideband.circle_members` | circle_id, name, owner_user_id, created_at, members, invitations | Sin las direcciones de los miembros |
+| `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions, has_phone_number | Sin tokens de sesión. Del teléfono solo se ve si existe, nunca el número. `user.id` es el mismo `user_id` de `sideband.users`. |
 | `ops.v_whatsapp` | Better Auth y esquema `whatsapp` (migración de web antes de ops) | linked_accounts, active_pairings, inbound_receipts | Solo recuentos. En Eventos, filtra por `whatsapp.link`, `whatsapp.request` o `whatsapp.send` para seguir el flujo. |
 | `ops.v_oauth_clients` | `public."oauthClient"`, `"oauthAccessToken"`, `"oauthRefreshToken"` | client_id, name, user_id, redirect_hosts, created_at, last_token_at, active_tokens | Sin `client_secret` ni tokens. Token activo: sin revocar y sin vencer (access o refresh). |
 | `ops.v_oauth_grants` | mismas tablas OAuth | user_id, client_id, client_name, last_token_at, active_tokens | Clientes que autorizó cada persona (los del registro dinámico no tienen dueño). Alimenta `UserDetail.identity.oauthClients`. |
@@ -83,13 +83,13 @@ Roles (`NOLOGIN`, los crea ADM-02 de forma idempotente):
 
 | Rol | Permisos |
 | --- | --- |
-| `nexo_telemetry_writer` | `INSERT` en `ops.events` y uso de su secuencia. |
-| `nexo_admin_ro` | `USAGE` en `ops` y `SELECT` en todas las `ops.v_*` excepto `v_request_payloads`. Si existe la bitácora del servidor admin, también `USAGE` en `admin` y `SELECT` solo en `admin.audit` (`AdminQueries.audit`, sin leer `meta`). |
-| `nexo_admin_reveal` | `SELECT` en `ops.v_request_payloads`. |
+| `sideband_telemetry_writer` | `INSERT` en `ops.events` y uso de su secuencia. |
+| `sideband_admin_ro` | `USAGE` en `ops` y `SELECT` en todas las `ops.v_*` excepto `v_request_payloads`. Si existe la bitácora del servidor admin, también `USAGE` en `admin` y `SELECT` solo en `admin.audit` (`AdminQueries.audit`, sin leer `meta`). |
+| `sideband_admin_reveal` | `SELECT` en `ops.v_request_payloads`. |
 
-Toda lectura del admin corre en `BEGIN READ ONLY; SET LOCAL ROLE nexo_admin_ro; SET LOCAL statement_timeout = '3s'`. En dev la conexión es el superusuario local, que puede asumir el rol; en producción el usuario de `ADMIN_DATABASE_URL_RO` es miembro del rol. Las vistas usan los privilegios de su dueño, así que el rol no necesita acceso a las tablas base.
+Toda lectura del admin corre en `BEGIN READ ONLY; SET LOCAL ROLE sideband_admin_ro; SET LOCAL statement_timeout = '3s'`. En dev la conexión es el superusuario local, que puede asumir el rol; en producción el usuario de `ADMIN_DATABASE_URL_RO` es miembro del rol. Las vistas usan los privilegios de su dueño, así que el rol no necesita acceso a las tablas base.
 
-Las vistas se crean en `ops.refresh_views()` (0002), que solo crea las que tienen sus tablas de origen (`to_regclass`) y reaplica los permisos de 0003 (`ops.apply_view_grants()`). Si ops migra antes que el broker, Better Auth o la coordinación, el dueño del esquema ejecuta `SELECT ops.refresh_views();` después de crearlas (es idempotente). `ops.prune_events(interval)` (0004) exige una retención de al menos 1 hora y no tiene `EXECUTE` para los roles del admin: la ejecuta el dueño o un usuario al que ADM-08 se lo otorgue. El payload se lee solo con `createPgRevealer` (`apps/admin/server/queries/reveal.ts`, rol `nexo_admin_reveal`).
+Las vistas se crean en `ops.refresh_views()` (0002), que solo crea las que tienen sus tablas de origen (`to_regclass`) y reaplica los permisos de 0003 (`ops.apply_view_grants()`). Si ops migra antes que el broker, Better Auth o la coordinación, el dueño del esquema ejecuta `SELECT ops.refresh_views();` después de crearlas (es idempotente). `ops.prune_events(interval)` (0004) exige una retención de al menos 1 hora y no tiene `EXECUTE` para los roles del admin: la ejecuta el dueño o un usuario al que ADM-08 se lo otorgue. El payload se lee solo con `createPgRevealer` (`apps/admin/server/queries/reveal.ts`, rol `sideband_admin_reveal`).
 
 ## 3. Telemetría (`@team-31/telemetry`, ADM-01)
 
@@ -165,11 +165,11 @@ sequenceDiagram
     S-->>SPA: 403 y no crea usuario
   else autorizado
     S->>DB: crea sesión (Better Auth)
-    S-->>SPA: cookie nexo-admin.session_token (HttpOnly, Secure, SameSite=Lax)
+    S-->>SPA: cookie sideband-admin.session_token (HttpOnly, Secure, SameSite=Lax)
   end
   SPA->>S: POST /api/admin/requests/:id/reveal {reason}
   S->>S: rol operator + sesión fresca (< ADMIN_FRESH_SECONDS) + Origin = ADMIN_URL
-  S->>DB: audit + SELECT ops.v_request_payloads (SET ROLE nexo_admin_reveal)
+  S->>DB: audit + SELECT ops.v_request_payloads (SET ROLE sideband_admin_reveal)
   S-->>SPA: payload (no se guarda en caché ni en el estado global)
 ```
 
@@ -177,14 +177,14 @@ sequenceDiagram
 | --- | --- | --- | --- | --- |
 | Humano viewer | Cookie de Better Auth (instancia propia del admin, esquema `admin`) | `/api/admin/*` | 8 h; se renueva cada 15 min de uso; sin caché de cookie (la revocación es inmediata) | Lectura redactada |
 | Humano operator | Igual | `/api/admin/*` | Igual. Acciones sensibles exigen sesión fresca (10 min) | + revelar payload, acciones en el broker, SQL, tokens |
-| Agente | Token personal `nxa_` + 32 bytes base64url, creado por un operator. Se guarda `sha256` | Solo `/mcp` | 1 a 30 días (7 por defecto), revocable | `admin:read` y opcional `admin:sql`. **Nunca** revela payloads ni ejecuta acciones |
+| Agente | Token personal `sba_` + 32 bytes base64url, creado por un operator. Se guarda `sha256` | Solo `/mcp` | 1 a 30 días (7 por defecto), revocable | `admin:read` y opcional `admin:sql`. **Nunca** revela payloads ni ejecuta acciones |
 | Servidor admin → broker | JWT de servicio EdDSA `iss=admin`, `aud=broker`, 60 s, `sub` = id del admin, claim `email` | `/v1/admin/*` del broker | 60 s | `rewake`, `expire`, `revokeAgent` |
 
 Reglas:
 
 - El rol se calcula en cada request desde `ADMIN_OPERATORS` / `ADMIN_VIEWERS`: quitar un correo revoca el acceso en el siguiente request.
 - Mutaciones: `Origin` debe ser `ADMIN_URL`, el cuerpo debe ser `application/json` y todas exigen `reason` (10 a 500 caracteres) que queda en `admin.audit`.
-- `ADMIN_DEV_AUTH=1` (prohibido si `NODE_ENV=production`) habilita `POST /api/admin/dev-login`, que crea una sesión de `dev@nexo.local` como operator.
+- `ADMIN_DEV_AUTH=1` (prohibido si `NODE_ENV=production`) habilita `POST /api/admin/dev-login`, que crea una sesión de `dev@sideband.local` como operator.
 - Límites: `/mcp` 60 req/min por token; reveal 10 por hora por admin; login 10 por minuto por IP.
 - Tablas del servidor admin (esquema `admin`): tablas de Better Auth, `admin.tokens(id, name, token_hash unique, prefix, scopes, created_by, created_at, expires_at, last_used_at, revoked_at)` y `admin.audit(id, at, actor_type, actor_id, actor_label, action, target, reason, ip, meta)`. Cada fila de auditoría también emite su evento `admin.*`.
 
@@ -207,17 +207,17 @@ La tabla completa está en `adminRoutes` (`apps/admin/shared/contract.ts`). Resu
 | `GET /api/admin/wakes` | viewer | Cola de avisos |
 | `POST /api/admin/sql` | operator | SELECT sobre `ops.v_*` |
 | `GET /api/admin/audit` | viewer | Bitácora de acciones |
-| `GET/POST/DELETE /api/admin/tokens` | operator | Tokens `nxa_` para el MCP |
+| `GET/POST/DELETE /api/admin/tokens` | operator | Tokens `sba_` para el MCP |
 
 Errores: `ErrorBody` con códigos `unauthorized`, `forbidden`, `not_fresh`, `not_found`, `invalid_input`, `rate_limited`, `upstream`, `internal` (+ `errorId`).
 
 ## 6. MCP de administración
 
-`POST /mcp` en el servidor admin. Streamable HTTP sin estado (`sessionIdGenerator: undefined`, `enableJsonResponse: true`) con `Authorization: Bearer nxa_…`.
+`POST /mcp` en el servidor admin. Streamable HTTP sin estado (`sessionIdGenerator: undefined`, `enableJsonResponse: true`) con `Authorization: Bearer sba_…`.
 
 ```bash
-claude mcp add --transport http nexo-admin "$ADMIN_URL/mcp" --header "Authorization: Bearer nxa_..."
-codex mcp add nexo-admin --url "$ADMIN_URL/mcp" --bearer-token-env-var NEXO_ADMIN_TOKEN
+claude mcp add --transport http sideband-admin "$ADMIN_URL/mcp" --header "Authorization: Bearer sba_..."
+codex mcp add sideband-admin --url "$ADMIN_URL/mcp" --bearer-token-env-var SIDEBAND_ADMIN_TOKEN
 ```
 
 | Tool | Entrada | Para qué |
@@ -242,7 +242,7 @@ React 19 + Vite + Tailwind 4 + shadcn (preset Nova, Radix, Geist). Usa la skill 
 
 ```
 ┌────────────┬──────────────────────────────────────────────────────────┐
-│ Nexo Admin │ ⌘K  buscar request / trace / error / persona      [1h ▾] │
+│ Sideband Admin │ ⌘K  buscar request / trace / error / persona      [1h ▾] │
 │            ├──────────────────────────────────────────────────────────┤
 │ Resumen    │ [web ●] [mcp ●] [broker ●] [worker ◐] [coord ●]           │
 │ Solicitudes│ ┌ Solicitudes ┐ ┌ p95 final ┐ ┌ Avisos ok ┐ ┌ Errores ┐   │
@@ -323,10 +323,10 @@ Conflictos esperables: `pnpm-lock.yaml`. Al rebasar, toma la versión de `main` 
 ### ADM-02 · Vistas, roles y `createPgAdminQueries`
 
 - `packages/ops/sql/0002_views.sql`, `0003_roles.sql` y `0004_prune.sql` (`ops.prune_events(interval)`), idempotentes (`CREATE OR REPLACE VIEW`, roles con `DO $$ … IF NOT EXISTS`). Las vistas sobre tablas que pueden no existir (Better Auth, coordinación) se crean condicionalmente con `DO $$` + `to_regclass`.
-- Implementa `apps/admin/server/queries/index.ts#createPgAdminQueries` con la interfaz `AdminQueries` completa. Cada método abre una transacción `READ ONLY`, hace `SET LOCAL ROLE nexo_admin_ro` y `statement_timeout`, y mapea filas al contrato (valida la salida con los esquemas zod).
+- Implementa `apps/admin/server/queries/index.ts#createPgAdminQueries` con la interfaz `AdminQueries` completa. Cada método abre una transacción `READ ONLY`, hace `SET LOCAL ROLE sideband_admin_ro` y `statement_timeout`, y mapea filas al contrato (valida la salida con los esquemas zod).
 - `sql()`: rechaza todo lo que no empiece con `SELECT`/`WITH` o tenga más de una sentencia, agrega `LIMIT 201` envolviendo la consulta, marca `truncated` y rechaza `ops.v_request_payloads`.
 - `request()`: combina `ops.v_request_events` y `ops.v_events` (por request_id) en `timeline`, ordenado por `at`.
-- Tests contra `TEST_DATABASE_URL`: aplica migraciones del broker (`applyPostgresMigrations`) y de ops, siembra con el store de Postgres del broker, verifica cada método, que el rol no pueda leer `nexo.requests` directo ni `v_request_payloads`, y que `sql("DELETE …")` falle.
+- Tests contra `TEST_DATABASE_URL`: aplica migraciones del broker (`applyPostgresMigrations`) y de ops, siembra con el store de Postgres del broker, verifica cada método, que el rol no pueda leer `sideband.requests` directo ni `v_request_payloads`, y que `sql("DELETE …")` falle.
 
 ### ADM-03 · `AdminPort` en el broker
 
@@ -339,12 +339,12 @@ Conflictos esperables: `pnpm-lock.yaml`. Al rebasar, toma la versión de `main` 
 ### ADM-04 · Servidor admin (Hono)
 
 - `apps/admin/server/index.ts`: lee env con zod, crea Better Auth del admin, `createPgAdminQueries`, cliente del broker y `mountAdminMcp`; sirve `/api/auth/*`, `/api/admin/*` según `adminRoutes`, `/healthz` y en producción la SPA estática de `dist/client` (fallback a `index.html`). Escucha en `ADMIN_API_PORT` en dev y en `ADMIN_PORT` en producción (`ADMIN_SERVE_SPA=1`).
-- `server/auth/`: Better Auth con Google (`ADMIN_GOOGLE_CLIENT_ID/SECRET`), pool con `search_path=admin`, `databaseHooks.user.create.before` que rechaza correos fuera de la lista, `session.expiresIn = 8h`, `updateAge = 15m`, `cookieCache` deshabilitado, `advanced.cookiePrefix = "nexo-admin"`, `trustedOrigins = [ADMIN_URL]`. Script `admin:auth:migrate`. Dev login con `ADMIN_DEV_AUTH=1`.
-- `server/tokens.ts`: crear, listar, revocar y autenticar `nxa_` (`authenticate` para `mountAdminMcp`), con `last_used_at` como máximo una vez por minuto.
+- `server/auth/`: Better Auth con Google (`ADMIN_GOOGLE_CLIENT_ID/SECRET`), pool con `search_path=admin`, `databaseHooks.user.create.before` que rechaza correos fuera de la lista, `session.expiresIn = 8h`, `updateAge = 15m`, `cookieCache` deshabilitado, `advanced.cookiePrefix = "sideband-admin"`, `trustedOrigins = [ADMIN_URL]`. Script `admin:auth:migrate`. Dev login con `ADMIN_DEV_AUTH=1`.
+- `server/tokens.ts`: crear, listar, revocar y autenticar `sba_` (`authenticate` para `mountAdminMcp`), con `last_used_at` como máximo una vez por minuto.
 - `server/audit.ts` y `server/broker.ts` (cliente de `/v1/admin/*` con JWT `iss=admin` y `traceparent`).
 - `server/api.ts`: recorre `adminRoutes` como `apps/broker/src/http/server.ts`: valida entrada, verifica rol y frescura, `Origin` en mutaciones, rate limits, `Cache-Control: no-store` y mapea `AdminQueryError` a `ErrorBody`. SSE `/live` con poll de 1 s por `id > cursor` y heartbeat de 15 s.
 - Tarea horaria: `SELECT ops.prune_events(make_interval(days => TELEMETRY_RETENTION_DAYS))`.
-- Scripts: `dev` corre Vite y `tsx watch server/index.ts` en paralelo. Servicio `admin` en `docker-compose.yml` (perfil `nexo`, solo loopback).
+- Scripts: `dev` corre Vite y `tsx watch server/index.ts` en paralelo. Servicio `admin` en `docker-compose.yml` (perfil `sideband`, solo loopback).
 - Tests con `AdminQueries` falso y Postgres de prueba: 401 sin sesión, 403 por rol, `not_fresh`, `Origin` inválido, token revocado o vencido, auditoría de reveal y acciones.
 
 ### ADM-05 · MCP de administración
@@ -384,19 +384,19 @@ El admin se despliega como `team-31-admin` en el Blueprint `render.yaml`: un sol
 | 2 | Render → `team-31-admin` → Environment | `ADMIN_URL` = URL pública del servicio (`https://team-31-admin.onrender.com` o el dominio propio, nunca el mismo origen que web). `ADMIN_OPERATORS` y `ADMIN_VIEWERS` (correos separados por coma). `BROKER_URL` = URL del broker. |
 | 3 | Llaves | `node infra/gen-keys.ts` en local genera `ADMIN_SERVICE_PRIVATE_KEY`. Pega la privada en el admin y agrega su pública como `admin` dentro de `SERVICE_JWT_PUBLIC_KEYS` del broker (sin ella, `/v1/admin/*` responde 401). |
 | 4 | Google Cloud | Cliente OAuth web con redirect `$ADMIN_URL/api/auth/callback/google`. Carga `ADMIN_GOOGLE_CLIENT_ID` y `ADMIN_GOOGLE_CLIENT_SECRET`. |
-| 5 | Deploy | Despliega el broker primero (su `preDeployCommand` aplica `nexo.*` y `ops`) y después el admin (`admin:auth:migrate` + `ops migrate`, que vuelve a aplicar vistas y permisos). |
-| 6 | Verificación | `GET $ADMIN_URL/healthz`, login con Google, Resumen con los servicios en `up`, y un token `nxa_` probado con `claude mcp add --transport http nexo-admin "$ADMIN_URL/mcp" --header "Authorization: Bearer nxa_..."`. |
+| 5 | Deploy | Despliega el broker primero (su `preDeployCommand` aplica `sideband.*` y `ops`) y después el admin (`admin:auth:migrate` + `ops migrate`, que vuelve a aplicar vistas y permisos). |
+| 6 | Verificación | `GET $ADMIN_URL/healthz`, login con Google, Resumen con los servicios en `up`, y un token `sba_` probado con `claude mcp add --transport http sideband-admin "$ADMIN_URL/mcp" --header "Authorization: Bearer sba_..."`. |
 
 Telemetría: `TELEMETRY_SINK=postgres` está en el grupo compartido. Web, broker, coordinación y admin escriben con su `DATABASE_URL`, y el MCP, que no tiene base propia, con `TELEMETRY_DATABASE_URL`. Antes de este cambio el `preDeploy` del broker no aplicaba `ops`, así que `ops.events` no existía en producción y los eventos se perdían.
 
 ### Roles con Postgres administrado
 
-En Render el usuario de la base no es superusuario. En Postgres 16+ quien crea un rol con `CREATEROLE` recibe solo `ADMIN OPTION`, sin `SET`, así que no podría hacer `SET ROLE nexo_admin_ro`. La migración `0008_role_membership.sql` otorga al usuario de migración la membresía `WITH SET TRUE, INHERIT FALSE`. Si no se puede, el admin cae en **modo degradado**:
+En Render el usuario de la base no es superusuario. En Postgres 16+ quien crea un rol con `CREATEROLE` recibe solo `ADMIN OPTION`, sin `SET`, así que no podría hacer `SET ROLE sideband_admin_ro`. La migración `0008_role_membership.sql` otorga al usuario de migración la membresía `WITH SET TRUE, INHERIT FALSE`. Si no se puede, el admin cae en **modo degradado**:
 
 | Situación del usuario de la base | Resultado | Lecturas del panel y MCP | Reveal | `sql()` / `admin_sql` |
 | --- | --- | --- | --- | --- |
-| Superusuario (local) | Roles completos | `SET LOCAL ROLE nexo_admin_ro` | `SET LOCAL ROLE nexo_admin_reveal` | Habilitado, solo vistas |
-| `CREATEROLE` (probado en PG17) | Crea los roles y se otorga `SET` | Igual | Igual | Habilitado; `nexo.*` da `permission denied` |
+| Superusuario (local) | Roles completos | `SET LOCAL ROLE sideband_admin_ro` | `SET LOCAL ROLE sideband_admin_reveal` | Habilitado, solo vistas |
+| `CREATEROLE` (probado en PG17) | Crea los roles y se otorga `SET` | Igual | Igual | Habilitado; `sideband.*` da `permission denied` |
 | Sin `CREATEROLE` | Advertencia en la migración, sin roles | `READ ONLY` sin cambio de rol, solo vistas redactadas | Funciona sin rol (la ruta exige operator, sesión fresca, motivo y auditoría) | **Deshabilitado**, porque sin el rol podría leer tablas base |
 
 El admin detecta el modo una vez por pool con `pg_has_role(current_user, rol, 'SET')`. Los tres casos se probaron contra un Postgres 17 limpio con usuarios no superusuario.

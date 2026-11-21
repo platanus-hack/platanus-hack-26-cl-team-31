@@ -70,7 +70,7 @@ export interface OwnerPort {
 }
 
 // Operational mutations for apps/admin. The broker keeps the invariant that each request ends in
-// exactly one final state, so the admin never writes nexo.* directly. `reason` is 10 to 500 chars.
+// exactly one final state, so the admin never writes sideband.* directly. `reason` is 10 to 500 chars.
 export interface AdminPort {
   // Only for an `awaiting_agent` request that has not expired. Queues the next wake attempt.
   rewake(a: AdminActor, requestId: string, reason: string): Promise<void>;

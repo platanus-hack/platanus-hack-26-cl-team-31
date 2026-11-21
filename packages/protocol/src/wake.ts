@@ -31,7 +31,7 @@ export const WakeTarget = z.discriminatedUnion("kind", [
 ]);
 export type WakeTarget = z.infer<typeof WakeTarget>;
 
-export const WAKE_EVENT = "nexo.request.created";
+export const WAKE_EVENT = "sideband.request.created";
 
 export const WakeNotice = z.strictObject({
   requestId: z.string(),

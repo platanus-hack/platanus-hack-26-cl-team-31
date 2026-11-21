@@ -36,7 +36,7 @@ function testPort(): AgentPort {
 }
 
 async function connect(url: string, token: string) {
-  const client = new Client({ name: "nexo-test", version: "1.0.0" });
+  const client = new Client({ name: "sideband-test", version: "1.0.0" });
   clients.push(client);
   await client.connect(new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
@@ -104,15 +104,15 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const getServiceToken = createServiceTokenMinter(JSON.stringify(privateKey.export({ format: "jwk" })));
   const publicKeys = { mcp: publicKey.export({ format: "jwk" }) };
   const request = {
-    requestId: "request-1", to: "bob@nexo.app", tool: "question", expiresAt: "2026-11-22T00:00:00Z",
+    requestId: "request-1", to: "bob@sideband.app", tool: "question", expiresAt: "2026-11-22T00:00:00Z",
   };
   const pending = { ...request, decision: "pending", final: false, waitingFor: "agent" };
   const question = { tool: "question", to: pending.to, args: { text: "¿Vienes?" } };
   const inbox = {
-    requestId: pending.requestId, nonce: "nonce-1", from: "ana@nexo.app", tool: pending.tool,
+    requestId: pending.requestId, nonce: "nonce-1", from: "ana@sideband.app", tool: pending.tool,
     args: question.args, expiresAt: pending.expiresAt, allowedFields: ["answer"],
     ownerAuthorization: { rule: "amigos", guidance: "", verifiedBy: "broker" },
-    senderMessage: { ...question.args, trusted: false }, howToReply: "Responde con nexo_reply.",
+    senderMessage: { ...question.args, trusted: false }, howToReply: "Responde con sideband_reply.",
   };
   const answer = { requestId: inbox.requestId, nonce: inbox.nonce, outcome: "answered", result: { answer: "Sí" } };
   const receipt = { requestId: inbox.requestId, status: "answered", deliveredFields: ["answer"], droppedFields: [] };
@@ -147,13 +147,13 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
 
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
-    ["nexo_ask", undefined], ["nexo_inbox", true], ["nexo_reply", undefined], ["nexo_check", true],
+    ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
-  expect((await ana.callTool({ name: "nexo_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
-  expect((await bob.callTool({ name: "nexo_inbox" })).structuredContent).toEqual({ items: [inbox] });
-  expect((await bob.callTool({ name: "nexo_reply", arguments: answer })).structuredContent).toEqual(receipt);
-  expect((await ana.callTool({ name: "nexo_check", arguments: { requestId: inbox.requestId } })).structuredContent)
+  expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
+  expect((await bob.callTool({ name: "sideband_inbox" })).structuredContent).toEqual({ items: [inbox] });
+  expect((await bob.callTool({ name: "sideband_reply", arguments: answer })).structuredContent).toEqual(receipt);
+  expect((await ana.callTool({ name: "sideband_check", arguments: { requestId: inbox.requestId } })).structuredContent)
     .toEqual(final);
 
   expect(requests).toEqual([
@@ -183,28 +183,28 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
     })}`;
     return `${jwt}.${sign(null, Buffer.from(jwt), privateKey).toString("base64url")}`;
   }
-  const client = await connect(`${origin}/mcp`, token("nexo:inbox nexo:status"));
+  const client = await connect(`${origin}/mcp`, token("sideband:inbox sideband:status"));
 
-  expect(await client.callTool({ name: "nexo_ask", arguments: { to: "bob@nexo.app", tool: "profile", args: {} } }))
+  expect(await client.callTool({ name: "sideband_ask", arguments: { to: "bob@sideband.app", tool: "profile", args: {} } }))
     .toMatchObject({
       isError: true,
-      content: [{ text: "Tu conexión no tiene permiso para esto; vuelve a autorizar en la App Nexo" }],
+      content: [{ text: "Tu conexión no tiene permiso para esto; vuelve a autorizar en la App Sideband" }],
       structuredContent: { ok: false, error: { code: "forbidden" } },
     });
   expect(agent.ask).not.toHaveBeenCalled();
-  expect((await client.callTool({ name: "nexo_inbox" })).structuredContent).toEqual({ items: [] });
+  expect((await client.callTool({ name: "sideband_inbox" })).structuredContent).toEqual({ items: [] });
   expect(agent.inbox).toHaveBeenCalledWith({
-    userId: "oauth-user", agentId: "oauth-agent", scopes: ["nexo:inbox", "nexo:status"],
+    userId: "oauth-user", agentId: "oauth-agent", scopes: ["sideband:inbox", "sideband:status"],
   });
-  expect(await client.callTool({ name: "nexo_check", arguments: { requestId: "missing" } })).toMatchObject({
+  expect(await client.callTool({ name: "sideband_check", arguments: { requestId: "missing" } })).toMatchObject({
     isError: true,
     structuredContent: { ok: false, error: { code: "not_found", message: "No se encontró la solicitud." } },
   });
 
-  const limited = await connect(`${origin}/mcp`, token("nexo:status"));
+  const limited = await connect(`${origin}/mcp`, token("sideband:status"));
   await expect(limited.request({
     method: "events/subscribe",
-    params: { name: WAKE_EVENT, delivery: { mode: "webhook", url: "https://callback.example.test/nexo", secret: `whsec_${Buffer.alloc(32).toString("base64")}` } },
+    params: { name: WAKE_EVENT, delivery: { mode: "webhook", url: "https://callback.example.test/sideband", secret: `whsec_${Buffer.alloc(32).toString("base64")}` } },
   }, z.looseObject({}))).rejects.toMatchObject({ code: -32000, data: { code: "forbidden" } });
   await expect(limited.request({ method: "events/unsubscribe", params: { id: "sub_0123456789abcdef" } }, z.looseObject({})))
     .rejects.toMatchObject({ code: -32000, data: { code: "forbidden" } });
@@ -228,7 +228,7 @@ it("anuncia eventos, valida suscripciones, devuelve los errores de callback y ca
     }],
   });
 
-  const url = "https://callback.example.test/nexo";
+  const url = "https://callback.example.test/sideband";
   const secret = `whsec_${Buffer.alloc(64, 255).toString("base64")}`;
   const subscription = { name: WAKE_EVENT, delivery: { mode: "webhook", url, secret } };
   const subscribe = (params: Record<string, unknown>) => client.request({ method: "events/subscribe", params }, resultSchema);

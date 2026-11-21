@@ -10,7 +10,7 @@ const suggestions: Record<Person, [string, string][]> = {
   ana: [["Consultar disponibilidad", "Hola, estoy organizando un partido. ¿Le acomoda a Bob el sábado a las seis de la tarde?"], ["Proponer un horario", "Invita a Bob y Carla a jugar el sábado. Propón las 4 o las 6 de la tarde como opciones."]],
   bob: [["Revisar mi bandeja", "¿Tengo alguna invitación pendiente?"], ["Responder con mi agenda", "Responde con mi disponibilidad al encuentro activo. Todavía no aceptes."]],
   carla: [["Revisar mi bandeja", "¿Qué encuentros tengo pendientes?"], ["Responder con mi agenda", "Cuéntales qué horas me sirven para el encuentro activo, sin aceptar todavía."]],
-  eva: [["Probar los permisos", "¿Sabes si Bob tiene tiempo para fútbol el sábado a las 18?"], ["Conocer Nexo", "¿Cómo protege Nexo la privacidad de los calendarios?"]],
+  eva: [["Probar los permisos", "¿Sabes si Bob tiene tiempo para fútbol el sábado a las 18?"], ["Conocer Sideband", "¿Cómo protege Sideband la privacidad de los calendarios?"]],
 };
 
 function Mark({ size = 24 }: { size?: number }) {
@@ -158,7 +158,7 @@ export function Dashboard() {
     return <>
       {!contactChat && meetingId && person !== "eva" && <p className="active-meeting">Encuentro activo <code>{meetingId.slice(0, 8)}</code></p>}
       <form className="composer" onSubmit={submit}>
-        <label className="sr-only" htmlFor="demo-message">Mensaje para Nexo</label>
+        <label className="sr-only" htmlFor="demo-message">Mensaje para Sideband</label>
         <textarea ref={input} id="demo-message" rows={2} value={draft} onChange={event => setDraft(event.target.value)}
           onKeyDown={event => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -166,16 +166,16 @@ export function Dashboard() {
               void send(draft);
             }
           }}
-          placeholder="Escríbele a Nexo…" maxLength={maxMessage} />
+          placeholder="Escríbele a Sideband…" maxLength={maxMessage} />
         <button type="submit" className="send" aria-label="Enviar mensaje" disabled={!ready || pending || !draft.trim()}><Arrow up /></button>
       </form>
     </>;
   }
 
   const hasMessages = !!messages?.length;
-  return <div className="nexo-demo">
+  return <div className="sideband-demo">
     <aside className="sidebar">
-      <div className="brand"><span className="mark"><Mark size={19} /></span>Nexo</div>
+      <div className="brand"><span className="mark"><Mark size={19} /></span>Sideband</div>
       <div className="identity-list" aria-label="Identidad activa">
         <p>Conversar como</p>
         {identities.map(id => <button type="button" key={id} aria-pressed={person === id} disabled={pending} onClick={() => { setPerson(id); setDraft(""); }}>
@@ -223,7 +223,7 @@ export function Dashboard() {
       </> : <div className="welcome">
         <div className="chat-width welcome-inner">
           <div className="welcome-title"><span className="welcome-mark"><Mark size={34} /></span><h1>Hola, {people[person].name}.</h1></div>
-          <p>{contactChat ? "Pregunta por un interés. Ana consultará a los agentes de su agenda." : person === "eva" ? "Puedes conversar con Nexo aunque no estés en el grupo de fútbol." : "Pregunta por un horario o coordina un encuentro. Escríbelo como se lo dirías a alguien."}</p>
+          <p>{contactChat ? "Pregunta por un interés. Ana consultará a los agentes de su agenda." : person === "eva" ? "Puedes conversar con Sideband aunque no estés en el grupo de fútbol." : "Pregunta por un horario o coordina un encuentro. Escríbelo como se lo dirías a alguien."}</p>
           {composer()}
           <div className="suggestions" aria-label="Ideas para empezar">
             {(contactChat ? [["Preguntar por cerámica", "¿A alguien le interesa la cerámica?"], ["Ver mis contactos", "¿Quién está en mi agenda?"]] : suggestions[person]).map(([label, prompt]) => <button key={label} type="button" disabled={pending} onClick={() => {
@@ -243,5 +243,5 @@ function previousAnswer(reply: ChatReply | null) {
     .map(({ input }) => typeof input.recipient === "string" && typeof input.slot === "string"
       ? `${input.recipient} a las ${formatSlot(input.slot)} (Santiago)` : null).filter(Boolean);
   return queries.length ? `La pregunta anterior era por la disponibilidad de ${queries.join(", ")}.`
-    : "Consulté el estado en Nexo.";
+    : "Consulté el estado en Sideband.";
 }

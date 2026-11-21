@@ -19,7 +19,7 @@ services:
       retries: 20
 
   broker:
-    profiles: ["nexo"]
+    profiles: ["sideband"]
     image: node:24-alpine
     working_dir: /workspace
     command: ["node", "apps/broker/dist/index.js"]
@@ -27,7 +27,7 @@ services:
       - .:/workspace:ro
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      DATABASE_URL: postgresql://nexo_broker:${BROKER_DATABASE_PASSWORD:-}@postgres:5432/app
+      DATABASE_URL: postgresql://sideband_broker:${BROKER_DATABASE_PASSWORD:-}@postgres:5432/app
       BROKER_PORT: ${BROKER_PORT:-}
       BROKER_HOST: 0.0.0.0
       BROKER_SIGNING_KEY: ${BROKER_SIGNING_KEY:-}
@@ -37,7 +37,7 @@ services:
       REQUEST_TTL_SECONDS: ${REQUEST_TTL_SECONDS:-900}
       WAKE_RETRY_DELAYS_MS: ${WAKE_RETRY_DELAYS_MS:-10000,30000}
       WAKE_ALLOW_INSECURE: ${WAKE_ALLOW_INSECURE:-0}
-      # Telemetría (ops.events). Sin TELEMETRY_DATABASE_URL usa DATABASE_URL: nexo_broker tiene INSERT en ops.events.
+      # Telemetría (ops.events). Sin TELEMETRY_DATABASE_URL usa DATABASE_URL: sideband_broker tiene INSERT en ops.events.
       TELEMETRY_SINK: ${TELEMETRY_SINK:-}
       TELEMETRY_DATABASE_URL: ${TELEMETRY_DATABASE_URL:-}
     ports:
@@ -74,7 +74,7 @@ services:
       - models:/root/.ollama
 
   mcp:
-    profiles: ["nexo"]
+    profiles: ["sideband"]
     image: node:24-alpine
     working_dir: /workspace
     command: ["node", "apps/mcp/dist/index.js"]
@@ -99,10 +99,10 @@ services:
       postgres:
         condition: service_healthy
 
-  # Admin de Nexo (SPA + API + MCP admin en un solo puerto). Compila antes con
+  # Admin de Sideband (SPA + API + MCP admin en un solo puerto). Compila antes con
   # `pnpm build --filter @team-31/admin...`. Ver apps/admin/README.md.
   admin:
-    profiles: ["nexo"]
+    profiles: ["sideband"]
     image: node:24-alpine
     working_dir: /workspace/apps/admin
     command: ["node", "dist/server/server/index.js"]

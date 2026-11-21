@@ -19,7 +19,7 @@ const audience = "https://mcp.example.test/mcp";
 const issuer = "https://auth.example.test/api/auth";
 const options = { audience, issuer, jwksUrl: `${issuer}/jwks`, devAuth: true };
 const secretText = "pregunta privada";
-const question = { to: "bob@nexo.app", tool: "question", args: { text: secretText } };
+const question = { to: "bob@sideband.app", tool: "question", args: { text: secretText } };
 
 let sink: MemorySink;
 let telemetry: Telemetry;
@@ -47,7 +47,7 @@ async function listen(server: Server) {
 }
 
 async function connect(url: string, token: string) {
-  const client = new Client({ name: "nexo-test", version: "1.0.0" });
+  const client = new Client({ name: "sideband-test", version: "1.0.0" });
   clients.push(client);
   await client.connect(new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
@@ -70,7 +70,7 @@ describe("telemetría del MCP", () => {
       headers.push({ traceparent: String(req.headers.traceparent ?? "") });
       req.resume();
       res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
-        requestId: "request-1", to: "bob@nexo.app", tool: "question", expiresAt: "2026-11-22T00:00:00Z",
+        requestId: "request-1", to: "bob@sideband.app", tool: "question", expiresAt: "2026-11-22T00:00:00Z",
         decision: "pending", final: false, waitingFor: "agent",
       }));
     }));
@@ -81,12 +81,12 @@ describe("telemetría del MCP", () => {
     });
     const origin = await listen(createHttpServer(options, agent, telemetry));
     const client = await connect(`${origin}/mcp`, "dev:ana:ana-bot");
-    await client.callTool({ name: "nexo_ask", arguments: question });
+    await client.callTool({ name: "sideband_ask", arguments: question });
 
     const [tool] = sink.find("mcp.tool.call");
     expect(tool).toMatchObject({
       service: "mcp", userId: "ana", agentId: "ana-bot", requestId: "request-1", status: "ok",
-      attrs: { tool: "nexo_ask", outcome: "ok" },
+      attrs: { tool: "sideband_ask", outcome: "ok" },
     });
     const parent = sink.find("http.request").find((span) => span.spanId === tool?.parentSpanId);
     expect(parent).toMatchObject({ traceId: tool?.traceId, userId: "ana", attrs: { method: "POST", route: "/mcp", status: 200 } });
@@ -112,16 +112,16 @@ describe("telemetría del MCP", () => {
     expect(sink.find("auth.token.rejected")[0]?.attrs).toEqual({ issuer, reason: "missing_token" });
 
     const client = await connect(`${origin}/mcp`, "dev:ana:ana-bot");
-    expect((await client.callTool({ name: "nexo_inbox" })).isError).toBe(true);
-    expect((await client.callTool({ name: "nexo_check", arguments: { requestId: "missing" } })).isError).toBe(true);
+    expect((await client.callTool({ name: "sideband_inbox" })).isError).toBe(true);
+    expect((await client.callTool({ name: "sideband_check", arguments: { requestId: "missing" } })).isError).toBe(true);
 
     const calls = sink.find("mcp.tool.call");
     expect(calls.map((call) => [call.attrs.tool, call.attrs.outcome, call.status])).toEqual([
-      ["nexo_inbox", "error", "error"],
-      ["nexo_check", "error", "ok"],
+      ["sideband_inbox", "error", "error"],
+      ["sideband_check", "error", "ok"],
     ]);
     const [error] = sink.find("error");
-    expect(error).toMatchObject({ userId: "ana", attrs: { operation: "mcp.tool.call nexo_inbox", type: "Error" } });
+    expect(error).toMatchObject({ userId: "ana", attrs: { operation: "mcp.tool.call sideband_inbox", type: "Error" } });
     expect(calls[0]?.errorId).toBe(error?.errorId);
     expect(calls[1]?.requestId).toBe("missing");
     expect(JSON.stringify(sink.records)).not.toContain("detalle privado");
@@ -129,12 +129,12 @@ describe("telemetría del MCP", () => {
 
   it("registra la denegación por permiso faltante", async () => {
     // Dev tokens carry every scope, so the limited principal goes straight to runTool.
-    const result = await runTool(telemetry, { userId: "ana", agentId: "ana-bot", scopes: ["nexo:status"] },
-      { tool: "nexo_ask", scope: "nexo:ask" }, async () => ({}));
+    const result = await runTool(telemetry, { userId: "ana", agentId: "ana-bot", scopes: ["sideband:status"] },
+      { tool: "sideband_ask", scope: "sideband:ask" }, async () => ({}));
     expect(result.isError).toBe(true);
-    expect(sink.find("mcp.tool.call")[0]?.attrs).toEqual({ tool: "nexo_ask", outcome: "denied" });
+    expect(sink.find("mcp.tool.call")[0]?.attrs).toEqual({ tool: "sideband_ask", outcome: "denied" });
     expect(sink.find("auth.scope.denied")).toEqual([expect.objectContaining({
-      userId: "ana", agentId: "ana-bot", attrs: { scope: "nexo:ask", operation: "nexo_ask" },
+      userId: "ana", agentId: "ana-bot", attrs: { scope: "sideband:ask", operation: "sideband_ask" },
     })]);
   });
 
@@ -144,7 +144,7 @@ describe("telemetría del MCP", () => {
     const client = await connect(`${origin}/mcp`, "dev:ana:ana-bot");
     const params = {
       name: WAKE_EVENT,
-      delivery: { mode: "webhook", url: "https://callback.example.test/nexo", secret: `whsec_${Buffer.alloc(32).toString("base64")}` },
+      delivery: { mode: "webhook", url: "https://callback.example.test/sideband", secret: `whsec_${Buffer.alloc(32).toString("base64")}` },
     };
     await expect(client.request({ method: "events/subscribe", params }, z.looseObject({})))
       .rejects.toMatchObject({ code: -32603 });
@@ -160,7 +160,7 @@ describe("telemetría del MCP", () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       const own = createTelemetry({ service: "mcp", sink: mcpSink(true, { TELEMETRY_SINK: "console" }), heartbeatMs: 0 });
-      own.emit("mcp.tool.call", { attrs: { tool: "nexo_ask", outcome: "ok" } });
+      own.emit("mcp.tool.call", { attrs: { tool: "sideband_ask", outcome: "ok" } });
       expect(stdout).not.toHaveBeenCalled();
       expect(stderr).toHaveBeenCalled();
     } finally {

@@ -15,8 +15,9 @@ const robotoMono = Roboto_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Nexo",
+  title: "Sideband",
   description: "Conecta tus agentes y decide qué pueden compartir.",
+  icons: { icon: "/sideband.svg" },
 };
 
 export const viewport: Viewport = {

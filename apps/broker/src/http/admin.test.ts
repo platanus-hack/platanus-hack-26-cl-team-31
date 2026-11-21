@@ -21,7 +21,7 @@ const alice: Principal = { userId: "alice", agentId: "alice-agent", scopes: Scop
 const bruno: Principal = { userId: "bruno", agentId: "bruno-agent", scopes: Scope.options };
 
 const adminToken = (key = admin.privateKey) => mintServiceToken({
-  iss: "admin", sub: "admin-1", email: "ops@nexo.app", privateKey: key.export({ format: "jwk" }),
+  iss: "admin", sub: "admin-1", email: "ops@sideband.app", privateKey: key.export({ format: "jwk" }),
 });
 const ownerToken = () => mintServiceToken({ iss: "web", sub: "bruno", privateKey: web.privateKey.export({ format: "jwk" }) });
 const agentToken = () => mintServiceToken({
@@ -33,13 +33,13 @@ async function fixture(keys: Partial<typeof publicKeys> = publicKeys) {
     store: createMemoryStore(),
     waker: { wake: async () => ({ ok: true, retryable: false, ms: 1 }), verifyCallback: async () => ({ ok: true }) },
     clock: { now: () => new Date() }, signingKey: signing.privateKey, nonceKey: new Uint8Array(32),
-    config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 0, 0], addressDomain: "nexo.app" },
+    config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 0, 0], addressDomain: "sideband.app" },
   });
   await broker.owner.claimAddress(alice, "alice");
   await broker.owner.claimAddress(bruno, "bruno");
-  await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
+  await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] });
   await broker.agent.connectWake(bruno, { kind: "standard_webhook", url: "https://example.com/hook", secret: "whsec_test" });
-  const { requestId } = await broker.agent.ask(alice, { to: "bruno@nexo.app", tool: "question", args: { text: "¿Vienes?" } });
+  const { requestId } = await broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes?" } });
   return { broker, requestId, app: createHttpServer({ broker, publicKeys: keys }) };
 }
 

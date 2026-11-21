@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "team-31-mcp": "./dist/index.js"
+    "sideband-mcp": "./dist/index.js"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

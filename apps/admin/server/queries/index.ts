@@ -1,5 +1,5 @@
 // AdminQueries sobre las vistas redactadas ops.v_* (docs/admin.md#22-vistas-adm-02).
-// Cada método corre en `BEGIN READ ONLY; SET LOCAL ROLE nexo_admin_ro; statement_timeout 3 s`
+// Cada método corre en `BEGIN READ ONLY; SET LOCAL ROLE sideband_admin_ro; statement_timeout 3 s`
 // y valida su salida con los esquemas del contrato antes de devolverla.
 import { performance } from "node:perf_hooks"
 
@@ -328,7 +328,7 @@ export function createPgAdminQueries({
 }: PgAdminQueriesOptions): PgAdminQueries {
   const pool = createPool(databaseUrl)
   const ro = <T>(fn: (db: Db) => Promise<T>) =>
-    readOnly(pool, "nexo_admin_ro", fn)
+    readOnly(pool, "sideband_admin_ro", fn)
 
   return {
     overview: (window) =>
@@ -745,7 +745,7 @@ export function createPgAdminQueries({
 
     audit: (cursor) =>
       ro(async (db) => {
-        // admin.audit es del servidor admin (ADM-04); nexo_admin_ro tiene SELECT solo sobre esa
+        // admin.audit es del servidor admin (ADM-04); sideband_admin_ro tiene SELECT solo sobre esa
         // tabla (packages/ops/sql/0003_roles.sql). Sin ella, no hay entradas. Nunca se lee meta.
         const { rows: found } = await db.query<{ ok: boolean }>(
           `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_class c
@@ -790,10 +790,10 @@ export function createPgAdminQueries({
 
     sql: async (text) => {
       const query = checkReadOnlySql(text)
-      if (!(await canAssumeRole(pool, "nexo_admin_ro"))) {
+      if (!(await canAssumeRole(pool, "sideband_admin_ro"))) {
         throw new AdminQueryError(
           "invalid_input",
-          "SQL deshabilitado: el usuario de base no puede asumir nexo_admin_ro (modo degradado, ver docs/admin.md#producción)."
+          "SQL deshabilitado: el usuario de base no puede asumir sideband_admin_ro (modo degradado, ver docs/admin.md#producción)."
         )
       }
       return ro(async (db) => {

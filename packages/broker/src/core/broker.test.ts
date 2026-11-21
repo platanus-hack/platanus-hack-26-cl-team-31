@@ -20,20 +20,20 @@ import { createOwnerRuntime, localReadTool } from "../client/runtime.js";
 import { deriveNonce, verifyJson } from "./crypto.js";
 
 const principals: Record<"alice" | "bruno" | "carla", Principal> = {
-  alice: { userId: "alice", agentId: "alice-bot", scopes: ["nexo:ask", "nexo:inbox", "nexo:reply", "nexo:status"] },
-  bruno: { userId: "bruno", agentId: "bruno-bot", scopes: ["nexo:ask", "nexo:inbox", "nexo:reply", "nexo:status"] },
-  carla: { userId: "carla", agentId: "carla-bot", scopes: ["nexo:ask", "nexo:inbox", "nexo:reply", "nexo:status"] },
+  alice: { userId: "alice", agentId: "alice-bot", scopes: ["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status"] },
+  bruno: { userId: "bruno", agentId: "bruno-bot", scopes: ["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status"] },
+  carla: { userId: "carla", agentId: "carla-bot", scopes: ["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status"] },
 };
 const { alice, bruno, carla } = principals;
 const availability: AskInput = {
-  to: "bruno@nexo.app", tool: "availability", purpose: "Coordinar", args: {
+  to: "bruno@sideband.app", tool: "availability", purpose: "Coordinar", args: {
     date: "2026-11-26", start: "09:00", durationMinutes: 30, timezone: "America/Santiago",
   },
 };
 const webhook: WakeTarget = { kind: "standard_webhook", url: "https://example.com/callback", secret: "whsec_demo" };
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 const nonceKey = new Uint8Array(32).fill(4);
-const toAlice: GrantInput = { grantee: "alice@nexo.app", tool: "availability", fields: ["available"] };
+const toAlice: GrantInput = { grantee: "alice@sideband.app", tool: "availability", fields: ["available"] };
 
 let now: Date;
 let broker: BrokerCore;
@@ -52,7 +52,7 @@ beforeEach(async () => {
     clock: { now: () => now },
     signingKey: privateKey,
     nonceKey,
-    config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 10_000, 30_000], addressDomain: "nexo.app" },
+    config: { requestTtlSeconds: 900, wakeRetryDelaysMs: [0, 10_000, 30_000], addressDomain: "sideband.app" },
   };
   broker = createBroker(deps);
   for (const p of Object.values(principals)) {
@@ -97,7 +97,7 @@ describe("contrato del broker", () => {
     const view = await askAvailability();
     const row = await deps.store.tx((tx) => tx.getRequest(view.requestId));
     expect(await verifyJson(publicKey, {
-      id: view.requestId, from: "alice@nexo.app", to: availability.to, tool: "availability",
+      id: view.requestId, from: "alice@sideband.app", to: availability.to, tool: "availability",
       args: availability.args, createdAt: now.toISOString(), expiresAt: view.expiresAt,
     }, row!.envelopeSignature)).toBe(true);
     await broker.agent.connectWake(bruno, webhook);
@@ -180,7 +180,7 @@ describe("contrato del broker", () => {
   });
 
   it("permite una respuesta manual del dueño cuando su agente escala la solicitud", async () => {
-    await broker.owner.setGrant(bruno, { grantee: "carla@nexo.app", tool: "question", fields: ["answer"] });
+    await broker.owner.setGrant(bruno, { grantee: "carla@sideband.app", tool: "question", fields: ["answer"] });
     const pending = await broker.agent.ask(carla, {
       to: availability.to, tool: "question", args: { text: "¿Disponible?" }, purpose: "Coordinar",
     });
@@ -197,7 +197,7 @@ describe("contrato del broker", () => {
   it("devuelve denegaciones firmadas sin motivos cuando falta el grant o la dirección no existe", async () => {
     for (const [sender, input] of [
       [carla, availability],
-      [alice, { ...availability, to: "unknown@nexo.app" }],
+      [alice, { ...availability, to: "unknown@sideband.app" }],
       [alice, { to: availability.to, tool: "profile", args: {} }],
     ] as const) {
       const denied = await broker.agent.ask(sender, input);
@@ -208,7 +208,7 @@ describe("contrato del broker", () => {
       await expectFinal(sender, denied.requestId, "deny", "deny");
     }
     expect(await broker.owner.activity(alice)).not.toEqual(expect.arrayContaining([expect.objectContaining({ decisionReason: expect.anything() })]));
-    await expect(broker.agent.ask(alice, { ...availability, to: "alice@nexo.app" })).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(broker.agent.ask(alice, { ...availability, to: "alice@sideband.app" })).rejects.toMatchObject({ code: "invalid_input" });
   });
 });
 
@@ -216,7 +216,7 @@ describe("aislamiento y concurrencia", () => {
   it("aísla 80 solicitudes concurrentes entre tres usuarios", async () => {
     for (const p of Object.values(principals)) {
       for (const { userId } of Object.values(principals).filter((other) => other !== p)) {
-        await broker.owner.setGrant(p, { grantee: `${userId}@nexo.app`, tool: "question", fields: ["answer"] });
+        await broker.owner.setGrant(p, { grantee: `${userId}@sideband.app`, tool: "question", fields: ["answer"] });
       }
     }
     const users = [alice, bruno, carla] as const;
@@ -224,7 +224,7 @@ describe("aislamiento y concurrencia", () => {
       const from = users[number % users.length]!;
       const to = users[(number + 1) % users.length]!;
       const text = `Solicitud ${number}`;
-      const view = await broker.agent.ask(from, { to: `${to.userId}@nexo.app`, tool: "question", args: { text } });
+      const view = await broker.agent.ask(from, { to: `${to.userId}@sideband.app`, tool: "question", args: { text } });
       return { from, to, text, requestId: view.requestId };
     }));
     const byUser = await Promise.all(users.map(async (user) => {
@@ -371,7 +371,7 @@ describe("conexiones y prueba de aviso", () => {
     const ping = await broker.owner.ping(bruno, bruno.agentId);
     expect(await broker.agent.inbox(another)).toEqual([]);
     const item = await inboxItem(bruno, ping.requestId);
-    expect(item).toMatchObject({ from: "system@nexo.app", tool: "question", senderMessage: { trusted: false } });
+    expect(item).toMatchObject({ from: "system@sideband.app", tool: "question", senderMessage: { trusted: false } });
     await expect(broker.agent.reply(another, { ...item, nonce: deriveNonce(nonceKey, ping.requestId), outcome: "no_data" }))
       .rejects.toMatchObject({ code: "not_found" });
     await broker.tick(now);
@@ -397,7 +397,7 @@ describe("conexiones y prueba de aviso", () => {
     const target: WakeTarget = {
       kind: "mcp_events", callbackUrl: "https://example.com/mcp", secret: "whsec_demo", subscriptionId: "sub", refreshBefore: null,
     };
-    const limited: Principal = { ...bruno, scopes: ["nexo:status"] };
+    const limited: Principal = { ...bruno, scopes: ["sideband:status"] };
     await expect(broker.agent.connectWake(limited, target)).rejects.toMatchObject({ code: "forbidden" });
     expect(verifyCallback).not.toHaveBeenCalled();
     verifyCallback.mockResolvedValueOnce({ ok: false, reason: "challenge_failed" });
@@ -426,7 +426,7 @@ describe("ejecución en el runtime del titular", () => {
 
   it("un permiso de intereses no autoriza una pregunta sobre el domicilio ni despierta al titular", async () => {
     await revoke();
-    await broker.owner.setGrant(bruno, { grantee: "alice@nexo.app", tool: "interest_check", fields: ["matches"] });
+    await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", tool: "interest_check", fields: ["matches"] });
     await broker.agent.connectWake(bruno, webhook);
     const { tools } = await broker.agent.capabilities(alice, availability.to);
     expect(tools.map(({ tool }) => tool)).toEqual(["interest_check", "connect"]);
@@ -495,7 +495,7 @@ describe("ejecución en el runtime del titular", () => {
 });
 
 describe("solicitudes de conexión", () => {
-  const connect: AskInput = { to: "bruno@nexo.app", tool: "connect", args: {} };
+  const connect: AskInput = { to: "bruno@sideband.app", tool: "connect", args: {} };
   const friends = async (owner: typeof bruno) => (await broker.owner.contacts(owner)).contacts.map(({ address }) => address);
 
   async function invite() {
@@ -507,26 +507,26 @@ describe("solicitudes de conexión", () => {
   it("llega al agente, que no puede aceptar, y el titular acepta eligiendo qué comparte", async () => {
     const { request, item } = await invite();
     expect(request).toMatchObject({ final: false, waitingFor: "agent" });
-    expect(item).toMatchObject({ from: "carla@nexo.app", tool: "connect", allowedFields: ["accepted"] });
+    expect(item).toMatchObject({ from: "carla@sideband.app", tool: "connect", allowedFields: ["accepted"] });
     await expect(broker.agent.reply(bruno, { ...item, outcome: "answered", result: { accepted: true } }))
       .rejects.toMatchObject({ code: "invalid_input" });
     expect((await broker.owner.contacts(bruno)).incoming).toEqual([
-      expect.objectContaining({ requestId: request.requestId, address: "carla@nexo.app", offer: basicSharing }),
+      expect.objectContaining({ requestId: request.requestId, address: "carla@sideband.app", offer: basicSharing }),
     ]);
 
     const share = { availability: "slots", interests: false, questions: true } as const;
     await broker.owner.answerInvitation(bruno, request.requestId, { accept: true, share });
     await expectFinal(carla, request.requestId, "allow", "answered", { accepted: true });
     expect(await broker.owner.contacts(bruno)).toEqual({
-      contacts: [{ address: "carla@nexo.app", gives: share, receives: basicSharing }],
+      contacts: [{ address: "carla@sideband.app", gives: share, receives: basicSharing }],
       incoming: [],
       outgoing: [],
     });
     expect((await broker.owner.contacts(carla)).contacts).toEqual([
-      { address: "bruno@nexo.app", gives: basicSharing, receives: share },
+      { address: "bruno@sideband.app", gives: basicSharing, receives: share },
     ]);
     expect(await broker.agent.ask(carla, availability)).toMatchObject({ final: false, waitingFor: "agent" });
-    expect(await broker.agent.ask(carla, { to: "bruno@nexo.app", tool: "interest_check", args: { interest: "cerámica" } }))
+    expect(await broker.agent.ask(carla, { to: "bruno@sideband.app", tool: "interest_check", args: { interest: "cerámica" } }))
       .toMatchObject({ final: true, decision: "deny" });
   });
 
@@ -541,7 +541,7 @@ describe("solicitudes de conexión", () => {
   });
 
   it("deniega las invitaciones a direcciones sin destinatario", async () => {
-    const request = await broker.agent.ask(carla, { ...connect, to: "nadie@nexo.app" });
+    const request = await broker.agent.ask(carla, { ...connect, to: "nadie@sideband.app" });
     expect(request).toMatchObject({ final: true, decision: "deny" });
     expect((await broker.tick(now)).wakesOk).toBe(0);
     expect(wake).not.toHaveBeenCalled();
@@ -549,33 +549,33 @@ describe("solicitudes de conexión", () => {
 
   it("repetir la invitación devuelve la abierta y la invitación cruzada del titular conecta a ambos", async () => {
     const offer = { availability: "none", interests: true, questions: false } as const;
-    const first = await broker.owner.connect(carla, "bruno@nexo.app", offer);
-    expect((await broker.owner.connect(carla, "bruno@nexo.app")).requestId).toBe(first.requestId);
+    const first = await broker.owner.connect(carla, "bruno@sideband.app", offer);
+    expect((await broker.owner.connect(carla, "bruno@sideband.app")).requestId).toBe(first.requestId);
     expect((await broker.owner.contacts(carla)).outgoing).toEqual([
-      expect.objectContaining({ requestId: first.requestId, address: "bruno@nexo.app", offer }),
+      expect.objectContaining({ requestId: first.requestId, address: "bruno@sideband.app", offer }),
     ]);
-    await expect(broker.agent.ask(bruno, { ...connect, to: "carla@nexo.app" }))
+    await expect(broker.agent.ask(bruno, { ...connect, to: "carla@sideband.app" }))
       .rejects.toMatchObject({ code: "invalid_input" });
 
-    const crossed = await broker.owner.connect(bruno, "carla@nexo.app");
+    const crossed = await broker.owner.connect(bruno, "carla@sideband.app");
     expect(crossed).toMatchObject({ final: true, result: { accepted: true } });
     await expectFinal(carla, first.requestId, "allow", "answered", { accepted: true });
     expect((await broker.owner.contacts(bruno)).contacts).toEqual([
-      { address: "carla@nexo.app", gives: basicSharing, receives: offer },
+      { address: "carla@sideband.app", gives: basicSharing, receives: offer },
     ]);
-    await expect(broker.owner.connect(carla, "bruno@nexo.app")).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(broker.owner.connect(carla, "bruno@sideband.app")).rejects.toMatchObject({ code: "invalid_input" });
   });
 
   it("cada titular cambia lo que comparte sin tocar lo del otro", async () => {
     const { request } = await invite();
     await broker.owner.answerInvitation(bruno, request.requestId, { accept: true });
     const pending = await broker.agent.ask(carla, availability);
-    await broker.owner.setSharing(bruno, "carla@nexo.app", noSharing);
+    await broker.owner.setSharing(bruno, "carla@sideband.app", noSharing);
     expect(await broker.agent.status(carla, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
     expect((await broker.owner.contacts(carla)).contacts).toEqual([
-      { address: "bruno@nexo.app", gives: basicSharing, receives: noSharing },
+      { address: "bruno@sideband.app", gives: basicSharing, receives: noSharing },
     ]);
-    await expect(broker.owner.setSharing(bruno, "diego@nexo.app", basicSharing)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.owner.setSharing(bruno, "diego@sideband.app", basicSharing)).rejects.toMatchObject({ code: "not_found" });
   });
 
   it("dejar de ser contactos borra la conexión y los permisos en ambos sentidos", async () => {
@@ -583,7 +583,7 @@ describe("solicitudes de conexión", () => {
     await broker.owner.answerInvitation(bruno, request.requestId, { accept: true });
     const pending = await broker.agent.ask(carla, availability);
 
-    await broker.owner.removeFriend(bruno, "carla@nexo.app");
+    await broker.owner.removeFriend(bruno, "carla@sideband.app");
     expect(await friends(bruno)).toEqual([]);
     expect(await friends(carla)).toEqual([]);
     expect(await broker.owner.grants(bruno)).toEqual([aliceGrant]);
@@ -595,17 +595,17 @@ describe("solicitudes de conexión", () => {
     const { request, item } = await invite();
     await broker.agent.reply(bruno, { requestId: item.requestId, nonce: item.nonce, outcome: "needs_owner" });
     await broker.owner.decide(bruno, request.requestId, { kind: "answer", result: { accepted: true } });
-    expect(await friends(bruno)).toEqual(["carla@nexo.app"]);
-    expect(await friends(carla)).toEqual(["bruno@nexo.app"]);
+    expect(await friends(bruno)).toEqual(["carla@sideband.app"]);
+    expect(await friends(carla)).toEqual(["bruno@sideband.app"]);
   });
 
   it("rechaza conectar consigo mismo", async () => {
-    await expect(broker.owner.connect(carla, "carla@nexo.app")).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(broker.owner.connect(carla, "carla@sideband.app")).rejects.toMatchObject({ code: "invalid_input" });
   });
 });
 
 describe("grants", () => {
-  const toCarla: GrantInput = { grantee: "carla@nexo.app", tool: "availability", fields: ["available"] };
+  const toCarla: GrantInput = { grantee: "carla@sideband.app", tool: "availability", fields: ["available"] };
 
   it("permite la tool con los campos del grant y deniega al revocarlo", async () => {
     const ask = () => broker.agent.ask(carla, availability);
@@ -654,12 +654,12 @@ describe("grants", () => {
 
 describe("círculos", () => {
   const ask = () => broker.agent.ask(carla, availability);
-  const [aliceAddress, brunoAddress, carlaAddress] = ["alice@nexo.app", "bruno@nexo.app", "carla@nexo.app"];
+  const [aliceAddress, brunoAddress, carlaAddress] = ["alice@sideband.app", "bruno@sideband.app", "carla@sideband.app"];
 
   async function circleOf(...members: Principal[]) {
     const circle = await broker.owner.createCircle(alice, "Fútbol");
     for (const member of members) {
-      await broker.owner.inviteToCircle(alice, circle.id, `${member.userId}@nexo.app`);
+      await broker.owner.inviteToCircle(alice, circle.id, `${member.userId}@sideband.app`);
       await broker.owner.joinCircle(member, circle.id);
     }
     return circle;

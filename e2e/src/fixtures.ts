@@ -49,7 +49,7 @@ function identities(group: Group, count: number): Identity[] {
   if (mode === "dev") {
     return Array.from({ length: count }, () => {
       const userId = `e2e-${randomUUID()}`;
-      const agentId = "nexo-e2e";
+      const agentId = "sideband-e2e";
       return { userId, agentId, token: `dev:${userId}:${agentId}` };
     });
   }

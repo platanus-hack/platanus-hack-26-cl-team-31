@@ -178,7 +178,7 @@ export async function createCircle(_: Feedback, form: FormData): Promise<Feedbac
 
 export async function inviteToCircle(circleId: string, _: Feedback, form: FormData): Promise<Feedback> {
   const address = Address.safeParse(form instanceof FormData ? String(form.get("address") ?? "").trim() : undefined);
-  if (!address.success) return { error: "Ingresa una dirección válida, por ejemplo nombre@nexo.app." };
+  if (!address.success) return { error: "Ingresa una dirección válida, por ejemplo nombre@sideband.app." };
   return changeCircle("inviteToCircle", "No se pudo invitar a esa dirección. Intenta de nuevo.",
     (owner) => ownerClient().inviteToCircle(owner, circleId, address.data));
 }
@@ -222,9 +222,9 @@ function contactsChanged() {
 export async function sendInvitation(_: Feedback, form: FormData): Promise<Feedback> {
   const address = await requireAddress();
   const owner = await getOwner();
-  if (!(form instanceof FormData)) return { error: "Ingresa una dirección válida, por ejemplo nombre@nexo.app." };
+  if (!(form instanceof FormData)) return { error: "Ingresa una dirección válida, por ejemplo nombre@sideband.app." };
   const to = Address.safeParse(String(form.get("to") ?? "").trim().toLowerCase());
-  if (!to.success) return { error: "Ingresa una dirección válida, por ejemplo nombre@nexo.app." };
+  if (!to.success) return { error: "Ingresa una dirección válida, por ejemplo nombre@sideband.app." };
   if (to.data === address) return { error: "Esa es tu propia dirección." };
   const share = sharingFrom(form);
   if (!share.success) return { error: "Elige qué le compartes." };

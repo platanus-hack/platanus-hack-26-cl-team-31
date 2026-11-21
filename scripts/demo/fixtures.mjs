@@ -6,8 +6,8 @@ import { createRequire } from "node:module";
 import { getAuthOptions } from "../../apps/web/src/lib/auth-env.mjs";
 
 const load = (app, name) => import(createRequire(new URL(`../../apps/${app}/package.json`, import.meta.url)).resolve(name));
-const state = new URL("../../.agents-local/nexo-demo.json", import.meta.url);
-const pendingState = new URL("nexo-demo.pending.json", state);
+const state = new URL("../../.agents-local/sideband-demo.json", import.meta.url);
+const pendingState = new URL("sideband-demo.pending.json", state);
 export const names = { simon: "Simon (demo)", dot: "Dot local", grok: "Grok Bot local", claude: "Claude Code local" };
 
 function localUrl(value, port, protocol = "http:") {
@@ -123,7 +123,7 @@ function localPart(actor, run) {
 }
 
 function email(actor, run) {
-  return `${localPart(actor, run)}@nexo-demo.invalid`;
+  return `${localPart(actor, run)}@sideband-demo.invalid`;
 }
 
 function redirectPath(run) {
@@ -156,8 +156,8 @@ export async function seed({ test, owner, database, mcp, web }, fixture) {
   });
   assert(metadata.ok, "Inicia el stack de la demo y espera el mensaje de Next.js.");
   const probe = { userId: "nx19-demo-probe-" + run };
-  const address = `nx19-probe-${run}@nexo.app`;
-  await database.query("INSERT INTO nexo.users (user_id, address) VALUES ($1, $2) ON CONFLICT DO NOTHING", [probe.userId, address]);
+  const address = `nx19-probe-${run}@sideband.app`;
+  await database.query("INSERT INTO sideband.users (user_id, address) VALUES ($1, $2) ON CONFLICT DO NOTHING", [probe.userId, address]);
   assert.equal((await owner.me(probe)).address, address, "El broker debe usar la base preparada por el comando stack.");
 
   const actors = {};

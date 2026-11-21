@@ -20,7 +20,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const owner = { userId: "ana" };
 const pending = OwnerPendingItem.parse({
   requestId: "request-1",
-  from: "bob@nexo.app",
+  from: "bob@sideband.app",
   tool: "question",
   args: { text: "¿Puedes ayudar?" },
   senderMessage: { text: "¿Puedes ayudar?", trusted: false },
@@ -31,7 +31,7 @@ const pending = OwnerPendingItem.parse({
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getOwner).mockResolvedValue(owner);
-  vi.mocked(requireAddress).mockResolvedValue("ana@nexo.app");
+  vi.mocked(requireAddress).mockResolvedValue("ana@sideband.app");
 });
 
 it("uses the signed-in owner and trims the answer to a pending question", async () => {
@@ -70,7 +70,7 @@ it.each([
   expect(broker.decide).toHaveBeenCalledWith(owner, pending.requestId, { kind: "answer", result });
 });
 
-const contact = "bob@nexo.app";
+const contact = "bob@sideband.app";
 
 function sharingForm(availability: string) {
   const form = new FormData();

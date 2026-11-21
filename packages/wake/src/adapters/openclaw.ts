@@ -15,7 +15,7 @@ export function openclawPost(
     },
     body: JSON.stringify({
       message: WAKE_INSTRUCTION(requestId),
-      name: "Nexo",
+      name: "Sideband",
       agentId: target.agentId,
       deliver: false,
       timeoutSeconds: 180,

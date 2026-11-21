@@ -44,7 +44,7 @@ import { createWorker } from "./worker.js";
 
 const connectionFields = fieldsOf("connect");
 const connectionGuidance =
-  "Cuéntale a tu titular quién quiere conectar. Solo tu titular acepta o rechaza desde la App Nexo: responde needs_owner.";
+  "Cuéntale a tu titular quién quiere conectar. Solo tu titular acepta o rechaza desde la App Sideband: responde needs_owner.";
 
 // Fields shared by members of the same circle.
 const basePolicy = [
@@ -269,7 +269,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (sent) return toRequesterView(sent);
     const received = open.find((row) => row.toUserId === userId && row.fromAddress === to);
     if (!received) return null;
-    if (byAgent) return new BrokerError("invalid_input", "Esta persona ya te invitó. Tu titular la acepta desde la App Nexo.");
+    if (byAgent) return new BrokerError("invalid_input", "Esta persona ya te invitó. Tu titular la acepta desde la App Sideband.");
     await closeInvitation(tx, received, true, share, "owner");
     return "accepted";
   }
@@ -279,7 +279,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   ): Promise<RequesterView | BrokerError> {
     const { to, tool, args, purpose } = input;
     const from = (await tx.getUser(userId))?.address;
-    if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
+    if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Sideband.");
     if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
     const recipient = await tx.getUserByAddress(to);
     const offer = input.tool === "connect" ? input.args.share : undefined;
@@ -433,7 +433,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   return {
     agent: {
       async capabilities(p, to) {
-        requireScope(p, "nexo:ask", "agent.capabilities");
+        requireScope(p, "sideband:ask", "agent.capabilities");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           const from = (await tx.getUser(p.userId))?.address;
@@ -448,12 +448,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async ask(p, input) {
-        requireScope(p, "nexo:ask", "agent.ask");
+        requireScope(p, "sideband:ask", "agent.ask");
         return ask(p.userId, input, p);
       },
 
       async inbox(p) {
-        requireScope(p, "nexo:inbox", "agent.inbox");
+        requireScope(p, "sideband:inbox", "agent.inbox");
         return store.tx(async (tx) => {
           await ensureActiveAgentConnection(tx, p);
           const address = (await tx.getUser(p.userId))?.address;
@@ -466,7 +466,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async reply(p, input) {
-        requireScope(p, "nexo:reply", "agent.reply");
+        requireScope(p, "sideband:reply", "agent.reply");
         const parsed = ReplyInput.safeParse(input);
         if (!parsed.success) {
           telemetry?.emit("broker.reply.rejected", {
@@ -498,7 +498,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             return reject(new BrokerError("forbidden", "El nonce no coincide."));
           }
           if (row.tool === "connect" && parsed.data.outcome === "answered") {
-            return reject(new BrokerError("invalid_input", "Solo el titular acepta una invitación desde la App Nexo. Responde needs_owner."));
+            return reject(new BrokerError("invalid_input", "Solo el titular acepta una invitación desde la App Sideband. Responde needs_owner."));
           }
           let response: Awaited<ReturnType<typeof prepareAgentReply>>;
           try {
@@ -521,7 +521,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async status(p, id) {
-        requireScope(p, "nexo:status", "agent.status");
+        requireScope(p, "sideband:status", "agent.status");
         return status(p.userId, id, p);
       },
 
@@ -692,12 +692,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const connection = await tx.getAgentConnection(o.userId, agentId, true);
           if (!connection || connection.revokedAt) throw notFound();
           const address = (await tx.getUser(o.userId))?.address;
-          if (!address) throw new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
+          if (!address) throw new BrokerError("invalid_input", "Primero elige tu dirección en la App Sideband.");
           const now = clock.now();
           const row: RequestRow = {
             ...await initialRequest({
               fromAddress: systemAddress, toAddress: address, fromUserId: null, toUserId: o.userId,
-              targetAgentId: agentId, tool: "question", args: { text: "Prueba de conexión de Nexo: responde con outcome no_data" },
+              targetAgentId: agentId, tool: "question", args: { text: "Prueba de conexión de Sideband: responde con outcome no_data" },
             }, now),
             status: "awaiting_agent",
             rule: "Prueba de conexión solicitada por el dueño",
@@ -784,7 +784,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (!parsed.success) throw new BrokerError("invalid_input", "El nombre del círculo debe tener entre 1 y 60 caracteres.");
         return store.tx(async (tx) => {
           const address = (await tx.getUser(o.userId))?.address;
-          if (!address) throw new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
+          if (!address) throw new BrokerError("invalid_input", "Primero elige tu dirección en la App Sideband.");
           const row = { id: randomUUID(), ownerUserId: o.userId, name: parsed.data, createdAt: clock.now() };
           await tx.insertCircle(row);
           await tx.inviteCircleMember(row.id, address);

@@ -8,9 +8,9 @@ import type { AdminRole } from "../../shared/contract.js"
 import type { AllowList } from "../env.js"
 
 // Better Auth propio del admin: instancia, esquema (`admin`, vía search_path del pool) y
-// cookie (`nexo-admin.*`) separados de los de apps/web. Ver docs/admin.md#4-sesiones-y-acceso.
+// cookie (`sideband-admin.*`) separados de los de apps/web. Ver docs/admin.md#4-sesiones-y-acceso.
 
-export const DEV_EMAIL = "dev@nexo.local"
+export const DEV_EMAIL = "dev@sideband.local"
 const SESSION_TTL_SECONDS = 8 * 3600
 const SESSION_UPDATE_AGE_SECONDS = 15 * 60
 
@@ -41,7 +41,7 @@ export type AdminAuthOptions = {
 // Endpoint solo de servidor (nunca se registra en /api/auth/*): crea una sesión para un correo
 // autorizado. Lo usan POST /api/admin/dev-login (ADMIN_DEV_AUTH=1) y las pruebas.
 const issueSessionPlugin = () => ({
-  id: "nexo-admin-issue-session",
+  id: "sideband-admin-issue-session",
   endpoints: {
     issueSession: createAuthEndpoint.serverOnly(
       { method: "POST", body: z.object({ email: z.email(), name: z.string().min(1).max(100) }) },
@@ -59,9 +59,9 @@ const issueSessionPlugin = () => ({
 }) satisfies BetterAuthPlugin
 
 function adminAuthConfig({ pool, baseUrl, secret, google, roleOf, freshSeconds, onLogin }: AdminAuthOptions) {
-  const forbidden = () => new APIError("FORBIDDEN", { message: "Este correo no tiene acceso al admin de Nexo." })
+  const forbidden = () => new APIError("FORBIDDEN", { message: "Este correo no tiene acceso al admin de Sideband." })
   return {
-    appName: "Nexo Admin",
+    appName: "Sideband Admin",
     database: pool,
     baseURL: baseUrl,
     basePath: "/api/auth",
@@ -78,7 +78,7 @@ function adminAuthConfig({ pool, baseUrl, secret, google, roleOf, freshSeconds, 
       // Sin caché de cookie: revocar una sesión surte efecto en el siguiente request.
       cookieCache: { enabled: false },
     },
-    advanced: { cookiePrefix: "nexo-admin" },
+    advanced: { cookiePrefix: "sideband-admin" },
     onAPIError: { errorURL: `${baseUrl}/login` },
     databaseHooks: {
       user: {

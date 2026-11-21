@@ -8,7 +8,7 @@ import { z } from "zod";
 const subscriptionSchema = z.object({ id: z.string(), refreshBefore: z.iso.datetime() });
 
 export async function connectAgent(url: URL, token: string) {
-  const client = new Client({ name: "nexo-e2e", version: "0.1.0" });
+  const client = new Client({ name: "sideband-e2e", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(url, {
     requestInit: { headers: { Authorization: `Bearer ${token}` }, redirect: "error" },
   });
@@ -32,10 +32,10 @@ export async function connectAgent(url: URL, token: string) {
   }
 
   return {
-    ask: (input: AskInput) => call("nexo_ask", input, RequesterView),
-    inbox: async () => (await call("nexo_inbox", {}, routes.agentInbox.response)).items,
-    reply: (input: ReplyInput) => call("nexo_reply", input, ReplyReceipt),
-    check: (requestId: string) => call("nexo_check", { requestId }, RequesterView),
+    ask: (input: AskInput) => call("sideband_ask", input, RequesterView),
+    inbox: async () => (await call("sideband_inbox", {}, routes.agentInbox.response)).items,
+    reply: (input: ReplyInput) => call("sideband_reply", input, ReplyReceipt),
+    check: (requestId: string) => call("sideband_check", { requestId }, RequesterView),
     subscribe: (url: string, secret: string) => client.request({
       method: "events/subscribe",
       params: { name: WAKE_EVENT, delivery: { mode: "webhook", url, secret } },

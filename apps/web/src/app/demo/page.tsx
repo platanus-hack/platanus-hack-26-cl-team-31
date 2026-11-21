@@ -4,9 +4,8 @@ import { Dashboard } from "./dashboard";
 import "./demo.css";
 
 export const metadata: Metadata = {
-  title: "Nexo — Laboratorio de coordinación",
-  description: "Prueba cómo Nexo coordina asistentes sin compartir calendarios.",
-  icons: { icon: "/nexo.svg" },
+  title: "Sideband — Laboratorio de coordinación",
+  description: "Prueba cómo Sideband coordina asistentes sin compartir calendarios.",
 };
 
 export default function DemoPage() {

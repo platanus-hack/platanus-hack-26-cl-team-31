@@ -1,4 +1,4 @@
-# Demo de Nexo en tres minutos
+# Demo de Sideband en tres minutos
 
 Simon configura quién puede consultar su agenda. Una persona del equipo recibe disponibilidad y bloques libres, una sin permiso recibe una denegación hasta que Simon se lo da, y las solicitudes reciben un cierre aunque se apague el receptor.
 
@@ -10,20 +10,20 @@ En la primera terminal ejecuta estos comandos y deja el stack abierto.
 
 ```sh
 pnpm bootstrap
-pnpm with-env node scripts/demo/nexo.mjs init
-pnpm with-env node scripts/demo/nexo.mjs stack
+pnpm with-env node scripts/demo/sideband.mjs init
+pnpm with-env node scripts/demo/sideband.mjs stack
 ```
 
 Espera los mensajes de arranque de Next.js, el broker y MCP. Ejecuta estos comandos en otra terminal.
 
 ```sh
-pnpm with-env node scripts/demo/nexo.mjs seed
-pnpm with-env node scripts/demo/nexo.mjs run --present
+pnpm with-env node scripts/demo/sideband.mjs seed
+pnpm with-env node scripts/demo/sideband.mjs run --present
 ```
 
 Abre el enlace de un solo uso en una ventana privada antes de compartir pantalla. La sesión lleva a **El cable**. Abre **Inicio**, **Permisos** y **Agentes** en pestañas del mismo navegador. El guion muestra cuándo actuar y pulsar Enter. Para una prueba desatendida, usa `run` sin `--present`. El comando valida los resultados de MCP y realiza las acciones de dueño por el cliente HTTP del broker.
 
-Las cuatro cuentas, los cinco clientes MCP y la agenda son fixtures locales. Dot, Grok Bot y Claude Code representan a tres compañeros. Simon tiene un OpenClaw principal con calendario ficticio y una segunda conexión para la revocación. Better Auth registra los clientes y emite sus tokens mediante OAuth con PKCE. El MCP valida los tokens con los JWKS de la app. El aviso principal cruza HTTP con el formato de OpenClaw. El receptor solo obtiene el identificador y busca los argumentos en `nexo_inbox`.
+Las cuatro cuentas, los cinco clientes MCP y la agenda son fixtures locales. Dot, Grok Bot y Claude Code representan a tres compañeros. Simon tiene un OpenClaw principal con calendario ficticio y una segunda conexión para la revocación. Better Auth registra los clientes y emite sus tokens mediante OAuth con PKCE. El MCP valida los tokens con los JWKS de la app. El aviso principal cruza HTTP con el formato de OpenClaw. El receptor solo obtiene el identificador y busca los argumentos en `sideband_inbox`.
 
 ## Guion para presentar
 
@@ -33,14 +33,14 @@ Las cuatro cuentas, los cinco clientes MCP y la agenda son fixtures locales. Dot
 | 0:20–0:55 | «Pregúntale a Simon si puede el lunes a las 11». La terminal envía la consulta de Dot. Muestra el aviso y el cierre en El cable. Dot recibe `available: false` y los bloques `12:00-12:30` y `15:00-15:30`. | Si Dot demora con MCP Events o pide confirmación, usa Claude Code con el watcher. Si falla el túnel, usa un OpenClaw en un servidor accesible. Para el ensayo local, ejecuta con el receptor de loopback. |
 | 0:55–1:30 | Claude Code pregunta lo mismo sin permiso y recibe `deny` firmado. En **Permisos**, pega su dirección, elige **Disponibilidad** y deja marcado solo **Si está disponible**. Pulsa **Dar permiso**. Claude pregunta de nuevo y recibe solo `available: false`. | Si el formulario falla, escribe `api` en la pausa de la terminal y pulsa Enter para crear ese permiso por el puerto del dueño. |
 | 1:30–2:00 | En **Permisos**, ubica la dirección de Grok Bot que muestra la terminal y pulsa **Revocar**. Su siguiente intento devuelve `deny` firmado, sin motivo ni datos. | Si el formulario falla, escribe `api` en la pausa para revocar el permiso y ejecutar la misma consulta. |
-| 2:00–2:25 | En **Agentes**, ubica el identificador del OpenClaw secundario que imprime la terminal. Pulsa **Desconectar** y confirma. El mismo cliente llama a `nexo_inbox` y recibe `not_found`. | Si el formulario falla, escribe `api` en la pausa para revocar esa conexión. |
+| 2:00–2:25 | En **Agentes**, ubica el identificador del OpenClaw secundario que imprime la terminal. Pulsa **Desconectar** y confirma. El mismo cliente llama a `sideband_inbox` y recibe `not_found`. | Si el formulario falla, escribe `api` en la pausa para revocar esa conexión. |
 | 2:25–3:00 | La terminal apaga el receptor principal y Dot pregunta otra vez. El worker del broker agota los reintentos. Muestra **Error de entrega** en El cable y `delivery_failed`, `final: true` y la comprobación de firma en la terminal. | Si el aviso se acepta y el bot queda sin responder en una presentación con agentes reales, mantén el seguimiento hasta que el plazo termine en `expired`. Con el receptor local apagado se puede enseñar el fallo de entrega en pocos segundos. |
 
 Las guías de conexión describen [Dot y MCP Events](agents/dot.md), [Grok Bot](agents/grokbot.md), [OpenClaw](agents/openclaw.md) y [Claude Code con el watcher](agents/claude-code-codex.md).
 
 ## Reinicio
 
-Cierra la ventana privada y detén el stack de la demo con Ctrl+C. Ejecuta `pnpm with-env node scripts/demo/nexo.mjs reset`. Este comando elimina la base descartable `app_nx19_<id>` que creó `init` y verifica su marca antes de borrarla. Las bases `app` y `app_test` conservan sus datos. Para repetir, ejecuta `init`, `stack`, `seed` y `run --present` en ese orden.
+Cierra la ventana privada y detén el stack de la demo con Ctrl+C. Ejecuta `pnpm with-env node scripts/demo/sideband.mjs reset`. Este comando elimina la base descartable `app_nx19_<id>` que creó `init` y verifica su marca antes de borrarla. Las bases `app` y `app_test` conservan sus datos. Para repetir, ejecuta `init`, `stack`, `seed` y `run --present` en ese orden.
 
 ## Ensayos
 

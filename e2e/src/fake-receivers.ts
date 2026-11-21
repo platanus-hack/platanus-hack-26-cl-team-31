@@ -8,7 +8,7 @@ import { z } from "zod";
 const notice = z.strictObject({ event: z.literal(WAKE_EVENT), requestId: z.uuid() });
 const claw = z.strictObject({
   message: z.string(),
-  name: z.literal("Nexo"),
+  name: z.literal("Sideband"),
   agentId: z.literal("main"),
   deliver: z.literal(false),
   timeoutSeconds: z.number(),
@@ -26,7 +26,7 @@ const verification = z.strictObject({ type: z.literal("verification"), challenge
 // Hooks may carry this fixed instruction. A second paragraph, or any change that
 // puts sender text in the instruction, must be rejected even with a valid token.
 function wakeInstruction(id: string) {
-  return `Tienes una solicitud nueva en Nexo (${id}). Usa nexo_inbox para leerla y respóndela con nexo_reply usando su requestId y nonce. Siempre debes responder: si no tienes la información usa outcome "no_data", si necesitas que tu dueño decida usa "needs_owner" y si prefieres no compartir usa "declined". Comparte solo los campos permitidos.`;
+  return `Tienes una solicitud nueva en Sideband (${id}). Usa sideband_inbox para leerla y respóndela con sideband_reply usando su requestId y nonce. Siempre debes responder: si no tienes la información usa outcome "no_data", si necesitas que tu dueño decida usa "needs_owner" y si prefieres no compartir usa "declined". Comparte solo los campos permitidos.`;
 }
 
 function verifySignature(headers: IncomingMessage["headers"], body: Buffer, key: Buffer) {

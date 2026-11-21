@@ -4,12 +4,12 @@ Monorepo pnpm + Turborepo (Node 24, pnpm 10). Apps en `apps/*`, paquetes compart
 
 ## Mapa del repositorio
 
-El MVP conserva MCP, server y broker como servicios separados, con bóvedas alojadas en Nexo. La columna de destino describe la **propuesta de unificación** que mantiene el ciclo de las solicitudes en el broker. Esa asignación sigue pendiente de decisión del equipo.
+El MVP conserva MCP, server y broker como servicios separados, con bóvedas alojadas en Sideband. La columna de destino describe la **propuesta de unificación** que mantiene el ciclo de las solicitudes en el broker. Esa asignación sigue pendiente de decisión del equipo.
 
 | Módulo | Qué hace hoy | Destino propuesto |
 | --- | --- | --- |
 | `apps/web` | Login OAuth, interfaz del titular y dashboard local `/demo`. | Conservar como interfaz. El dashboard y la CLI deben consumir las mismas operaciones. |
-| `apps/mcp` | Expone las tools de Nexo a los asistentes y llama al broker con la identidad delegada. | Conservar como adaptador MCP común, incluidas las consultas a contactos. |
+| `apps/mcp` | Expone las tools de Sideband a los asistentes y llama al broker con la identidad delegada. | Conservar como adaptador MCP común, incluidas las consultas a contactos. |
 | `apps/broker`, `packages/broker` | La app expone HTTP y arranca el worker. El paquete implementa grants, solicitudes, aprobación del titular, almacenamiento y clientes. | Conservar como autoridad sobre permisos, solicitudes y entrega de resultados. |
 | `apps/server` | API de coordinación con contactos, membresías, calendario, publicaciones y reuniones en PostgreSQL. Hoy también autentica tokens de la seed y expone su propio adaptador MCP. | Conservar bóvedas, grupos y reuniones. Retirar el directorio y las publicaciones. Migrar los consumidores y el historial antes de retirar `people.token_hash`, `availability_requests` y `apps/server/src/mcp.ts`. |
 | `packages/protocol`, `packages/auth`, `packages/wake` | `protocol` define herramientas, grants y mensajes. `auth` implementa OAuth y JWT de servicio. `wake` envía avisos a agentes. | Conservar y reutilizar desde los servicios y sus clientes. |
@@ -25,9 +25,9 @@ Un titular pregunta al agente de otro titular. El broker autoriza la pregunta y 
 
 ### Permisos
 
-Un grant permite a una dirección Nexo usar una tool y recibir ciertos campos de su respuesta. Los permisos de un círculo compartido se suman a los grants directos.
+Un grant permite a una dirección Sideband usar una tool y recibir ciertos campos de su respuesta. Los permisos de un círculo compartido se suman a los grants directos.
 
-- El tipo es `Grant` (`packages/protocol/src/grants.ts`) y se guarda en `nexo.grants`. Un titular tiene un solo grant vivo por dirección y tool.
+- El tipo es `Grant` (`packages/protocol/src/grants.ts`) y se guarda en `sideband.grants`. Un titular tiene un solo grant vivo por dirección y tool.
 - El titular los administra con `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`). Web los muestra por contacto en `/contacts`.
 - Un permiso nuevo es una tool o un campo en `packages/protocol/src/tools.ts`. El grant ya lo cubre.
 - Los grants no se componen. Que Bob le dé un grant a Ana y Ana a Carla no le da a Carla nada de Bob.
@@ -38,7 +38,7 @@ Un grant permite a una dirección Nexo usar una tool y recibir ciertos campos de
 Pendiente, cada uno en su PR:
 
 - Retirar la tool `profile`. Sigue declarada y no admite grants, así que toda solicitud `profile` se deniega.
-- Vista `ops.v_grants` para el admin y borrar la tabla `nexo.sharing_rules`, que `ops.v_users` todavía lee.
+- Vista `ops.v_grants` para el admin y borrar la tabla `sideband.sharing_rules`, que `ops.v_users` todavía lee.
 - Pasar `memberships.can_ask` y `can_share` de `apps/server` a grants y retirar el directorio con `interests.audience`.
 - `demo_profiles.interest_readers` solo alimenta el seed de `apps/demo`, que la convierte en grants.
 
@@ -47,12 +47,12 @@ Pendiente, cada uno en su PR:
 - **Categoría.** El titular da permisos por categoría de información. Cada categoría fija en el código su tool y sus campos: Disponibilidad (`availability`: `available`), Horarios libres (`availability`: `available`, `freeSlots`), Intereses (`interest_check`: `matches`) y Preguntas abiertas (`question`: `answer`).
 - **Preguntas abiertas.** El broker no lee el texto y el agente del titular decide qué contesta. Quedan fuera de los permisos predeterminados.
 - **Básico.** Al conectar vienen marcadas Disponibilidad e Intereses.
-- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro (el que invita al enviar, el invitado al aceptar; lo básico viene marcado) y puede cambiarlo después sin avisar. Solo el titular acepta, desde la App Nexo; su agente responde `needs_owner`. Dejar de ser contactos borra la conexión y sus grants en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeFriend` del `OwnerPort`) y las categorías en `packages/protocol/src/sharing.ts`.
+- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro (el que invita al enviar, el invitado al aceptar; lo básico viene marcado) y puede cambiarlo después sin avisar. Solo el titular acepta, desde la App Sideband; su agente responde `needs_owner`. Dejar de ser contactos borra la conexión y sus grants en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeFriend` del `OwnerPort`) y las categorías en `packages/protocol/src/sharing.ts`.
 
 ### Modelo decidido, por construir
 
 - **Política por círculo.** Hoy todos los círculos usan la política base. Cuando haga falta otra, se guarda en el círculo.
-- **Perfil.** Nombre y dirección Nexo de cada titular, visibles para todo usuario con sesión.
+- **Perfil.** Nombre y dirección Sideband de cada titular, visibles para todo usuario con sesión.
 
 ### Vocabulario
 
@@ -62,7 +62,7 @@ Usa un término por concepto, en el código y en los textos.
 | --- | --- | --- |
 | Titular | `Owner`, `userId` | Persona que da los grants y responde por sus datos. «Dueño» en textos anteriores. |
 | Agente | `Principal`, `agentId` | Asistente conectado que actúa por un titular con sus `scopes`. |
-| Dirección Nexo | `Address` | Identificador `nombre@dominio` con el que otros titulares le escriben. |
+| Dirección Sideband | `Address` | Identificador `nombre@dominio` con el que otros titulares le escriben. |
 | Solicitud | `AskInput`, `requestId` | Pregunta de un titular a otro con una tool. Termina en un `FinalOutcome`. |
 | Tool | `ToolName` | Operación que se puede pedir: `availability`, `question`, `interest_check`. `profile` está en retiro. |
 | Grant | `Grant`, `GrantInput` | Permiso de un titular a una dirección: una tool y los campos de respuesta que entrega. En la interfaz se llama «permiso». |
@@ -70,7 +70,7 @@ Usa un término por concepto, en el código y en los textos.
 | Política base | `basePolicy` | Tools y campos que se dan los miembros de un círculo. |
 | Contacto | `contacts`, tool `connect` | Titular con el que otro aceptó conectarse. Ambos eligen qué categorías se dan como grants. |
 | Círculo | `Circle` | Conjunto de titulares con un creador. Sus miembros se dan la política base mientras estén dentro. «Grupo» en textos anteriores. |
-| Perfil | por construir | Nombre y dirección Nexo de un titular, visibles para los demás usuarios. |
+| Perfil | por construir | Nombre y dirección Sideband de un titular, visibles para los demás usuarios. |
 | Aviso | `WakeTarget`, `WakeNotice` | Notificación al agente del destinatario de que tiene una solicitud. |
 | Bandeja | `InboxItem` | Solicitudes pendientes que lee el agente del destinatario. |
 
@@ -129,8 +129,8 @@ Al terminar con un worktree: `pnpm teardown` (borra sus contenedores/datos y lib
 | Servicio | Variable        | Puerto          |
 | -------- | --------------- | --------------- |
 | web      | `WEB_PORT`      | `3000 + SLOT`   |
-| MCP Nexo | `MCP_PORT` | `4100 + SLOT` |
-| broker Nexo | `BROKER_PORT` | `4200 + SLOT` |
+| MCP Sideband | `MCP_PORT` | `4100 + SLOT` |
+| broker Sideband | `BROKER_PORT` | `4200 + SLOT` |
 | agentes (HTTP local) | `COORDINATION_PORT` | `4310 + SLOT` |
 | admin (SPA, y todo en producción) | `ADMIN_PORT` | `4400 + SLOT` |
 | admin (API + MCP en dev) | `ADMIN_API_PORT` | `4450 + SLOT` |
@@ -149,31 +149,31 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 - `pnpm infra:up` / `pnpm infra:down` / `pnpm infra:reset` (borra datos y re-crea).
 - Scripts SQL de init en `infra/postgres/init/` (solo corren al crear el volumen).
 
-## Identidad Nexo
+## Identidad Sideband
 
-- OAuth en web usa `DATABASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` y `MCP_RESOURCE_URL`. El origen local `BETTER_AUTH_URL` se genera a partir de `WEB_PORT`. `pnpm bootstrap` prepara el esquema OAuth y genera las llaves faltantes en `.env.local`. Google se habilita al configurar `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`. Sus pruebas usan `TEST_DATABASE_URL`. Consulta [Stack local de Nexo](docs/local-stack.md).
+- OAuth en web usa `DATABASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` y `MCP_RESOURCE_URL`. El origen local `BETTER_AUTH_URL` se genera a partir de `WEB_PORT`. `pnpm bootstrap` prepara el esquema OAuth y genera las llaves faltantes en `.env.local`. Google se habilita al configurar `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`. Sus pruebas usan `TEST_DATABASE_URL`. Consulta [Stack local de Sideband](docs/local-stack.md).
 - El MCP remoto verifica los access tokens con `AUTH_ISSUER`, `AUTH_JWKS_URL` y `MCP_RESOURCE_URL`. `MCP_DEV_AUTH=1` habilita tokens de desarrollo fuera de producción.
-- MCP, web y el servidor admin firman JWT para el broker con `MCP_SERVICE_PRIVATE_KEY`, `WEB_SERVICE_PRIVATE_KEY` y `ADMIN_SERVICE_PRIVATE_KEY` respectivamente. Web usa `BROKER_URL` para consultar la dirección Nexo. El broker verifica con `SERVICE_JWT_PUBLIC_KEYS` (JSON con las claves JWK públicas `mcp`, `web` y `admin`). `pnpm bootstrap` (`node infra/gen-keys.ts`) genera las que falten y agrega `admin` a un `SERVICE_JWT_PUBLIC_KEYS` existente.
+- MCP, web y el servidor admin firman JWT para el broker con `MCP_SERVICE_PRIVATE_KEY`, `WEB_SERVICE_PRIVATE_KEY` y `ADMIN_SERVICE_PRIVATE_KEY` respectivamente. Web usa `BROKER_URL` para consultar la dirección Sideband. El broker verifica con `SERVICE_JWT_PUBLIC_KEYS` (JSON con las claves JWK públicas `mcp`, `web` y `admin`). `pnpm bootstrap` (`node infra/gen-keys.ts`) genera las que falten y agrega `admin` a un `SERVICE_JWT_PUBLIC_KEYS` existente.
 - El JWT `iss=admin` (`mintServiceToken({ iss: "admin", sub: adminId, email, privateKey })`) solo vale en `/v1/admin/*` (`rewake`, `expire`, `revokeAgent` del `AdminPort`); el broker lo rechaza en `/v1/agent/*` y `/v1/owner/*`, y los JWT `mcp` y `web` no valen en `/v1/admin/*`. Sin `SERVICE_JWT_PUBLIC_KEYS.admin`, esas rutas responden 401.
 
-## MCP Nexo
+## MCP Sideband
 
 - `pnpm env:init` genera `MCP_RESOURCE_URL` con el puerto del worktree, y `AUTH_ISSUER` y `AUTH_JWKS_URL` con el puerto web. Ajusta los valores en `.env.local` si cambias el origen público.
 - Usa `pnpm dev --filter @team-31/mcp` para iniciar solo MCP. Escucha en loopback por defecto y expone `GET /healthz`.
-- La [guía del MCP](apps/mcp/README.md) cubre stdio de desarrollo y el perfil Compose `nexo`.
+- La [guía del MCP](apps/mcp/README.md) cubre stdio de desarrollo y el perfil Compose `sideband`.
 
-## WhatsApp Nexo
+## WhatsApp Sideband
 
-- Web recibe los avisos firmados de Kapso en `/api/kapso/webhook`, en el puerto web existente. Configura `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WHATSAPP_NUMBER` y `KAPSO_WEBHOOK_SECRET` solo en web; aplica `pnpm nexo:auth:migrate` en un worktree existente.
+- Web recibe los avisos firmados de Kapso en `/api/kapso/webhook`, en el puerto web existente. Configura `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WHATSAPP_NUMBER` y `KAPSO_WEBHOOK_SECRET` solo en web; aplica `pnpm sideband:auth:migrate` en un worktree existente.
 - Vincula el teléfono desde `/agents/connect/whatsapp`. La identidad sigue siendo el titular de Better Auth y el broker comparte las solicitudes con MCP. Setup y prueba: [docs/whatsapp.md](docs/whatsapp.md).
 
-## Broker Nexo
+## Broker Sideband
 
 - Después de `pnpm bootstrap`, inicia solo el broker con `pnpm dev --filter @team-31/broker-service`. `pnpm env:init` actualiza worktrees existentes y genera `BROKER_PORT` y `BROKER_URL`.
 - Conserva en `.env.local` las llaves que generó `pnpm bootstrap`. Configura `REQUEST_TTL_SECONDS` o `WAKE_RETRY_DELAYS_MS` para probar plazos y reintentos más cortos.
-- `pnpm bootstrap` genera `BROKER_DATABASE_PASSWORD`, aplica las migraciones del broker y prepara el rol `nexo_broker`. El broker local se conecta con ese rol. `DATABASE_URL` del worktree se usa para migrar y para los demás servicios que ya la consumen. Para repetir la preparación de la base del broker, ejecuta `pnpm nexo:broker:migrate`.
-- Ese mismo paso (`db:prepare`, que también corre al iniciar `pnpm dev` del broker) aplica las migraciones de `ops` después de `nexo.*` y del esquema OAuth, ejecuta `ops.refresh_views()` y otorga a `nexo_broker` `INSERT` en `ops.events` (permiso directo: el rol no puede ser miembro de `nexo_telemetry_writer`). Así el broker escribe su telemetría con su propio rol; `TELEMETRY_DATABASE_URL` la redirige a otra conexión.
-- `BROKER_HOST` usa `127.0.0.1` por defecto. Para correrlo en Docker, compila con `pnpm build --filter @team-31/broker-service` y ejecuta `docker compose --env-file .env --env-file .env.local --profile nexo up -d broker`. Compose solo publica el puerto en loopback.
+- `pnpm bootstrap` genera `BROKER_DATABASE_PASSWORD`, aplica las migraciones del broker y prepara el rol `sideband_broker`. El broker local se conecta con ese rol. `DATABASE_URL` del worktree se usa para migrar y para los demás servicios que ya la consumen. Para repetir la preparación de la base del broker, ejecuta `pnpm sideband:broker:migrate`.
+- Ese mismo paso (`db:prepare`, que también corre al iniciar `pnpm dev` del broker) aplica las migraciones de `ops` después de `sideband.*` y del esquema OAuth, ejecuta `ops.refresh_views()` y otorga a `sideband_broker` `INSERT` en `ops.events` (permiso directo: el rol no puede ser miembro de `sideband_telemetry_writer`). Así el broker escribe su telemetría con su propio rol; `TELEMETRY_DATABASE_URL` la redirige a otra conexión.
+- `BROKER_HOST` usa `127.0.0.1` por defecto. Para correrlo en Docker, compila con `pnpm build --filter @team-31/broker-service` y ejecuta `docker compose --env-file .env --env-file .env.local --profile sideband up -d broker`. Compose solo publica el puerto en loopback.
 - `WAKE_ALLOW_INSECURE=1` permite avisos HTTP locales durante el desarrollo. Consulta [la guía del broker](apps/broker/README.md) para los detalles de Postgres, los avisos y el stream de actividad.
 
 ## Coordinación local entre N asistentes
@@ -196,7 +196,7 @@ Desde un worktree preparado con `pnpm bootstrap`, inicia web y broker en el host
 2. Claude usa el MCP stdio de la demo con `list_contacts`, `ask_contact` y `await_contact`. El MCP llama a `BROKER_URL` con la identidad de Ana. [apps/broker](apps/broker/src/index.ts) atiende HTTP y ejecuta el worker. [packages/broker](packages/broker/src/core/broker.ts) evalúa las reglas y conserva el estado en PostgreSQL, incluso después de cerrar el chat.
 3. Una denegación cierra la solicitud antes del aviso. Para un `interest_check` permitido, el broker envía un webhook firmado a `/api/demo/contact-wake/<id>` en web. El agente del contacto lee su JSON de prueba con Claude Code y responde a través del broker. El receptor usa la misma dirección en cada sesión. [Receptor](apps/demo/src/contact-wake.mjs) · [Relaciones y datos de prueba](apps/mcp/README.md#buscar-entre-los-agentes-de-la-agenda)
 
-## Pruebas de punta a punta de Nexo
+## Pruebas de punta a punta de Sideband
 
 - [`e2e/`](e2e/README.md) prueba el stack local con clientes MCP del SDK. La suite se ejecuta cuando se define `E2E_MCP_URL` y usa `BROKER_URL` y `WEB_SERVICE_PRIVATE_KEY` de un worktree de prueba.
 - `E2E_AUTH_MODE` vale `dev` por defecto. Para `oauth`, pasa los access tokens de cuentas de prueba en `E2E_OAUTH_TOKENS`. `E2E_ISOLATION_COUNT` controla cuántas solicitudes simultáneas se envían (80 por defecto).
@@ -204,7 +204,7 @@ Desde un worktree preparado con `pnpm bootstrap`, inicia web y broker en el host
 
 ## 🔭 Todo debe ser monitoreable por el admin (obligatorio)
 
-Nexo se depura en producción con `apps/admin` (panel + MCP de administración). Diseño: [docs/admin.md](docs/admin.md). Cualquier funcionalidad nueva o modificada **en el mismo PR** debe:
+Sideband se depura en producción con `apps/admin` (panel + MCP de administración). Diseño: [docs/admin.md](docs/admin.md). Cualquier funcionalidad nueva o modificada **en el mismo PR** debe:
 
 1. **Emitir telemetría** con `@team-31/telemetry` (`emit`, `span`, `error`). Cada transición de estado, llamada externa, decisión de permisos o de autenticación y cada error genera un evento. Si el evento no existe, decláralo en `packages/telemetry/src/catalog.ts` con su esquema. Incluye `requestId`, `userId` y `agentId` cuando existan.
 2. **Nunca tragarse un error**: `catch` → `telemetry.error(operación, error)` y devolver el `errorId` (encabezado `X-Error-Id`). Nada de `console.error` suelto.
@@ -232,8 +232,8 @@ Las llamadas internas al broker usan `tracedFetch` (opción `fetch` de `createAg
 ## Admin y observabilidad
 
 - App en `apps/admin`: SPA React + Vite + shadcn (preset Nova, Radix) en `src/`, servidor Hono (API, auth y MCP admin) en `server/` y contrato compartido en `shared/`. Instrucciones en [apps/admin/AGENTS.md](apps/admin/AGENTS.md).
-- `pnpm dev --filter @team-31/admin` levanta la SPA en `ADMIN_PORT` (Vite, con proxy de `/api` y `/mcp`) y el servidor admin en `ADMIN_API_PORT` (`tsx watch`). Acceso por `ADMIN_OPERATORS`/`ADMIN_VIEWERS` (Google con `ADMIN_GOOGLE_CLIENT_ID/SECRET`) o, fuera de producción, `ADMIN_DEV_AUTH=1` y `POST /api/admin/dev-login`. Esquema `admin` en producción: `pnpm with-env pnpm --filter @team-31/admin admin:auth:migrate`. Compose: servicio `admin` del perfil `nexo` (todo en `ADMIN_PORT`, solo loopback). Detalles en [apps/admin/README.md](apps/admin/README.md).
-- Esquema `ops` en Postgres (`packages/ops`): `ops.events` (telemetría) y vistas redactadas `ops.v_*`. `pnpm bootstrap` lo migra (vía `pnpm nexo:broker:migrate`, ver Broker Nexo). A mano: `pnpm --filter @team-31/ops build && pnpm with-env pnpm --filter @team-31/ops migrate`. `applyOpsMigrations` siempre termina con `ops.refresh_views()`, que crea las vistas cuyas tablas ya existen: vuelve a migrar después de crear tablas nuevas.
+- `pnpm dev --filter @team-31/admin` levanta la SPA en `ADMIN_PORT` (Vite, con proxy de `/api` y `/mcp`) y el servidor admin en `ADMIN_API_PORT` (`tsx watch`). Acceso por `ADMIN_OPERATORS`/`ADMIN_VIEWERS` (Google con `ADMIN_GOOGLE_CLIENT_ID/SECRET`) o, fuera de producción, `ADMIN_DEV_AUTH=1` y `POST /api/admin/dev-login`. Esquema `admin` en producción: `pnpm with-env pnpm --filter @team-31/admin admin:auth:migrate`. Compose: servicio `admin` del perfil `sideband` (todo en `ADMIN_PORT`, solo loopback). Detalles en [apps/admin/README.md](apps/admin/README.md).
+- Esquema `ops` en Postgres (`packages/ops`): `ops.events` (telemetría) y vistas redactadas `ops.v_*`. `pnpm bootstrap` lo migra (vía `pnpm sideband:broker:migrate`, ver Broker Sideband). A mano: `pnpm --filter @team-31/ops build && pnpm with-env pnpm --filter @team-31/ops migrate`. `applyOpsMigrations` siempre termina con `ops.refresh_views()`, que crea las vistas cuyas tablas ya existen: vuelve a migrar después de crear tablas nuevas.
 - Telemetría: `@team-31/telemetry` (`createTelemetry`, `tracedFetch`) y `@team-31/telemetry/hono` (`honoTelemetry`). Instrumentación en 5 líneas y catálogo en [packages/telemetry/README.md](packages/telemetry/README.md). `TELEMETRY_SINK=postgres|console|off`; `postgres` usa `TELEMETRY_DATABASE_URL` o `DATABASE_URL`. En dev los servicios escriben en `ops.events` del worktree; Compose pasa ambas variables a broker, MCP y coordinación.
 - Variables `ADMIN_*` y `TELEMETRY_*` en `.env.local.example`.
 - UI: usa la skill `shadcn` (`.agents/skills/shadcn`, enlazada en `.claude/skills`) y el MCP `shadcn` de `.mcp.json`. Componentes con `pnpm dlx shadcn@latest add <componente>` desde `apps/admin`.

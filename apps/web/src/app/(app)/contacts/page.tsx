@@ -39,7 +39,7 @@ async function ContactsList() {
 
       <section aria-labelledby="contacts-title">
         <h2 id="contacts-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Tus contactos</h2>
-        {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Invita a alguien con su dirección Nexo.</Empty> : (
+        {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Invita a alguien con su dirección Sideband.</Empty> : (
           <ul className="space-y-2">
             {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} />)}
           </ul>

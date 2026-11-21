@@ -26,7 +26,7 @@ function inbound(text: string, { signature, numberId = "12345", from = phone }: 
     type: "text", from, id: "wamid.demo", timestamp: String(Math.floor(Date.now() / 1000)),
     text: { body: text }, kapso: { direction: "inbound" },
   } });
-  return new Request("https://nexo.test/api/kapso/webhook", { method: "POST", body, headers: {
+  return new Request("https://sideband.test/api/kapso/webhook", { method: "POST", body, headers: {
     "X-Webhook-Event": "whatsapp.message.received",
     "X-Webhook-Signature": signature ?? createHmac("sha256", secret).update(body).digest("hex"),
   } });
@@ -37,7 +37,7 @@ beforeEach(() => {
   vi.stubEnv("KAPSO_WEBHOOK_SECRET", secret);
   vi.stubEnv("KAPSO_PHONE_NUMBER_ID", "12345");
   vi.stubEnv("KAPSO_WHATSAPP_NUMBER", "+15555550123");
-  vi.stubEnv("BETTER_AUTH_URL", "https://nexo.test");
+  vi.stubEnv("BETTER_AUTH_URL", "https://sideband.test");
   vi.stubGlobal("fetch", send.mockImplementation(() => Promise.resolve(new Response(null, { status: 200 }))));
   linkedUser = undefined;
   store.claim.mockResolvedValue(true);
@@ -74,22 +74,22 @@ it("detecta el remitente del código y pide confirmar en la web, sin llamar al b
 
 it("crea y consulta como el titular vinculado; desvinculado no puede consultar", async () => {
   linkedUser = "user-a";
-  broker.ask.mockResolvedValue({ requestId, to: "carla@nexo.app", tool: "question", decision: "pending", waitingFor: "owner" });
+  broker.ask.mockResolvedValue({ requestId, to: "carla@sideband.app", tool: "question", decision: "pending", waitingFor: "owner" });
   broker.activity.mockResolvedValue([{ direction: "sent", requestId }]);
-  broker.status.mockResolvedValue({ requestId, to: "carla@nexo.app", tool: "question", decision: "allow", result: { answer: "Sí, puedo." } });
+  broker.status.mockResolvedValue({ requestId, to: "carla@sideband.app", tool: "question", decision: "allow", result: { answer: "Sí, puedo." } });
 
   async function message(text: string) {
     expect((await POST(inbound(text))).status).toBe(200);
     await (vi.mocked(after).mock.calls.at(-1)?.[0] as () => Promise<void>)();
     return JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body;
   }
-  expect(await message("Pregunta a carla@nexo.app si puede jugar")).toContain(requestId);
+  expect(await message("Pregunta a carla@sideband.app si puede jugar")).toContain(requestId);
   expect(broker.ask).toHaveBeenCalledWith({ userId: "user-a" }, {
-    to: "carla@nexo.app", tool: "question", args: { text: "si puede jugar" },
+    to: "carla@sideband.app", tool: "question", args: { text: "si puede jugar" },
   });
   expect(await message("¿ya respondió?")).toContain("Sí, puedo.");
   expect(broker.status).toHaveBeenCalledWith({ userId: "user-a" }, requestId);
-  broker.status.mockResolvedValue({ requestId, to: "carla@nexo.app", tool: "connect", decision: "allow", result: { accepted: true } });
+  broker.status.mockResolvedValue({ requestId, to: "carla@sideband.app", tool: "connect", decision: "allow", result: { accepted: true } });
   expect(await message(`estado ${requestId}`)).toContain("Aceptó la solicitud de conexión.");
   linkedUser = undefined;
   expect(await message("estado")).toContain("Vincula tu WhatsApp");

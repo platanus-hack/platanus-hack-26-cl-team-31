@@ -5,8 +5,8 @@ import type { AgentConnectionRow, GrantRow, RequestRow, Store, WakeJob } from ".
 // makeStore supplies an isolated store per test, including an empty wake queue.
 export function runStoreContractTests(makeStore: () => Store | Promise<Store>): void {
   const now = new Date("2026-11-21T15:00:00Z");
-  const fromAddress = "alice@nexo.app";
-  const toAddress = "bruno@nexo.app";
+  const fromAddress = "alice@sideband.app";
+  const toAddress = "bruno@sideband.app";
   let store: Store;
 
   function grantTo(granteeAddress: string): GrantRow {
@@ -36,7 +36,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
     it("rolls back addresses, grants, requests and their events when a transaction rejects", async () => {
       const row = await makeRequest();
       await expect(store.tx(async (tx) => {
-        await tx.createAddress("carla", "carla@nexo.app");
+        await tx.createAddress("carla", "carla@sideband.app");
         await tx.putGrant(grantTo(toAddress));
         await tx.updateRequest(row.id, { status: "awaiting_owner" }, row.version);
         await tx.appendEvent({ requestId: row.id, at: now, kind: "permission" });
@@ -53,13 +53,13 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
 
     it("allows one address per user and one user per address", async () => {
       await expect(store.tx((tx) => tx.createAddress("carla", fromAddress))).rejects.toMatchObject({ code: "conflict" });
-      await expect(store.tx((tx) => tx.createAddress("alice", "other@nexo.app"))).rejects.toMatchObject({ code: "conflict" });
+      await expect(store.tx((tx) => tx.createAddress("alice", "other@sideband.app"))).rejects.toMatchObject({ code: "conflict" });
       await store.tx(async (tx) => {
         const grant = await tx.putGrant({ ...grantTo(fromAddress), grantorUserId: "carla" });
         expect(await tx.getUser("carla")).toMatchObject({ userId: "carla" });
-        await tx.createAddress("carla", "carla@nexo.app");
+        await tx.createAddress("carla", "carla@sideband.app");
         expect(await tx.listGrants("carla")).toEqual([grant]);
-        expect(await tx.getUserByAddress("carla@nexo.app")).toMatchObject({ userId: "carla" });
+        expect(await tx.getUserByAddress("carla@sideband.app")).toMatchObject({ userId: "carla" });
       });
     });
 
@@ -76,7 +76,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.getRequest(inbox.id, { fromUserId: "alice" })).toMatchObject({ id: inbox.id });
         expect((await tx.listInbox(toAddress)).map(({ id }) => id)).toEqual([inbox.id]);
         expect((await tx.listOwnerPending(toAddress)).map(({ id }) => id)).toEqual([pending.id]);
-        expect(await tx.listActivity("someone@nexo.app", 10)).toEqual([]);
+        expect(await tx.listActivity("someone@sideband.app", 10)).toEqual([]);
         expect((await tx.listActivity(fromAddress, 10)).map(({ id }) => id)).toEqual(expect.arrayContaining([inbox.id, pending.id, final.id]));
         expect((await tx.listActivity(fromAddress, 1))).toHaveLength(1);
         expect((await tx.listDueForExpiry(now, 10)).map(({ id }) => id)).toEqual(expect.arrayContaining([inbox.id, pending.id]));
@@ -87,7 +87,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
     });
 
     it("filters historical address matches before limiting the current recipient's activity", async () => {
-      const address = "carla@nexo.app";
+      const address = "carla@sideband.app";
       const historical = await makeRequest({
         toAddress: address, toUserId: null, createdAt: new Date(now.getTime() + 1),
       });
@@ -228,7 +228,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.inviteCircleMember(circle.id, toAddress);
         expect(await tx.joinCircle(circle.id, fromAddress, now)).toBe(true);
         expect(await tx.joinCircle(circle.id, fromAddress, now)).toBe(false);
-        expect(await tx.joinCircle(circle.id, "carla@nexo.app", now)).toBe(false);
+        expect(await tx.joinCircle(circle.id, "carla@sideband.app", now)).toBe(false);
         expect(await tx.shareCircle(fromAddress, toAddress)).toBe(false);
         expect(await tx.listCircles(toAddress)).toEqual([circle]);
 

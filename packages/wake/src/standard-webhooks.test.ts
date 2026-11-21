@@ -4,9 +4,9 @@ import { sign, verify } from "./standard-webhooks.js";
 const secret = "whsec_AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 const id = "evt_req_123";
 const timestamp = 1_700_000_000;
-const body = '{"event":"nexo.request.created","requestId":"req_123"}';
+const body = '{"event":"sideband.request.created","requestId":"req_123"}';
 // Independent HMAC-SHA256 vector calculated with OpenSSL.
-const signature = "v1,ST53nTYgDaTizDhxgikxiAMlAMgjfiBQVzKm/Q9K6cc=";
+const signature = "v1,EvyHo4dwmt/8hRUOLpw1cahz0gv4IXoJTvu7P0VVsuk=";
 
 describe("Standard Webhooks", () => {
   it("firma y verifica el vector conocido", () => {

@@ -15,8 +15,8 @@ const mcp = generateKeyPairSync("ed25519");
 const web = generateKeyPairSync("ed25519");
 const signing = generateKeyPairSync("ed25519");
 const publicKeys = { mcp: mcp.publicKey.export({ format: "jwk" }), web: web.publicKey.export({ format: "jwk" }) };
-const question = { to: "bruno@nexo.app", tool: "question", args: { text: "¿Vienes mañana?" } };
-const grantToAlice: GrantInput = { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] };
+const question = { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes mañana?" } };
+const grantToAlice: GrantInput = { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] };
 const mcpEvents = {
   kind: "mcp_events",
   callbackUrl: "https://example.com/events",
@@ -33,7 +33,7 @@ function fixture(requestTtlSeconds = 900) {
   const broker = createBroker({
     store: createMemoryStore(), waker, clock: { now: () => new Date() },
     signingKey: signing.privateKey, nonceKey: new Uint8Array(32),
-    config: { requestTtlSeconds, wakeRetryDelaysMs: [0, 0, 0], addressDomain: "nexo.app" },
+    config: { requestTtlSeconds, wakeRetryDelaysMs: [0, 0, 0], addressDomain: "sideband.app" },
   });
   return { broker, waker };
 }
@@ -114,11 +114,11 @@ describe("HTTP interno del broker", () => {
     await broker.tick(new Date());
     expect(waker.wake).not.toHaveBeenCalled();
 
-    await call(app, routes.ownerSetGrant, { token: bruno, body: { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] } });
+    await call(app, routes.ownerSetGrant, { token: bruno, body: { grantee: "alice@sideband.app", tool: "question", fields: ["answer"] } });
     const asked = await call(app, routes.ownerAsk, { token: alice, body: question });
     expect(asked).toMatchObject({ decision: "pending", waitingFor: "agent" });
     expect((await call(app, routes.ownerActivity, { token: alice })).items).toContainEqual(expect.objectContaining({
-      requestId: asked.requestId, from: "alice@nexo.app", direction: "sent",
+      requestId: asked.requestId, from: "alice@sideband.app", direction: "sent",
     }));
     const ownerPath = `/v1/owner/requests/${asked.requestId}`;
     await expectError(await request(app, routes.ownerStatus, { token: bruno, path: ownerPath }), 404, "not_found");
@@ -151,23 +151,23 @@ describe("HTTP interno del broker", () => {
     await call(app, routes.ownerClaimAddress, { token: alice, body: { localPart: "alice" } });
     await call(app, routes.ownerClaimAddress, { token: bruno, body: { localPart: "bruno" } });
 
-    const sent = await call(app, routes.ownerConnect, { token: alice, body: { to: "bruno@nexo.app" } });
+    const sent = await call(app, routes.ownerConnect, { token: alice, body: { to: "bruno@sideband.app" } });
     expect(sent).toMatchObject({ final: false, waitingFor: "agent" });
     const { items: [invitation] } = await call(app, routes.agentInbox, { token: brunoBot });
     expect(invitation).toMatchObject({ requestId: sent.requestId, tool: "connect" });
     const answerPath = routes.ownerAnswerInvitation.path.replace(":id", sent.requestId);
     await call(app, routes.ownerAnswerInvitation, { token: bruno, path: answerPath, body: { accept: true } });
     const contacts = (token: string) => call(app, routes.ownerContacts, { token });
-    expect((await contacts(alice)).contacts.map(({ address }) => address)).toEqual(["bruno@nexo.app"]);
-    expect((await contacts(bruno)).contacts.map(({ address }) => address)).toEqual(["alice@nexo.app"]);
+    expect((await contacts(alice)).contacts.map(({ address }) => address)).toEqual(["bruno@sideband.app"]);
+    expect((await contacts(bruno)).contacts.map(({ address }) => address)).toEqual(["alice@sideband.app"]);
 
-    const sharingPath = routes.ownerSetSharing.path.replace(":address", encodeURIComponent("bruno@nexo.app"));
+    const sharingPath = routes.ownerSetSharing.path.replace(":address", encodeURIComponent("bruno@sideband.app"));
     await call(app, routes.ownerSetSharing, {
       token: alice, path: sharingPath, body: { availability: "slots", interests: false, questions: false },
     });
     expect((await contacts(bruno)).contacts[0]?.receives).toEqual({ availability: "slots", interests: false, questions: false });
 
-    const path = routes.ownerRemoveFriend.path.replace(":address", encodeURIComponent("bruno@nexo.app"));
+    const path = routes.ownerRemoveFriend.path.replace(":address", encodeURIComponent("bruno@sideband.app"));
     await call(app, routes.ownerRemoveFriend, { token: alice, path });
     expect((await contacts(alice)).contacts).toEqual([]);
     expect((await contacts(bruno)).contacts).toEqual([]);
@@ -195,12 +195,12 @@ describe("HTTP interno del broker", () => {
     const [alice, bruno] = await Promise.all([owner("alice"), owner("bruno")]);
 
     const circle = await call(app, routes.ownerCreateCircle, { token: alice, body: { name: "Fútbol" } });
-    const member = `/v1/owner/circles/${circle.id}/members/bruno@nexo.app`;
+    const member = `/v1/owner/circles/${circle.id}/members/bruno@sideband.app`;
     await call(app, routes.ownerInviteToCircle, { token: alice, path: member });
     await expectError(await request(app, routes.ownerInviteToCircle, { token: bruno, path: member }), 404, "not_found");
     await call(app, routes.ownerJoinCircle, { token: bruno, path: `/v1/owner/circles/${circle.id}/join` });
     expect((await call(app, routes.ownerCircles, { token: bruno })).items).toEqual([{
-      ...circle, members: [{ address: "alice@nexo.app", joined: true }, { address: "bruno@nexo.app", joined: true }],
+      ...circle, members: [{ address: "alice@sideband.app", joined: true }, { address: "bruno@sideband.app", joined: true }],
     }]);
 
     await call(app, routes.ownerRemoveFromCircle, { token: bruno, path: member });
@@ -220,7 +220,7 @@ describe("HTTP interno del broker", () => {
     expect(await call(app, routes.ownerMe, { token: bruno })).toEqual({ userId: "bruno" });
     await call(app, routes.ownerClaimAddress, { token: alice, body: { localPart: "alice" } });
     expect(await call(app, routes.ownerClaimAddress, { token: bruno, body: { localPart: "bruno" } }))
-      .toEqual({ address: "bruno@nexo.app" });
+      .toEqual({ address: "bruno@sideband.app" });
     const denied = await call(app, routes.agentAsk, { token: aliceBot, body: question });
     expect(denied).toMatchObject({ final: true, decision: "deny" });
 
@@ -236,7 +236,7 @@ describe("HTTP interno del broker", () => {
     await call(app, routes.ownerDecide, {
       token: bruno, path: `/v1/owner/requests/${waiting.requestId}/decision`, body: { kind: "deny" },
     });
-    const capabilityPath = `${routes.agentCapabilities.path}?to=bruno@nexo.app`;
+    const capabilityPath = `${routes.agentCapabilities.path}?to=bruno@sideband.app`;
     expect((await call(app, routes.agentCapabilities, { token: aliceBot, path: capabilityPath })).tools)
       .toContainEqual(expect.objectContaining({ tool: "question", allowedFields: ["answer"] }));
     await expectError(await request(app, routes.agentCapabilities, { token: bruno, path: capabilityPath }), 401, "unauthorized");
@@ -248,11 +248,11 @@ describe("HTTP interno del broker", () => {
     const asked = await call(app, routes.agentAsk, { token: aliceBot, body: { ...question, userId: "carla" } });
     expect(asked).toMatchObject({ final: false, waitingFor: "agent" });
     await broker.tick(new Date());
-    expect(waker.wake).toHaveBeenCalledWith(mcpEvents, { event: "nexo.request.created", requestId: asked.requestId }, expect.objectContaining({ attempt: 1 }));
+    expect(waker.wake).toHaveBeenCalledWith(mcpEvents, { event: "sideband.request.created", requestId: asked.requestId }, expect.objectContaining({ attempt: 1 }));
     const inbox = (await call(app, routes.agentInbox, { token: brunoBot })).items;
     expect(inbox).toHaveLength(1);
     const item = inbox[0]!;
-    expect(item).toMatchObject({ requestId: asked.requestId, from: "alice@nexo.app", senderMessage: { trusted: false } });
+    expect(item).toMatchObject({ requestId: asked.requestId, from: "alice@sideband.app", senderMessage: { trusted: false } });
     expect(await call(app, routes.agentReply, { token: brunoBot, body: {
       requestId: item.requestId, nonce: item.nonce, outcome: "answered", result: { answer: "Sí" },
     } })).toMatchObject({ requestId: asked.requestId, status: "answered" });
@@ -284,7 +284,7 @@ describe("HTTP interno del broker", () => {
     const app = createHttpServer({ ...fixture(), publicKeys });
     const [webToken, mcpToken] = await Promise.all([owner("alice"), agent("alice")]);
     const timestamp = Math.floor(Date.now() / 1000);
-    const expired = await new SignJWT({ azp: "alice-agent", scope: "nexo:ask" })
+    const expired = await new SignJWT({ azp: "alice-agent", scope: "sideband:ask" })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer("mcp").setAudience("broker").setSubject("alice").setJti("expired")
       .setIssuedAt(timestamp - 100).setExpirationTime(timestamp - 40).sign(mcp.privateKey);
@@ -355,7 +355,7 @@ describe("HTTP interno del broker", () => {
     for (const userId of ["alice", "bruno", "carla"]) await broker.owner.claimAddress({ userId }, userId);
     const app = createHttpServer({ broker, publicKeys });
     const [aliceBot, bruno, carla] = await Promise.all([agent("alice"), owner("bruno"), owner("carla")]);
-    const unrelated = await call(app, routes.agentAsk, { token: aliceBot, body: { ...question, to: "carla@nexo.app" } });
+    const unrelated = await call(app, routes.agentAsk, { token: aliceBot, body: { ...question, to: "carla@sideband.app" } });
     await broker.owner.setGrant({ userId: "bruno" }, grantToAlice);
     const asked = await call(app, routes.agentAsk, { token: aliceBot, body: question });
     const brunoBot = { userId: "bruno", agentId: "bruno-agent", scopes: Scope.options };

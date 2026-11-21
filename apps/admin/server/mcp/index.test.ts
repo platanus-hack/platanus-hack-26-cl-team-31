@@ -66,8 +66,8 @@ const overview: Overview = {
 const requestSummary: RequestSummary = {
   id: "req_8f2a",
   tool: "availability",
-  fromAddress: "ana@nexo",
-  toAddress: "bob@nexo",
+  fromAddress: "ana@sideband",
+  toAddress: "bob@sideband",
   status: "awaiting_agent",
   outcome: null,
   rule: "contacts",
@@ -126,7 +126,7 @@ const agent: AgentRow = {
 }
 
 const userSummary: UserSummary = {
-  userId: "u_bob", address: "bob@nexo", displayName: "Bob", createdAt: at, agents: 1, sent24h: 2, received24h: 5, lastActivityAt: later,
+  userId: "u_bob", address: "bob@sideband", displayName: "Bob", createdAt: at, agents: 1, sent24h: 2, received24h: 5, lastActivityAt: later,
 }
 
 const userDetail: UserDetail = {
@@ -148,7 +148,7 @@ function fakeQueries(): AdminQueries {
     errors: vi.fn(async () => [errorGroup]),
     error: vi.fn(async (id: string) => (id === event.errorId ? event : null)),
     users: vi.fn(async () => ({ items: [userSummary], nextCursor: null })),
-    user: vi.fn(async (id: string) => (id === "u_bob" || id === "bob@nexo" ? userDetail : null)),
+    user: vi.fn(async (id: string) => (id === "u_bob" || id === "bob@sideband" ? userDetail : null)),
     agents: vi.fn(async () => [agent]),
     wakeQueue: vi.fn(async () => [wakeJob]),
     audit: vi.fn(async () => ({ items: [], nextCursor: null })),
@@ -159,9 +159,9 @@ function fakeQueries(): AdminQueries {
 // ---------- Harness: app Hono en memoria + cliente MCP del SDK ----------
 
 const tokens: Record<string, TokenPrincipal> = {
-  nxa_read: { tokenId: "tok_read", label: "lectura", createdBy: "ops@nexo.test", scopes: ["admin:read"] },
-  nxa_sql: { tokenId: "tok_sql", label: "sql", createdBy: "ops@nexo.test", scopes: ["admin:read", "admin:sql"] },
-  nxa_other: { tokenId: "tok_other", label: "otro", createdBy: "ops@nexo.test", scopes: ["admin:read"] },
+  sba_read: { tokenId: "tok_read", label: "lectura", createdBy: "ops@sideband.test", scopes: ["admin:read"] },
+  sba_sql: { tokenId: "tok_sql", label: "sql", createdBy: "ops@sideband.test", scopes: ["admin:read", "admin:sql"] },
+  sba_other: { tokenId: "tok_other", label: "otro", createdBy: "ops@sideband.test", scopes: ["admin:read"] },
 }
 
 function setup(queries: AdminQueries = fakeQueries()) {
@@ -183,7 +183,7 @@ afterEach(async () => {
   await Promise.all(clients.splice(0).map((client) => client.close()))
 })
 
-async function connect(app: Hono, token = "nxa_read") {
+async function connect(app: Hono, token = "sba_read") {
   const client = new Client({ name: "admin-test", version: "1.0.0" })
   clients.push(client)
   await client.connect(new StreamableHTTPClientTransport(new URL("http://admin.test/mcp"), {
@@ -249,14 +249,14 @@ describe("tools", () => {
     ["admin_errors", {}, adminRoutes.errors.response],
     ["admin_get_error", { error_id: errorGroup.sampleErrorId }, adminRoutes.error.response],
     ["admin_search_users", { q: "bob" }, adminRoutes.users.response],
-    ["admin_get_user", { id_or_address: "bob@nexo" }, adminRoutes.user.response],
+    ["admin_get_user", { id_or_address: "bob@sideband" }, adminRoutes.user.response],
     ["admin_agents", { failing: true }, adminRoutes.agents.response],
     ["admin_wake_queue", { state: "done" }, adminRoutes.wakeQueue.response],
     ["admin_sql", { sql: "select id, status from ops.v_requests" }, adminRoutes.sql.response],
   ]
 
   it.each(cases)("%s devuelve structuredContent que pasa su esquema y un resumen", async (name, args, schema) => {
-    const client = await connect(setup().app, "nxa_sql")
+    const client = await connect(setup().app, "sba_sql")
     const result = await client.callTool({ name, arguments: args }) as CallToolResult
 
     expect(result.isError).toBeFalsy()
@@ -285,8 +285,8 @@ describe("tools", () => {
     await client.callTool({ name: "admin_events", arguments: { request_id: "req_8f2a", trace_id: "t1", before_id: "99" } })
     expect(queries.events).toHaveBeenCalledWith({ requestId: "req_8f2a", traceId: "t1", beforeId: "99", limit: 100 })
 
-    await client.callTool({ name: "admin_search_requests", arguments: { status: ["expired"], address: "bob@nexo" } })
-    expect(queries.requests).toHaveBeenCalledWith({ status: ["expired"], address: "bob@nexo", limit: 50 })
+    await client.callTool({ name: "admin_search_requests", arguments: { status: ["expired"], address: "bob@sideband" } })
+    expect(queries.requests).toHaveBeenCalledWith({ status: ["expired"], address: "bob@sideband", limit: 50 })
 
     await client.callTool({ name: "admin_errors", arguments: { service: "broker" } })
     expect(queries.errors).toHaveBeenCalledWith({ window: "24h", service: "broker" })
@@ -316,7 +316,7 @@ describe("tools", () => {
     ["admin_get_request", { request_id: "req_nope" }, /No existe la solicitud «req_nope»/],
     ["admin_get_trace", { trace_id: "nope" }, /No existe la traza/],
     ["admin_get_error", { error_id: "nope" }, /No existe el error/],
-    ["admin_get_user", { id_or_address: "nadie@nexo" }, /No existe la persona/],
+    ["admin_get_user", { id_or_address: "nadie@sideband" }, /No existe la persona/],
   ])("%s sin resultado devuelve isError con un mensaje claro", async (name, args, message) => {
     const client = await connect(setup().app)
     const result = await client.callTool({ name, arguments: args }) as CallToolResult
@@ -330,7 +330,7 @@ describe("tools", () => {
     vi.mocked(queries.sql).mockRejectedValueOnce(new AdminQueryError("invalid_input", "Solo se permite SELECT."))
     vi.mocked(queries.sql).mockRejectedValueOnce(new AdminQueryError("timeout", "canceling statement"))
     vi.mocked(queries.overview).mockRejectedValueOnce(new Error("connect ECONNREFUSED 10.0.0.1:5432"))
-    const client = await connect(setup(queries).app, "nxa_sql")
+    const client = await connect(setup(queries).app, "sba_sql")
 
     const invalid = await client.callTool({ name: "admin_sql", arguments: { sql: "delete from ops.events" } }) as CallToolResult
     expect(invalid.isError).toBe(true)
@@ -374,26 +374,26 @@ describe("autenticación y límites", () => {
 
   it("con token inválido responde 401 y no consulta nada", async () => {
     const { app, deps, queries } = setup()
-    const response = await rpc(app, { Authorization: "Bearer nxa_revocado" })
+    const response = await rpc(app, { Authorization: "Bearer sba_revocado" })
     expect(response.status).toBe(401)
     expect(response.headers.get("www-authenticate")).toContain('error="invalid_token"')
-    expect(deps.authenticate).toHaveBeenCalledWith("nxa_revocado")
+    expect(deps.authenticate).toHaveBeenCalledWith("sba_revocado")
     expect(queries.overview).not.toHaveBeenCalled()
 
-    // Un bearer que no es nxa_ (por ejemplo, un JWT de Nexo) ni siquiera llega a authenticate.
+    // Un bearer que no es sba_ (por ejemplo, un JWT de Sideband) ni siquiera llega a authenticate.
     const jwt = await rpc(app, { Authorization: "Bearer eyJhbGciOi.x.y" })
     expect(jwt.status).toBe(401)
     expect(deps.authenticate).toHaveBeenCalledTimes(1)
   })
 
   it("el cliente del SDK falla al conectar con un token inválido", async () => {
-    await expect(connect(setup().app, "nxa_revocado")).rejects.toThrow()
+    await expect(connect(setup().app, "sba_revocado")).rejects.toThrow()
   })
 
   it("otros métodos responden 405 JSON-RPC", async () => {
     const { app } = setup()
     for (const method of ["GET", "DELETE", "PUT"]) {
-      const response = await rpc(app, { Authorization: "Bearer nxa_read" }, method)
+      const response = await rpc(app, { Authorization: "Bearer sba_read" }, method)
       expect(response.status).toBe(405)
       expect(response.headers.get("allow")).toBe("POST")
       expect(await response.json()).toMatchObject({ jsonrpc: "2.0", id: null, error: { code: -32000 } })
@@ -402,7 +402,7 @@ describe("autenticación y límites", () => {
 
   it("admin_sql sin el scope admin:sql falla y no ejecuta la consulta", async () => {
     const { app, queries } = setup()
-    const client = await connect(app, "nxa_read")
+    const client = await connect(app, "sba_read")
     const result = await client.callTool({ name: "admin_sql", arguments: { sql: "select 1" } }) as CallToolResult
     expect(result.isError).toBe(true)
     expect(textOf(result)).toContain("admin:sql")
@@ -412,26 +412,26 @@ describe("autenticación y límites", () => {
   it("limita a 60 solicitudes por minuto por token", async () => {
     const { app } = setup()
     for (let i = 0; i < 60; i++) {
-      const response = await rpc(app, { Authorization: "Bearer nxa_read" })
+      const response = await rpc(app, { Authorization: "Bearer sba_read" })
       expect(response.status).toBe(200)
     }
-    const limited = await rpc(app, { Authorization: "Bearer nxa_read" })
+    const limited = await rpc(app, { Authorization: "Bearer sba_read" })
     expect(limited.status).toBe(429)
     expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0)
     expect(await limited.json()).toMatchObject({ jsonrpc: "2.0", error: { message: expect.stringContaining("60") } })
 
     // El límite es por token: otro token sigue funcionando.
-    expect((await rpc(app, { Authorization: "Bearer nxa_other" })).status).toBe(200)
+    expect((await rpc(app, { Authorization: "Bearer sba_other" })).status).toBe(200)
   })
 
   it("la ventana del límite se renueva al pasar el minuto", async () => {
     vi.useFakeTimers({ now: new Date(at), toFake: ["Date"] })
     try {
       const { app } = setup()
-      for (let i = 0; i < 60; i++) await rpc(app, { Authorization: "Bearer nxa_read" })
-      expect((await rpc(app, { Authorization: "Bearer nxa_read" })).status).toBe(429)
+      for (let i = 0; i < 60; i++) await rpc(app, { Authorization: "Bearer sba_read" })
+      expect((await rpc(app, { Authorization: "Bearer sba_read" })).status).toBe(429)
       vi.setSystemTime(Date.parse(at) + 60_000)
-      expect((await rpc(app, { Authorization: "Bearer nxa_read" })).status).toBe(200)
+      expect((await rpc(app, { Authorization: "Bearer sba_read" })).status).toBe(200)
     } finally {
       vi.useRealTimers()
     }
@@ -441,16 +441,16 @@ describe("autenticación y límites", () => {
 describe("auditoría", () => {
   it("audita cada tools/call con mcp:<tool>, el actor y el target", async () => {
     const { app, deps } = setup()
-    const client = await connect(app, "nxa_read")
+    const client = await connect(app, "sba_read")
     await client.callTool({ name: "admin_get_request", arguments: { request_id: "req_8f2a" } })
     await client.callTool({ name: "admin_overview", arguments: {} })
     await client.callTool({ name: "admin_sql", arguments: { sql: "select 1" } })
 
     expect(deps.audit).toHaveBeenCalledTimes(3)
-    expect(deps.audit).toHaveBeenNthCalledWith(1, { actor: tokens.nxa_read, action: "mcp:admin_get_request", target: "req_8f2a" })
-    expect(deps.audit).toHaveBeenNthCalledWith(2, { actor: tokens.nxa_read, action: "mcp:admin_overview", target: null })
+    expect(deps.audit).toHaveBeenNthCalledWith(1, { actor: tokens.sba_read, action: "mcp:admin_get_request", target: "req_8f2a" })
+    expect(deps.audit).toHaveBeenNthCalledWith(2, { actor: tokens.sba_read, action: "mcp:admin_overview", target: null })
     // También queda auditado el intento sin scope.
-    expect(deps.audit).toHaveBeenNthCalledWith(3, { actor: tokens.nxa_read, action: "mcp:admin_sql", target: null })
+    expect(deps.audit).toHaveBeenNthCalledWith(3, { actor: tokens.sba_read, action: "mcp:admin_sql", target: null })
   })
 
   it("no audita tools/list y falla cerrado si la auditoría no se puede escribir", async () => {

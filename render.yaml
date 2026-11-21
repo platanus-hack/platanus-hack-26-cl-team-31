@@ -7,7 +7,7 @@ envVarGroups:
         value: production
       - key: TURBO_TELEMETRY_DISABLED
         value: "1"
-      # Telemetría de Nexo (docs/admin.md): cada servicio escribe en ops.events.
+      # Telemetría de Sideband (docs/admin.md): cada servicio escribe en ops.events.
       - key: TELEMETRY_SINK
         value: postgres
 

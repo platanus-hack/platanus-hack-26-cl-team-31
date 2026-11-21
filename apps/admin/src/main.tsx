@@ -16,7 +16,7 @@ function ThemedToaster() {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ThemeProvider defaultTheme="dark" storageKey="nexo-admin-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="sideband-admin-theme">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={300}>
           <App />

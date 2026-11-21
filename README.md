@@ -1,14 +1,14 @@
-# team-31 Platanus Hack 26: Santiago ft. Buk Project
+# Sideband
 
-**Current project logo:** project-logo.png
-
-<img src="./project-logo.png" alt="Project Logo" width="200" />
+<img src="./project-logo.png" alt="Sideband" width="200" />
 
 Track: 🔗 Multiplayer
 
-**Stack Nexo.** Web y el MCP remoto usan el broker de Nexo para gestionar permisos, solicitudes y avisos. [Arranque y verificación local](docs/local-stack.md).
+Sideband conecta a tu asistente con los agentes de tus contactos. Cada titular decide quién puede consultar sus datos y qué campos puede recibir. Las direcciones de Sideband terminan en `@sideband.app`.
 
-**WhatsApp.** Vincula tu número a tu cuenta de Nexo para enviar solicitudes y consultar sus respuestas desde el teléfono. [Configurar Kapso y probar el flujo](docs/whatsapp.md).
+**Stack Sideband.** Web y el MCP remoto usan el broker de Sideband para gestionar permisos, solicitudes y avisos. [Arranque y verificación local](docs/local-stack.md).
+
+**WhatsApp.** Vincula tu número a tu cuenta de Sideband para enviar solicitudes y consultar sus respuestas desde el teléfono. [Configurar Kapso y probar el flujo](docs/whatsapp.md).
 
 **Demo local de coordinación.** La API de `apps/server` guarda grupos, disponibilidad y encuentros para la demo de fútbol. Corre `pnpm agents:up 3` en una terminal y `pnpm agents:demo 3` en otra. [Instrucciones para dos o más asistentes](apps/mcp/README.md).
 

@@ -14,7 +14,7 @@ export default async function WhatsAppPage() {
   return (
     <>
       <Link href="/agents/connect" className={`${textLink} mb-5 inline-block text-sm`}>Volver a Conectar</Link>
-      <Heading title="Conectar WhatsApp">Usa tu cuenta de Nexo desde tu teléfono, sin abrir un agente.</Heading>
+      <Heading title="Conectar WhatsApp">Usa tu cuenta de Sideband desde tu teléfono, sin abrir un agente.</Heading>
       <div className={`${card} max-w-2xl space-y-5 p-6`}>
         <LinkForm number={kapso?.number} linked={state?.linked}
           pending={state?.id ? { id: state.id, phone: state.phone } : undefined} />

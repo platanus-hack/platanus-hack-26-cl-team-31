@@ -111,9 +111,9 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     }
   })
 
-  it("devuelve la sesión con rol y frescura y respeta la cookie nexo-admin", async () => {
+  it("devuelve la sesión con rol y frescura y respeta la cookie sideband-admin", async () => {
     const cookie = await login("viewer@test.cl")
-    expect(cookie).toMatch(/^nexo-admin\.session_token=/)
+    expect(cookie).toMatch(/^sideband-admin\.session_token=/)
     const response = await buildApp().request("/api/admin/session", { headers: { cookie } })
     expect(response.status).toBe(200)
     const body = await response.json()
@@ -298,7 +298,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     expect(invalid.status).toBe(400)
   })
 
-  it("crea, lista y revoca tokens nxa_; el token revocado ya no autentica", async () => {
+  it("crea, lista y revoca tokens sba_; el token revocado ya no autentica", async () => {
     const cookie = await login("op@test.cl")
     const app = buildApp()
     const tokens = createPgTokenStore(pool)
@@ -321,7 +321,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     expect((await auditRows()).map((row) => row.action)).toEqual(expect.arrayContaining(["token.create", "token.revoke"]))
   })
 
-  it("/mcp acepta tokens nxa_ vigentes, audita cada tool y rechaza los revocados", async () => {
+  it("/mcp acepta tokens sba_ vigentes, audita cada tool y rechaza los revocados", async () => {
     const app = buildApp()
     const tokens = createPgTokenStore(pool)
     const { token, meta } = await tokens.create({ name: "claude-test", ttlDays: 1 }, "op@test.cl")
@@ -358,7 +358,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     expect(response.status).toBe(200)
     const cookie = response.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ")
     const session = await (await app.request("/api/admin/session", { headers: { cookie } })).json()
-    expect(session.user).toMatchObject({ email: "dev@nexo.local", role: "operator" })
+    expect(session.user).toMatchObject({ email: "dev@sideband.local", role: "operator" })
   })
 
   it("SSE /live envía eventos en orden con id y event telemetry", async () => {
