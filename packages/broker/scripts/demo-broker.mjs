@@ -63,8 +63,8 @@ export async function startDemoBroker(source) {
       kind: "standard_webhook", url: `http://127.0.0.1:${receiver.address().port}/agents/bob-bot/wake`, secret,
     });
     return {
-      async ask(interest) {
-        const request = await broker.agent.ask(ana, { to, tool: "interest_check", args: { interest } });
+      async ask(tool, args) {
+        const request = await broker.agent.ask(ana, { to, tool, args });
         console.error("Ana → broker:", request.decision, request.requestId);
         await broker.tick(new Date()); // HTTP 202 acknowledges the wake, not Bob's answer.
         return request;

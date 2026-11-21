@@ -61,11 +61,12 @@ La lista de contactos empieza vacía. Guardar una dirección es unilateral. La d
 
 ### Cuando la respuesta necesita al runtime de Bob
 
-La demo inicia dos sesiones de Claude Code usando tu login local. Ana tiene las herramientas MCP `ask_bob` y `await_bob`. Bob recibe sólo `check_interest`, que lee el archivo elegido por su operador.
+La demo inicia una sesión de Claude Code para Ana y despierta a Bob cuando el broker autoriza la consulta. Ana usa `ask_bob` para comprobar un interés, `ask_bob_question` para enviar una pregunta abierta y `await_bob` para una solicitud pendiente. Bob recibe sólo `check_interest`, que lee el archivo elegido por su operador.
 
 1. Prepara un archivo JSON privado de Bob con una lista de intereses. Por ejemplo, `["cerámica", "senderismo"]`. La ruta predeterminada es `.agents-local/bob-interests.json`.
 2. Desde la raíz, ejecuta `corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica?"`. Puedes indicar otra ruta como segundo argumento. Ejecuta el comando sin argumentos para conversar con Ana.
 3. Cambia los intereses en el archivo de Bob y repite la pregunta. Una lista vacía devuelve `matches: false`. Si falta el archivo, el resultado es `no_data`.
+4. Prueba una consulta privada con `corepack pnpm agents:runtime-demo "¿Cuál es el domicilio de Bob?"`. Bob sólo autorizó a Ana a comprobar un interés concreto. La operación `question` queda fuera de ese permiso. El broker devuelve `deny` de inmediato, sin encolar un webhook ni consultar datos de Bob. Puedes probar también «¿Cuáles son todos los intereses de Bob?» con el mismo resultado.
 
 Ana envía la operación `interest_check` a la dirección de Bob. El broker verifica la regla de Bob para Ana, encola el aviso y entrega un ID pendiente. El worker envía un webhook HTTP firmado al receptor local registrado para `bob-bot`. El receptor devuelve HTTP 202 y usa su identidad para buscar la solicitud en la bandeja. Claude Code ejecuta la lectura aprobada y devuelve el JSON observado. La herramienta compara el interés solicitado con la lista sin distinguir mayúsculas. La lista completa permanece en el equipo.
 

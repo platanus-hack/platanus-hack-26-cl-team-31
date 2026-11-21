@@ -396,6 +396,24 @@ describe("ejecución en el runtime del titular", () => {
   const notice = (requestId: string) => ({ event: WAKE_EVENT, requestId });
   const revoke = () => broker.owner.setRules(bruno, { ...defaultRules, blocked: ["alice@nexo.app"] });
 
+  it("un permiso de intereses no autoriza una pregunta sobre el domicilio ni despierta al titular", async () => {
+    await broker.owner.setRules(bruno, SharingRules.parse({
+      circles: {}, grants: {}, defaultForUnknown: "deny",
+      people: { "alice@nexo.app": [{ tool: "interest_check", fields: ["matches"] }] },
+    }));
+    await broker.agent.connectWake(bruno, webhook);
+    const { tools } = await broker.agent.capabilities(alice, availability.to);
+    expect(tools.map(({ tool }) => tool)).toEqual(["interest_check"]);
+    const view = await broker.agent.ask(alice, {
+      to: availability.to, tool: "question", args: { text: "¿Cuál es el domicilio de Bruno?" },
+    });
+    expect(view).toEqual(await expectFinal(alice, view.requestId, "deny", "deny"));
+    expect(view).not.toHaveProperty("result");
+    await broker.tick(now);
+    expect(wake).not.toHaveBeenCalled();
+    expect(await broker.agent.inbox(bruno)).toEqual([]);
+  });
+
   it("descubre las dos fuentes y ofrece sólo las capacidades autorizadas al solicitante", async () => {
     const { tools } = await broker.agent.capabilities(alice, availability.to);
     expect(tools).toMatchObject([
