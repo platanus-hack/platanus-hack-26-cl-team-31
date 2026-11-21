@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   Address,
   AskInput,
+  CircleName,
   fieldsOf,
   describeTool,
   GrantInput,
@@ -11,17 +12,19 @@ import {
   ReplyInput,
   WakeTarget,
   WAKE_SUBSCRIPTION_SCOPE,
+  type Circle,
   type FinalOutcome,
   type Principal,
   type ReplyReceipt,
   type RequesterView,
   type Scope,
+  type ToolName,
   type ToolResult,
 } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import { filterResult } from "../policy/index.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
-import type { RequestRow, StoreTx } from "../store/store.js";
+import type { CircleRow, RequestRow, StoreTx } from "../store/store.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
 import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
@@ -34,17 +37,31 @@ import { createWorker } from "./worker.js";
 const connectionFields = fieldsOf("connect");
 const connectionGuidance =
   "Pregúntale a tu titular si quiere conectar con esta dirección. Responde answered con accepted: true solo si lo confirma; si no, accepted: false.";
-const friendDefaults = [
+// What two friends give each other, and what the members of a circle give each other.
+const basePolicy = [
   { tool: "availability", fields: ["available", "freeSlots"] },
   { tool: "interest_check", fields: ["matches"] },
 ] satisfies Pick<GrantInput, "tool" | "fields">[];
 
-// A request stays authorized while the recipient's grant to the sender still covers its fields.
+// What the recipient lets the sender receive for a tool: the fields of their grant, plus the base
+// policy while both have joined the same circle.
+async function sharedFields(tx: StoreTx, toUserId: string, toAddress: Address, from: Address, tool: ToolName) {
+  const grant = await tx.getGrant(toUserId, from, tool);
+  const base = basePolicy.find((entry) => entry.tool === tool);
+  const circle = base && await tx.shareCircle(toAddress, from) ? base.fields : [];
+  return {
+    fields: [...new Set([...(grant?.fields ?? []), ...circle])],
+    // Stable rule code for telemetry.
+    rule: grant ? "grant" : circle.length > 0 ? "circle" : "no_grant",
+  };
+}
+
+// A request stays authorized while the recipient still shares its fields with the sender.
 async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
   // Invitations, connection tests and one-time owner approvals have their own consent flow.
   if (row.tool === "connect" || row.fromUserId === null || row.approvedOnce) return true;
-  const grant = await tx.getGrant(toUserId, row.fromAddress, row.tool);
-  return grant !== null && row.allowedFields.every(field => grant.fields.includes(field));
+  const { fields } = await sharedFields(tx, toUserId, row.toAddress, row.fromAddress, row.tool);
+  return fields.length > 0 && row.allowedFields.every(field => fields.includes(field));
 }
 
 function notFound(): BrokerError {
@@ -189,7 +206,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     participants.sort((a, b) => a.userId.localeCompare(b.userId));
     for (const { userId, address } of participants) {
       if (!await tx.addFriend(userId, address)) continue;
-      for (const { tool, fields } of friendDefaults) {
+      for (const { tool, fields } of basePolicy) {
         const grantId = randomUUID();
         if (await tx.insertFriendGrant({
           id: grantId, grantorUserId: userId, granteeAddress: address, tool, fields, createdAt: clock.now(),
@@ -213,22 +230,25 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
     }, now);
     const invitation = recipient && tool === "connect";
-    const grant = recipient && !invitation && await tx.getGrant(recipient.userId, from, tool);
-    // Stable rule code for telemetry. The request keeps separate display text.
-    const ruleCode = invitation ? "connection_request" : grant ? "grant" : recipient ? "no_grant" : "no_recipient";
+    const shared = recipient && !invitation
+      ? await sharedFields(tx, recipient.userId, to, from, tool)
+      : { fields: [], rule: "no_recipient" };
+    const allowed = shared.fields.length > 0;
+    // The request keeps separate display text.
+    const ruleCode = invitation ? "connection_request" : shared.rule;
     record(tx, "broker.policy.evaluated", {
       requestId: row.id, userId, ...(agentId ? { agentId } : {}),
-      attrs: { tool, decision: invitation || grant ? "allow" : "deny", rule: ruleCode },
+      attrs: { tool, decision: invitation || allowed ? "allow" : "deny", rule: ruleCode },
     });
     if (invitation) {
       row = {
         ...row, status: "awaiting_agent", allowedFields: connectionFields,
         rule: "Solicitud de conexión", guidance: connectionGuidance,
       };
-    } else if (grant) {
+    } else if (allowed) {
       row = {
-        ...row, status: "awaiting_agent", allowedFields: grant.fields,
-        rule: `Permiso para ${tool}: ${grant.fields.join(", ")}`,
+        ...row, status: "awaiting_agent", allowedFields: shared.fields,
+        rule: `Permiso para ${tool}: ${shared.fields.join(", ")}`,
       };
     } else {
       const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
@@ -317,6 +337,35 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return view;
   }
 
+  // Close the pending requests that a membership change left without permission.
+  async function cancelForMembers(tx: StoreTx, addresses: Address[]): Promise<void> {
+    for (const address of addresses) {
+      const user = await tx.getUserByAddress(address);
+      if (user) await cancelUnauthorized(tx, user.userId);
+    }
+  }
+
+  async function ownedCircle(tx: StoreTx, userId: string, circleId: string): Promise<CircleRow> {
+    const circle = await tx.getCircle(circleId);
+    if (circle?.ownerUserId !== userId) throw notFound();
+    return circle;
+  }
+
+  async function toCircle(tx: StoreTx, row: CircleRow): Promise<Circle> {
+    const owner = (await tx.getUser(row.ownerUserId))?.address;
+    if (!owner) throw new BrokerError("internal", "El círculo no tiene creador con dirección.");
+    const members = await tx.listCircleMembers(row.id);
+    return {
+      id: row.id, name: row.name, owner,
+      members: members.map(({ address, joinedAt }) => ({ address, joined: joinedAt !== undefined })),
+    };
+  }
+
+  // Addresses stay out of telemetry: only the circle and what happened to it.
+  function recordCircle(tx: StoreTx, userId: string, circleId: string, action: "created" | "deleted" | "invited" | "joined" | "removed") {
+    record(tx, "broker.circle.changed", { userId, attrs: { circleId, action } });
+  }
+
   return {
     agent: {
       async capabilities(p, to) {
@@ -326,8 +375,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const from = (await tx.getUser(p.userId))?.address;
           const owner = await tx.getUserByAddress(to);
           if (!from || !owner || from === to) return { tools: [] };
-          const grants = await Promise.all(GrantTool.options.map(tool => tx.getGrant(owner.userId, from, tool)));
-          const tools = grants.flatMap(grant => grant ? [describeTool(grant.tool, grant.fields)] : []);
+          const shared = await Promise.all(GrantTool.options.map(async tool =>
+            ({ tool, fields: (await sharedFields(tx, owner.userId, to, from, tool)).fields })));
+          const tools = shared.flatMap(({ tool, fields }) => fields.length > 0 ? [describeTool(tool, fields)] : []);
           tools.push(describeTool("connect", connectionFields));
           return { tools };
         });
@@ -598,6 +648,82 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         const view = await store.tx((tx) => submit(tx, o.userId, { to: target.data, tool: "connect", args: {} }));
         if (view instanceof BrokerError) throw view;
         return view;
+      },
+
+      async circles(o) {
+        return store.tx(async (tx) => {
+          const address = (await tx.getUser(o.userId))?.address;
+          if (!address) return [];
+          return Promise.all((await tx.listCircles(address)).map((row) => toCircle(tx, row)));
+        });
+      },
+
+      async createCircle(o, name) {
+        const parsed = CircleName.safeParse(name);
+        if (!parsed.success) throw new BrokerError("invalid_input", "El nombre del círculo debe tener entre 1 y 60 caracteres.");
+        return store.tx(async (tx) => {
+          const address = (await tx.getUser(o.userId))?.address;
+          if (!address) throw new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
+          const row = { id: randomUUID(), ownerUserId: o.userId, name: parsed.data, createdAt: clock.now() };
+          await tx.insertCircle(row);
+          await tx.inviteCircleMember(row.id, address);
+          await tx.joinCircle(row.id, address, row.createdAt);
+          recordCircle(tx, o.userId, row.id, "created");
+          return toCircle(tx, row);
+        });
+      },
+
+      async deleteCircle(o, circleId) {
+        await store.tx(async (tx) => {
+          const circle = await ownedCircle(tx, o.userId, circleId);
+          const members = await tx.listCircleMembers(circle.id);
+          await tx.deleteCircle(circle.id);
+          recordCircle(tx, o.userId, circle.id, "deleted");
+          await cancelForMembers(tx, members.map(({ address }) => address));
+        });
+      },
+
+      async inviteToCircle(o, circleId, address) {
+        if (!Address.safeParse(address).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
+        await store.tx(async (tx) => {
+          const circle = await ownedCircle(tx, o.userId, circleId);
+          await tx.inviteCircleMember(circle.id, address);
+          recordCircle(tx, o.userId, circle.id, "invited");
+        });
+      },
+
+      async joinCircle(o, circleId) {
+        await store.tx(async (tx) => {
+          const address = (await tx.getUser(o.userId))?.address;
+          if (!address) throw notFound();
+          if (await tx.joinCircle(circleId, address, clock.now())) {
+            recordCircle(tx, o.userId, circleId, "joined");
+            return;
+          }
+          // A repeated join succeeds. Without an invitation the circle stays hidden.
+          const members = await tx.listCircleMembers(circleId);
+          if (!members.some((member) => member.address === address)) throw notFound();
+        });
+      },
+
+      async removeFromCircle(o, circleId, address) {
+        await store.tx(async (tx) => {
+          const circle = await tx.getCircle(circleId);
+          const own = (await tx.getUser(o.userId))?.address;
+          const isOwner = circle?.ownerUserId === o.userId;
+          if (!circle || (!isOwner && own !== address)) throw notFound();
+          if (isOwner && own === address) {
+            throw new BrokerError("conflict", "Quien creó el círculo no puede salir. Elimínalo.");
+          }
+          const members = await tx.listCircleMembers(circle.id);
+          if (!await tx.removeCircleMember(circle.id, address)) {
+            // Removing someone twice succeeds. A stranger gets no hint that the circle exists.
+            if (isOwner) return;
+            throw notFound();
+          }
+          recordCircle(tx, o.userId, circle.id, "removed");
+          await cancelForMembers(tx, members.map((member) => member.address));
+        });
       },
 
       async friends(o) {

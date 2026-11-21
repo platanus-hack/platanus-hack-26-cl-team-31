@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
+import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
 import { ActivityItem, AgentConnection, OwnerDecision, OwnerPendingItem } from "./owner.js";
 import { Capability } from "./tools.js";
@@ -12,6 +13,7 @@ const requestParams = z.object({ id: z.string() });
 const agentParams = z.object({ agentId: z.string() });
 const adminAgentParams = z.object({ userId: z.string(), agentId: z.string() });
 const noContent = { status: 204, response: z.undefined() } as const;
+const circleMemberParams = z.object({ id: z.string(), address: Address });
 
 export const routes = {
   agentCapabilities: {
@@ -189,6 +191,53 @@ export const routes = {
     ...noContent,
     iss: "web",
     port: "owner.removeFriend",
+  },
+  ownerCircles: {
+    method: "GET",
+    path: "/v1/owner/circles",
+    response: z.object({ items: z.array(Circle) }),
+    iss: "web",
+    port: "owner.circles",
+  },
+  ownerCreateCircle: {
+    method: "POST",
+    path: "/v1/owner/circles",
+    body: z.object({ name: CircleName }),
+    response: Circle,
+    iss: "web",
+    port: "owner.createCircle",
+  },
+  ownerDeleteCircle: {
+    method: "DELETE",
+    path: "/v1/owner/circles/:id",
+    params: requestParams,
+    ...noContent,
+    iss: "web",
+    port: "owner.deleteCircle",
+  },
+  ownerInviteToCircle: {
+    method: "PUT",
+    path: "/v1/owner/circles/:id/members/:address",
+    params: circleMemberParams,
+    ...noContent,
+    iss: "web",
+    port: "owner.inviteToCircle",
+  },
+  ownerJoinCircle: {
+    method: "POST",
+    path: "/v1/owner/circles/:id/join",
+    params: requestParams,
+    ...noContent,
+    iss: "web",
+    port: "owner.joinCircle",
+  },
+  ownerRemoveFromCircle: {
+    method: "DELETE",
+    path: "/v1/owner/circles/:id/members/:address",
+    params: circleMemberParams,
+    ...noContent,
+    iss: "web",
+    port: "owner.removeFromCircle",
   },
   ownerStream: {
     method: "GET",

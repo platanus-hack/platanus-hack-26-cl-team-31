@@ -622,3 +622,82 @@ describe("grants", () => {
     expect(await broker.agent.status(carla, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
   });
 });
+
+describe("círculos", () => {
+  const ask = () => broker.agent.ask(carla, availability);
+  const [aliceAddress, brunoAddress, carlaAddress] = ["alice@nexo.app", "bruno@nexo.app", "carla@nexo.app"];
+
+  async function circleOf(...members: Principal[]) {
+    const circle = await broker.owner.createCircle(alice, "Fútbol");
+    for (const member of members) {
+      await broker.owner.inviteToCircle(alice, circle.id, `${member.userId}@nexo.app`);
+      await broker.owner.joinCircle(member, circle.id);
+    }
+    return circle;
+  }
+
+  it("da la política base entre miembros solo después de aceptar la invitación", async () => {
+    const circle = await broker.owner.createCircle(alice, "  Fútbol  ");
+    expect(circle).toEqual({
+      id: expect.any(String), name: "Fútbol", owner: aliceAddress, members: [{ address: aliceAddress, joined: true }],
+    });
+    await broker.owner.inviteToCircle(alice, circle.id, brunoAddress);
+    await broker.owner.inviteToCircle(alice, circle.id, carlaAddress);
+    await broker.owner.joinCircle(bruno, circle.id);
+    expect(await ask()).toMatchObject({ final: true, decision: "deny" });
+    expect(await broker.owner.circles(carla)).toMatchObject([{ id: circle.id, members: [
+      { address: aliceAddress, joined: true }, { address: brunoAddress, joined: true }, { address: carlaAddress, joined: false },
+    ] }]);
+
+    await broker.owner.joinCircle(carla, circle.id);
+    await broker.owner.joinCircle(carla, circle.id);
+    expect((await broker.agent.capabilities(carla, brunoAddress)).tools).toMatchObject([
+      { tool: "availability", allowedFields: ["available", "freeSlots"] },
+      { tool: "interest_check", allowedFields: ["matches"] },
+      { tool: "connect" },
+    ]);
+    const pending = await ask();
+    expect(await inboxItem(bruno, pending.requestId)).toMatchObject({ allowedFields: ["available", "freeSlots"] });
+    expect(await broker.agent.ask(carla, { to: brunoAddress, tool: "question", args: { text: "¿Dónde vives?" } }))
+      .toMatchObject({ final: true, decision: "deny" });
+  });
+
+  it("salir o ser sacado cierra lo pendiente y corta el acceso en ambos sentidos", async () => {
+    const circle = await circleOf(bruno, carla);
+    const toBruno = await ask();
+    const toCarla = await broker.agent.ask(bruno, { ...availability, to: carlaAddress });
+
+    await broker.owner.removeFromCircle(carla, circle.id, carlaAddress);
+    expect(await broker.agent.status(carla, toBruno.requestId)).toMatchObject({ final: true, decision: "deny" });
+    expect(await broker.agent.status(bruno, toCarla.requestId)).toMatchObject({ final: true, decision: "deny" });
+    expect(await ask()).toMatchObject({ final: true, decision: "deny" });
+    expect(await broker.owner.circles(carla)).toEqual([]);
+
+    await broker.owner.removeFromCircle(alice, circle.id, brunoAddress);
+    await broker.owner.removeFromCircle(alice, circle.id, brunoAddress);
+    expect((await broker.owner.circles(alice))[0]?.members).toEqual([{ address: aliceAddress, joined: true }]);
+  });
+
+  it("mantiene el acceso mientras ambos sigan en otro círculo o exista un grant", async () => {
+    const [futbol, trabajo] = [await circleOf(bruno, carla), await circleOf(bruno, carla)];
+    await broker.owner.removeFromCircle(carla, futbol.id, carlaAddress);
+    expect(await ask()).toMatchObject({ final: false, waitingFor: "agent" });
+
+    await broker.owner.setGrant(bruno, { grantee: carlaAddress, tool: "availability", fields: ["available"] });
+    await broker.owner.deleteCircle(alice, trabajo.id);
+    const pending = await ask();
+    expect(await inboxItem(bruno, pending.requestId)).toMatchObject({ allowedFields: ["available"] });
+  });
+
+  it("solo quien lo creó invita, saca a otros y lo elimina", async () => {
+    const circle = await circleOf(bruno);
+    await expect(broker.owner.inviteToCircle(bruno, circle.id, carlaAddress)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.owner.removeFromCircle(bruno, circle.id, aliceAddress)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.owner.deleteCircle(bruno, circle.id)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.owner.joinCircle(carla, circle.id)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.owner.removeFromCircle(carla, circle.id, carlaAddress)).rejects.toMatchObject({ code: "not_found" });
+    await expect(broker.owner.removeFromCircle(alice, circle.id, aliceAddress)).rejects.toMatchObject({ code: "conflict" });
+    await expect(broker.owner.createCircle(alice, " ")).rejects.toMatchObject({ code: "invalid_input" });
+    expect(await broker.owner.circles(bruno)).toHaveLength(1);
+  });
+});

@@ -160,6 +160,12 @@ export const catalog = [
     attrs: { grantId: id(), tool: code(), fields: int().nonnegative() },
   }),
   defineEvent({ name: "broker.grant.revoked", kind: "policy", description: "El dueño revocó un permiso.", attrs: { grantId: id() } }),
+  defineEvent({
+    name: "broker.circle.changed",
+    kind: "policy",
+    description: "Cambió un círculo o su membresía. Sin direcciones: solo el id del círculo y la acción.",
+    attrs: { circleId: id(), action: z.enum(["created", "deleted", "invited", "joined", "removed"]) },
+  }),
 
   defineEvent({
     name: "wake.attempt",

@@ -1,5 +1,6 @@
 export * from "./address.js";
 export * from "./admin.js";
+export * from "./circles.js";
 export * from "./errors.js";
 export * from "./grants.js";
 export * from "./owner.js";

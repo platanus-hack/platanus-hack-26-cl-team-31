@@ -31,6 +31,9 @@ El grant es el único modelo de permisos. Un grant dice que un titular deja a un
 - El titular los administra con `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`). Web los muestra en `/grants`.
 - Un permiso nuevo es una tool o un campo en `packages/protocol/src/tools.ts`. El grant ya lo cubre.
 - Los grants no se componen. Que Bob le dé un grant a Ana y Ana a Carla no le da a Carla nada de Bob.
+- La política base es lo que comparten dos amigos y los miembros de un círculo: `availability` con `available` y `freeSlots`, e `interest_check` con `matches`. Vive en `basePolicy` (`packages/broker/src/core/broker.ts`).
+- Un círculo es un conjunto con nombre (`Circle`, `/v1/owner/circles`). Solo quien lo creó invita, saca a otros y lo elimina, y cada invitado acepta antes de entrar. Mientras dos titulares estén en el mismo círculo se dan la política base.
+- Los permisos de círculo se calculan al preguntar, en `sharedFields`, y no se guardan como grants. Salir borra la membresía y cierra las solicitudes pendientes que quedan sin permiso. Si ambos siguen en otro círculo, o existe un grant, el acceso se mantiene.
 
 Pendiente, cada uno en su PR:
 
@@ -44,11 +47,8 @@ Pendiente, cada uno en su PR:
 Decidido el 2026-11-21. Lo que sigue todavía no existe en el código; quien lo construya usa estos términos y estas reglas.
 
 - **Categoría.** El titular da permisos por categoría de información y nunca ve tools ni campos. Cada categoría fija en el código su tool y sus campos: Disponibilidad (`availability`: `available`), Horarios libres (`availability`: `available`, `freeSlots`), Intereses (`interest_check`: `matches`) y Preguntas abiertas (`question`: `answer`).
-- **Preguntas abiertas no tiene límite de tema.** El broker no lee el texto y el agente del titular decide qué contesta. Por eso queda fuera de lo básico.
-- **Básico.** Las categorías que se dan por defecto: Disponibilidad e Intereses.
-- **Contacto.** Agregar a una persona le da lo básico; quitarla le quita todo. Va en un solo sentido: si Ana agrega a Bob, Bob puede preguntarle a Ana.
-- **Grupo.** Un conjunto con nombre que crea un titular. Solo su creador invita y saca miembros, y cada invitado acepta antes de entrar. Cada miembro le da lo básico a los demás.
-- **Los permisos de grupo se calculan, no se guardan.** Bob puede preguntarle algo a Ana si ella le dio ese permiso, o si comparten un grupo y la categoría es básica. Salir de un grupo borra la membresía; si siguen juntos en otro, lo básico se mantiene.
+- **Preguntas abiertas no tiene límite de tema.** El broker no lee el texto y el agente del titular decide qué contesta. Por eso queda fuera de la política base.
+- **Política por círculo.** Hoy todos los círculos usan la política base. Cuando haga falta otra, se guarda en el círculo.
 - **Perfil.** Nombre y dirección Nexo de cada titular, visibles para todo usuario con sesión.
 
 ### Vocabulario
@@ -64,9 +64,9 @@ Usa un término por concepto, en el código y en los textos.
 | Tool | `ToolName` | Operación que se puede pedir: `availability`, `question`, `interest_check`. `profile` está en retiro. |
 | Grant | `Grant`, `GrantInput` | Permiso de un titular a una dirección: una tool y los campos de respuesta que entrega. En la interfaz se llama «permiso». |
 | Categoría | por construir | Tipo de información sobre el que responde un agente. Fija una tool y sus campos. |
-| Básico | por construir | Categorías que reciben por defecto un contacto y los miembros de un grupo. |
-| Contacto | por construir | Persona a la que un titular le dio lo básico. |
-| Grupo | por construir | Conjunto de titulares, con un creador, que se dan lo básico entre sí. |
+| Política base | `basePolicy` | Tools y campos que se dan dos amigos y los miembros de un círculo. |
+| Amigo | `friends`, tool `connect` | Titular con el que otro aceptó conectarse. Cada uno recibe del otro la política base como grants. |
+| Círculo | `Circle` | Conjunto de titulares con un creador. Sus miembros se dan la política base mientras estén dentro. «Grupo» en textos anteriores. |
 | Perfil | por construir | Nombre y dirección Nexo de un titular, visibles para los demás usuarios. |
 | Aviso | `WakeTarget`, `WakeNotice` | Notificación al agente del destinatario de que tiene una solicitud. |
 | Bandeja | `InboxItem` | Solicitudes pendientes que lee el agente del destinatario. |
