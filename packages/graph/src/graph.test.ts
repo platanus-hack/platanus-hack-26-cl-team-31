@@ -121,7 +121,9 @@ describe("nearest (multi-objetivo)", () => {
           .sort((a, b) => a - b)
           .slice(0, 3);
         for (const backwardBudget of [0, 1, 3, 1000]) {
-          const res = runSync(targetedNearest(index, s, { targets, k: 3, filter, backwardBudget }));
+          // Wider JS options may include a point target; it must never preempt the candidate search.
+          const options = { targets, k: 3, filter, backwardBudget, target: s };
+          const res = runSync(targetedNearest(index, s, options));
           expect(res.paths.map((p) => p.cost).length).toBe(expected.length);
           res.paths.forEach((p, i) => {
             expect(close(p.cost, expected[i] as number), `seed=${seed} budget=${backwardBudget}`).toBe(true);
