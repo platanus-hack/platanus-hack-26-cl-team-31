@@ -16,18 +16,22 @@ async function Workspace({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <header className="sticky top-0 z-20 border-b border-line bg-canvas/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1056px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-          <Link href="/" aria-label="Sideband, inicio" className="mr-2 rounded-full"><Brand /></Link>
+      <header className="sticky top-0 z-20 bg-canvas/90 backdrop-blur-md">
+        <div className="mx-auto flex h-[68px] max-w-[1220px] items-center gap-4 px-4 sm:px-6">
+          <Link href="/" aria-label="Sideband, inicio" className="rounded-full"><Brand /></Link>
           {address && (
-            <>
-              <Navigation />
-              <span className="inline-flex h-8 max-w-full items-center truncate rounded-full bg-chip px-3 font-mono text-xs text-body sm:ml-auto">{address}</span>
-            </>
+            <span className="ml-auto inline-flex h-9 min-w-0 items-center truncate rounded-full bg-white/7 px-3.5 text-[13px] font-medium text-white/60">{address}</span>
           )}
         </div>
       </header>
-      <main id="contenido" className="mx-auto w-full max-w-[1056px] px-4 pt-12 pb-20 sm:px-6 sm:pt-16">{children}</main>
+      <div className="mx-auto flex max-w-[1220px] flex-col gap-6 px-4 pb-20 sm:px-6 lg:flex-row lg:gap-14">
+        {address && (
+          <aside className="lg:sticky lg:top-[68px] lg:h-[calc(100dvh-68px)] lg:w-[200px] lg:shrink-0 lg:pt-6">
+            <Navigation />
+          </aside>
+        )}
+        <main id="contenido" className="min-w-0 flex-1 pt-4 lg:pt-8">{children}</main>
+      </div>
     </>
   );
 }
@@ -35,8 +39,8 @@ async function Workspace({ children }: { children: ReactNode }) {
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh bg-canvas font-sans text-ink">
-      <a href="#contenido" className="sr-only rounded-full bg-card px-4 py-2 text-sm focus:not-sr-only focus:absolute focus:z-30 focus:m-3">Saltar al contenido</a>
-      <Suspense fallback={<p role="status" className="mx-auto max-w-[1056px] px-6 py-10 text-[13px] text-muted">Cargando…</p>}>
+      <a href="#contenido" className="sr-only rounded-full bg-menu px-4 py-2 text-sm focus:not-sr-only focus:absolute focus:z-30 focus:m-3">Saltar al contenido</a>
+      <Suspense fallback={<p role="status" className="mx-auto max-w-[1220px] px-6 py-10 text-[13px] text-muted">Cargando…</p>}>
         <Workspace>{children}</Workspace>
       </Suspense>
     </div>
