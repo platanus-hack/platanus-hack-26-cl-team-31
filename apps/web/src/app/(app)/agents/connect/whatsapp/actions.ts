@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import QRCode from "qrcode";
-import { setChannel } from "@/lib/whatsapp/channel";
-import { config, noticeTarget } from "@/lib/whatsapp/kapso";
+import { registerNoticeChannel, setChannel } from "@/lib/whatsapp/channel";
+import { config } from "@/lib/whatsapp/kapso";
 import { getTelemetry } from "@/lib/telemetry";
 import { whatsappStore } from "@/lib/whatsapp/runtime";
 import { getOwner, requireAddress } from "../../../owner";
@@ -19,8 +19,7 @@ export async function updatePhone(_: Feedback, form: FormData): Promise<Feedback
   try {
     const store = whatsappStore();
     if (action === "unlink") {
-      await store.unlink(userId);
-      await setChannel(userId, { kind: "none" });
+      await store.unlink(userId, () => setChannel(userId, { kind: "none" }));
       telemetry.emit("whatsapp.link", { userId, attrs: { action: "unlinked" } });
       revalidatePath(path);
       return { message: "WhatsApp desvinculado." };
@@ -39,8 +38,7 @@ export async function updatePhone(_: Feedback, form: FormData): Promise<Feedback
     if (action === "confirm" && typeof id === "string" && /^[a-f0-9-]{36}$/.test(id)) {
       const linkId = await store.confirm(userId, id);
       if (!linkId) return { error: "El vínculo venció o cambió. Genera otro código." };
-      const target = noticeTarget(linkId);
-      if (target) await setChannel(userId, target);
+      await store.registerChannel({ linkId }, registerNoticeChannel);
       telemetry.emit("whatsapp.link", { userId, attrs: { action: "confirmed" } });
       revalidatePath(path);
       return { message: "WhatsApp vinculado." };

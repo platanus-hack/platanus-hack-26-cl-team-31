@@ -1,6 +1,7 @@
 ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS whatsapp_linked_at timestamptz;
 -- Opaque id in the URL where the broker notifies this link. Never the user id or the phone.
 ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS whatsapp_link_id uuid UNIQUE;
+ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS whatsapp_channel_registered boolean NOT NULL DEFAULT false;
 -- WhatsApp only accepts free-form messages within 24 hours of the owner's last message.
 ALTER TABLE public."user" ADD COLUMN IF NOT EXISTS whatsapp_last_inbound_at timestamptz;
 
