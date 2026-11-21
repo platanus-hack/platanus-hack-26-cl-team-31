@@ -121,7 +121,7 @@ export function createStack(env) {
         // Un `isError` silencioso convertiría una falla en un dato mal formado: se rompe aquí.
         if (!allowError) throw new HttpError(`mcp ${name}`, request, 200, data ?? result);
       }
-      return { data, raw: result, sentAt };
+      return { data, isError: result.isError === true, raw: result, sentAt };
     }
   }
 

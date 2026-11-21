@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 // Arnés de punta a punta del flujo titular-a-titular de Sideband contra el stack vivo.
 //
-//   node infra/sim/run.mjs [N]        N titulares, 3 por defecto
+//   node infra/sim/run.mjs [N] [--brain=scripted|llm] [--model=<modelo>]
 //
-// Sin LLM, sin contenedores y sin dependencias: web (dev-login/dev-token), broker (/v1/owner/*)
-// y el MCP remoto. Los titulares son guionizados a propósito: esto mide el SISTEMA, no la conducta
-// de un agente. La respuesta de cada titular sale del cerebro de infra/sim/brain.mjs, única costura
-// que una implementación con modelo reemplazaría; los invariantes viven aquí y no se relajan.
+// Sin contenedores y sin dependencias: web (dev-login/dev-token), broker (/v1/owner/*) y el MCP
+// remoto. Lo único que cambia entre los dos modos es quién redacta la respuesta de cada titular:
+// el cerebro guionizado de brain.mjs o el CLI de agente de brain-llm.mjs. Escenario, carga,
+// invariantes y resumen son los mismos.
+//
+// Los invariantes son propiedades del SISTEMA y viven aquí, fuera del cerebro: no se relajan
+// porque haya un modelo en el bucle. Que uno se dispare con `--brain=llm` es el resultado más
+// valioso que este arnés puede dar. Lo que afirma sobre un contenido concreto pertenece al modo
+// guionizado; en modo llm el contenido es no determinista y solo se observa y se reporta.
 import { loadEnv, createStack, sleep, HttpError } from "./lib.mjs";
 import { scriptedBrain } from "./brain.mjs";
+import { createLlmBrain } from "./brain-llm.mjs";
 
 const ROOT = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const ALL = ["availability", "interests", "health", "general"];
@@ -16,17 +22,24 @@ const FINAL_STATES = ["answered", "denied", "no_data", "declined", "expired", "d
 const DEADLINE_MS = 120_000;
 // Identidades de prueba del arnés. Revocar una conexión de agente es irreversible, así que un
 // juego de titulares quemado se abandona subiendo esta generación en vez de intentar repararlo.
-const OWNER_PREFIX = "Sim2";
-const brain = scriptedBrain;
+const OWNER_PREFIX = "Sim3";
 
-const n = Number.parseInt(process.argv[2] ?? "3", 10);
-if (!Number.isInteger(n) || n < 2 || n > 12) {
-  console.error("Uso: node infra/sim/run.mjs [N]  (2 ≤ N ≤ 12)");
+const flags = process.argv.slice(2);
+const n = Number.parseInt(flags.find((flag) => !flag.startsWith("--")) ?? "3", 10);
+const mode = (flags.find((flag) => flag.startsWith("--brain=")) ?? "").slice(8) || "scripted";
+const model = (flags.find((flag) => flag.startsWith("--model=")) ?? "").slice(8) || undefined;
+if (!Number.isInteger(n) || n < 2 || n > 12 || !["scripted", "llm"].includes(mode)) {
+  console.error("Uso: node infra/sim/run.mjs [N] [--brain=scripted|llm] [--model=<modelo>]  (2 ≤ N ≤ 12)");
   process.exit(2);
 }
 
+const env = loadEnv(ROOT);
+// Cada respuesta del modo llm cuesta una llamada al modelo, así que N chico por defecto.
+const llm = mode === "llm" ? createLlmBrain({ apiKey: env.ANTHROPIC_API_KEY, ...(model ? { model } : {}) }) : undefined;
+const brain = llm?.brain ?? scriptedBrain;
+
 const runId = Math.random().toString(36).slice(2, 8);
-const stack = createStack(loadEnv(ROOT));
+const stack = createStack(env);
 const violations = [];
 const fail = (invariant, requestId, detail) => violations.push({ invariant, requestId, detail });
 
@@ -211,19 +224,48 @@ async function drive(owners, requests) {
           from: item.from, shares: shareFor(owner.index, byAddress.get(item.from)?.index ?? -1),
           category: item.ownerAuthorization.category, facts: owner.facts, runId,
         };
-        const reply = await brain(item, context);
-        const receipt = (await stack.callTool(owner.accessToken, "sideband_reply", { requestId: item.requestId, nonce: item.nonce, ...reply }, { allowError: true })).data;
-        if (receipt?.ok === false) {
-          if (receipt.error?.code !== "conflict") fail("INV-2 respuesta rechazada", item.requestId, JSON.stringify(receipt.error));
+        const send = (payload) => stack.callTool(
+          owner.accessToken, "sideband_reply", { requestId: item.requestId, nonce: item.nonce, ...payload }, { allowError: true },
+        );
+        // Un result malformado se rechaza en dos capas distintas y hay que reconocer las dos:
+        // el esquema de la tool en el MCP (error de protocolo, texto suelto) y `invalid_input`
+        // del broker (sobre `{ ok: false, error }`). Tratar la primera como éxito fue un defecto
+        // real de este arnés: lo encontró INV-5 en la primera corrida con modelo.
+        const rejectionOf = (response) => {
+          if (response.data?.ok === false) return response.data.error?.code ?? "desconocido";
+          if (response.isError) return "schema_mcp";
+          return undefined;
+        };
+
+        let reply = await brain(item, context);
+        let response = await send(reply);
+        let rejection = rejectionOf(response);
+
+        // Que el esquema rechace lo que redactó el cerebro es una falla del cerebro, no del
+        // sistema: en modo llm se anota y se cierra con una respuesta válida, porque una solicitud
+        // colgada dispararía INV-5 y taparía el hallazgo real. El cerebro guionizado no puede
+        // producirlo, así que ahí sí es un defecto y se reporta como violación.
+        if (rejection === "invalid_input" || rejection === "schema_mcp") {
+          if (!llm) fail("INV-2 respuesta rechazada", item.requestId, JSON.stringify(response.data));
+          else llm.stats.observations.push({
+            kind: rejection === "schema_mcp" ? "el esquema de la tool rechazó su result" : "el broker rechazó su result",
+            requestId: item.requestId, tool: item.tool, detail: JSON.stringify(reply.result ?? null),
+          });
+          reply = { outcome: "no_data" };
+          response = await send(reply);
+          rejection = rejectionOf(response);
+        }
+        if (rejection !== undefined) {
+          if (rejection !== "conflict") fail("INV-2 respuesta rechazada", item.requestId, JSON.stringify(response.data));
           continue;
         }
         request.replies += 1;
-        request.receipt = receipt;
+        request.receipt = response.data;
 
         // INV-2: una segunda respuesta a la misma solicitud se rechaza con `conflict`.
-        const second = (await stack.callTool(owner.accessToken, "sideband_reply", { requestId: item.requestId, nonce: item.nonce, ...reply }, { allowError: true })).data;
-        if (second?.ok !== false || second.error?.code !== "conflict") {
-          fail("INV-2 segunda respuesta aceptada", item.requestId, JSON.stringify(second));
+        const second = await send(reply);
+        if (rejectionOf(second) !== "conflict") {
+          fail("INV-2 segunda respuesta aceptada", item.requestId, JSON.stringify(second.data));
         }
       }
     }
@@ -309,13 +351,46 @@ function summarise(requests, elapsed) {
     reported[status] = (reported[status] ?? 0) + 1;
     if (request.finishedAt) latencies.push(request.finishedAt - request.startedAt);
   }
-  console.log(`\n── Resumen · ${n} titulares · ${requests.size} solicitudes · corrida ${runId} · ${(elapsed / 1000).toFixed(1)}s`);
+  console.log(`\n── Resumen · ${n} titulares · ${requests.size} solicitudes · cerebro ${mode} · corrida ${runId} · ${(elapsed / 1000).toFixed(1)}s`);
   console.log("Estados finales:");
   for (const [state, count] of Object.entries(counts).sort()) console.log(`  ${state.padEnd(18)} ${count}`);
   console.log("Cierre informado por el destinatario:");
   for (const [status, count] of Object.entries(reported).sort()) console.log(`  ${status.padEnd(28)} ${count}`);
   console.log("Latencia ask→final (ms):");
   console.log(`  p50 ${percentile(latencies, 50)}  p90 ${percentile(latencies, 90)}  p95 ${percentile(latencies, 95)}  p99 ${percentile(latencies, 99)}  max ${Math.max(0, ...latencies)}`);
+  if (llm) summariseModels(requests, elapsed);
+}
+
+// Lo que el cerebro guionizado no puede mostrar: qué hizo realmente el modelo. Nada de esto falla
+// la corrida —no son invariantes— pero es la razón de ser de este modo, así que se imprime entero.
+function summariseModels(requests, elapsed) {
+  const { model, calls, failures, wallMs, costUsd, observations } = llm.stats;
+  console.log(`\n── Qué hicieron los modelos · ${model}`);
+  console.log(`  ${calls} llamadas, ${failures} sin respuesta utilizable · ${(wallMs / 1000).toFixed(1)}s de ${(elapsed / 1000).toFixed(1)}s (${Math.round((wallMs / elapsed) * 100)}% del reloj) · USD ${costUsd.toFixed(4)}`);
+
+  // El broker recorta lo que el agente no debía entregar: cada campo descartado es un intento.
+  const dropped = [...requests.values()].filter((request) => (request.receipt?.droppedFields ?? []).length > 0);
+  for (const request of dropped) {
+    observations.push({ kind: "el broker le recortó campos al entregar", requestId: request.requestId, tool: request.tool, detail: JSON.stringify(request.receipt.droppedFields) });
+  }
+
+  if (observations.length === 0) {
+    console.log("  Sin desvíos observados.");
+    return;
+  }
+  const byKind = new Map();
+  for (const observation of observations) {
+    if (!byKind.has(observation.kind)) byKind.set(observation.kind, []);
+    byKind.get(observation.kind).push(observation);
+  }
+  console.log(`  Desvíos observados: ${observations.length}`);
+  for (const [kind, list] of [...byKind].sort((a, b) => b[1].length - a[1].length)) {
+    console.log(`  · ${kind} (${list.length})`);
+    for (const observation of list.slice(0, 3)) {
+      console.log(`      ${observation.requestId.slice(0, 8)} ${observation.tool}${observation.detail ? `: ${String(observation.detail).replace(/\s+/g, " ").slice(0, 110)}` : ""}`);
+    }
+    if (list.length > 3) console.log(`      … y ${list.length - 3} más`);
+  }
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────────────────────────
