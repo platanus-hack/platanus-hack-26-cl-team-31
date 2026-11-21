@@ -8,8 +8,7 @@ import { DEV_EMAIL, type AdminAuth, type RoleResolver } from "./auth/index.js"
 import type { AuditActor, AuditLog } from "./audit.js"
 import type { BrokerAdminClient } from "./broker.js"
 import { AdminHttpError, statusOf } from "./errors.js"
-import { flowEventNames, isFlowRow, projectFlowRow } from "@team-31/agent-flow/telemetry"
-import { createLiveSlots, liveStream, type LiveOptions } from "./live.js"
+import { createFlowLiveSpec, createLiveSlots, liveStream, type LiveOptions } from "./live.js"
 import type { AdminLimiters } from "./rate-limit.js"
 import type { TokenStore } from "./tokens.js"
 import type { Revealer } from "./types.js"
@@ -141,28 +140,6 @@ export function createAdminApi(deps: AdminApiDeps) {
     }
   }
 
-  function flowLive(c: Context, principal: AdminPrincipal) {
-    const { after } = parseInput(adminRoutes.flowLive.query, queryInput(c))
-    const known = new Set<string>()
-    return liveStream(c, queries, telemetry, liveSlots, {
-      stream: "flow",
-      principalId: principal.id,
-      hasAccess: liveAccess(c, principal),
-      filters: { names: [...flowEventNames] },
-      after,
-      backlog: false,
-      accept: isFlowRow,
-      project: projectFlowRow,
-      prelude: async (events) => {
-        const ids = [...new Set(events.flatMap((event) => (event.requestId && !known.has(event.requestId) ? [event.requestId] : [])))]
-        const refs = []
-        for (let i = 0; i < ids.length; i += 200) refs.push(...(await queries.requestRefs(ids.slice(i, i + 200))))
-        for (const id of ids) known.add(id)
-        while (known.size > 5_000) known.delete(known.values().next().value as string)
-        return refs.map((ref) => ({ event: "request", data: ref }))
-      },
-    }, deps.live)
-  }
 
   // Sesión de Better Auth. Si getSession renueva la sesión (updateAge), reenvía la cookie.
   async function authenticate(c: Context): Promise<AdminPrincipal> {
@@ -337,7 +314,10 @@ export function createAdminApi(deps: AdminApiDeps) {
           stream: "events", principalId: principal.id, hasAccess: liveAccess(c, principal), filters, backlog: true,
         }, deps.live)
       }
-      if (name === "flowLive") return flowLive(c, principal)
+      if (name === "flowLive") {
+        const { after } = parseInput(adminRoutes.flowLive.query, queryInput(c))
+        return liveStream(c, queries, telemetry, liveSlots, createFlowLiveSpec(queries, principal.id, liveAccess(c, principal), after), deps.live)
+      }
       return c.json(route.response.parse(await handle(name, c, principal)))
     }))
   }
