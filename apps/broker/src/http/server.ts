@@ -148,6 +148,10 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   telemetry?: Telemetry;
 }) {
   const app = new Hono<AuthContext>();
+  app.use("/v1/*", async (c, next) => {
+    c.header("Cache-Control", "no-store");
+    await next();
+  });
   app.use(honoTelemetry(telemetry));
   const auth = {
     mcp: requireServiceIdentity("mcp", publicKeys, telemetry),

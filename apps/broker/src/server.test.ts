@@ -99,6 +99,14 @@ afterEach(() => {
 });
 
 describe("HTTP interno del broker", () => {
+  it("la bóveda impide almacenar en caché tanto datos privados como rechazos", async () => {
+    const app = createHttpServer({ broker: fixture().broker, publicKeys });
+    const allowed = await request(app, routes.ownerVault, { token: await owner("alice") });
+    const rejected = await request(app, routes.ownerVault);
+    expect([allowed.status, rejected.status]).toEqual([200, 401]);
+    for (const response of [allowed, rejected]) expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
   it("comparte por MCP las solicitudes del titular, sin saltarse los permisos", async () => {
     const { broker, waker } = fixture();
     const app = createHttpServer({ broker, publicKeys });
