@@ -9,7 +9,7 @@ import type {
   GrantInput,
   Address,
   AgentConnection,
-  PublicAgent,
+  PublicAgent, PublicProfile,
   AgentContacts,
   AskArguments,
   ChannelName,
@@ -32,6 +32,7 @@ import type {
 // A first authorized call registers the agent and emits presence, including reads of
 // capabilities, inbox, status and contacts when they succeed with no items.
 export interface AgentPort {
+  searchPublicProfiles(p: Principal, query: string): Promise<PublicProfile[]>;
   networkUsers(p: Principal, after?: Address, q?: string): Promise<{ addresses: Address[]; nextCursor?: Address }>;
   connect(p: Principal): Promise<void>;
   contactGroups(p: Principal): Promise<ContactGroups>;
@@ -52,6 +53,9 @@ export interface AgentPort {
 }
 
 export interface OwnerPort {
+  searchPublicProfiles(o: Owner, query: string): Promise<PublicProfile[]>;
+  directory(o: Owner): Promise<AgentContacts>;
+  queryVault(o: Owner, query: VaultQuery): Promise<VaultResult>;
   contactGroups(o: Owner): Promise<ContactGroups & VaultCatalog>;
   vault(o: Owner): Promise<OwnerVault>;
   changeVault(o: Owner, change: VaultChange): Promise<VaultReceipt>;

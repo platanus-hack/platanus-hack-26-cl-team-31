@@ -6,6 +6,7 @@ import { acceptsMcpOrigin } from "@team-31/auth";
 import { BrokerError, type AgentPort } from "@team-31/broker-client";
 import { Scope, type Principal } from "@team-31/protocol";
 import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
+import type { HandleMessage } from "./tools/message.js";
 import { createServer } from "./server.js";
 
 const mcpPath = "/mcp";
@@ -29,6 +30,7 @@ export function createHttpServer(
   options: Parameters<typeof createMcpGuard>[0],
   agent: AgentPort,
   telemetry: Telemetry = silentTelemetry("mcp"),
+  messages?: HandleMessage,
 ) {
   const guard = createMcpGuard(options);
   const resource = new URL(options.audience);
@@ -146,7 +148,14 @@ export function createHttpServer(
       }));
       return;
     }
-    const server = createServer(principal, agent, telemetry);
+    const server = createServer(principal, agent, {
+      ...telemetry,
+      error(operation, error, fields) {
+        const errorId = telemetry.error(operation, error, fields);
+        if (!res.headersSent) res.setHeader("X-Error-Id", errorId);
+        return errorId;
+      },
+    }, messages);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.once("close", () => {
       void server.close().catch((error: unknown) => telemetry.error("mcp.close", error));

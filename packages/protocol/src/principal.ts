@@ -11,6 +11,7 @@ export const agentScopes = {
   vaultCatalog: "sideband:vault",
   vaultMembers: "sideband:vault",
   changeVault: "sideband:vault",
+  searchPublicProfiles: "sideband:ask",
   queryVault: "sideband:ask",
   networkUsers: "sideband:ask",
   capabilities: "sideband:ask",

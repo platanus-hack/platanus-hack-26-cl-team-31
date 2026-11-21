@@ -8,6 +8,7 @@ import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-
 import { Scope, WAKE_EVENT } from "@team-31/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { HandleMessage } from "./tools/message.js";
 import { createHttpServer } from "./http.js";
 import { createServiceTokenMinter } from "./service-token.js";
 
@@ -26,7 +27,7 @@ async function listen(server: Server) {
 function testPort(): AgentPort {
   return {
     connect: vi.fn(),
-    capabilities: vi.fn(),
+    searchPublicProfiles: vi.fn(), capabilities: vi.fn(),
     vaultCatalog: vi.fn(), vaultMembers: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
     networkUsers: vi.fn(), contactGroups: vi.fn(), changeContactGroup: vi.fn(),
     ask: vi.fn(),
@@ -186,7 +187,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
-    ["sideband_network_users", true], ["sideband_contact_groups", true], ["sideband_contact_group_change", undefined],
+    ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_contact_groups", true], ["sideband_contact_group_change", undefined],
     ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
     ["sideband_vault_request_access", undefined],
   ]);
@@ -229,7 +230,12 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
       keys: [{ ...publicKey.export({ format: "jwk" }), kid: "oauth-test", alg: "EdDSA" }],
     }));
   }));
-  const origin = await listen(createHttpServer({ audience, issuer, jwksUrl: `${jwksOrigin}/jwks` }, agent));
+  const messages = vi.fn<HandleMessage>(async (context, input) => {
+    if (input.text === "estado") await context.ops.status("request-1");
+    else await context.ops.contacts();
+    return { kind: "clarification", question: "¿A quién?", continuationId: "opaque" };
+  });
+  const origin = await listen(createHttpServer({ audience, issuer, jwksUrl: `${jwksOrigin}/jwks` }, agent, undefined, messages));
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
   function token(scope: string) {
     const jwt = `${encode({ typ: "at+jwt", alg: "EdDSA", kid: "oauth-test" })}.${encode({
@@ -257,6 +263,14 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
   });
 
   const limited = await connect(`${origin}/mcp`, token("sideband:status"));
+  const message = (text: string) => limited.callTool({ name: "sideband_message", arguments: { text, messageId: "ba915d2c-3d48-44eb-a3d4-146033dc216a" } });
+  expect((await limited.listTools()).tools.map(t => t.name)).toContain("sideband_message");
+  expect(await message("contactos")).toMatchObject({ isError: true, structuredContent: { error: { code: "forbidden" } } });
+  expect(agent.contacts).not.toHaveBeenCalled();
+  expect(await message("estado")).toMatchObject({ isError: true, structuredContent: { error: { code: "not_found" } } });
+  expect(agent.status).toHaveBeenLastCalledWith({ userId: "oauth-user", agentId: "oauth-agent", scopes: ["sideband:status"] }, "request-1");
+  expect(messages.mock.calls.at(-1)?.[0].deliveryId).toBe("ba915d2c-3d48-44eb-a3d4-146033dc216a");
+  expect(messages.mock.calls.at(-1)?.[0].binding).toBe(JSON.stringify(["mcp", "oauth-agent", ["sideband:status"]]));
   await expect(limited.request({
     method: "events/subscribe",
     params: { name: WAKE_EVENT, delivery: { mode: "webhook", url: "https://callback.example.test/sideband", secret: `whsec_${Buffer.alloc(32).toString("base64")}` } },

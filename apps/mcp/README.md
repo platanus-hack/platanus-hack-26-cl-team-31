@@ -1,5 +1,11 @@
 # MCP de Sideband
 
+## Mensajes del titular
+
+Con `ANTHROPIC_API_KEY` y la base de turnos configuradas, el servidor publica `sideband_message`. La herramienta recibe el texto original del titular y devuelve datos, recibos o una aclaración. Al contestar una aclaración o preguntar por una solicitud previa, el cliente adjunta el `continuationId` recibido. Los clientes que reintentan entregas pasan un UUID propio como `messageId` y reutilizan el mismo UUID en cada intento del mismo mensaje. Un mensaje nuevo recibe un UUID nuevo. Las continuaciones se vinculan al titular, al agente y a sus scopes. El broker evalúa las solicitudes con la identidad delegada.
+
+`search_public_profiles({ query })` busca personas por nombre o dirección dentro del directorio público. Las consultas sobre un amigo o un círculo se resuelven dentro de las relaciones del titular. [Diseño del flujo](../../docs/message-routing.md)
+
 ## Grupos privados de la bóveda
 
 - `sideband_contacts` lista los contactos aceptados. `sideband_contact_groups` lista tus grupos privados y sus miembros.

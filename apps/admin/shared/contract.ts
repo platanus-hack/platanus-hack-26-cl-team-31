@@ -147,6 +147,7 @@ export const Overview = z.object({
     top: z.array(z.lazy(() => ErrorGroup)),
   }),
   rateLimited: z.number(),
+  awaitingClarifications: z.number().optional(),
   activeQuotaWindows: z.number(),
 })
 export type Overview = z.infer<typeof Overview>
@@ -218,6 +219,7 @@ export const WakeJobRow = z.object({
 export type WakeJobRow = z.infer<typeof WakeJobRow>
 
 export const RequestDetail = z.object({
+  idempotentReceipts: z.number().int().nonnegative().optional(),
   summary: RequestSummary,
   allowedFields: z.array(z.string()),
   droppedFields: z.array(z.string()),

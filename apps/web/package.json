@@ -13,12 +13,12 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "1.12.0",
     "@better-auth/oauth-provider": "1.7.18",
     "@team-31/agent-flow": "workspace:*",
     "@team-31/auth": "workspace:*",
     "@team-31/broker-client": "workspace:*",
     "@team-31/demo": "workspace:*",
+    "@team-31/message-flow": "workspace:*",
     "@team-31/protocol": "workspace:^",
     "@team-31/telemetry": "workspace:*",
     "@team-31/wake": "workspace:*",

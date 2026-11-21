@@ -20,7 +20,7 @@ import {
   VaultChange, VaultQuery,
   ToolResultSchemas,
   ToolName,
-  LocalPart,
+  LocalPart, ProfileSearch,
   OwnerDecision,
   ReplyInput,
   WakeTarget,
@@ -40,6 +40,7 @@ import type { BrokerCore, BrokerDeps } from "../ports.js";
 import { sanitizeReply } from "../sanitize/pipeline.js";
 import { SanitizeBlockedError, type SanitizeFlag } from "../sanitize/types.js";
 import type { RequestRow, StoreTx } from "../store/store.js";
+import { submitOnce } from "./ask-receipt.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
 import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
@@ -49,7 +50,7 @@ import {
 import { createLifecycleEvents } from "./events.js";
 import { createWorker } from "./worker.js";
 import { categoriesOf, createGrantWriter, sharingRule, stillAuthorized } from "./grants.js";
-import { createCirclePort, listCircles } from "./circles.js";
+import { createCirclePort } from "./circles.js";
 
 const connectionFields = fieldsOf("connect");
 const connectionGuidance =
@@ -260,6 +261,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const from = (await tx.getUser(userId))?.address;
     if (!from) return new BrokerError("invalid_input", "Primero elige tu dirección en la App Sideband.");
     if (from === to) return new BrokerError("invalid_input", "Elige una dirección distinta a la tuya.");
+    if (input.requireRelation) {
+      const matches = await tx.lockRequiredRelation(userId, from, to, input.requireRelation);
+      record(tx, "broker.ask.relation_checked", { userId, agentId, attrs: { kind: input.requireRelation.kind, matches } });
+      if (!matches) return notFound();
+    }
     const recipient = await tx.getUserByAddress(to);
     let offer = input.tool === "connect" ? input.args.share : undefined;
     const senderGroupId = input.tool === "connect" ? input.groupId ?? undefined : undefined;
@@ -396,7 +402,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (principal && parsed.data.tool === "connect" && parsed.data.groupId) requireScope(principal, "changeContactGroup");
     const view = await store.tx(async (tx) => {
       if (principal) await ensureActiveAgentConnection(tx, principal);
-      return submit(tx, userId, parsed.data, { agentId: principal?.agentId, channel });
+      const sender = { userId, agentId: principal?.agentId, channel };
+      return submitOnce(tx, sender, parsed.data, record, () => submit(tx, userId, parsed.data, sender));
     });
     if (view instanceof BrokerError) throw view;
     return view;
@@ -431,7 +438,6 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     record(tx, "broker.contact.tagged", { userId, attrs: { tag } });
   }
 
-
   async function listContactsWithOutgoingSharing(tx: StoreTx, userId: string) {
     const mine = await tx.listGrants(userId);
     const tags = await tx.listContactTags(userId);
@@ -441,13 +447,28 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     }));
   }
 
-  async function listContacts(tx: StoreTx, userId: string) {
-    const me = (await tx.getUser(userId))?.address;
-    return Promise.all((await listContactsWithOutgoingSharing(tx, userId)).map(async (contact) => {
-      const other = await tx.getUserByAddress(contact.address);
-      const theirs = other && me ? (await tx.listGrants(other.userId)).filter((grant) => grant.granteeAddress === me) : [];
-      return { ...contact, receives: categoriesOf(theirs) };
-    }));
+  async function directory(tx: StoreTx, userId: string) {
+    const contacts = (await tx.listContacts(userId))
+      .map(({ gives, receives, ...identity }) => ({ ...identity, theyShare: receives, youShare: gives }));
+    return { contacts, circles: await tx.listJoinedCircles(userId) };
+  }
+
+  async function searchProfiles(tx: StoreTx, userId: string, query: string, agentId?: string) {
+    const parsed = ProfileSearch.safeParse({ query });
+    if (!parsed.success) throw new BrokerError("invalid_input", "Escribe entre 2 y 100 caracteres para buscar.");
+    const profiles = await tx.searchPublicProfiles(parsed.data.query);
+    record(tx, "broker.profiles.searched", { userId, agentId, attrs: { count: profiles.length } });
+    return profiles;
+  }
+
+  async function queryVault(tx: StoreTx, userId: string, input: VaultQuery, agentId?: string) {
+    const query = VaultQuery.safeParse(input);
+    if (!query.success) throw new BrokerError("invalid_input", "Revisa la dirección y la categoría.");
+    const reader = (await tx.getUser(userId))?.address;
+    const result = reader ? await tx.sharedVault(reader, query.data.to, query.data.categoryId) : { categories: [] };
+    record(tx, "broker.vault.queried", { userId, agentId,
+      attrs: { lookup: query.data.categoryId ? "entries" : "categories", visible: result.categories.length > 0 } });
+    return result;
   }
 
   async function changeVault(tx: StoreTx, userId: string, input: VaultChange, agentId?: string) {
@@ -536,15 +557,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
       async queryVault(p, input) {
         requireScope(p, "queryVault");
-        const query = VaultQuery.safeParse(input);
-        if (!query.success) throw new BrokerError("invalid_input", "Revisa la dirección y la categoría.");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
-          const reader = (await tx.getUser(p.userId))?.address;
-          const result = reader ? await tx.sharedVault(reader, query.data.to, query.data.categoryId) : { categories: [] };
-          record(tx, "broker.vault.queried", { userId: p.userId, agentId: p.agentId,
-            attrs: { lookup: query.data.categoryId ? "entries" : "categories", visible: result.categories.length > 0 } });
-          return result;
+          return queryVault(tx, p.userId, input, p.agentId);
         });
       },
       async capabilities(p, to) {
@@ -661,6 +676,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return result;
       },
 
+      async searchPublicProfiles(p, query) {
+        requireScope(p, "searchPublicProfiles");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          return searchProfiles(tx, p.userId, query, p.agentId);
+        });
+      },
+
       async networkUsers(p, after, q) {
         requireScope(p, "networkUsers");
         return store.tx(async tx => {
@@ -675,17 +698,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         requireScope(p, "contacts");
         return store.tx(async (tx) => {
           await ensureActiveAgentConnection(tx, p);
-          const me = (await tx.getUser(p.userId))?.address;
-          if (!me) return { contacts: [], circles: [] };
-          const contacts = (await listContacts(tx, p.userId))
-            .map(({ address, tag, gives, receives }) => ({ address, ...(tag ? { tag } : {}), theyShare: receives, youShare: gives }));
-          const circles = (await listCircles(tx, me))
-            .filter((circle) => circle.members.some((member) => member.address === me && member.joined))
-            .map(({ name, members }) => ({
-              name,
-              members: members.filter((member) => member.joined && member.address !== me).map(({ address }) => address),
-            }));
-          return { contacts, circles };
+          return directory(tx, p.userId);
         });
       },
 
@@ -851,6 +864,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (error) throw error;
       },
 
+      directory: o => store.tx(tx => directory(tx, o.userId)),
+      queryVault: (o, input) => store.tx(tx => queryVault(tx, o.userId, input)),
+      searchPublicProfiles: (o, query) => store.tx(tx => searchProfiles(tx, o.userId, query)),
+
       async agentDirectory() {
         return store.tx((tx) => tx.listPublicAgents());
       },
@@ -914,7 +931,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       async contacts(o) {
         return store.tx(async (tx) => {
-          const contacts = await listContacts(tx, o.userId);
+          const contacts = await tx.listContacts(o.userId);
           const now = clock.now();
           const open = (await tx.listOpenInvitations(o.userId)).filter((row) => row.expiresAt > now);
           const invitation = (row: RequestRow, address: Address) => ({

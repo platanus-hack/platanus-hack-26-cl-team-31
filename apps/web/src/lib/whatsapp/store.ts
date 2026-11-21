@@ -84,17 +84,23 @@ export function createWhatsAppStore(db: Pool) {
     },
     claim: (numberId: string, messageId: string) => claim(db, numberId, messageId),
     // Order disconnect and sensitive delivery: disconnect waits for work already holding this lock.
-    async whileLinked(phone: string, timestamp: number, run: (userId: string | undefined) => Promise<void>) {
+    async whileLinked(phone: string, timestamp: number,
+      run: (userId: string | undefined, linkId: string | undefined) => Promise<void>,
+      delivery?: { numberId: string; messageId: string },
+    ) {
       // Before the shared lock below: updating the row while holding it would deadlock with another
       // message from the same phone holding the same lock.
       await db.query(`UPDATE public."user" SET whatsapp_last_inbound_at = to_timestamp($2)
         WHERE "phoneNumber" = $1 AND whatsapp_linked_at <= to_timestamp($2)
           AND (whatsapp_last_inbound_at IS NULL OR whatsapp_last_inbound_at < to_timestamp($2))`, [phone, timestamp]);
       await transaction(async (tx) => {
-        const { rows } = await tx.query<{ id: string }>(`
-          SELECT id FROM public."user" WHERE "phoneNumber" = $1
+        // Keep revocation ordered even when a batch takes several broker round trips.
+        await tx.query("SET LOCAL idle_in_transaction_session_timeout = 0");
+        if (delivery && !await claim(tx, delivery.numberId, delivery.messageId)) return;
+        const { rows } = await tx.query<{ id: string; link_id: string | null }>(`
+          SELECT id, whatsapp_link_id AS link_id FROM public."user" WHERE "phoneNumber" = $1
             AND whatsapp_linked_at <= to_timestamp($2) FOR SHARE`, [phone, timestamp]);
-        await run(rows[0]?.id);
+        await run(rows[0]?.id, rows[0]?.link_id ?? undefined);
       });
     },
     // Hold the link lock through broker registration so concurrent retries and disconnect are ordered.

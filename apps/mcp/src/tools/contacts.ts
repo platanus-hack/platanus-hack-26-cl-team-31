@@ -16,6 +16,14 @@ export function registerContacts(server: McpServer, principal: Principal, agent:
     outputSchema: routes.agentContacts.response,
   }, () => runTool(telemetry, principal, { tool: "sideband_contacts", scope: agentScopes.contacts },
     () => agent.contacts(principal)));
+
+  server.registerTool("search_public_profiles", {
+    description: "Busca perfiles públicos por nombre o dirección cuando el titular pide descubrir personas en Sideband.",
+    annotations: { readOnlyHint: true },
+    inputSchema: routes.agentSearchPublicProfiles.body,
+    outputSchema: routes.agentSearchPublicProfiles.response,
+  }, ({ query }) => runTool(telemetry, principal, { tool: "search_public_profiles", scope: agentScopes.searchPublicProfiles },
+    async () => ({ items: await agent.searchPublicProfiles(principal, query) })));
   server.registerTool("sideband_network_users", {
     description: "Lista las direcciones de quienes conectaron un agente a Sideband alguna vez, incluidos quienes no son contactos. Con q busca parte de la dirección. Para la página siguiente conserva q y pasa nextCursor como after.",
     annotations: { readOnlyHint: true },

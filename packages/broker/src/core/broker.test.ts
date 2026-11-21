@@ -138,12 +138,76 @@ it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de
   }
   const query = { categoryId, to: "bruno@sideband.app" };
   expect((await broker.agent.queryVault(alice, query)).categories[0]?.entries).toHaveLength(1);
+  expect((await broker.owner.queryVault(alice, query)).categories[0]?.entries).toEqual([{ label: "Regalo", value: "Cafetera" }]);
+  expect(await broker.owner.queryVault({ userId: "sin-vínculo" }, query)).toEqual({ categories: [] });
   await broker.agent.changeVault(p, { ...put, value: "Molino" });
   await broker.owner.changeVault(bruno, { action: "set_group", categoryId, group: "friend", allowed: false });
   expect(await broker.agent.queryVault(alice, query)).toEqual({ categories: [] });
+  expect(await broker.owner.queryVault(alice, query)).toEqual({ categories: [] });
   expect((await broker.agent.queryVault(carla, query)).categories[0]?.entries).toEqual([{ label: "Regalo", value: "Molino" }]);
   await broker.agent.changeVault(p, { action: "delete_entry", categoryId, label: put.label });
   expect((await broker.agent.queryVault(carla, query)).categories[0]?.entries).toEqual([]);
+});
+
+it("recupera el recibo inicial después de una respuesta y aísla claves por titular, agente, canal y destinatario", async () => {
+  const input = { ...availability, idempotencyKey: "turno.17" };
+  const [first, ...copies] = await Promise.all(Array.from({ length: 8 }, () => broker.agent.ask(alice, input)));
+  expect(copies.every(view => view.requestId === first!.requestId)).toBe(true);
+  const [incoming] = await broker.agent.inbox(bruno);
+  await broker.agent.reply(bruno, { requestId: incoming!.requestId, nonce: incoming!.nonce,
+    outcome: "answered", result: { available: true } });
+  const askOnly = { ...alice, scopes: ["sideband:ask" as const] };
+  expect(await broker.agent.ask(askOnly, input)).toEqual(first);
+  await expect(broker.agent.ask(alice, { ...input, purpose: "Otro envío" })).rejects.toMatchObject({ code: "conflict" });
+
+  const separate = await Promise.all([
+    broker.owner.ask(alice, input),
+    broker.owner.ask(alice, input, "whatsapp"),
+    broker.agent.ask(carla, input),
+    broker.agent.ask(alice, { ...input, to: "carla@sideband.app" }),
+  ]);
+  expect(new Set([first, ...separate].map(view => view!.requestId)).size).toBe(5);
+});
+
+it("comprueba contacto y etiqueta antes de crear una solicitud, incluso cuando existe un grant directo", async () => {
+  const requireRelation = { kind: "contact", tag: "friend" } as const;
+  const input = { ...availability, requireRelation, idempotencyKey: "friend-test" };
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
+  const invitation = await broker.owner.connect(alice, availability.to, [], "work");
+  await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true, share: ["availability"] });
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
+  await broker.owner.setContactTag(alice, availability.to, "friend");
+  await expect(broker.agent.ask(alice, input)).resolves.toMatchObject({ decision: "pending" });
+  await broker.owner.setContactTag(alice, availability.to, "family");
+  await expect(broker.agent.ask(alice, { ...input, idempotencyKey: "another" })).rejects.toMatchObject({ code: "not_found" });
+  await broker.owner.removeFriend(alice, availability.to);
+  await expect(broker.agent.ask(alice, {
+    ...availability, requireRelation: { kind: "contact" },
+  })).rejects.toMatchObject({ code: "not_found" });
+});
+
+it("exige que ambos hayan aceptado el círculo indicado aunque sigan compartiendo otros permisos", async () => {
+  const circle = await broker.owner.createCircle(alice, "Fútbol");
+  const input = { ...availability, requireRelation: { kind: "circle", circleId: circle.id } as const };
+  await broker.owner.inviteToCircle(alice, circle.id, availability.to);
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
+  expect(await broker.agent.inbox(bruno)).toEqual([]);
+  await broker.owner.joinCircle(bruno, circle.id);
+  await expect(broker.agent.ask(alice, input)).resolves.toMatchObject({ decision: "pending" });
+  await expect(broker.agent.ask(carla, input)).rejects.toMatchObject({ code: "not_found" });
+  await broker.owner.removeFromCircle(bruno, circle.id, availability.to);
+  await expect(broker.agent.ask(alice, input)).rejects.toMatchObject({ code: "not_found" });
+});
+
+it("la búsqueda pública exige el scope de pregunta y una consulta válida", async () => {
+  const profile = [{ address: "bruno@sideband.app", displayName: "bruno" }];
+  await expect(broker.agent.searchPublicProfiles(alice, " BRUNO ")).resolves.toEqual(profile);
+  await expect(broker.owner.searchPublicProfiles(alice, "BRUNO@SIDEBAND.APP")).resolves.toEqual(profile);
+  await expect(broker.agent.searchPublicProfiles({ ...alice, scopes: ["sideband:status"] }, "bruno"))
+    .rejects.toMatchObject({ code: "forbidden" });
+  for (const query of [" ", "a", "abc\0def", "a".repeat(101)]) {
+    await expect(broker.owner.searchPublicProfiles(alice, query)).rejects.toMatchObject({ code: "invalid_input" });
+  }
 });
 
 async function askAvailability() {
@@ -818,7 +882,7 @@ describe("solicitudes de conexión", () => {
 
     expect(await broker.agent.contacts(carla)).toEqual({
       contacts: [{ address: "bruno@sideband.app", theyShare: [], youShare: basicSharing }],
-      circles: [{ name: "Fútbol", members: ["alice@sideband.app"] }],
+      circles: [{ id: circle.id, name: "Fútbol", members: ["alice@sideband.app"] }],
     });
     expect((await broker.agent.contacts(bruno)).circles).toEqual([]);
     await expect(broker.agent.contacts({ ...carla, scopes: ["sideband:inbox"] })).rejects.toMatchObject({ code: "forbidden" });

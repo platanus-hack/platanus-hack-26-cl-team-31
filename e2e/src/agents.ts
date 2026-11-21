@@ -32,6 +32,7 @@ export async function connectAgent(url: URL, token: string) {
   }
 
   return {
+    call,
     ask: (input: AskInput) => call("sideband_ask", input, RequesterView),
     inbox: async () => (await call("sideband_inbox", {}, routes.agentInbox.response)).items,
     reply: (input: ReplyInput) => call("sideband_reply", input, ReplyReceipt),

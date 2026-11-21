@@ -36,22 +36,22 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
     const run = vi.fn();
     const now = Math.ceil(Date.now() / 1000) + 2;
     await store.whileLinked(phone, now, run);
-    expect(run).toHaveBeenLastCalledWith(undefined);
+    expect(run).toHaveBeenLastCalledWith(undefined, undefined);
     expect(await store.confirm("bob", candidate.id!)).toBeUndefined();
     expect(await store.confirm("ana", candidate.id!)).toMatch(/^[a-f0-9-]{36}$/);
     expect(await store.confirm("ana", candidate.id!)).toBeUndefined();
     expect((await store.state("ana"))?.linked).toBe(phone);
     await store.whileLinked(phone, now - 10, run);
-    expect(run).toHaveBeenLastCalledWith(undefined);
+    expect(run).toHaveBeenLastCalledWith(undefined, undefined);
     await store.whileLinked(phone, now, run);
-    expect(run).toHaveBeenLastCalledWith("ana");
+    expect(run).toHaveBeenLastCalledWith("ana", expect.any(String));
 
     expect(await store.detect((await store.start("bob"))!, phone)).toBe("bob");
     await expect(store.confirm("bob", (await store.state("bob"))!.id!)).rejects.toMatchObject({ code: "23505" });
     expect((await store.state("bob"))!.linked).toBeNull();
     await store.unlink("ana");
     await store.whileLinked(phone, now, run);
-    expect(run).toHaveBeenLastCalledWith(undefined);
+    expect(run).toHaveBeenLastCalledWith(undefined, undefined);
     await db.query(`UPDATE whatsapp.pairing SET expires_at = now() - interval '1 minute' WHERE user_id = 'bob'`);
     expect(await store.state("bob")).toMatchObject({ linked: null, id: null });
   });
@@ -113,6 +113,15 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
   it("registra una sola entrega ante reintentos concurrentes", async () => {
     expect((await Promise.all([store.claim("123", "wamid.1"), store.claim("123", "wamid.1")])).sort())
       .toEqual([false, true]);
+  });
+
+  it("confirma el recibo del turno solo después de entregar y serializa copias del mismo evento", async () => {
+    const delivery = { numberId: "wa", messageId: "turn-retry" };
+    const dispatch = vi.fn().mockRejectedValueOnce(new Error("falló la entrega")).mockResolvedValue(undefined);
+    const run = () => store.whileLinked("+56955550222", Math.ceil(Date.now() / 1000), dispatch, delivery);
+    await expect(run()).rejects.toThrow("falló la entrega");
+    await Promise.all([run(), run()]);
+    expect(dispatch).toHaveBeenCalledTimes(2);
   });
 
   it("al repetir la migración habilita las operaciones necesarias para el rol web de Render", async () => {

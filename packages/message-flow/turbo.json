@@ -1,0 +1,8 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/packages/broker/drizzle/0201_message_turns.sql"]
+    }
+  }
+}

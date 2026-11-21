@@ -163,6 +163,13 @@ export const requests = sideband.table("requests", {
   index("requests_status_expires_at_idx").on(table.status, table.expiresAt),
 ]);
 
+export const askReceipts = sideband.table("ask_receipts", {
+  keyHash: text("key_hash").primaryKey(),
+  inputHash: text("input_hash").notNull(),
+  requestId: text("request_id").notNull().references(() => requests.id, { onDelete: "cascade" }),
+  waitingFor: text("waiting_for", { enum: ["agent", "owner"] }),
+}, (t) => [index("ask_receipts_request_idx").on(t.requestId)]);
+
 export const requestEvents = sideband.table("request_events", {
   id: bigserial("id", { mode: "bigint" }).primaryKey(),
   requestId: text("request_id").notNull().references(() => requests.id),
@@ -216,4 +223,23 @@ export const channels = sideband.table("channels", {
   primaryKey({ columns: [table.userId, table.name] }),
   check("channels_name_check", sql`${table.name} in (${values(channelNames)})`),
   check("channels_wake_secret_check", sql`(${table.wakeKind} = 'none') = (${table.wakeSecret} is null)`),
+]);
+
+// Conversation checkpoints are accessed only by the message-flow runtime.
+export const messageTurns = sideband.table("message_turns", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  binding: text("binding").notNull(),
+  agentId: text("agent_id").notNull(),
+  deliveryId: text("delivery_id"),
+  parentId: text("parent_id").unique(),
+  state: jsonb("state"),
+  outcome: text("outcome"),
+  clarification: jsonb("clarification"),
+  createdAt: time("created_at").notNull().defaultNow(),
+  expiresAt: time("expires_at").notNull(),
+}, t => [
+  uniqueIndex("message_turn_delivery_idx").on(t.userId, t.binding, t.agentId, t.deliveryId),
+  index("message_turn_binding_idx").on(t.userId, t.binding, t.agentId, t.createdAt),
+  index("message_turn_expiry_idx").on(t.expiresAt),
 ]);

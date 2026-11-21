@@ -1,5 +1,5 @@
 import { Owner, type Address, type ConnectInput, type ContactTag, type Sharing } from "@team-31/protocol";
-import { routes } from "@team-31/protocol/http";
+import { encodeAsk, routes } from "@team-31/protocol/http";
 import type { OwnerPort } from "./ports.js";
 import { createHttpClient, type ClientOptions } from "./http.js";
 
@@ -10,6 +10,9 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     request(routes.ownerRemoveContact, owner, { params: { address: contact } });
 
   return {
+    searchPublicProfiles: async (o, query) => (await request(routes.ownerSearchPublicProfiles, o, { body: { query } })).items,
+    directory: o => request(routes.ownerDirectory, o),
+    queryVault: (o, body) => request(routes.ownerQueryVault, o, { body }),
     contactGroups: o => request(routes.ownerContactGroups, o),
     vault: (o) => request(routes.ownerVault, o),
     changeVault: (o, body) => request(routes.ownerChangeVault, o, { body }),
@@ -23,8 +26,8 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     activity: async (owner, query = {}) =>
       (await request(routes.ownerActivity, owner, { query: typeof query === "number" ? { limit: query } : query })).items,
     ask: (owner, body, channel) => channel
-      ? request(routes.ownerChannelAsk, owner, { params: { name: channel }, body })
-      : request(routes.ownerAsk, owner, { body }),
+      ? request(routes.ownerChannelAsk, owner, { params: { name: channel }, body: encodeAsk(body) })
+      : request(routes.ownerAsk, owner, { body: encodeAsk(body) }),
     status: (owner, id) => request(routes.ownerStatus, owner, { params: { id } }),
     decide: (owner, id, body) => request(routes.ownerDecide, owner, { params: { id }, body }),
     agentDirectory: async (owner) => (await request(routes.ownerAgentDirectory, owner)).items,

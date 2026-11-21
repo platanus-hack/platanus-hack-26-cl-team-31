@@ -1,8 +1,9 @@
-import type { Address, ContactGroups, ContactTag, Sharing, OwnerVault } from "@team-31/protocol";
+import { Address, type ContactGroups, type ContactTag, type Sharing, type OwnerVault } from "@team-31/protocol";
+import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit } from "./directory.js";
 import { activeAgentConflict, BrokerError } from "../errors.js";
 import { wakeClaim } from "./store.js";
 import type {
-  AgentConnectionRow, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
+  AgentConnectionRow, AskReceipt, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "./store.js";
 
 type State = {
@@ -17,6 +18,7 @@ type State = {
   circles: Map<string, CircleRow>;
   circleMembers: CircleMemberRow[];
   requests: Map<string, RequestRow>;
+  askReceipts: Map<string, AskReceipt>;
   events: RequestEvent[];
   wakes: Map<string, WakeJob>;
   agents: Map<string, AgentConnectionRow>;
@@ -179,6 +181,19 @@ function transaction(state: State): StoreTx {
       return { categories: (state.vaults.get(owner)?.categories ?? []).filter(c => (!id || id === c.id) && canRead(owner, c, reader))
         .map(c => ({ id: c.id, name: c.name, ...(id ? { entries: structuredClone(c.entries) } : {}) })) };
     },
+    async searchPublicProfiles(query) {
+      const term = normalizeSearch(query);
+      const exact = Address.safeParse(term);
+      return [...state.users.values()].flatMap(({ address, displayName }) => {
+        if (!address) return [];
+        const handle = address.split("@")[0]!;
+        const name = normalizeSearch(displayName ?? "");
+        if (exact.success ? address !== exact.data : !address.includes(term) && !name.includes(term)) return [];
+        const rank = name === term || handle === term ? 0 : name.startsWith(term) || handle.startsWith(term) ? 1 : 2;
+        return [{ rank, address, displayName: displayName || handle }];
+      }).sort((a, b) => a.rank - b.rank || Buffer.compare(Buffer.from(a.address), Buffer.from(b.address)))
+        .slice(0, publicProfileLimit).map(({ address, displayName }) => ({ address, displayName }));
+    },
     async getUser(userId) {
       return structuredClone(state.users.get(userId) ?? null);
     },
@@ -209,6 +224,30 @@ function transaction(state: State): StoreTx {
       if (!live) return false;
       live.revokedAt = structuredClone(at);
       return true;
+    },
+    async listContacts(userId) {
+      const me = state.users.get(userId)?.address;
+      if (!me) return [];
+      return [...(state.contacts.get(userId) ?? [])].sort().map(address => {
+        const other = findUserByAddress(address);
+        const gives = liveGrants(userId).filter(g => g.granteeAddress === address);
+        const receives = other ? liveGrants(other.userId).filter(g => g.granteeAddress === me) : [];
+        return directoryContact({ address, name: other?.displayName, tag: state.contactTags.get(userId)?.get(address),
+          gives: gives.map(g => g.category), receives: receives.map(g => g.category) });
+      });
+    },
+    async listJoinedCircles(userId) {
+      const me = state.users.get(userId)?.address;
+      if (!me) return [];
+      const joined = [...state.circles.values()].filter(c => circleMember(c.id, me)?.joinedAt)
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
+      return directoryCircles(joined.flatMap(({ id, name: circleName }) => {
+        const others = state.circleMembers.filter(m => m.circleId === id && m.joinedAt && m.address !== me)
+          .map(m => m.address).sort();
+        return [{ id, circleName }, ...others.map(address => ({
+          id, circleName, address, memberName: findUserByAddress(address)?.displayName,
+        }))];
+      }));
     },
     async listContactAddresses(userId) {
       return [...(state.contacts.get(userId) ?? [])].sort();
@@ -280,6 +319,15 @@ function transaction(state: State): StoreTx {
       state.circleMembers = state.circleMembers.filter((current) => current !== member);
       return member !== undefined;
     },
+    async lockRequiredRelation(userId, from, to, relation) {
+      if (relation.kind === "circle") {
+        return Boolean(circleMember(relation.circleId, from)?.joinedAt && circleMember(relation.circleId, to)?.joinedAt);
+      }
+      return Boolean(state.contacts.get(userId)?.has(to)) &&
+        (relation.tag === undefined || state.contactTags.get(userId)?.get(to) === relation.tag);
+    },
+    async lockAskReceipt(keyHash) { return structuredClone(state.askReceipts.get(keyHash) ?? null); },
+    async insertAskReceipt(receipt) { state.askReceipts.set(receipt.keyHash, structuredClone(receipt)); },
     async shareCircle(a, b) {
       const joined = (address: Address) => state.circleMembers
         .filter((member) => member.address === address && member.joinedAt).map((member) => member.circleId);
@@ -404,7 +452,7 @@ function transaction(state: State): StoreTx {
 export function createMemoryStore(): Store {
   let state: State = {
     vaults: new Map(), memberRules: new Map(), contactGroups: new Map(), users: new Map(), grants: [], contacts: new Map(), contactTags: new Map(), tagPresets: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
-    events: [], wakes: new Map(), agents: new Map(), channels: new Map(),
+    askReceipts: new Map(), events: [], wakes: new Map(), agents: new Map(), channels: new Map(),
   };
   let previous = Promise.resolve();
 
