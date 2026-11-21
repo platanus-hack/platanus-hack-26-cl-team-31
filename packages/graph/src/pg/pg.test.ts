@@ -19,6 +19,16 @@ describe.skipIf(!url)("PgGraphIndex (Postgres)", () => {
   const index = new PgGraphIndex(db);
   const g = syntheticGraph({ people: 400, seed: 11 });
   const mem = new MemoryGraphIndex(g.mutations);
+  // Los tests que modifican el grafo lo marcan; los que comparan contra `g` lo recargan antes,
+  // así ninguno depende del orden en que corren.
+  let dirty = false;
+
+  async function baseGraph() {
+    if (!dirty) return;
+    await index.truncate();
+    await index.bulkLoad(g.mutations);
+    dirty = false;
+  }
 
   async function pgSnapshot(): Promise<string[]> {
     const { rows } = await db.query(
@@ -45,10 +55,12 @@ describe.skipIf(!url)("PgGraphIndex (Postgres)", () => {
   });
 
   it("bulkLoad = índice en memoria", async () => {
+    await baseGraph();
     expect(await pgSnapshot()).toEqual(memSnapshot(mem));
   });
 
   it("nearest y path dan los mismos costos que en memoria, con pocas consultas", async () => {
+    await baseGraph();
     const filter: EdgeFilter = (arc) => arc.scope === "";
     for (const s of g.people.slice(0, 8)) {
       for (const f of [undefined, filter]) {
@@ -69,6 +81,9 @@ describe.skipIf(!url)("PgGraphIndex (Postgres)", () => {
   });
 
   it("apply incremental = memoria", async () => {
+    await baseGraph();
+    dirty = true;
+    const local = new MemoryGraphIndex(g.mutations);
     const changes: GraphMutation[] = [
       membershipMutation({ person_id: "p1", group_id: "nuevo", can_ask: true, can_share: false }),
       membershipMutation({ person_id: "p2", group_id: "nuevo", can_ask: false, can_share: true }),
@@ -79,11 +94,12 @@ describe.skipIf(!url)("PgGraphIndex (Postgres)", () => {
       { op: "removeNode", id: "person:p3" },
     ];
     await index.apply(changes);
-    mem.apply(changes);
-    expect(await pgSnapshot()).toEqual(memSnapshot(mem));
+    local.apply(changes);
+    expect(await pgSnapshot()).toEqual(memSnapshot(local));
   });
 
   it("rebuildFromCore = proyección en TS", async () => {
+    dirty = true;
     await db.query(await readFile(CORE_SQL, "utf8"));
     const core = syntheticGraph({ people: 120, seed: 5, vaults: false }).core;
     await db.query("INSERT INTO people(id, token_hash) SELECT id, 'h' || id FROM unnest($1::text[]) id", [core.people.map((p) => p.id)]);

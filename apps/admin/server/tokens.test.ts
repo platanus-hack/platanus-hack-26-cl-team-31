@@ -1,3 +1,4 @@
+import { createTestDatabase, ignoreTerminationAfterEnd, type TestDatabase } from "@team-31/test-db"
 import type pg from "pg"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { migrateAdminTables } from "./audit.js"
@@ -9,14 +10,19 @@ const DAY = 86_400_000
 
 describe.skipIf(!TEST_DATABASE_URL)("tokens sba_ (Postgres)", () => {
   let pool: pg.Pool
+  let testDb: TestDatabase | undefined
 
   beforeAll(async () => {
-    pool = createAdminPool(TEST_DATABASE_URL!)
+    // Base propia: better-auth inspecciona todos los esquemas, y otros paquetes crean y borran
+    // los suyos en app_test en paralelo.
+    testDb = await createTestDatabase("admin_tokens")
+    pool = ignoreTerminationAfterEnd(createAdminPool(testDb.url))
     await migrateAdminTables(pool)
     await pool.query("DELETE FROM admin.tokens")
   })
   afterAll(async () => {
     await pool?.end()
+    await testDb?.drop()
   })
 
   it("crea un token sba_ de 32 bytes, guarda solo sha256 y lo autentica", async () => {

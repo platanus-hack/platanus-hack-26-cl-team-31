@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto"
 import { verifyServiceToken } from "@team-31/auth/service"
 import { createTelemetry, memorySink } from "@team-31/telemetry"
 import { jwtVerify, type JWK } from "jose"
+import { createTestDatabase, ignoreTerminationAfterEnd, type TestDatabase } from "@team-31/test-db"
 import type pg from "pg"
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { AdminQueryError } from "../shared/queries.js"
@@ -22,6 +23,7 @@ const publicJwk = publicKey.export({ format: "jwk" }) as JWK
 
 describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
   let pool: pg.Pool
+  let testDb: TestDatabase | undefined
   const allow = { operators: ["op@test.cl"], viewers: ["viewer@test.cl"] }
   const roleOf = createRoleResolver(() => allow, { devAuth: true })
   let authOptions: AdminAuthOptions
@@ -75,7 +77,10 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     (await pool.query("SELECT actor_type, actor_label, action, target, reason, meta FROM admin.audit ORDER BY at")).rows
 
   beforeAll(async () => {
-    pool = createAdminPool(TEST_DATABASE_URL!)
+    // Base propia: better-auth inspecciona todos los esquemas, y otros paquetes crean y borran
+    // los suyos en app_test en paralelo.
+    testDb = await createTestDatabase("admin_api")
+    pool = ignoreTerminationAfterEnd(createAdminPool(testDb.url))
     authOptions = { pool, baseUrl: ADMIN_URL, secret: "x".repeat(32), roleOf, freshSeconds: 600 }
     await migrateAdminTables(pool)
     await migrateAdminAuth(authOptions)
@@ -93,6 +98,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
 
   afterAll(async () => {
     await pool?.end()
+    await testDb?.drop()
   })
 
   it("responde /healthz sin sesión", async () => {
