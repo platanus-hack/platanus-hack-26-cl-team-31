@@ -77,6 +77,35 @@ importers:
         specifier: ^5
         version: 5.9.3
 
+  packages/broker:
+    dependencies:
+      '@team-31/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@team-31/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/protocol:
+    dependencies:
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@team-31/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   packages/typescript-config: {}
 
 packages:
