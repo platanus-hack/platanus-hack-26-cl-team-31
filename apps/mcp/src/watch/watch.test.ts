@@ -131,3 +131,19 @@ it("valida la sesión e inyecta solo el ID en un aviso en cola de OpenCode", asy
     delivery: "queue", resume: true,
   });
 });
+
+it("avisa también por una solicitud pendiente en la primera lectura al incluir pendientes", async () => {
+  const controller = new AbortController();
+  const events: string[] = [];
+  const inbox = vi.fn<() => Promise<string[]>>()
+    .mockResolvedValueOnce(["ya-pendiente"])
+    .mockResolvedValueOnce(["ya-pendiente", "nueva"]);
+  await pollInbox({
+    inbox, signal: controller.signal, intervalMs: 1, includePending: true, onReady: vi.fn(), onRetry: vi.fn(),
+    onRequest(id) {
+      events.push(id);
+      if (id === "nueva") controller.abort();
+    },
+  });
+  expect(events).toEqual(["ya-pendiente", "nueva"]);
+});

@@ -4,7 +4,7 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 const permanentErrors = new Set(["forbidden", "unauthorized", "not_found", "tool_error"]);
 
 export async function pollInbox({
-  inbox, signal, onReady, onRequest, onRetry, intervalMs = 2_000,
+  inbox, signal, onReady, onRequest, onRetry, intervalMs = 2_000, includePending = false,
 }: {
   inbox: (signal: AbortSignal) => Promise<string[]>;
   signal: AbortSignal;
@@ -12,6 +12,7 @@ export async function pollInbox({
   onRequest: (id: string) => void | Promise<void>;
   onRetry: () => void;
   intervalMs?: number;
+  includePending?: boolean;
 }) {
   const seen = new Set<string>();
   let ready = false;
@@ -32,11 +33,11 @@ export async function pollInbox({
       continue;
     }
     if (signal.aborted) return;
+    if (!ready) onReady();
     for (const id of ids) {
-      if (ready && !seen.has(id)) await onRequest(id);
+      if ((ready || includePending) && !seen.has(id)) await onRequest(id);
       seen.add(id);
     }
-    if (!ready) onReady();
     ready = true;
     delay = intervalMs;
   }

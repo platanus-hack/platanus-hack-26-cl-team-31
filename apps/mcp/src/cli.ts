@@ -87,7 +87,7 @@ async function main() {
     if (values.poll) {
       stage = "No se pudo leer la bandeja de Sideband";
       return await pollInbox({
-        inbox: remote.inbox, signal: shutdown.signal,
+        inbox: remote.inbox, signal: shutdown.signal, includePending: Boolean(notify),
         async onRequest(requestId) {
           printRequest(requestId);
           try {
