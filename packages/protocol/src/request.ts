@@ -12,6 +12,7 @@ export const AskInput = z.discriminatedUnion("tool", [
   askBase.extend({ tool: z.literal("profile"), args: ToolArgs.profile }),
   askBase.extend({ tool: z.literal("availability"), args: ToolArgs.availability }),
   askBase.extend({ tool: z.literal("question"), args: ToolArgs.question }),
+  askBase.extend({ tool: z.literal("connect"), args: ToolArgs.connect }),
 ]);
 export type AskInput = z.infer<typeof AskInput>;
 

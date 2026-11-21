@@ -35,6 +35,7 @@ export const toolLabel: Record<ToolName, string> = {
   question: "Pregunta",
   profile: "Perfil",
   interest_check: "Interés",
+  connect: "Conexión",
 }
 
 export const wakeKindLabel: Record<WakeKind, string> = {

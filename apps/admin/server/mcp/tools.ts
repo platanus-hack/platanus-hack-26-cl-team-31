@@ -73,7 +73,7 @@ export function adminTools(queries: AdminQueries): AdminTool[] {
       description: "Busca solicitudes por estado, herramienta, dirección (origen o destino), prefijo de id, rango de fechas o atascadas. Pagina con cursor.",
       input: z.object({
         status: RequestFilters.shape.status.describe("Estados a incluir (awaiting_agent, awaiting_owner, answered, no_data, declined, denied, expired, delivery_failed)."),
-        tool: RequestFilters.shape.tool.describe("Herramienta: profile, availability, question o interest_check."),
+        tool: RequestFilters.shape.tool.describe("Herramienta: profile, availability, question, interest_check o connect."),
         address: RequestFilters.shape.address.describe("Dirección Nexo que coincide con origen o destino."),
         q: RequestFilters.shape.q.describe("Prefijo del request id."),
         stuck: z.boolean().optional().describe("true para ver solo las abiertas con plazo vencido."),

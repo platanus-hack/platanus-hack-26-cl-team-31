@@ -1,7 +1,7 @@
 "use server";
 
 import { BrokerError } from "@team-31/broker/client";
-import { GrantInput, LocalPart, OwnerDecision, ToolResultSchemas } from "@team-31/protocol";
+import { Address, GrantInput, LocalPart, OwnerDecision, ToolResultSchemas } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -144,6 +144,9 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
     if ((kind === "yes" || kind === "no") && item.escalated && item.tool === "interest_check") {
       decision = { kind: "answer", result: { matches: kind === "yes" } };
     }
+    if ((kind === "yes" || kind === "no") && item.escalated && item.tool === "connect") {
+      decision = { kind: "answer", result: { accepted: kind === "yes" } };
+    }
 
     const parsed = OwnerDecision.safeParse(decision);
     if (!parsed.success || (kind === "approve_once" && item.escalated)) {
@@ -156,6 +159,8 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
 
   revalidatePath("/");
   revalidatePath("/activity");
+  revalidatePath("/friends");
+  revalidatePath("/grants");
   return { message: "Decisión guardada." };
 }
 
@@ -183,4 +188,45 @@ export async function manageAgent(agentId: string, _: Feedback, form: FormData):
   revalidatePath("/activity");
   revalidatePath("/");
   return { message: operation === "ping" ? "Prueba solicitada. Revisa su estado en Actividad." : "Agente desconectado." };
+}
+
+export async function readFriends() {
+  await requireAddress();
+  const owner = await getOwner();
+  return ownerClient().friends(owner);
+}
+
+export async function sendConnection(_: Feedback, form: FormData): Promise<Feedback> {
+  const address = await requireAddress();
+  const owner = await getOwner();
+  const to = Address.safeParse(form instanceof FormData ? String(form.get("to") ?? "").trim() : undefined);
+  if (!to.success) return { error: "Ingresa una dirección válida, por ejemplo nombre@nexo.app." };
+  if (to.data === address) return { error: "Esa es tu propia dirección." };
+
+  try {
+    const view = await ownerClient().connect(owner, to.data);
+    revalidatePath("/friends");
+    revalidatePath("/activity");
+    if (view.final && view.decision === "deny") return { error: "No se pudo enviar la solicitud a esa dirección." };
+  } catch (error) {
+    return { error: actionError("sendConnection", error, "No se pudo enviar la solicitud. Intenta de nuevo.") };
+  }
+  return { message: "Solicitud enviada. Te avisaremos cuando responda." };
+}
+
+export async function removeFriend(friend: string): Promise<Feedback> {
+  await requireAddress();
+  const owner = await getOwner();
+  const address = Address.safeParse(friend);
+  if (!address.success) return { error: "La dirección no es válida." };
+
+  try {
+    await ownerClient().removeFriend(owner, address.data);
+  } catch (error) {
+    return { error: actionError("removeFriend", error, "No se pudo quitar. Intenta de nuevo.") };
+  }
+  revalidatePath("/friends");
+  revalidatePath("/grants");
+  revalidatePath("/activity");
+  return { message: "Quitado de Amigos." };
 }

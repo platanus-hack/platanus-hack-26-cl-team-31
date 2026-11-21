@@ -244,7 +244,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM nexo.__drizzle_migrations");
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
   });
 
   it("recovers only legacy one-time approvals with an audit event", async () => {
@@ -263,6 +263,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     });
     // Restore the legacy schema and migration journal while keeping the fixture rows.
     await isolated.query("ALTER TABLE nexo.requests DROP COLUMN approved_once");
+    await isolated.query("DROP TABLE nexo.friends");
     await isolated.query("DROP TABLE nexo.grants");
     await isolated.query("DELETE FROM nexo.__drizzle_migrations WHERE id > 1");
 
@@ -327,6 +328,19 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           await tx.appendEvent({ requestId: row.id, at: now, kind: "received" });
           expect(await tx.listEvents([row.id])).toMatchObject([{ kind: "received" }]);
           expect(await tx.updateRequest(row.id, { guidance: "updated by runtime" }, row.version)).toBe(true);
+          const friend = "alice@nexo.app";
+          const grant = {
+            id: randomUUID(), grantorUserId: "bruno", granteeAddress: friend,
+            tool: "availability" as const, fields: ["available"], createdAt: now,
+          };
+          expect(await tx.addFriend("bruno", friend)).toBe(true);
+          expect(await tx.addFriend("bruno", friend)).toBe(false);
+          expect(await tx.listFriends("bruno")).toEqual([friend]);
+          expect(await tx.insertFriendGrant(grant)).toBe(true);
+          expect(await tx.insertFriendGrant({ ...grant, id: randomUUID() })).toBe(false);
+          expect(await tx.removeFriend("bruno", friend)).toBe(true);
+          expect(await tx.revokeFriendGrants("bruno", friend, now)).toEqual([grant.id]);
+          expect(await tx.listGrants("bruno")).toEqual([]);
         });
       } finally {
         await runtime.close();
