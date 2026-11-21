@@ -32,7 +32,7 @@ import {
   QueryPanel,
 } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
-import { api } from "@/lib/api"
+import { api, buildPath } from "@/lib/api"
 import { formatAbsolute, formatNumber } from "@/lib/format"
 import { errorQuery } from "@/lib/queries"
 import { serviceColor, serviceLabel } from "@/lib/status"
@@ -180,7 +180,7 @@ function ErrorSheet({
           <SheetFooter className="flex-row flex-wrap border-t">
             {event.traceId ? (
               <Button variant="outline" size="sm" asChild>
-                <Link to={`/trazas/${event.traceId}`}>
+                <Link to={buildPath("/trazas/:id", { id: event.traceId })}>
                   <WaypointsIcon data-icon="inline-start" />
                   Ver traza
                 </Link>
@@ -188,7 +188,9 @@ function ErrorSheet({
             ) : null}
             {event.requestId ? (
               <Button variant="outline" size="sm" asChild>
-                <Link to={`/solicitudes/${event.requestId}`}>
+                <Link
+                  to={buildPath("/solicitudes/:id", { id: event.requestId })}
+                >
                   <InboxIcon data-icon="inline-start" />
                   Ver solicitud
                 </Link>
@@ -255,7 +257,9 @@ export function ErrorsPage() {
           columns={columns}
           data={query.data?.items}
           loading={query.isPending}
-          onRowClick={(e) => navigate(`/errores/${e.sampleErrorId}`)}
+          onRowClick={(e) =>
+            navigate(buildPath("/errores/:id", { id: e.sampleErrorId }))
+          }
           getRowId={(e) => e.sampleErrorId}
           initialSorting={[{ id: "count", desc: true }]}
           empty={{

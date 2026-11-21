@@ -7,7 +7,9 @@ import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest"
 import App from "./App"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { errorQuery } from "@/lib/queries"
 import { queryClient } from "@/lib/query"
+import { errorEvents } from "@/mocks/fixtures"
 import { writeMockState } from "@/mocks/handlers"
 
 vi.hoisted(() => vi.stubEnv("VITE_ADMIN_MOCK", "1"))
@@ -104,6 +106,36 @@ it("abre el detalle de una traza por URL y vuelve al listado por el breadcrumb",
     expect(host.querySelector("h1")?.textContent).toBe("Trazas")
   )
   expect(window.location.pathname).toBe("/trazas")
+})
+
+it("abre desde un error la solicitud con su identificador completo", async () => {
+  const event = { ...errorEvents[0]!, requestId: "req/a?b#c" }
+  const errorId = event.errorId!
+  queryClient.setQueryData(errorQuery(errorId).queryKey, event)
+  await openApp(`/errores/${errorId}`)
+
+  const links = () =>
+    Array.from(
+      document.querySelectorAll<HTMLAnchorElement>('[role="dialog"] a')
+    )
+  const reference = () =>
+    links().find((link) => link.textContent === event.requestId)
+  await waitForView(() => expect(reference()).toBeDefined())
+  const path = "/solicitudes/req%2Fa%3Fb%23c"
+  expect(reference()!.getAttribute("href")).toBe(path)
+  expect(
+    links()
+      .find((link) => link.textContent === "Ver solicitud")
+      ?.getAttribute("href")
+  ).toBe(path)
+  await act(() => reference()!.click())
+
+  await waitForView(() =>
+    expect(
+      host.querySelector('nav[aria-label="breadcrumb"] [aria-current="page"]')
+        ?.textContent
+    ).toBe(event.requestId)
+  )
 })
 
 it("vuelve al resumen desde una ruta desconocida", async () => {
