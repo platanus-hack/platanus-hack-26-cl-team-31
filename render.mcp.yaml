@@ -5,7 +5,7 @@ services:
     plan: free
     region: oregon
     autoDeployTrigger: 'off'
-    buildCommand: corepack pnpm install --frozen-lockfile --prod=false && corepack pnpm exec turbo run build --force --filter @team-31/web --filter @team-31/mcp --filter @team-31/broker-service
+    buildCommand: NODE_ENV=development corepack pnpm install --frozen-lockfile && corepack pnpm exec turbo run build --force --filter @team-31/web --filter @team-31/mcp --filter @team-31/broker-service
     startCommand: node infra/render/start.mjs
     healthCheckPath: /healthz
     envVars:
