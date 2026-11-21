@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url"
 import { serveStatic } from "@hono/node-server/serve-static"
+import { honoTelemetry } from "@team-31/telemetry/hono"
 import { Hono } from "hono"
 import { secureHeaders } from "hono/secure-headers"
 import { ErrorBody } from "../shared/contract.js"
@@ -20,7 +21,7 @@ const defaultSpaRoot = () => fileURLToPath(new URL("../../client/", import.meta.
 
 export function createAdminApp(deps: AdminAppDeps) {
   const app = new Hono()
-  // TODO(admin): app.use(honoTelemetry(telemetry)) cuando llegue ADM-01.
+  app.use(honoTelemetry(deps.telemetry))
   app.use(secureHeaders({ crossOriginResourcePolicy: "same-origin", referrerPolicy: "same-origin" }))
 
   app.get("/healthz", (c) => {
@@ -28,7 +29,7 @@ export function createAdminApp(deps: AdminAppDeps) {
     return c.json({ ok: true, service: "admin" })
   })
 
-  app.use("/api/auth/sign-in/*", loginRateLimit(deps.limiters, deps.trustProxy))
+  app.use("/api/auth/sign-in/*", loginRateLimit(deps.limiters, deps.trustProxy, deps.telemetry))
   app.on(["GET", "POST"], "/api/auth/*", (c) => {
     c.header("Cache-Control", "no-store")
     return deps.auth.handler(c.req.raw)
@@ -38,7 +39,11 @@ export function createAdminApp(deps: AdminAppDeps) {
 
   mountAdminMcp(app, {
     queries: deps.queries,
-    authenticate: deps.authenticateToken,
+    authenticate: async (bearer) => {
+      const principal = await deps.authenticateToken(bearer)
+      if (!principal) deps.telemetry.emit("auth.token.rejected", { attrs: { issuer: "admin", reason: "invalid_token" } })
+      return principal
+    },
     audit: async ({ actor, action, target }) => {
       await deps.audit.record({ actor: { type: "token", id: actor.tokenId, label: actor.label }, action, target })
     },

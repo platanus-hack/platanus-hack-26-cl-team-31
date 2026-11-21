@@ -1,9 +1,9 @@
 import { setTimeout } from "node:timers/promises"
+import type { Telemetry } from "@team-31/telemetry"
 import type { Context } from "hono"
 import { streamSSE } from "hono/streaming"
 import { TelemetryEvent, type EventFilters } from "../shared/contract.js"
 import type { AdminQueries } from "../shared/queries.js"
-import { logFailure } from "./errors.js"
 
 // GET /api/admin/live: cola en vivo de ops.events por SSE. Hace poll cada segundo por
 // id > cursor, manda un heartbeat cada 15 s y reanuda desde Last-Event-ID.
@@ -20,6 +20,7 @@ const byId = (a: TelemetryEvent, b: TelemetryEvent) => {
 export async function liveStream(
   c: Context,
   queries: AdminQueries,
+  telemetry: Pick<Telemetry, "error">,
   filters: Omit<EventFilters, "afterId" | "beforeId" | "limit">,
   { pollMs = 1_000, heartbeatMs = 15_000, backlog = 50, shutdown }: LiveOptions = {},
 ) {
@@ -65,7 +66,7 @@ export async function liveStream(
       }
     } catch (error) {
       // El cliente reconecta solo (retry) y retoma desde Last-Event-ID.
-      if (!signal.aborted) logFailure("GET /api/admin/live", error)
+      if (!signal.aborted) telemetry.error("GET /api/admin/live", error)
     } finally {
       signal.removeEventListener("abort", abort)
     }

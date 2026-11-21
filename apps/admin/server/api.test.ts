@@ -1,4 +1,6 @@
 import { generateKeyPairSync } from "node:crypto"
+import { verifyServiceToken } from "@team-31/auth/service"
+import { createTelemetry, memorySink } from "@team-31/telemetry"
 import { jwtVerify, type JWK } from "jose"
 import type pg from "pg"
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
@@ -25,6 +27,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
   let authOptions: AdminAuthOptions
   let auth: ReturnType<typeof createAdminAuth>
   const brokerFetch = vi.fn<typeof fetch>()
+  let sink = memorySink()
   const reveal = vi.fn()
   const queries = fakeQueries({
     sql: async (sql) => {
@@ -35,13 +38,16 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
   })
 
   function buildApp(overrides: { devAuth?: boolean } = {}) {
+    const telemetry = createTelemetry({ service: "admin", sink, heartbeatMs: 0, lifecycle: false })
+    const tokens = createPgTokenStore(pool)
     return createAdminApp({
+      telemetry,
       auth,
       roleOf,
       queries,
-      tokens: createPgTokenStore(pool),
-      authenticateToken: async () => null,
-      audit: createPgAuditLog(pool),
+      tokens,
+      authenticateToken: (bearer) => tokens.authenticate(bearer),
+      audit: createPgAuditLog(pool, telemetry),
       broker: createBrokerAdminClient({ baseUrl: BROKER_URL, privateKey: privateJwk, fetch: brokerFetch }),
       revealer: { reveal },
       limiters: createAdminLimiters(),
@@ -81,6 +87,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     allow.operators = ["op@test.cl"]
     allow.viewers = ["viewer@test.cl"]
     brokerFetch.mockReset()
+    sink = memorySink()
     reveal.mockReset()
   })
 
@@ -196,6 +203,11 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     ])
     const { rows: [audit] } = await pool.query("SELECT id FROM admin.audit WHERE action = 'reveal'")
     expect(body.auditId).toBe(audit.id)
+    // Cada fila de auditoría emite su evento admin.*, sin motivo ni payload.
+    const [event] = sink.find("admin.reveal")
+    expect(event).toMatchObject({ requestId: "req_1", attrs: { action: "reveal", target: "req_1" } })
+    expect(JSON.stringify(sink.records)).not.toContain("depurando")
+    expect(JSON.stringify(sink.records)).not.toContain("lunes")
   })
 
   it("exige un motivo de 10 a 500 caracteres y limita reveal a 10 por hora", async () => {
@@ -240,9 +252,13 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     expect(payload).toMatchObject({ sub: user.id, email: "op@test.cl" })
     expect(payload.exp! - payload.iat!).toBe(60)
     expect(payload.jti).toBeTypeOf("string")
+    // El broker (ADM-03) lo acepta como AdminActor.
+    await expect(verifyServiceToken(token, { publicKeys: { admin: publicJwk }, expectedIss: "admin" }))
+      .resolves.toEqual({ adminId: user.id, email: "op@test.cl" })
 
     const rows = await auditRows()
     expect(rows.find((row) => row.action === "rewake")).toMatchObject({ target: "req_1", reason: "el aviso se perdió", meta: { ok: true } })
+    expect(sink.find("admin.action")[0]).toMatchObject({ attrs: { action: "rewake", target: "req_1" } })
   })
 
   it("expire y revokeAgent: errores del broker se mapean y quedan auditados", async () => {
@@ -303,6 +319,32 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     expect((await app.request(`/api/admin/tokens/${meta.id}`, { method: "DELETE", headers: { cookie, origin: ADMIN_URL } })).status).toBe(404)
 
     expect((await auditRows()).map((row) => row.action)).toEqual(expect.arrayContaining(["token.create", "token.revoke"]))
+  })
+
+  it("/mcp acepta tokens nxa_ vigentes, audita cada tool y rechaza los revocados", async () => {
+    const app = buildApp()
+    const tokens = createPgTokenStore(pool)
+    const { token, meta } = await tokens.create({ name: "claude-test", ttlDays: 1 }, "op@test.cl")
+    const call = (bearer: string) => app.request("/mcp", {
+      method: "POST",
+      headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "admin_services", arguments: {} } }),
+    })
+
+    const ok = await call(token)
+    expect(ok.status).toBe(200)
+    const body = await ok.json()
+    expect(body.result.structuredContent.items[0]).toMatchObject({ service: "broker", state: "up" })
+    expect(await auditRows()).toEqual([
+      { actor_type: "token", actor_label: "claude-test", action: "mcp:admin_services", target: null, reason: null, meta: {} },
+    ])
+    expect(sink.find("admin.mcp.call")[0]).toMatchObject({ attrs: { action: "mcp:admin_services", tool: "admin_services" } })
+
+    await tokens.revoke(meta.id)
+    const revoked = await call(token)
+    expect(revoked.status).toBe(401)
+    expect(revoked.headers.get("www-authenticate")).toContain("Bearer")
+    expect(sink.find("auth.token.rejected")[0]).toMatchObject({ attrs: { issuer: "admin", reason: "invalid_token" } })
   })
 
   it("dev login solo con ADMIN_DEV_AUTH=1 y Origin válido", async () => {

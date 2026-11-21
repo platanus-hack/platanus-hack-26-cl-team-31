@@ -1,4 +1,5 @@
 import { getConnInfo } from "@hono/node-server/conninfo"
+import type { Telemetry } from "@team-31/telemetry"
 import { Hono, type Context } from "hono"
 import type { z } from "zod"
 import { adminRoutes, ErrorBody, PayloadReveal, type AdminRole, type AdminRouteName } from "../shared/contract.js"
@@ -6,7 +7,7 @@ import { AdminQueryError, type AdminQueries } from "../shared/queries.js"
 import { DEV_EMAIL, type AdminAuth, type RoleResolver } from "./auth/index.js"
 import type { AuditActor, AuditLog } from "./audit.js"
 import type { BrokerAdminClient } from "./broker.js"
-import { AdminHttpError, logFailure, statusOf } from "./errors.js"
+import { AdminHttpError, statusOf } from "./errors.js"
 import { liveStream, type LiveOptions } from "./live.js"
 import type { AdminLimiters } from "./rate-limit.js"
 import type { TokenStore } from "./tokens.js"
@@ -34,6 +35,7 @@ export type AdminApiDeps = {
   broker: BrokerAdminClient
   revealer: Revealer
   limiters: AdminLimiters
+  telemetry: Telemetry
   adminUrl: string
   freshSeconds: number
   devAuth: boolean
@@ -90,10 +92,13 @@ export function clientIp(c: Context, trustProxy: boolean): string | null {
   }
 }
 
-function errorResponse(c: Context, error: unknown) {
+function errorResponse(c: Context, error: unknown, telemetry: Pick<Telemetry, "error" | "emit">) {
   if (error instanceof AdminHttpError) {
     if (error.code === "unauthorized") c.header("WWW-Authenticate", 'Cookie realm="nexo-admin"')
     if (error.retryAfter) c.header("Retry-After", String(error.retryAfter))
+    if (error.code === "rate_limited") {
+      telemetry.emit("http.rate_limited", { attrs: { route: c.req.routePath, bucket: c.req.path.endsWith("/reveal") ? "reveal" : "login" } })
+    }
     return c.json(ErrorBody.parse({ error: { code: error.code, message: error.message } }), statusOf[error.code])
   }
   if (error instanceof AdminQueryError) {
@@ -102,13 +107,22 @@ function errorResponse(c: Context, error: unknown) {
     }
     return c.json(ErrorBody.parse({ error: { code: error.code, message: error.message } }), statusOf[error.code])
   }
-  const errorId = logFailure(c.req.routePath, error)
+  const errorId = telemetry.error(`${c.req.method} ${c.req.routePath}`, error)
   c.header("X-Error-Id", errorId)
   return c.json(ErrorBody.parse({ error: { code: "internal", message: "Ocurrió un error interno en el admin.", errorId } }), 500)
 }
 
 export function createAdminApi(deps: AdminApiDeps) {
-  const { auth, roleOf, queries, tokens, audit, broker, revealer, limiters, adminUrl, freshSeconds } = deps
+  const { auth, roleOf, queries, tokens, audit, broker, revealer, limiters, adminUrl, freshSeconds, telemetry } = deps
+  // Los errores esperados (401, 403, 404…) se responden aquí y no llegan a onError, para que
+  // honoTelemetry no los registre como errores. Los inesperados devuelven X-Error-Id.
+  const guarded = (handler: (c: Context) => Promise<Response>) => async (c: Context) => {
+    try {
+      return await handler(c)
+    } catch (error) {
+      return errorResponse(c, error, telemetry)
+    }
+  }
   const now = deps.now ?? Date.now
   const api = new Hono()
 
@@ -118,8 +132,10 @@ export function createAdminApi(deps: AdminApiDeps) {
     for (const cookie of headers.getSetCookie()) c.header("Set-Cookie", cookie, { append: true })
     if (!response) throw new AdminHttpError("unauthorized", "Inicia sesión para usar el admin.")
     const role = roleOf(response.user.email)
-    // TODO(admin): telemetry.emit("auth.token.rejected", { attrs: { issuer: "admin-session", reason: "not_allowed" } })
-    if (!role) throw new AdminHttpError("forbidden", "Este correo no tiene acceso al admin de Nexo.")
+    if (!role) {
+      telemetry.emit("auth.token.rejected", { attrs: { issuer: "admin_session", reason: "not_allowed" } })
+      throw new AdminHttpError("forbidden", "Este correo no tiene acceso al admin de Nexo.")
+    }
     return {
       id: response.user.id,
       email: response.user.email,
@@ -159,7 +175,6 @@ export function createAdminApi(deps: AdminApiDeps) {
       await audit.record({ ...entry, meta: { ok: false, code: error instanceof AdminHttpError ? error.code : "internal" } })
       throw error
     }
-    // TODO(admin): telemetry.emit("admin.action", { attrs: { action, target } })
     return { ok: true as const, auditId: await audit.record({ ...entry, meta: { ok: true } }) }
   }
 
@@ -191,7 +206,6 @@ export function createAdminApi(deps: AdminApiDeps) {
         if (blocked) throw new AdminHttpError("rate_limited", "Alcanzaste el máximo de 10 revelaciones por hora.", blocked)
         // Se audita antes de leer: queda registro aunque la lectura falle.
         const auditId = await audit.record({ actor: actorOf(principal), action: "reveal", target: id, reason, ip: clientIp(c, deps.trustProxy) })
-        // TODO(admin): telemetry.emit("admin.reveal", { requestId: id, attrs: { action: "reveal", target: id } })
         const payload = found(await revealer.reveal(id), "No existe la solicitud.")
         return PayloadReveal.parse({
           requestId: id,
@@ -247,7 +261,6 @@ export function createAdminApi(deps: AdminApiDeps) {
       case "createToken": {
         const input = await parseBody(c, adminRoutes.createToken.body)
         const created = await tokens.create(input, principal.email)
-        // TODO(admin): telemetry.emit("admin.token.created", { attrs: { action: "token.create", target: created.meta.id } })
         await audit.record({
           actor: actorOf(principal),
           action: "token.create",
@@ -260,7 +273,6 @@ export function createAdminApi(deps: AdminApiDeps) {
       case "revokeToken": {
         const { id } = parseInput(adminRoutes.revokeToken.params, c.req.param())
         if (!(await tokens.revoke(id))) throw new AdminHttpError("not_found", "No existe el token o ya estaba revocado.")
-        // TODO(admin): telemetry.emit("admin.token.revoked", { attrs: { action: "token.revoke", target: id } })
         await audit.record({ actor: actorOf(principal), action: "token.revoke", target: id, ip: clientIp(c, deps.trustProxy) })
         return { ok: true }
       }
@@ -268,7 +280,7 @@ export function createAdminApi(deps: AdminApiDeps) {
   }
 
   for (const [name, route] of Object.entries(adminRoutes) as [AdminRouteName, Route][]) {
-    api.on([route.method], [route.path], async (c) => {
+    api.on([route.method], [route.path], guarded(async (c) => {
       c.header("Cache-Control", "no-store")
       const principal = await authenticate(c)
       if (roleRank[principal.role] < roleRank[route.role]) {
@@ -279,20 +291,20 @@ export function createAdminApi(deps: AdminApiDeps) {
         throw new AdminHttpError("not_fresh", "Vuelve a iniciar sesión para confirmar esta acción.")
       }
       if (name === "live") {
-        return liveStream(c, queries, parseInput(adminRoutes.live.query, queryInput(c)), deps.live)
+        return liveStream(c, queries, telemetry, parseInput(adminRoutes.live.query, queryInput(c)), deps.live)
       }
       return c.json(route.response.parse(await handle(name, c, principal)))
-    })
+    }))
   }
 
   // Dev login: sesión de dev@nexo.local como operator. Solo existe con ADMIN_DEV_AUTH=1, que
   // env.ts prohíbe en producción. GET le dice a la SPA si debe mostrar «Entrar como dev».
   if (deps.devAuth) {
-    api.get("/api/admin/dev-login", (c) => {
+    api.get("/api/admin/dev-login", async (c) => {
       c.header("Cache-Control", "no-store")
       return c.json({ enabled: true })
     })
-    api.post("/api/admin/dev-login", async (c) => {
+    api.post("/api/admin/dev-login", guarded(async (c) => {
       c.header("Cache-Control", "no-store")
       requireSameOrigin(c, false)
       const blocked = limiters.login.consume(clientIp(c, deps.trustProxy) ?? "unknown")
@@ -300,13 +312,13 @@ export function createAdminApi(deps: AdminApiDeps) {
       const { headers } = await auth.api.issueSession({ body: { email: DEV_EMAIL, name: "Dev" }, returnHeaders: true })
       for (const cookie of headers.getSetCookie()) c.header("Set-Cookie", cookie, { append: true })
       return c.json({ ok: true })
-    })
+    }))
   }
 
-  api.all("/api/admin/*", () => {
+  api.all("/api/admin/*", guarded(async () => {
     throw new AdminHttpError("not_found", "No se encontró la ruta.")
-  })
-  api.onError((error, c) => errorResponse(c, error))
+  }))
+  api.onError((error, c) => errorResponse(c, error, telemetry))
   return api
 }
 
@@ -316,12 +328,11 @@ function found<T>(value: T | null, message: string): T {
 }
 
 // Límite de inicio de sesión (10 por minuto por IP) para /api/auth/sign-in/*.
-export function loginRateLimit(limiters: AdminLimiters, trustProxy: boolean) {
+export function loginRateLimit(limiters: AdminLimiters, trustProxy: boolean, telemetry: Pick<Telemetry, "error" | "emit">) {
   return async (c: Context, next: () => Promise<void>) => {
     const blocked = limiters.login.consume(clientIp(c, trustProxy) ?? "unknown")
     if (blocked) {
-      // TODO(admin): telemetry.emit("http.rate_limited", { attrs: { route: "/api/auth/sign-in/*", bucket: "login" } })
-      return errorResponse(c, new AdminHttpError("rate_limited", "Demasiados intentos de inicio de sesión.", blocked))
+      return errorResponse(c, new AdminHttpError("rate_limited", "Demasiados intentos de inicio de sesión.", blocked), telemetry)
     }
     await next()
   }

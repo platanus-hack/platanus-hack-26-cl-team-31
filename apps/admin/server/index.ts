@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server"
+import { createTelemetry, tracedFetch, type Telemetry } from "@team-31/telemetry"
 import type { AdminQueries } from "../shared/queries.js"
 import { createPgAdminQueries } from "./queries/index.js"
 import { createAdminApp } from "./app.js"
@@ -7,7 +8,7 @@ import { createAdminAuth, createRoleResolver, migrateAdminAuth, type AdminAuthOp
 import { createBrokerAdminClient } from "./broker.js"
 import { createAdminPool } from "./db.js"
 import { allowListFromEnv, readEnv, type AdminEnv } from "./env.js"
-import { AdminHttpError, logFailure } from "./errors.js"
+import { AdminHttpError } from "./errors.js"
 import { startPruneTask } from "./prune.js"
 import { createAdminLimiters } from "./rate-limit.js"
 import { createPgTokenStore } from "./tokens.js"
@@ -48,10 +49,10 @@ async function loadRevealer(databaseUrl: string): Promise<Revealer> {
   }
 }
 
-async function start(env: AdminEnv) {
+async function start(env: AdminEnv, telemetry: Telemetry) {
   const pool = createAdminPool(env.databaseUrl)
   await migrateAdminTables(pool)
-  const audit = createPgAuditLog(pool)
+  const audit = createPgAuditLog(pool, telemetry)
   const roleOf = createRoleResolver(allowListFromEnv(process.env), { devAuth: env.devAuth })
   const authOptions: AdminAuthOptions = {
     pool,
@@ -61,7 +62,6 @@ async function start(env: AdminEnv) {
     roleOf,
     freshSeconds: env.freshSeconds,
     onLogin: async (user) => {
-      // TODO(admin): telemetry.emit("admin.login", { attrs: { action: "login" } })
       await audit.record({ actor: { type: "admin", id: user.id, label: user.email }, action: "login", target: null })
     },
   }
@@ -79,7 +79,8 @@ async function start(env: AdminEnv) {
     tokens,
     authenticateToken: (bearer) => tokens.authenticate(bearer),
     audit,
-    broker: createBrokerAdminClient({ baseUrl: env.brokerUrl, privateKey: env.servicePrivateKey }),
+    broker: createBrokerAdminClient({ baseUrl: env.brokerUrl, privateKey: env.servicePrivateKey, fetch: tracedFetch(telemetry) }),
+    telemetry,
     limiters: createAdminLimiters(),
     adminUrl: env.adminUrl,
     freshSeconds: env.freshSeconds,
@@ -89,9 +90,8 @@ async function start(env: AdminEnv) {
     live: { shutdown: shutdown.signal },
   })
 
-  const stopPrune = startPruneTask(pool, env.retentionDays)
+  const stopPrune = startPruneTask(pool, env.retentionDays, telemetry)
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, ({ address, port }) => {
-    // TODO(admin): telemetry.emit("service.started", { attrs: { version } }) y latido cada 30 s (ADM-01).
     console.info(`[admin] escuchando en ${address}:${port}${env.serveSpa ? " (SPA + API + MCP)" : " (API + MCP)"}`)
     if (env.devAuth) console.info("[admin] ADMIN_DEV_AUTH=1: POST /api/admin/dev-login habilitado")
   })
@@ -103,14 +103,15 @@ async function start(env: AdminEnv) {
     try {
       await new Promise<void>((resolve) => server.close(() => resolve()))
       await pool.end()
+      await telemetry.shutdown()
     } catch (error) {
-      logFailure("shutdown", error)
+      telemetry.error("shutdown", error)
       process.exitCode = 1
     }
   }
 
   server.on("error", (error) => {
-    logFailure("http.listen", error)
+    telemetry.error("http.listen", error)
     process.exitCode = 1
     void stop()
   })
@@ -127,10 +128,15 @@ try {
 }
 
 if (env) {
+  // service.started, latido cada 30 s y sink según TELEMETRY_SINK (postgres por defecto con DATABASE_URL).
+  const telemetry = createTelemetry({ service: "admin", version: process.env.npm_package_version ?? "0.0.1" })
   try {
-    await start(env)
+    await start(env, telemetry)
   } catch (error) {
-    logFailure("startup", error)
+    const errorId = telemetry.error("startup", error)
+    const code = (error as { code?: unknown } | null)?.code
+    console.error(`[admin] No se pudo iniciar (errorId ${errorId}${typeof code === "string" ? `, ${code}` : ""}).`)
     process.exitCode = 1
+    await telemetry.shutdown()
   }
 }

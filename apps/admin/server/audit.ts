@@ -1,3 +1,4 @@
+import type { Telemetry } from "@team-31/telemetry"
 import type pg from "pg"
 
 // Bitácora de acciones del admin (admin.audit) y migración de las tablas propias del
@@ -21,7 +22,18 @@ export interface AuditLog {
   record(entry: AuditInput): Promise<string>
 }
 
-export function createPgAuditLog(pool: pg.Pool): AuditLog {
+// Evento admin.* del catálogo de @team-31/telemetry que acompaña a cada fila.
+function eventOf(action: string) {
+  if (action === "login") return "admin.login" as const
+  if (action === "logout") return "admin.logout" as const
+  if (action === "reveal") return "admin.reveal" as const
+  if (action === "token.create") return "admin.token.created" as const
+  if (action === "token.revoke") return "admin.token.revoked" as const
+  if (action.startsWith("mcp:")) return "admin.mcp.call" as const
+  return "admin.action" as const
+}
+
+export function createPgAuditLog(pool: pg.Pool, telemetry: Pick<Telemetry, "emit">): AuditLog {
   return {
     async record({ actor, action, target, reason = null, ip = null, meta = {} }) {
       const { rows } = await pool.query<{ id: string }>(
@@ -29,7 +41,16 @@ export function createPgAuditLog(pool: pg.Pool): AuditLog {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
         [actor.type, actor.id, actor.label, action, target, reason, ip, JSON.stringify(meta)],
       )
-      // TODO(admin): telemetry.emit("admin.<acción>", { attrs: { action, target } }) por cada fila (ADM-01).
+      // Sin motivo, ip ni correo: solo la acción y su objetivo.
+      const event = eventOf(action)
+      telemetry.emit(event, {
+        requestId: action === "reveal" || action === "rewake" || action === "expire" ? target : null,
+        attrs: {
+          action,
+          ...(target ? { target } : {}),
+          ...(event === "admin.mcp.call" ? { tool: action.slice("mcp:".length) } : {}),
+        },
+      })
       return rows[0]!.id
     },
   }
