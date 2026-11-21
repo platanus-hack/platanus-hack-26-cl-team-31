@@ -37,7 +37,7 @@ export interface AgentPort {
   connect(p: Principal): Promise<void>;
   tags(p: Principal): Promise<TagsView>;
   changeTag(p: Principal, input: TagChange): Promise<{ tagId: string }>;
-  vaultCatalog(p: Principal): Promise<VaultCatalog>;
+  vaultCatalog(p: Principal, categoryId?: string): Promise<VaultCatalog>;
   vaultMembers(p: Principal, categoryId: string): Promise<{ members: Address[] }>;
   changeVault(p: Principal, change: VaultChange): Promise<VaultReceipt>;
   queryVault(p: Principal, query: VaultQuery): Promise<VaultResult>;

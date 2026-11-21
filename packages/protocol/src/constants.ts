@@ -22,7 +22,15 @@ export const categories: Record<Category, { label: string; tools: readonly ToolN
   general: { label: "Preguntas abiertas", tools: ["question"] },
 };
 
-export const tagColors = ["emerald", "amber", "violet", "sky", "rose", "slate"] as const;
+// Every holder starts with one vault category per catalog category, under the same id.
+export const defaultVaultCategories: readonly { id: Category; name: string; description: string }[] = [
+  { id: "availability", name: categories.availability.label, description: "Tus horarios y cuándo estás libre." },
+  { id: "interests", name: categories.interests.label, description: "Lo que te gusta y los temas que te interesan." },
+  { id: "health", name: categories.health.label, description: "Alergias, tratamientos y contactos médicos." },
+  { id: "general", name: categories.general.label, description: "Lo que no entra en otra categoría." },
+];
+
+export const tagColors =["emerald", "amber", "violet", "sky", "rose", "slate"] as const;
 export type TagColor = (typeof tagColors)[number];
 
 export const defaultTags: readonly { id: string; name: string; color: TagColor; categories: readonly Category[] }[] = [

@@ -127,6 +127,13 @@
       "when": 1795301751624,
       "tag": "0015_vault_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795302011466,
+      "tag": "0016_vault_descriptions",
+      "breakpoints": true
     }
   ]
 }

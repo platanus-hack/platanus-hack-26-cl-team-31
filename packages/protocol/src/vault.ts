@@ -1,9 +1,14 @@
 import { z } from "zod";
 import { Address } from "./address.js";
+import { Category } from "./categories.js";
 import { Tag, TagColor, TagId, TagName } from "./sharing.js";
 
+export { defaultVaultCategories } from "./constants.js";
+
 const name = z.string().trim().min(1).max(80);
-const categoryId = z.uuid();
+const description = z.string().trim().max(280);
+// Default categories keep the catalog ids. Every other category gets a UUID.
+const categoryId = z.union([z.uuid(), Category]);
 const value = z.union([z.string().trim().min(1).max(2000), z.number(), z.boolean()]);
 const documentId = z.uuid();
 const fileName = z.string().min(1).max(255).refine(value => !/[\u0000-\u001f\u007f]/.test(value), "El nombre del archivo contiene caracteres no permitidos.");
@@ -15,12 +20,17 @@ export const MAX_VAULT_DOCUMENT_BYTES = 5 * 1024 * 1024;
 const maxBase64Length = Math.ceil(MAX_VAULT_DOCUMENT_BYTES / 3) * 4;
 const contentBase64 = z.base64().max(maxBase64Length);
 export const VaultEntry = z.object({ label: name, value });
-export const VaultCategory = z.object({ id: categoryId, name });
+export const VaultCategory = z.object({ id: categoryId, name, description: description.optional() });
 const categorySharing = VaultCategory.extend({ tags: z.array(TagId) });
-export const VaultCatalog = z.object({ categories: z.array(categorySharing) });
-export type VaultCatalog = z.infer<typeof VaultCatalog>;
 export const VaultMembersQuery = z.strictObject({ categoryId });
 export const VaultMembers = z.object({ members: z.array(Address) });
+// The holder's own catalog. Entries and members come only when a single category is requested.
+export const VaultCatalogQuery = z.strictObject({ categoryId: categoryId.optional() });
+export const VaultCatalog = z.object({ categories: z.array(categorySharing.extend({
+  entries: z.array(VaultEntry).optional(),
+  members: VaultMembers.shape.members.optional(),
+})) });
+export type VaultCatalog = z.infer<typeof VaultCatalog>;
 export const TagsView = z.object({ tags: z.array(Tag.extend({ members: z.array(Address) })) });
 export type TagsView = z.infer<typeof TagsView>;
 export const TagChange = z.discriminatedUnion("action", [
@@ -81,6 +91,7 @@ export type VaultResult = z.infer<typeof VaultResult>;
 export const VaultChange = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("create"), name }),
   z.strictObject({ action: z.literal("rename"), categoryId, name }),
+  z.strictObject({ action: z.literal("describe"), categoryId, description }),
   z.strictObject({ action: z.literal("delete"), categoryId }),
   z.strictObject({ action: z.literal("put_entry"), categoryId, ...VaultEntry.shape }),
   z.strictObject({ action: z.literal("delete_entry"), categoryId, label: name }),

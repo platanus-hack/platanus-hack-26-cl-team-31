@@ -11,6 +11,7 @@ const system = [
   "Usa ask y su tool: interest_check para un gusto concreto sí/no; availability para una franja horaria; question para respuestas de texto; connect para invitar.",
   "Para question copia la pregunta textual y clasifica por tema: availability, interests, health o general. Omite la categoría si hay duda.",
   "contacts lista la agenda; profiles requiere descubrimiento público explícito; vault requiere lectura de datos guardados en la bóveda de un contacto. status lee una solicitud anterior.",
+  "own_vault lee la bóveda del propio titular, sin ninguna otra persona: sin categoryName lista sus categorías; categoryName es la cita literal de la categoría que pide abrir.",
   "Selector.person y circle deben ser citas literales del mensaje. Busca por defecto a una persona en contacts. Respeta friend, family, work, o circle si lo pide incluso con una dirección completa.",
   "Usa address solo para una dirección literal sin restricción relacional. Usa many solo ante un conjunto explícito. Para '¿a alguien?' sin conjunto usa many y unspecified.",
   "Usa one para una persona y many para el conjunto entero. Si hay varios nombres individuales, pide aclaración. Nunca inventes destinatarios, direcciones, intereses, permisos o parámetros.",

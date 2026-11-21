@@ -28,6 +28,7 @@ export function registerMessage(
       ask: input => permitted(agentScopes.ask, () => agent.ask(principal, input)),
       status: id => permitted(agentScopes.status, () => agent.status(principal, id)),
       queryVault: query => permitted(agentScopes.queryVault, () => agent.queryVault(principal, query)),
+      ownVault: categoryId => permitted(agentScopes.vaultCatalog, () => agent.vaultCatalog(principal, categoryId)),
       searchProfiles: query => permitted(agentScopes.searchPublicProfiles, () => agent.searchPublicProfiles(principal, query)),
     },
   };

@@ -16,6 +16,7 @@ function fixture(addresses = [to]) {
     activity: vi.fn().mockResolvedValue([]),
     status: vi.fn().mockResolvedValue(pending),
     contacts: vi.fn().mockResolvedValue({ contacts: addresses.map((address) => ({ address })) }),
+    vault: vi.fn().mockResolvedValue({ categories: [] }),
   };
   return { broker, report: vi.fn() };
 }
@@ -84,6 +85,36 @@ it("lista los contactos con lo que cada uno comparte, con o sin Claude", async (
   expect(interpret).toHaveBeenCalledOnce();
   expect(broker.ask).not.toHaveBeenCalled();
   expect(report).not.toHaveBeenCalled();
+});
+
+it("lista las bóvedas propias con su descripción y abre una por nombre sin usar el modelo", async () => {
+  const { broker, report } = fixture();
+  broker.vault.mockResolvedValue({ categories: [
+    { id: "health", name: "Salud", description: "Alergias y tratamientos.", tags: [], entries: [{ label: "Alergia", value: "Maní" }] },
+    { id: "interests", name: "Intereses", tags: [], entries: [] },
+  ] });
+  const interpret = vi.fn();
+  await expect(runCommand(broker, owner, "bóvedas", report, interpret)).resolves.toBe(
+    "Tus bóvedas:\n• Salud: Alergias y tratamientos.\n• Intereses: sin descripción\nEscribe «bóveda» y un nombre para ver lo que guarda.");
+  await expect(runCommand(broker, owner, "Boveda salud?", report, interpret)).resolves.toBe("Salud: Alergias y tratamientos.\n• Alergia: Maní");
+  await expect(runCommand(broker, owner, "bóveda Intereses", report, interpret)).resolves.toBe("Intereses: sin descripción\nAún no guarda datos.");
+  await expect(runCommand(broker, owner, "bóveda Viajes", report, interpret)).resolves.toContain("No tienes una bóveda llamada «Viajes»");
+  expect(interpret).not.toHaveBeenCalled();
+  expect(broker.ask).not.toHaveBeenCalled();
+});
+
+it("escribe la respuesta del flujo sobre las bóvedas propias igual que los comandos", async () => {
+  const { broker, report } = fixture();
+  const health = { id: "health", name: "Salud", description: "Alergias y tratamientos.", tags: [] };
+  const flow = vi.fn()
+    .mockResolvedValueOnce({ kind: "own_vault", data: { categories: [health] } })
+    .mockResolvedValueOnce({ kind: "own_vault", data: { categories: [{ ...health, entries: [{ label: "Alergia", value: "Maní" }] }] } })
+    .mockResolvedValueOnce({ kind: "own_vault", data: { categories: [] } });
+  await expect(runCommand(broker, owner, "dime las bóvedas que tengo", report, flow)).resolves.toBe(
+    "Tus bóvedas:\n• Salud: Alergias y tratamientos.\nEscribe «bóveda» y un nombre para ver lo que guarda.");
+  await expect(runCommand(broker, owner, "qué guardo en salud", report, flow)).resolves.toBe("Salud: Alergias y tratamientos.\n• Alergia: Maní");
+  await expect(runCommand(broker, owner, "qué guardo", report, flow)).resolves.toContain("Tu bóveda no tiene categorías");
+  expect(broker.vault).not.toHaveBeenCalled();
 });
 
 it("avisa cuando todavía no hay contactos", async () => {

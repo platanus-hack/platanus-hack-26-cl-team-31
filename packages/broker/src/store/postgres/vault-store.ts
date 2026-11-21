@@ -1,4 +1,4 @@
-import { Address, type OwnerVault, type VaultCatalog, type VaultDocumentQuery } from "@team-31/protocol";
+import { Address, defaultVaultCategories, type OwnerVault, type VaultCatalog, type VaultDocumentQuery } from "@team-31/protocol";
 import { and, DrizzleQueryError, eq, exists, inArray, sql } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import { BrokerError } from "../../errors.js";
@@ -21,13 +21,25 @@ export async function insertWithParents(db: Tx, insert: (tx: Tx) => Promise<unkn
   }
 }
 
+// An empty description is stored as "" and left out of the answer.
+function categoryInfo<T extends { description: string }>({ description, ...category }: T) {
+  return { ...category, ...(description ? { description } : {}) };
+}
+
 export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "putVaultDocument" | "sharedVaultDocument"> {
   // Serialize name resolution (including an absent name) with category creation, rename and deletion.
   const lockNames = (owner: string) => db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}, 417))`);
+  // The flag keeps a default category the holder deleted from coming back.
+  async function seedDefaults(owner: string) {
+    const [first] = await db.update(users).set({ vaultSeeded: true })
+      .where(and(eq(users.userId, owner), eq(users.vaultSeeded, false))).returning({ userId: users.userId });
+    if (first) await db.insert(c).values(defaultVaultCategories.map(category => ({ owner, ...category }))).onConflictDoNothing();
+  }
   async function vaultCatalog(owner: string, forNameResolution = false): Promise<VaultCatalog> {
     if (forNameResolution) await lockNames(owner);
-    const rows = await db.select({ id: c.id, name: c.name }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
-    const categories: VaultCatalog["categories"] = rows.map(row => ({ ...row, tags: [] }));
+    await seedDefaults(owner);
+    const rows = await db.select({ id: c.id, name: c.name, description: c.description }).from(c).where(eq(c.owner, owner)).orderBy(c.name, c.id);
+    const categories: VaultCatalog["categories"] = rows.map(row => ({ ...categoryInfo(row), tags: [] }));
     if (!categories.length) return { categories };
     const byId = new Map(categories.map(category => [category.id, category]));
     const permissions = await db.select({ id: p.id, tagId: p.tagId }).from(p).where(eq(p.owner, owner)).orderBy(sql`${p.tagId} collate "C"`);
@@ -49,6 +61,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
 
   return {
     async vaultMembers(owner, categoryId) {
+      await seedDefaults(owner);
       const rows = await memberRows(owner, categoryId);
       return rows.length ? rows.flatMap(({ address }) => address ? [Address.parse(address)] : []) : null;
     },
@@ -68,6 +81,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     },
     async changeVault(owner, id, change) {
       if (change.action === "create" || change.action === "rename" || change.action === "delete") await lockNames(owner);
+      await seedDefaults(owner);
       const category = and(eq(c.owner, owner), eq(c.id, id));
       if (change.action === "create") {
         await db.insert(c).values({ owner, id, name: change.name });
@@ -76,6 +90,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       if (!(await db.select({ id: c.id }).from(c).where(category).for("update")).length) return false;
       switch (change.action) {
         case "rename": await db.update(c).set({ name: change.name }).where(category); break;
+        case "describe": await db.update(c).set({ description: change.description }).where(category); break;
         case "delete": await db.delete(c).where(category); break;
         case "set_member":
           return insertWithParents(db, async tx => tx.insert(r).values({ owner, id, address: change.address, allowed: change.allowed })
@@ -102,8 +117,9 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       const owner = db.select({ owner: users.userId }).from(users).where(eq(users.address, to));
       const visible = and(inArray(c.owner, owner), exists(db.select({ address: friends.address }).from(friends)
         .where(and(eq(friends.userId, c.owner), eq(friends.address, reader), canRead))));
-      if (!id) return { categories: await db.select({ id: c.id, name: c.name }).from(c).where(visible).orderBy(c.name, c.id) };
-      const rows = await db.select({ name: c.name, entry: { label: e.label, value: e.value } }).from(c)
+      const info = { id: c.id, name: c.name, description: c.description };
+      if (!id) return { categories: (await db.select(info).from(c).where(visible).orderBy(c.name, c.id)).map(categoryInfo) };
+      const rows = await db.select({ ...info, entry: { label: e.label, value: e.value } }).from(c)
         .leftJoin(e, and(eq(e.owner, c.owner), eq(e.id, c.id))).where(and(visible, eq(c.id, id))).orderBy(e.label);
       if (!rows[0]) return { categories: [] };
       const documents = await db.select({
@@ -111,9 +127,10 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       }).from(d).innerJoin(c, and(eq(c.owner, d.owner), eq(c.id, d.categoryId)))
         .where(and(visible, eq(d.categoryId, id)))
         .orderBy(d.createdAt, d.id);
+      const { entry: _, ...category } = rows[0];
       return {
         categories: [{
-          id, name: rows[0].name,
+          ...categoryInfo(category),
           entries: rows.flatMap(row => row.entry ? [row.entry] : []),
           ...(documents.length ? {
             documents: documents.map(document => ({
@@ -129,6 +146,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       };
     },
     async putVaultDocument(row) {
+      await seedDefaults(row.owner);
       if (!(await db.select({ id: c.id }).from(c).where(and(eq(c.owner, row.owner), eq(c.id, row.categoryId)))).length) return null;
       await db.insert(d).values({
         ...row,

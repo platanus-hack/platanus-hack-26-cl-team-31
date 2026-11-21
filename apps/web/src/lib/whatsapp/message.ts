@@ -29,6 +29,11 @@ export function whatsappMessage(
       recentSent: async () => (await broker.activity(owner, 100)).filter(item => item.direction === "sent")
         .map(({ requestId, to }) => ({ requestId, to })),
       queryVault: input => broker.queryVault(owner, input),
+      ownVault: async categoryId => {
+        const { categories } = await broker.vault(owner);
+        if (categoryId) return { categories: categories.filter(c => c.id === categoryId) };
+        return { categories: categories.map(({ id, name, description, tags }) => ({ id, name, description, tags })) };
+      },
       searchProfiles: query => broker.searchPublicProfiles(owner, query),
     },
   };
