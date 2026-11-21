@@ -73,6 +73,30 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     } finally { await replica.close(); }
   });
 
+  it("mide Retry-After desde la respuesta cuando la ventana se abre durante la espera", async () => {
+    const first = await isolated.connect();
+    try {
+      await first.query("BEGIN");
+      await first.query(`INSERT INTO sideband.quota_windows (user_id, bucket, count, reset_at)
+        VALUES ('ana', 'ask', 1, now() + interval '1 minute')`);
+
+      const waiting = store.consumeQuota("ana", "ask", 1);
+      // The second replica started its statement but cannot update the first replica's row yet.
+      await expect.poll(async () => (await first.query(`SELECT EXISTS (
+        SELECT FROM pg_locks WHERE NOT granted AND transactionid = pg_current_xact_id()::xid
+      ) AS waiting`)).rows[0].waiting, { timeout: 10_000 }).toBe(true);
+      await first.query(`UPDATE sideband.quota_windows SET reset_at = clock_timestamp() + interval '1 minute'
+        WHERE user_id = 'ana' AND bucket = 'ask'`);
+      await first.query("COMMIT");
+
+      const result = await waiting;
+      expect(result?.retryAfter).toBeGreaterThan(0);
+      expect(result?.retryAfter).toBeLessThanOrEqual(60);
+    } finally {
+      first.release(true);
+    }
+  });
+
   async function makeRequest(overrides: Partial<RequestRow> = {}) {
     const row: RequestRow = {
       id: randomUUID(), fromUserId: "alice", toUserId: "bruno",

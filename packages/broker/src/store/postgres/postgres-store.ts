@@ -592,14 +592,14 @@ export function createPostgresStore({ databaseUrl, secretsKey }: PostgresStoreOp
           (SELECT user_id, bucket FROM sideband.quota_windows WHERE reset_at <= now()
            ORDER BY reset_at LIMIT 1000 FOR UPDATE SKIP LOCKED)`);
       }
-      // Both replicas serialize on the same key. Use the DB clock for the whole window.
+      // Replicas serialize on the same key. Report the remaining time after any row-lock wait.
       const { rows: [row] } = await pool.query<{ retry: number }>(`
         INSERT INTO sideband.quota_windows AS w (user_id, bucket, count, reset_at)
         VALUES ($1, $2, 1, statement_timestamp() + interval '1 minute')
         ON CONFLICT (user_id, bucket) DO UPDATE SET
           count = CASE WHEN w.reset_at <= statement_timestamp() THEN 1 ELSE least(w.count + 1, $3::int + 1) END,
           reset_at = CASE WHEN w.reset_at <= statement_timestamp() THEN excluded.reset_at ELSE w.reset_at END
-        RETURNING CASE WHEN count > $3::int THEN greatest(1, ceil(extract(epoch FROM reset_at - statement_timestamp()))::int)
+        RETURNING CASE WHEN count > $3::int THEN greatest(1, ceil(extract(epoch FROM reset_at - clock_timestamp()))::int)
                        ELSE 0 END AS retry`, [userId, bucket, limit]);
       if (!row) throw new BrokerError("internal", "No se pudo verificar la cuota.");
       return row.retry ? { retryAfter: row.retry } : undefined;
