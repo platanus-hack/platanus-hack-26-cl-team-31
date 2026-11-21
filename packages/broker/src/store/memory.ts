@@ -65,6 +65,9 @@ function transaction(state: State): StoreTx {
   }
 
   return {
+    async vaultCatalog(owner) {
+      return { categories: (state.vaults.get(owner)?.categories ?? []).map(({ id, name }) => ({ id, name })) };
+    },
     async ownerVault(owner) { return structuredClone(state.vaults.get(owner) ?? { categories: [] }); },
     async changeVault(owner, id, change) {
       const vault = state.vaults.get(owner) ?? { categories: [] };

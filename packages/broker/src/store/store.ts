@@ -1,6 +1,6 @@
 import type {
   ActivityEvent,
-  OwnerVault, VaultChange, VaultResult,
+  OwnerVault, VaultCatalog, VaultChange, VaultResult,
   Address,
   Category,
   ChannelName,
@@ -116,6 +116,7 @@ export interface Store {
 }
 
 export interface StoreTx {
+  vaultCatalog(owner: string): Promise<VaultCatalog>;
   ownerVault(owner: string): Promise<OwnerVault>;
   changeVault(owner: string, id: string, change: VaultChange): Promise<boolean>;
   sharedVault(reader: Address, to: Address, categoryId?: string): Promise<VaultResult>;

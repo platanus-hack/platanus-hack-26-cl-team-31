@@ -1,7 +1,7 @@
 import type { KeyObject, webcrypto } from "node:crypto";
 import type {
   ActivityItem,
-  OwnerVault, VaultChange, VaultQuery, VaultResult,
+  OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
   AdminActor,
   Capability,
   Circle,
@@ -33,8 +33,8 @@ import type { SanitizeContext } from "./sanitize/types.js";
 import type { Store } from "./store/store.js";
 
 export interface AgentPort {
-  vaultCatalog(p: Principal): Promise<{ categories: { id: string; name: string }[] }>;
-  changeVault(p: Principal, change: VaultChange): Promise<{ categoryId: string }>;
+  vaultCatalog(p: Principal): Promise<VaultCatalog>;
+  changeVault(p: Principal, change: VaultChange): Promise<VaultReceipt>;
   queryVault(p: Principal, query: VaultQuery): Promise<VaultResult>;
   capabilities(p: Principal, to: Address): Promise<{ tools: Capability[] }>;
   ask(p: Principal, input: AskInput): Promise<RequesterView>;
@@ -49,7 +49,7 @@ export interface AgentPort {
 
 export interface OwnerPort {
   vault(o: Owner): Promise<OwnerVault>;
-  changeVault(o: Owner, change: VaultChange): Promise<{ categoryId: string }>;
+  changeVault(o: Owner, change: VaultChange): Promise<VaultReceipt>;
   me(o: Owner): Promise<{ userId: string; address?: Address; displayName?: string }>;
   claimAddress(o: Owner, localPart: string): Promise<Address>;
   grants(o: Owner): Promise<Grant[]>;

@@ -511,7 +511,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         requireScope(p, "sideband:vault", "agent.vaultCatalog");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
-          return { categories: (await tx.ownerVault(p.userId)).categories.map(({ id, name }) => ({ id, name })) };
+          return tx.vaultCatalog(p.userId);
         });
       },
       async changeVault(p, change) {

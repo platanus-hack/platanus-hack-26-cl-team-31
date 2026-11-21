@@ -8,6 +8,7 @@ const value = z.union([z.string().trim().min(1).max(2000), z.number(), z.boolean
 export const VaultEntry = z.object({ label: name, value });
 export const VaultCategory = z.object({ id: categoryId, name });
 export const VaultCatalog = z.object({ categories: z.array(VaultCategory) });
+export type VaultCatalog = z.infer<typeof VaultCatalog>;
 export const OwnerVault = z.object({ categories: z.array(VaultCategory.extend({
   groups: z.array(ContactTag), entries: z.array(VaultEntry),
 })) });
@@ -27,3 +28,4 @@ export const VaultChange = z.discriminatedUnion("action", [
 ]);
 export type VaultChange = z.infer<typeof VaultChange>;
 export const VaultReceipt = z.object({ categoryId });
+export type VaultReceipt = z.infer<typeof VaultReceipt>;
