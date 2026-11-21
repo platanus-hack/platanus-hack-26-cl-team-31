@@ -120,6 +120,13 @@
       "when": 1795295494379,
       "tag": "0016_sondeo_sin_secreto",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795299030626,
+      "tag": "0017_revocacion_del_admin",
+      "breakpoints": true
     }
   ]
 }

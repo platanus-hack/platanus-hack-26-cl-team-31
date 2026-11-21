@@ -213,6 +213,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     // presentar un token válido ya es un acto deliberado suyo. La conexión revive como nueva —sin el canal
     // push que apagó al revocar—, y si entretanto conectó otro agente, el conflicto se le dice en voz alta.
     if (connection.revokedAt) {
+      // La del admin es la excepción: cortar a un agente comprometido no puede deshacerse con el token
+      // que sigue vivo. El agente ve el mismo not_found de un recurso ajeno —nunca sabe que lo cortó un
+      // operador y no su titular— y el operador lo lee en broker.agent.revive_denied.
+      if (connection.revokedBy === "admin") {
+        // Fuera de la transacción: esta lanza, y lo que se revierte no se emite.
+        events.emit("broker.agent.revive_denied", { userId, agentId, attrs: { by: "admin" } });
+        throw notFound();
+      }
       const revived = await tx.reviveAgentConnection(connection);
       record(tx, "broker.agent.revived", { userId, agentId, attrs: { kind: revived.wakeTarget.kind } });
       return revived;
@@ -1029,7 +1037,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       removeFriend: removeContact,
 
       async revokeAgent(o, agentId) {
-        await store.tx((tx) => revokeConnection(tx, o.userId, agentId, clock.now(), (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "owner" } })));
+        await store.tx((tx) => revokeConnection(tx, o.userId, agentId, clock.now(), "owner", (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "owner" } })));
       },
     },
 

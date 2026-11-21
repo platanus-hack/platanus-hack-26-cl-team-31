@@ -1,6 +1,6 @@
 import { Address, type ContactGroups, type ContactTag, type Sharing, type OwnerVault } from "@team-31/protocol";
 import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit } from "./directory.js";
-import { activeAgentConflict, BrokerError } from "../errors.js";
+import { activeAgentConflict, BrokerError, notFound } from "../errors.js";
 import { wakeClaim } from "./store.js";
 import type {
   AgentConnectionRow, AskReceipt, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
@@ -422,7 +422,10 @@ function transaction(state: State): StoreTx {
       return structuredClone(created);
     },
     async reviveAgentConnection(row) {
-      return structuredClone(putAgent({ ...row, revokedAt: undefined, verifiedAt: undefined, wakeTarget: { kind: "none" } }));
+      if (row.revokedBy === "admin") throw notFound();
+      return structuredClone(putAgent({
+        ...row, revokedAt: undefined, revokedBy: undefined, verifiedAt: undefined, wakeTarget: { kind: "none" },
+      }));
     },
     async upsertAgentConnection(row) {
       putAgent(row);

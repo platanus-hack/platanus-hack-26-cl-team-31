@@ -358,6 +358,8 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       await tx.upsertAgentConnection({ ...base, agentId: "later", createdAt: new Date(now.getTime() + 1) });
       await tx.upsertAgentConnection({ ...base, agentId: "old", revokedAt: now });
     });
+    // Se rebobina después de escribir los fixtures: el store de hoy ya guarda revoked_by.
+    await isolated.query("ALTER TABLE sideband.agent_connections DROP COLUMN revoked_by");
     await applyPostgresMigrations({ databaseUrl });
     const agents = await store.tx(tx => tx.listAgentConnections("alice"));
     expect(agents.filter(a => !a.revokedAt).map(a => a.agentId)).toEqual(["first"]);
@@ -367,6 +369,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   // Rewind the vault and channel tables before replaying older fixtures.
   async function undoVaultAndNotifyOrigin() {
+    await isolated.query("ALTER TABLE sideband.agent_connections DROP COLUMN revoked_by");
     await isolated.query("ALTER TABLE sideband.requests DROP COLUMN sender_group_id");
     await isolated.query("DROP TABLE sideband.vault_member_rules");
     await isolated.query("DROP INDEX sideband.agent_connections_one_active");

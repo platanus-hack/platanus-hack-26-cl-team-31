@@ -422,7 +422,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
 
     it("revive una conexión revocada sin devolverle el canal push ni la verificación", async () => {
       const revoked: AgentConnectionRow = {
-        userId: "carla", agentId: "bot", label: "Bot", createdAt: now, revokedAt: now,
+        userId: "carla", agentId: "bot", label: "Bot", createdAt: now, revokedAt: now, revokedBy: "owner",
         wakeTarget: { kind: "standard_webhook", url: "https://example.com/callback", secret: "whsec_test" },
         verifiedAt: now, lastWakeAt: now,
       };
@@ -438,6 +438,21 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
       await store.tx(async (tx) => {
         expect(await tx.getAgentConnection("carla", "bot")).toEqual(revived);
+      });
+    });
+
+    it("no revive la conexión que revocó el admin: esa revocación es terminal", async () => {
+      const revoked: AgentConnectionRow = {
+        userId: "carla", agentId: "bot", label: "Bot", createdAt: now,
+        wakeTarget: { kind: "none" }, revokedAt: now, revokedBy: "admin",
+      };
+      await store.tx((tx) => tx.upsertAgentConnection(revoked));
+      await expect(store.tx(async (tx) => {
+        const locked = await tx.ensureAgentConnection({ ...revoked, revokedAt: undefined, revokedBy: undefined });
+        return tx.reviveAgentConnection(locked);
+      })).rejects.toMatchObject({ code: "not_found" });
+      await store.tx(async (tx) => {
+        expect(await tx.getAgentConnection("carla", "bot")).toEqual(revoked);
       });
     });
 

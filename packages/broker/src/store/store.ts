@@ -97,6 +97,9 @@ export function wakeClaim({ runAt, ...job }: WakeJob, recovered: boolean, dueAt:
   return { ...job, state: "running", leaseUntil: runAt, recovered, dueAt };
 }
 
+export const revokers = ["owner", "admin"] as const;
+export type Revoker = (typeof revokers)[number];
+
 export type AgentConnectionRow = {
   userId: string;
   agentId: string;
@@ -105,6 +108,10 @@ export type AgentConnectionRow = {
   verifiedAt?: Date;
   lastWakeAt?: Date;
   revokedAt?: Date;
+  // Quién revocó. La del titular es reversible (vuelve pasando otra vez por el consentimiento OAuth);
+  // la del admin es terminal. Vacío en las filas anteriores a esta columna: valen como del titular,
+  // que era lo único que existía.
+  revokedBy?: Revoker;
   createdAt: Date;
 };
 
@@ -227,6 +234,7 @@ export interface StoreTx {
   // Devuelve a la red una conexión revocada (su fila ya bloqueada) como si fuera nueva: sin revocación,
   // sin el canal push que el titular apagó al revocar y sin su verificación. Conserva la etiqueta y las
   // fechas, que son historia. Si el titular ya tiene otra conexión viva, lanza "conflict": nadie la desplaza.
+  // Si quien revocó fue el admin, lanza "not_found": esa revocación no se deshace presentando un token.
   reviveAgentConnection(row: AgentConnectionRow): Promise<AgentConnectionRow>;
   upsertAgentConnection(row: AgentConnectionRow): Promise<void>;
   listPublicAgents(): Promise<PublicAgent[]>;

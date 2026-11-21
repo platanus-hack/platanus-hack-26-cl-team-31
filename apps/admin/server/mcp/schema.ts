@@ -41,6 +41,8 @@ const STATIC_VIEWS: Record<string, string[]> = {
   v_wake_jobs: ["id", "request_id", "attempt", "state", "run_at", "kind", "ok", "http_status", "code"],
   v_agent_connections: [
     "user_id", "agent_id", "label", "wake_kind", "wake_host", "verified_at", "last_wake_at", "revoked_at", "created_at",
+    // Quién revocó: "owner" (reversible) o "admin" (terminal). null en las filas previas a la columna.
+    "revoked_by",
   ],
   v_users: ["user_id", "address", "display_name", "created_at", "rules"],
   v_circles: ["circle_id", "name", "owner_user_id", "created_at", "members", "invitations"],

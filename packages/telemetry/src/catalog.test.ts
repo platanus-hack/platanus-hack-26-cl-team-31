@@ -14,7 +14,7 @@ describe("catálogo", () => {
       "broker.request.closed", "broker.reply.rejected", "broker.reply.sanitized", "broker.owner.decided", "broker.grant.set", "broker.grant.revoked",
       "broker.contact.connected", "broker.contact.removed", "broker.contact.tagged", "broker.channel.set", "broker.tag.preset_set",
       "broker.vault.changed", "broker.vault.queried",
-      "broker.circle.changed", "broker.agent.connected", "broker.agent.revoked", "broker.agent.revived",
+      "broker.circle.changed", "broker.agent.connected", "broker.agent.revoked", "broker.agent.revived", "broker.agent.revive_denied",
       "worker.tick.completed", "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
       "admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created",
       "admin.token.revoked", "admin.mcp.call", "admin.live.opened", "admin.live.closed", "telemetry.invalid_event",

@@ -1,7 +1,7 @@
 import { AdminActor, AdminReason } from "@team-31/protocol";
 import { BrokerError, notFound } from "../errors.js";
 import type { AdminPort, BrokerDeps } from "../ports.js";
-import type { RequestRow, StoreTx } from "../store/store.js";
+import type { RequestRow, Revoker, StoreTx } from "../store/store.js";
 import type { RecordEvent } from "./events.js";
 
 export type AdminEventCode = "admin_rewake" | "admin_expire" | "admin_revoke";
@@ -25,16 +25,18 @@ function requireAction(actor: AdminActor, reason: string): void {
   }
 }
 
-// Same effect as OwnerPort.revokeAgent: idempotent and keeps the first revocation time.
+// Idempotent, and it keeps the first revocation with whoever made it: a later revocation never
+// relabels an administrative one as the owner's, which would make it revivable again.
+// The owner's is reversible (the agent comes back through OAuth consent); the admin's is terminal.
 // onRevoked runs only for the first revocation (presence telemetry: broker.agent.revoked).
 export async function revokeConnection(
-  tx: StoreTx, userId: string, agentId: string, at: Date,
+  tx: StoreTx, userId: string, agentId: string, at: Date, by: Revoker,
   onRevoked?: (fields: { userId: string; agentId: string }) => void,
 ): Promise<void> {
   const connection = await tx.getAgentConnection(userId, agentId, true);
   if (!connection) throw notFound();
   if (connection.revokedAt) return;
-  await tx.upsertAgentConnection({ ...connection, revokedAt: at });
+  await tx.upsertAgentConnection({ ...connection, revokedAt: at, revokedBy: by });
   onRevoked?.({ userId, agentId });
 }
 
@@ -83,7 +85,7 @@ export function createAdminPort(
 
     async revokeAgent(actor, userId, agentId, reason) {
       requireAction(actor, reason);
-      await store.tx((tx) => revokeConnection(tx, userId, agentId, clock.now(), (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "admin" } })));
+      await store.tx((tx) => revokeConnection(tx, userId, agentId, clock.now(), "admin", (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "admin" } })));
       // Revocation has no request, so it leaves no request_event (code admin_revoke goes to telemetry).
       telemetry?.emit("admin.action", { userId, agentId, attrs: { action: "admin_revoke", target: `${userId}/${agentId}` } });
     },

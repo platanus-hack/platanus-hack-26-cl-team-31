@@ -6,7 +6,7 @@ import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, 
 import { alias } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { activeAgentConflict, BrokerError } from "../../errors.js";
+import { activeAgentConflict, BrokerError, notFound } from "../../errors.js";
 import { wakeClaim } from "../store.js";
 import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
@@ -111,7 +111,8 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
   function writeConnection({ wakeTarget, ...row }: AgentConnectionRow) {
     return {
       ...row, ...codec.encode(wakeTarget, row),
-      verifiedAt: row.verifiedAt ?? null, lastWakeAt: row.lastWakeAt ?? null, revokedAt: row.revokedAt ?? null,
+      verifiedAt: row.verifiedAt ?? null, lastWakeAt: row.lastWakeAt ?? null,
+      revokedAt: row.revokedAt ?? null, revokedBy: row.revokedBy ?? null,
     };
   }
 
@@ -122,6 +123,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       verifiedAt: row.verifiedAt ?? undefined,
       lastWakeAt: row.lastWakeAt ?? undefined,
       revokedAt: row.revokedAt ?? undefined,
+      revokedBy: row.revokedBy ?? undefined,
     };
   }
 
@@ -519,7 +521,12 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
     },
 
     async reviveAgentConnection(row) {
-      const revived: AgentConnectionRow = { ...row, revokedAt: undefined, verifiedAt: undefined, wakeTarget: { kind: "none" } };
+      // La revocación del admin no se deshace presentando un token: el agente ve el mismo not_found
+      // de cualquier recurso ajeno y nunca sabe que lo cortó un operador.
+      if (row.revokedBy === "admin") throw notFound();
+      const revived: AgentConnectionRow = {
+        ...row, revokedAt: undefined, revokedBy: undefined, verifiedAt: undefined, wakeTarget: { kind: "none" },
+      };
       const [live] = await db.select({ agentId: agentConnections.agentId }).from(agentConnections).where(and(
         eq(agentConnections.userId, row.userId), ne(agentConnections.agentId, row.agentId), isNull(agentConnections.revokedAt),
       )).limit(1);
