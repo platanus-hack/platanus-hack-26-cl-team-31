@@ -9,7 +9,6 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { createBroker, createMemoryStore } from "@team-31/broker";
 import { createAgentClient } from "@team-31/broker/client";
 import { applyOpsMigrations } from "@team-31/ops";
-import { SharingRules } from "@team-31/protocol";
 import {
   createTelemetry,
   memorySink,
@@ -55,10 +54,7 @@ async function askThroughMcp(sink: TelemetrySink) {
   });
   await broker.owner.claimAddress({ userId: "ana" }, "ana");
   await broker.owner.claimAddress({ userId: "bob" }, "bob");
-  await broker.owner.setRules({ userId: "bob" }, SharingRules.parse({
-    circles: { amigos: ["ana@nexo.app"] },
-    grants: { amigos: [{ tool: "question", fields: ["answer"] }] },
-  }));
+  await broker.owner.setGrant({ userId: "bob" }, { grantee: "ana@nexo.app", tool: "question", fields: ["answer"] });
 
   const brokerApp = createBrokerHttp({
     broker, publicKeys: { mcp: mcpKey.publicKey.export({ format: "jwk" }) }, telemetry: brokerTelemetry,

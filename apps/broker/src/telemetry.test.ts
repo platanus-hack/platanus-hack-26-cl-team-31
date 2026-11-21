@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { mintServiceToken } from "@team-31/auth/service";
 import { createBroker, createMemoryStore, type BrokerCore } from "@team-31/broker";
-import { Scope, SharingRules, type Waker } from "@team-31/protocol";
+import { Scope, type Waker } from "@team-31/protocol";
 import { memorySink, type MemorySink } from "@team-31/telemetry";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRateLimiter } from "./http/rate-limit.js";
@@ -40,10 +40,7 @@ beforeEach(async () => {
   });
   await broker.owner.claimAddress({ userId: "alice" }, "alice");
   await broker.owner.claimAddress({ userId: "bruno" }, "bruno");
-  await broker.owner.setRules({ userId: "bruno" }, SharingRules.parse({
-    circles: { amigos: ["alice@nexo.app"] },
-    grants: { amigos: [{ tool: "question", fields: ["answer"] }] },
-  }));
+  await broker.owner.setGrant({ userId: "bruno" }, { grantee: "alice@nexo.app", tool: "question", fields: ["answer"] });
   sink.clear();
 });
 
