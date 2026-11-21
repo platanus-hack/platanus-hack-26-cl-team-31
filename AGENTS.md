@@ -19,6 +19,28 @@ El MVP conserva MCP, server y broker como servicios separados, con bóvedas aloj
 
 Las guías viven en `docs/`. [docs/poc](docs/poc/README.md) conserva el prototipo anterior al monorepo como referencia histórica.
 
+## Antes de escribir código
+
+Cada capacidad tiene un dueño. Búscalo con `git grep` antes de crear un archivo, extiéndelo y nombra en el PR lo que reutilizaste.
+
+| Necesitas | Ya existe en |
+| --- | --- |
+| Rutas HTTP del broker con sus esquemas y emisor | `routes` de `@team-31/protocol/http` |
+| Llamar al broker | `createAgentClient` y `createOwnerClient` de `@team-31/broker/client` |
+| Firmar o verificar un JWT de servicio | `mintServiceToken` y `verifyServiceToken` de `@team-31/auth/service` |
+| Verificar un access token OAuth | `createMcpGuard` de `@team-31/auth/resource` |
+| Enviar un aviso o verificar su firma | `createWaker` y `verifyWebhookSignature` de `@team-31/wake` |
+| Eventos, errores y `fetch` con traza | `@team-31/telemetry` |
+| Generar llaves | `infra/gen-keys.ts` |
+| Usuarios y reglas de prueba | `fixtureUsers` y `fixtureSharingRules` de `@team-31/protocol` |
+| Receptor falso de avisos | `startFakeReceivers` de `e2e/src/fake-receivers.ts` |
+
+- **La segunda copia se mueve.** Cuando dos módulos necesitan lo mismo, mueve el original a `packages/*` en ese PR e importa desde ambos. Deuda actual: tres limitadores de ventana fija (`apps/broker/src/http/rate-limit.ts`, `apps/admin/server/rate-limit.ts`, `apps/admin/server/mcp/rate-limit.ts`) y el esquema zod de la JWK Ed25519 repetido en `apps/broker/src/env.ts` y `apps/admin/server/env.ts`. Unifícalos antes de sumar otro uso.
+- **El reparto de archivos de un issue define quién edita. Importar siempre está permitido.** Si lo que necesitas vive en la carpeta de otro issue, impórtalo. Si falta, pídelo en el PR.
+- **Programa contra código que existe en `main`.** Si tu issue depende de un módulo pendiente, entrega ambos juntos o deja el PR en draft hasta que llegue. Un stub que lanza, un `Proxy` que simula la interfaz o un `import()` con ruta variable pasan el build y dejan el servicio respondiendo 502.
+- **Un camino por capacidad.** Hay cinco servidores MCP, tres receptores de avisos de prueba y tres demos. Uno nuevo, o un cliente HTTP nuevo, lleva en el PR una línea que explica por qué el existente no sirve.
+- **Un PR, un issue.** Apunta a menos de 500 líneas propias. El lockfile, el código generado y las skills copiadas van en un commit separado.
+
 ## Setup (por worktree)
 
 Varios devs/agentes trabajan en paralelo, cada uno en su propio worktree. Cada worktree recibe un **SLOT** único que define sus puertos y su stack Docker aislado (contenedores y datos propios).
@@ -118,7 +140,9 @@ Nexo se depura en producción con `apps/admin` (panel + MCP de administración).
 6. **Servicio nuevo**: emite `service.started` y `service.heartbeat` y expone `GET /healthz`.
 7. **Mutaciones operativas** (reintentar, expirar, revocar…) se exponen en el `AdminPort` del broker, nunca como `UPDATE` directo desde el admin.
 
-En la descripción del PR agrega una línea **«Cómo se ve en el admin:»** con el evento, la vista o la pantalla donde se observa el cambio. Si `@team-31/telemetry` todavía no está en tu rama (issue ADM-01), deja el estado persistido con timestamps y motivo, y agrega `// TODO(admin): <evento>` donde va la llamada.
+En la descripción del PR agrega una línea **«Cómo se ve en el admin:»** con el evento, la vista o la pantalla donde se observa el cambio.
+
+Hoy solo `apps/admin` importa `@team-31/telemetry`. Broker, MCP, web y `apps/server` registran con `console` hasta ADM-07, y `packages/ops/sql/` solo contiene `0001_events.sql`. Al tocar uno de esos servicios, instrumenta lo que cambias con `createTelemetry` y reemplaza los `// TODO(admin): <evento>` del archivo por la llamada real.
 
 ## Admin y observabilidad
 
@@ -133,7 +157,9 @@ En la descripción del PR agrega una línea **«Cómo se ve en el admin:»** con
 
 `pnpm dev` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm typecheck`. Antes de dar algo por listo: `pnpm lint && pnpm typecheck` (y `pnpm test` si aplica).
 
-Las validaciones del plan se ejecutan en el worktree local. El repo prescinde de workflows de GitHub Actions.
+`pnpm lint` solo cubre `apps/admin` y `apps/web`. El resto depende de `pnpm typecheck` y `pnpm test`, y `apps/demo` queda fuera de `typecheck`.
+
+Las validaciones se ejecutan en el worktree local. `.github/workflows/cd.yml` corre build y typecheck en cada push a `main` y dispara los deploy hooks de Render para los servicios de `render.yaml` (web, broker, MCP y coordinación).
 
 ## ⚠️ Al agregar infra o configuración nueva
 
