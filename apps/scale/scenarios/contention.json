@@ -1,0 +1,15 @@
+{
+  "description": "Contención: 60 agentes en un solo grupo proponiendo y respondiendo encuentros grandes a la vez.",
+  "seed": "contention",
+  "agents": 60,
+  "outsiders": 3,
+  "groups": { "count": 1, "perAgent": [1, 1] },
+  "permissions": { "canAsk": 0.95, "canShare": 0.95, "volatile": 0.05 },
+  "calendar": { "days": 2, "slotsPerDay": 6, "slotMinutes": 60, "busy": 0.08 },
+  "meetings": { "participants": [6, 20], "slots": [2, 5], "accept": 0.97 },
+  "mix": {
+    "availability_check": 5, "request_get": 0, "interest_publish": 0, "interest_search": 2, "interest_withdraw": 0,
+    "meeting_propose": 30, "meeting_inbox": 50, "meeting_get": 8, "group_permission": 2, "probe": 3
+  },
+  "run": { "iterations": 40, "thinkMs": [0, 2] }
+}

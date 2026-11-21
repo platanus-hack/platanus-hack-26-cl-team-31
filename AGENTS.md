@@ -235,6 +235,30 @@ Las llamadas internas al broker usan `tracedFetch` (opción `fetch` de `createAg
 - Variables `ADMIN_*` y `TELEMETRY_*` en `.env.local.example`.
 - UI: usa la skill `shadcn` (`.agents/skills/shadcn`, enlazada en `.claude/skills`) y el MCP `shadcn` de `.mcp.json`. Componentes con `pnpm dlx shadcn@latest add <componente>` desde `apps/admin`.
 
+## Docker: demo y tests efímeros
+
+Sin Node local, sólo Docker. Cada corrida usa un stack propio (Postgres en tmpfs, sin puertos en el host) y lo borra al terminar, así que no choca con tu stack de dev ni con otros worktrees.
+
+- `pnpm docker:demo [N]` — esquema + identidades + demo MCP con N participantes (default 3).
+- `pnpm docker:test` — tests de todos los paquetes contra `app_test`, la demo end-to-end y el escenario de carga `smoke` (~5 s).
+
+Imagen única en `Dockerfile` (excluye `apps/web`); servicios `demo`/`test`/`scale` en `docker-compose.yml`; override aislado en `infra/docker/compose.isolated.yml`.
+
+## Carga + invariantes (`apps/scale`)
+
+`pnpm scale:run <escenario> [--agents N] [--iterations N | --duration SEG] [--concurrency N] [--seed S] [--mcp [K]]`
+
+Levanta un stack aislado (como `docker:demo`), siembra un mundo determinista y lanza N agentes virtuales contra la API. Cada respuesta y la base final se verifican contra invariantes de correctitud y seguridad. Sale con código ≠ 0 si hay violaciones. La tabla (p50/p95/p99 por tool, req/s) se imprime al final, y el JSON y las muestras de `docker stats` quedan en `.scale-results/` (gitignored).
+
+- Escenarios: `smoke` (10 agentes), `hundred` (100), `contention` (60 en un solo grupo con encuentros de 6 a 20 personas) y `tenk` (10.000, para probar la siembra).
+- `--mcp [K]`: los primeros K agentes (o todos) usan adaptadores MCP stdio reales en vez de HTTP directo. Cada uno es un proceso Node de ~37 MB, así que 100 llegan a ~4 GB.
+- Sin Docker, contra tu stack de dev: `pnpm with-env node apps/scale/src/run.mjs smoke --reset`. **`--reset` borra toda la base de coordinación**. Sólo siembra: `pnpm with-env node apps/scale/src/seed.mjs <escenario> --reset`.
+
+**Formato de escenario** (`apps/scale/scenarios/<nombre>.json`). Las claves que omitas toman los `DEFAULTS` de `apps/scale/src/world.mjs`:
+`seed`, `agents`, `outsiders` (personas sin grupo), `groups {count, perAgent:[min,max], skew}`, `permissions {canAsk, canShare, volatile}` (probabilidades por membresía; las "volátiles" revocan y restauran `can_share` durante la corrida), `calendar {start, days, slotsPerDay, slotMinutes, busy, halfOffset}`, `interests {vocabulary, perAgent, public}`, `meetings {participants, slots, accept}`, `foreign` (prob. de apuntar a grupos/personas ajenas), `mix` (pesos por acción: `availability_check`, `request_get`, `interest_*`, `meeting_propose`, `meeting_inbox`, `meeting_get`, `group_permission`, `probe`), `run {iterations | durationSec, concurrency, thinkMs:[min,max], drainRounds}`. Misma semilla → mismo mundo (`worldHash` en el JSON). Los tokens son aleatorios y se escriben con permisos 0600 en un directorio temporal, nunca en el repo.
+
+**Agregar un escenario**: crea el JSON. **Agregar un invariante**: llama a `inv.check("nombre", ok, reqId, detalle)` en `apps/scale/src/run.mjs` (sobre respuestas) o agrega una consulta a `DB_CHECKS` en `apps/scale/src/invariants.mjs` (filas que violan; vacío = ok). Usa `inv.warn` sólo para desvíos conocidos del servidor que todavía no se arreglan. Hoy hay uno, `inbox_only_pending`: `meeting_inbox` puede devolver un encuentro recién cerrado por lectura no repetible entre sentencias.
+
 ## Comandos
 
 `pnpm dev` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm typecheck`. Antes de dar algo por listo: `pnpm lint && pnpm typecheck` (y `pnpm test` si aplica).
