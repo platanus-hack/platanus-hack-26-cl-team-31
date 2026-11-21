@@ -17,7 +17,9 @@ async function recipient(tx: StoreTx, row: RequestRow): Promise<AgentConnectionR
   }
   const agents = await tx.listAgentConnections(row.toUserId);
   return agents.filter((agent) => !agent.revokedAt && agent.wakeTarget.kind !== "none")
-    .sort((a, b) => Number(Boolean(b.verifiedAt)) - Number(Boolean(a.verifiedAt))
+    // Un CLI que sondea va al final: si el titular tiene un canal push, ese se lleva el aviso.
+    .sort((a, b) => Number(a.wakeTarget.kind === "polling") - Number(b.wakeTarget.kind === "polling")
+      || Number(Boolean(b.verifiedAt)) - Number(Boolean(a.verifiedAt))
       || a.createdAt.getTime() - b.createdAt.getTime()
       || a.agentId.localeCompare(b.agentId))[0];
 }

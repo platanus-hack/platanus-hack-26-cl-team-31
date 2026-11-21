@@ -417,6 +417,37 @@ describe("conexiones y prueba de aviso", () => {
     });
   });
 
+  it("despacha a una conexión de sondeo sin entregarle un objetivo push", async () => {
+    await broker.agent.connectWake(bruno, { kind: "polling" });
+    const view = await askAvailability();
+    expect((await broker.tick(now)).wakesOk).toBe(1);
+    // El sondeo se despacha por el mismo camino que un canal push: el waker es quien no hace el POST.
+    expect(wake).toHaveBeenCalledExactlyOnceWith({ kind: "polling" }, { requestId: view.requestId, event: WAKE_EVENT },
+      expect.objectContaining({ attempt: 1, userId: bruno.userId, agentId: bruno.agentId }));
+    expect((await broker.owner.agents(bruno))[0]).toMatchObject({ wakeKind: "polling", lastWakeAt: now.toISOString() });
+  });
+
+  it("prefiere el canal push cuando el titular también tiene un CLI sondeando", async () => {
+    // "ana-cli" gana cualquiera de los criterios de orden anteriores: sólo el de sondeo lo manda al final.
+    await broker.agent.connectWake({ ...bruno, agentId: "ana-cli" }, { kind: "polling" });
+    await broker.agent.connectWake(bruno, webhook);
+    const view = await askAvailability();
+    expect((await broker.tick(now)).wakesOk).toBe(1);
+    expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId: view.requestId, event: WAKE_EVENT },
+      expect.objectContaining({ attempt: 1, userId: bruno.userId, agentId: bruno.agentId }));
+  });
+
+  it("ignora una conexión de sondeo revocada", async () => {
+    await broker.agent.connectWake(bruno, { kind: "polling" });
+    await broker.owner.revokeAgent(bruno, bruno.agentId);
+    await askAvailability();
+    expect((await broker.tick(now)).wakesOk).toBe(1);
+    expect(wake).not.toHaveBeenCalled();
+    const [connection] = await broker.owner.agents(bruno);
+    expect(connection).toMatchObject({ wakeKind: "polling", revokedAt: now.toISOString() });
+    expect(connection?.lastWakeAt).toBeUndefined();
+  });
+
   it("verifica callbacks antes de guardar y limita la desconexión a la suscripción propia", async () => {
     const target: WakeTarget = {
       kind: "mcp_events", callbackUrl: "https://example.com/mcp", secret: "whsec_demo", subscriptionId: "sub", refreshBefore: null,
