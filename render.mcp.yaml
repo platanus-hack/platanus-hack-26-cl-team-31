@@ -1,0 +1,54 @@
+services:
+  - type: web
+    name: nexo-team31
+    runtime: node
+    plan: free
+    region: oregon
+    autoDeployTrigger: 'off'
+    buildCommand: corepack pnpm install --frozen-lockfile --prod=false && corepack pnpm exec turbo run build --force --filter @team-31/web --filter @team-31/mcp --filter @team-31/broker-service
+    startCommand: node infra/render/start.mjs
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: SKIP_INSTALL_DEPS
+        value: 'true'
+      - key: NEXT_TELEMETRY_DISABLED
+        value: '1'
+      - key: TURBO_TELEMETRY_DISABLED
+        value: '1'
+      - key: MCP_PORT
+        value: '4100'
+      - key: BROKER_PORT
+        value: '4200'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nexo-team31-db
+          property: connectionString
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: NONCE_KEY
+        generateValue: true
+      - key: WAKE_SECRETS_KEY
+        generateValue: true
+      - key: BROKER_DB_PASSWORD
+        generateValue: true
+      - key: WEB_DB_PASSWORD
+        generateValue: true
+      - key: BROKER_SIGNING_KEY
+        sync: false
+      - key: MCP_SERVICE_PRIVATE_KEY
+        sync: false
+      - key: WEB_SERVICE_PRIVATE_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+databases:
+  - name: nexo-team31-db
+    plan: free
+    region: oregon
+    postgresMajorVersion: '17'
+    ipAllowList: []

@@ -8,6 +8,8 @@ Track: 🔗 Multiplayer
 
 **Demo local de coordinación.** Corre `pnpm agents:up 3` en una terminal y `pnpm agents:demo 3` en otra. [Instrucciones para dos o más asistentes](apps/mcp/README.md).
 
+**MCP remoto.** [Despliega Nexo en Render](docs/render.md) y conecta el cliente MCP de tu agente. No necesitas Ollama ni una clave de un proveedor de modelos.
+
 ### Dashboard con chat
 
 En `/demo`, **Contactos de Ana** usa el mismo runtime de Claude Code que `agents:runtime-demo`. Con PostgreSQL activo, ejecuta `pnpm agents:seed`, inicia `pnpm dev --filter @team-31/web` y pregunta «¿A alguien le interesa la cerámica?». **Ver datos** muestra el ID y la decisión del broker para cada contacto. Necesitas Claude Code autenticado y la configuración del proxy en el entorno local.
