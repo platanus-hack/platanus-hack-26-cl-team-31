@@ -54,7 +54,7 @@ Sesiones de 8 h que se renuevan cada 15 min de uso, sin caché de cookie. Las mu
 ```bash
 pnpm build --filter @team-31/admin...
 pnpm with-env pnpm --filter @team-31/admin start            # ADMIN_SERVE_SPA=1: SPA + API + MCP en ADMIN_PORT
-docker compose --env-file .env --env-file .env.local --profile sideband up -d admin   # solo loopback
+docker compose --env-file .env --env-file .env.local --profile sideband up -d --build admin   # compila en Docker; solo loopback
 ```
 
 ### Pruebas
