@@ -6,6 +6,7 @@ import { createWaker } from "@team-31/wake";
 import type { BrokerEnv } from "./env.js";
 import type { BrokerServiceTelemetry } from "./telemetry.js";
 import { createMemoryRateLimiter, createSharedRateLimiter } from "./http/rate-limit.js";
+import { createR2Storage } from "./r2.js";
 
 function openStore(env: BrokerEnv) {
   if (!env.DATABASE_URL) {
@@ -22,6 +23,7 @@ export function composeBroker(env: BrokerEnv, telemetry?: Pick<BrokerServiceTele
   const waker = createWaker({ allowInsecure: env.WAKE_ALLOW_INSECURE, telemetry: telemetry?.shared });
   const { store, limiter, close } = openStore(env);
   const broker = createBroker({
+    documentStorage: createR2Storage(env, telemetry?.shared),
     store,
     waker,
     clock: { now: () => new Date() },

@@ -134,7 +134,7 @@ export type VaultDocumentRow = {
   mimeType?: string;
   sizeBytes: number;
   sha256: string;
-  content: Buffer;
+  content: Buffer | null; // NULL: verified bytes in the private object store.
   idempotencyKey: string;
   createdAt: Date;
 };

@@ -175,7 +175,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       if (!stored) return null;
       if (stored.categoryId !== row.categoryId || stored.fileName !== row.fileName ||
           stored.mimeType !== (row.mimeType ?? null) || stored.sha256 !== row.sha256 || stored.sizeBytes !== row.sizeBytes ||
-          !Buffer.from(stored.content).equals(Buffer.from(row.content))) {
+          (stored.content && row.content && !stored.content.equals(row.content))) {
         throw new BrokerError("conflict", "La clave de idempotencia ya fue usada para otro archivo.");
       }
       return { ...stored, mimeType: stored.mimeType ?? undefined };

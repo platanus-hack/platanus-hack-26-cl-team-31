@@ -73,6 +73,17 @@ export const VaultDocumentUpload = z.strictObject({
 });
 export type VaultDocumentUpload = z.infer<typeof VaultDocumentUpload>;
 
+// Binary transfers are performed by the local client, never serialized as MCP arguments.
+export const VaultFile = VaultDocumentUpload.omit({ contentBase64: true }).extend({
+  sizeBytes: VaultDocumentMetadata.shape.sizeBytes,
+  sha256: VaultDocumentMetadata.shape.sha256,
+});
+export type VaultFile = z.infer<typeof VaultFile>;
+export const VaultUploadLink = z.object({ uploadUrl: z.url(), expiresInSeconds: z.literal(60) });
+export type VaultUploadLink = z.infer<typeof VaultUploadLink>;
+export const VaultDownloadLink = VaultDocumentMetadata.extend({ downloadUrl: z.url(), expiresInSeconds: z.literal(60) });
+export type VaultDownloadLink = z.infer<typeof VaultDownloadLink>;
+
 export const VaultDocumentQuery = z.strictObject({
   to: Address,
   categoryId,

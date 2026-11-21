@@ -32,6 +32,7 @@ import {
   type ToolResult,
   VaultDocumentQuery,
   VaultDocumentUpload,
+  VaultFile,
   MAX_VAULT_DOCUMENT_BYTES,
   type VaultDocumentDownload,
   type VaultDocumentMetadata,
@@ -498,17 +499,34 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   }
 
   async function downloadVaultDocument(tx: StoreTx, userId: string, input: VaultDocumentQuery, agentId?: string): Promise<VaultDocumentDownload> {
+    const row = await authorizedDocument(tx, userId, input);
+    if (row.content === null) throw new BrokerError("invalid_input", "Usa el enlace temporal para este documento.");
+    record(tx, "broker.vault.document.downloaded", { userId, agentId, attrs: { sizeBytes: row.sizeBytes } });
+    return { ...documentMetadata(row), contentBase64: Buffer.from(row.content).toString("base64") };
+  }
+
+  async function authorizedDocument(tx: StoreTx, userId: string, input: VaultDocumentQuery) {
     const parsed = VaultDocumentQuery.safeParse(input);
     if (!parsed.success) throw new BrokerError("invalid_input", "Revisa el documento y la categoría.");
     const reader = (await tx.getUser(userId))?.address;
     if (!reader) throw notFound();
     const row = await tx.sharedVaultDocument(reader, parsed.data.to, parsed.data);
     if (!row) throw notFound();
-    const metadata = documentMetadata(row);
-    record(tx, "broker.vault.document.downloaded", {
-      userId, agentId, attrs: { sizeBytes: row.sizeBytes },
-    });
-    return { ...metadata, contentBase64: Buffer.from(row.content).toString("base64") };
+    return row;
+  }
+
+  // Scope every object to one owner, category, idempotency key and expected bytes.
+  function objectKey(owner: string, file: VaultFile) {
+    return createHash("sha256").update(JSON.stringify([owner, file.categoryId, file.idempotencyKey, file.sha256, file.sizeBytes])).digest("hex");
+  }
+  function storage() {
+    if (!deps.documentStorage) throw new BrokerError("invalid_input", "El almacenamiento R2 no está configurado.");
+    return deps.documentStorage;
+  }
+  async function checkUpload(tx: StoreTx, p: Principal, categoryId: string) {
+    await ensureActiveAgentConnection(tx, p);
+    if (!(await tx.getUser(p.userId))?.address ||
+      !(await tx.vaultCatalog(p.userId)).categories.some(c => c.id === categoryId)) throw notFound();
   }
 
   async function removeContact(o: Owner, contact: Address) {
@@ -591,6 +609,41 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           await ensureActiveAgentConnection(tx, p);
           return uploadVaultDocument(tx, p.userId, input, p.agentId);
         });
+      },
+      async prepareVaultUpload(p, input) {
+        requireScope(p, "uploadVaultDocument");
+        const file = VaultFile.parse(input);
+        await store.tx(tx => checkUpload(tx, p, file.categoryId));
+        return { uploadUrl: await storage().uploadUrl(objectKey(p.userId, file), file.sizeBytes), expiresInSeconds: 60 };
+      },
+      async confirmVaultUpload(p, input) {
+        requireScope(p, "uploadVaultDocument");
+        const file = VaultFile.parse(input);
+        await store.tx(tx => checkUpload(tx, p, file.categoryId));
+        await storage().verifyAndStore(objectKey(p.userId, file), file.sizeBytes, file.sha256);
+        return store.tx(async tx => {
+          await checkUpload(tx, p, file.categoryId);
+          const row = await tx.putVaultDocument({ ...file, id: randomUUID(), owner: p.userId, content: null, createdAt: clock.now() });
+          if (!row) throw notFound();
+          record(tx, "broker.vault.document.uploaded", { userId: p.userId, agentId: p.agentId, attrs: { sizeBytes: row.sizeBytes } });
+          return documentMetadata(row);
+        });
+      },
+      async vaultDownloadLink(p, query) {
+        requireScope(p, "downloadVaultDocument");
+        const read = () => store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          return authorizedDocument(tx, p.userId, query);
+        });
+        const row = await read();
+        const key = objectKey(row.owner, row);
+        if (row.content !== null) {
+          await storage().cacheLegacy(key, Buffer.from(row.content));
+          await read(); // Access may have changed while copying the legacy bytes.
+        }
+        const downloadUrl = await storage().downloadUrl(key, row.content !== null);
+        events.emit("broker.vault.document.downloaded", { userId: p.userId, agentId: p.agentId, attrs: { sizeBytes: row.sizeBytes } });
+        return { ...documentMetadata(row), downloadUrl, expiresInSeconds: 60 };
       },
       async downloadVaultDocument(p, input) {
         requireScope(p, "downloadVaultDocument");

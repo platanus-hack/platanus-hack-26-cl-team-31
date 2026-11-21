@@ -3,6 +3,7 @@ import type {
   ActivityItem,
   TagChange, TagsView, Tag, TagInput, TagUpdate, OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
   VaultDocumentDownload, VaultDocumentMetadata, VaultDocumentQuery, VaultDocumentUpload,
+  VaultFile, VaultUploadLink, VaultDownloadLink,
   AdminActor,
   Capability,
   Circle,
@@ -42,6 +43,9 @@ export interface AgentPort {
   changeVault(p: Principal, change: VaultChange): Promise<VaultReceipt>;
   queryVault(p: Principal, query: VaultQuery): Promise<VaultResult>;
   uploadVaultDocument(p: Principal, input: VaultDocumentUpload): Promise<VaultDocumentMetadata>;
+  prepareVaultUpload(p: Principal, input: VaultFile): Promise<VaultUploadLink>;
+  confirmVaultUpload(p: Principal, input: VaultFile): Promise<VaultDocumentMetadata>;
+  vaultDownloadLink(p: Principal, query: VaultDocumentQuery): Promise<VaultDownloadLink>;
   downloadVaultDocument(p: Principal, query: VaultDocumentQuery): Promise<VaultDocumentDownload>;
   capabilities(p: Principal, to: Address): Promise<{ tools: Capability[] }>;
   ask(p: Principal, input: AskArguments): Promise<RequesterView>;

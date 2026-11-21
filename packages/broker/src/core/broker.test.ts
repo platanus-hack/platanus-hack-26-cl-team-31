@@ -218,6 +218,37 @@ it("sube cualquier archivo a la bóveda y lo entrega solo mientras la categoría
   })).rejects.toMatchObject({ code: "not_found" });
 });
 
+it("confirma en R2 antes de listar, exige categoría propia y deniega nuevos enlaces tras revocar", async () => {
+  const storage = {
+    uploadUrl: vi.fn().mockResolvedValue("https://r2.example/upload"),
+    verifyAndStore: vi.fn(), cacheLegacy: vi.fn(),
+    downloadUrl: vi.fn().mockResolvedValue("https://r2.example/download"),
+  };
+  broker = createBroker({ ...deps, documentStorage: storage });
+  const p = { ...bruno, scopes: [...bruno.scopes, "sideband:vault" as const] };
+  const { categoryId } = await broker.agent.changeVault(p, { action: "create", name: "PDFs" });
+  const file = { categoryId, fileName: "document.pdf", sizeBytes: 3, sha256: "0".repeat(64), idempotencyKey: "one" };
+  await expect(broker.agent.prepareVaultUpload({ ...p, userId: "alice" }, file)).rejects.toMatchObject({ code: "not_found" });
+  expect(storage.uploadUrl).not.toHaveBeenCalled();
+  await broker.agent.prepareVaultUpload(p, file);
+  storage.verifyAndStore.mockRejectedValueOnce(new Error("checksum"));
+  await expect(broker.agent.confirmVaultUpload(p, file)).rejects.toThrow("checksum");
+  await broker.agent.changeVault(p, { action: "set_visibility", categoryId, visibility: "public" });
+  const q = { categoryId, to: availability.to };
+  expect((await broker.agent.queryVault(alice, q)).categories[0]?.documents ?? []).toEqual([]);
+  const doc = await broker.agent.confirmVaultUpload(p, file);
+  expect(await broker.agent.confirmVaultUpload(p, file)).toEqual(doc);
+  const query = { ...q, documentId: doc.id };
+  expect(await broker.agent.vaultDownloadLink(alice, query)).toEqual({ ...doc, downloadUrl: "https://r2.example/download", expiresInSeconds: 60 });
+  expect(storage.cacheLegacy).not.toHaveBeenCalled();
+  const legacy = await broker.agent.uploadVaultDocument(p, { categoryId, fileName: "old", contentBase64: "YQ==", idempotencyKey: "old" });
+  await broker.agent.vaultDownloadLink(alice, { ...q, documentId: legacy.id });
+  expect(storage.cacheLegacy).toHaveBeenCalledWith(expect.any(String), Buffer.from("a"));
+  await broker.agent.changeVault(p, { action: "set_visibility", categoryId, visibility: "private" });
+  await expect(broker.agent.vaultDownloadLink(alice, query)).rejects.toMatchObject({ code: "not_found" });
+  expect(storage.downloadUrl).toHaveBeenCalledTimes(2);
+});
+
 it("recupera el recibo inicial después de una respuesta y aísla claves por titular, agente, canal y destinatario", async () => {
   const input = { ...availability, idempotencyKey: "turno.17" };
   const [first, ...copies] = await Promise.all(Array.from({ length: 8 }, () => broker.agent.ask(alice, input)));

@@ -48,6 +48,9 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "agent.changeVault": return agent.changeVault(c.get("mcp"), await parseBody(c, route.body));
     case "agent.queryVault": return agent.queryVault(c.get("mcp"), await parseBody(c, route.body));
     case "agent.uploadVaultDocument": return agent.uploadVaultDocument(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.prepareVaultUpload": return agent.prepareVaultUpload(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.confirmVaultUpload": return agent.confirmVaultUpload(c.get("mcp"), await parseBody(c, route.body));
+    case "agent.vaultDownloadLink": return agent.vaultDownloadLink(c.get("mcp"), await parseBody(c, route.body));
     case "agent.downloadVaultDocument": return agent.downloadVaultDocument(c.get("mcp"), await parseBody(c, route.body));
     case "owner.vault": return owner.vault(c.get("web"));
     case "owner.changeVault": return owner.changeVault(c.get("web"), await parseBody(c, route.body));
@@ -149,7 +152,8 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
 
 // Ports that create a request share the ask rate-limit bucket.
 const askPorts: readonly (string | null)[] = ["agent.ask", "owner.ask", "owner.channelAsk"];
-const vaultPorts: readonly (string | null)[] = ["agent.uploadVaultDocument", "agent.downloadVaultDocument"];
+const vaultPorts: readonly (string | null)[] = ["agent.uploadVaultDocument", "agent.downloadVaultDocument",
+  "agent.prepareVaultUpload", "agent.confirmVaultUpload", "agent.vaultDownloadLink"];
 
 // Correlates the http.request span with the request it touched (ids only, never the payload).
 function requestIdOf(c: HttpContext, result: unknown): string | undefined {

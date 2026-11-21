@@ -12,8 +12,19 @@ Con `ANTHROPIC_API_KEY` y la base de turnos configuradas, el servidor publica `s
 - Cada titular parte con Amigo, Familia y Trabajo, y puede crear, renombrar, cambiar de color y borrar etiquetas. Un contacto puede llevar varias.
 - `sideband_tag_change` permite `create`, `update` (nombre o color), `delete`, `add_contact` y `remove_contact`; todas las operaciones salvo `create` usan el ID de la etiqueta. Solo se etiquetan contactos aceptados. Los cambios del agente nunca modifican lo que el titular comparte: las categorías de cada etiqueta solo se eligen en la App Sideband.
 - `sideband_vault_catalog` muestra qué etiquetas (`tags`) tienen permiso de lectura en cada categoría propia, sin leer su contenido.
-- `sideband_vault_upload` guarda cualquier archivo en una categoría propia. El cliente envía sus bytes como base64 y debe generar una `idempotencyKey` nueva por archivo.
-- `sideband_vault_download` devuelve el archivo original como base64 después de comprobar el acceso vigente a la categoría. `sideband_vault_query` lista los metadatos de los archivos cuando consultas una categoría concreta.
+- `sideband_vault_upload` prepara un PUT temporal a R2 para el archivo autorizado del titular; `sideband_vault_confirm_upload` comprueba los bytes y registra el documento.
+- `sideband_vault_download` devuelve los metadatos y un enlace temporal al original. `sideband_vault_query` lista los documentos de una categoría autorizada.
+
+### Archivos en R2
+
+Usa un bucket **privado**, sin dominio público ni `r2.dev`, y una credencial **Object Read & Write** limitada a ese bucket. Pasa `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID` y `R2_SECRET_ACCESS_KEY` al proceso **broker**; si el launcher de Render filtra env vars, inclúyelas solo en el entorno de su hijo broker. Aplica las migraciones antes de activar el MCP nuevo. Las herramientas de enlaces requieren las cuatro variables.
+
+1. Por orden del titular, el cliente local mide el archivo (hasta 5 MiB) y calcula su SHA-256 hexadecimal. Llama a `sideband_vault_upload` con `categoryId`, `fileName`, `sizeBytes`, `sha256`, `idempotencyKey` y opcionalmente `mimeType`.
+2. Desde el equipo donde está el archivo, envía sus bytes: `curl --fail --upload-file "$archivo" "$uploadUrl"`. Usa un archivo regular para que el cliente envíe el `Content-Length` firmado. Si el enlace vence, repite la preparación. No envíes rutas locales a Render ni codifiques el contenido en el chat.
+3. Llama a `sideband_vault_confirm_upload` con los mismos datos. Solo este recibo confirma que la categoría contiene el archivo. La confirmación lee como máximo 5 MiB y guarda la copia verificada bajo una clave que la URL de subida no permite modificar.
+4. Para descargar, llama a `sideband_vault_download` con `to`, `categoryId` y `documentId`; abre `downloadUrl` o usa `curl --fail --output "$destino" "$downloadUrl"`. Sigue disponible el original de los documentos históricos: tras autorizar al lector, el broker publica una copia temporal en R2. Trata ambos enlaces como secretos: son reutilizables durante 60 segundos, incluso si se revoca el acceso después de emitirlos.
+
+Configura reglas de ciclo de vida para borrar `staging/` y `legacy/` pasado un día. No apliques esa expiración a `documents/`: contiene los originales confirmados. Borrar una categoría revoca las descargas nuevas; la purga física de objetos definitivos sin referencia requiere reconciliar el bucket con los metadatos antes de eliminarlos. No borres el bucket ni reviertas el broker antiguo con documentos R2 en uso: Postgres solo guarda sus metadatos.
 - `sideband_vault_members` lista los contactos con acceso efectivo a una categoría propia. Busca primero su ID con `sideband_vault_catalog`.
 - Con `sideband_vault_change`, `set_tag` cambia el acceso de una etiqueta. `set_member` con `categoryId`, `address` y `allowed` agrega o quita un contacto aceptado de esa categoría. La decisión individual prevalece sobre las etiquetas hasta que se cambie o se elimine el contacto.
 - `sideband_vault_request_access` recibe `to` y `categoryName`. El contacto ve la solicitud en Inicio: al conceder lectura se reutiliza la categoría o se crea vacía y se agrega un permiso individual. Rechazar o dejarla vencer no cambia la bóveda. El solicitante consulta el resultado con `sideband_check`.

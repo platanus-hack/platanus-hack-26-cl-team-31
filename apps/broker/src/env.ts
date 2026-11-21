@@ -28,6 +28,10 @@ function optional<T>(value: T) {
 }
 
 const settings = z.object({
+  R2_ACCOUNT_ID: z.preprocess(optional, z.string().regex(/^[a-f0-9]{32}$/).optional()),
+  R2_BUCKET: z.preprocess(optional, z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/).optional()),
+  R2_ACCESS_KEY_ID: z.preprocess(optional, z.string().min(1).optional()),
+  R2_SECRET_ACCESS_KEY: z.preprocess(optional, z.string().min(1).optional()),
   NODE_ENV: z.string().optional(),
   BROKER_HOST: z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1"),
   BROKER_PORT: z.coerce.number().int().min(1).max(65_535),
@@ -44,6 +48,8 @@ const settings = z.object({
   SERVICE_JWT_PUBLIC_KEYS: json(z.object({ mcp: ed25519PublicKey, web: ed25519PublicKey, admin: ed25519PublicKey.optional() })),
   WAKE_ALLOW_INSECURE: z.enum(["0", "1"]).default("0").transform((flag) => flag === "1"),
 }).superRefine((env, ctx) => {
+  const r2 = [env.R2_ACCOUNT_ID, env.R2_BUCKET, env.R2_ACCESS_KEY_ID, env.R2_SECRET_ACCESS_KEY];
+  if (r2.some(Boolean) && !r2.every(Boolean)) ctx.addIssue({ code: "custom", message: "Configura las cuatro variables R2 juntas." });
   if (env.NODE_ENV === "production" && env.WAKE_ALLOW_INSECURE) {
     ctx.addIssue({ code: "custom", path: ["WAKE_ALLOW_INSECURE"], message: "No se permite en producción." });
   }

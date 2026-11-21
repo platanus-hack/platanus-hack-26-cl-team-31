@@ -230,6 +230,10 @@ export const catalog = [
   defineEvent({ name: "broker.vault.queried", kind: "policy", description: "Consulta a categorías compartidas, sin contenido.",
     attrs: { lookup: z.enum(["entries", "categories"]), visible: z.boolean() } }),
   defineEvent({
+    name: "broker.vault.storage", kind: "http", description: "Transferencia R2 sin identificadores, URLs ni contenido.",
+    attrs: { operation: z.enum(["sign_upload", "verify_upload", "store", "cache_legacy", "sign_download"]) },
+  }),
+  defineEvent({
     name: "broker.vault.document.uploaded", kind: "policy",
     description: "Archivo guardado en una categoría propia, sin nombre ni contenido.",
     attrs: { sizeBytes: int().nonnegative() },

@@ -25,6 +25,7 @@ export type BrokerCore = {
 export type { Store } from "./store/store.js";
 
 export type BrokerDeps = {
+  documentStorage?: DocumentStorage;
   store: Store;
   waker: Waker;
   clock: { now(): Date };
@@ -38,6 +39,12 @@ export type BrokerDeps = {
   sanitize?: Pick<SanitizeContext, "redactor" | "canaries" | "contacts" | "limits">;
 };
 
+export interface DocumentStorage {
+  uploadUrl(key: string, sizeBytes: number): Promise<string>;
+  verifyAndStore(key: string, sizeBytes: number, sha256: string): Promise<void>;
+  cacheLegacy(key: string, bytes: Buffer): Promise<void>;
+  downloadUrl(key: string, legacy: boolean): Promise<string>;
+}
 export type { BrokerTelemetry } from "./core/events.js";
 
 export type CreateBroker = (deps: BrokerDeps) => BrokerCore;

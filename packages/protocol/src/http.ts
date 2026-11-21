@@ -12,6 +12,7 @@ import { ChannelName, WakeTarget } from "./wake.js";
 import {
   TagChange, TagReceipt, TagsView, OwnerVault, VaultCatalog, VaultCatalogQuery, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult,
   VaultChange, VaultReceipt, VaultDocumentDownload, VaultDocumentQuery, VaultDocumentMetadata, VaultDocumentUpload,
+  VaultFile, VaultUploadLink, VaultDownloadLink,
 } from "./vault.js";
 
 // A pre-routing broker accepts an unwrapped AskInput and would strip unfamiliar optional
@@ -57,6 +58,9 @@ export const routes = {
   agentChangeVault: { method: "POST", path: "/v1/agent/vault", body: VaultChange, response: VaultReceipt, iss: "mcp", port: "agent.changeVault" },
   agentQueryVault: { method: "POST", path: "/v1/agent/vault/query", body: VaultQuery, response: VaultResult, iss: "mcp", port: "agent.queryVault" },
   agentVaultUpload: { method: "POST", path: "/v1/agent/vault/documents", body: VaultDocumentUpload, response: VaultDocumentMetadata, iss: "mcp", port: "agent.uploadVaultDocument" },
+  agentVaultPrepare: { method: "POST", path: "/v1/agent/vault/documents/prepare", body: VaultFile, response: VaultUploadLink, iss: "mcp", port: "agent.prepareVaultUpload" },
+  agentVaultConfirm: { method: "POST", path: "/v1/agent/vault/documents/confirm", body: VaultFile, response: VaultDocumentMetadata, iss: "mcp", port: "agent.confirmVaultUpload" },
+  agentVaultLink: { method: "POST", path: "/v1/agent/vault/documents/link", body: VaultDocumentQuery, response: VaultDownloadLink, iss: "mcp", port: "agent.vaultDownloadLink" },
   agentVaultDownload: { method: "POST", path: "/v1/agent/vault/documents/download", body: VaultDocumentQuery, response: VaultDocumentDownload, iss: "mcp", port: "agent.downloadVaultDocument" },
   agentCapabilities: {
     method: "GET", path: "/v1/agent/capabilities", query: z.object({ to: Address }),

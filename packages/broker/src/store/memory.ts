@@ -197,7 +197,7 @@ function transaction(state: State): StoreTx {
         const existing = state.documents.get(existingId);
         if (existing && existing.categoryId === row.categoryId && existing.fileName === row.fileName &&
             existing.mimeType === row.mimeType && existing.sha256 === row.sha256 && existing.sizeBytes === row.sizeBytes &&
-            Buffer.from(existing.content).equals(Buffer.from(row.content))) {
+            (!existing.content || !row.content || Buffer.from(existing.content).equals(row.content))) {
           return structuredClone(existing);
         }
         throw new BrokerError("conflict", "La clave de idempotencia ya fue usada para otro archivo.");

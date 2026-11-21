@@ -86,7 +86,7 @@ export const vaultDocuments = sideband.table("vault_documents", {
   mimeType: text("mime_type"),
   sizeBytes: integer("size_bytes").notNull(),
   sha256: text("sha256").notNull(),
-  content: bytea("content").notNull(),
+  content: bytea("content"),
   idempotencyKey: text("idempotency_key").notNull(),
   createdAt: time("created_at").notNull(),
 }, (t) => [

@@ -192,6 +192,8 @@ MCP y WhatsApp comparten `@team-31/message-flow`. LangGraph ejecuta las transici
 
 ## Broker Sideband
 
+- Documentos por agente: configura `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID` y `R2_SECRET_ACCESS_KEY` solo para el broker. El cliente transfiere el binario con URLs de 60 segundos. Ver [configuración y prueba](apps/mcp/README.md#archivos-en-r2).
+
 - Después de `pnpm bootstrap`, inicia solo el broker con `pnpm dev --filter @team-31/broker-service`. `pnpm env:init` actualiza worktrees existentes y genera `BROKER_PORT` y `BROKER_URL`.
 - Conserva en `.env.local` las llaves que generó `pnpm bootstrap`. Configura `REQUEST_TTL_SECONDS` o `WAKE_RETRY_DELAYS_MS` para probar plazos y reintentos más cortos.
 - `pnpm bootstrap` genera `BROKER_DATABASE_PASSWORD`, aplica las migraciones del broker y prepara el rol `sideband_broker`. El broker local se conecta con ese rol. `DATABASE_URL` del worktree se usa para migrar y para los demás servicios que ya la consumen. Para repetir la preparación de la base del broker, ejecuta `pnpm sideband:broker:migrate`.
