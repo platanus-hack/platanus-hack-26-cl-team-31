@@ -1,0 +1,22 @@
+{
+  "name": "@team-31/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@team-31/auth": "workspace:*",
+    "@team-31/broker": "workspace:*",
+    "@team-31/protocol": "workspace:*",
+    "@team-31/typescript-config": "workspace:*",
+    "@types/node": "24.19.2",
+    "jose": "6.2.15",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "zod": "4.6.7"
+  }
+}
