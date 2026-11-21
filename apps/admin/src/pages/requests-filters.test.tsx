@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client"
 import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { requests } from "@/mocks/fixtures"
 import { RequestsPage } from "./requests"
 
 let host: HTMLDivElement
@@ -44,7 +46,9 @@ async function openRequests(search: string) {
   await act(() =>
     root.render(
       <QueryClientProvider client={client}>
-        <RouterProvider router={router} />
+        <TooltipProvider>
+          <RouterProvider router={router} />
+        </TooltipProvider>
       </QueryClientProvider>
     )
   )
@@ -164,4 +168,49 @@ it("vuelve a todas las herramientas y limpia los filtros restantes", async () =>
   await act(() => control("button", "Limpiar").click())
   expectFilters("")
   expect(searchField().value).toBe("")
+})
+
+it("carga la página siguiente del mismo filtro una sola vez y conserva las solicitudes anteriores", async () => {
+  const [{ summary: first }, { summary: second }] = requests
+  const cursor = "página+2/="
+  let finishPage!: (response: Response) => void
+  const pending = new Promise<Response>((resolve) => {
+    finishPage = resolve
+  })
+  fetchRequests
+    .mockResolvedValueOnce(
+      Response.json({ items: [first], nextCursor: cursor })
+    )
+    .mockImplementationOnce(() => pending)
+
+  const loadMore = () =>
+    Array.from(host.querySelectorAll("button")).find(
+      (button) => button.textContent === "Cargar más"
+    )
+  const requestLinks = () =>
+    Array.from(host.querySelectorAll("tbody a"), (link) =>
+      link.getAttribute("href")
+    )
+
+  await openRequests("q=req_")
+  await advance(1)
+  expectFilters("q=req_")
+  expect(requestLinks()).toEqual([`/solicitudes/${first.id}`])
+  await act(() => loadMore()!.click())
+  await advance(1)
+  const [path] = fetchRequests.mock.lastCall!
+  const url = new URL(path, window.location.href)
+  expect(url.searchParams.get("cursor")).toBe(cursor)
+  expect(url.searchParams.get("q")).toBe("req_")
+  expect(loadMore()?.disabled).toBe(true)
+  await act(() => loadMore()!.click())
+  expect(fetchRequests).toHaveBeenCalledTimes(2)
+
+  finishPage(Response.json({ items: [second], nextCursor: null }))
+  await advance(1)
+  expect(requestLinks()).toEqual([
+    `/solicitudes/${first.id}`,
+    `/solicitudes/${second.id}`,
+  ])
+  expect(loadMore()).toBeUndefined()
 })
