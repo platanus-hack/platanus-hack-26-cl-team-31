@@ -241,7 +241,7 @@ Las llamadas internas al broker usan `tracedFetch` (opción `fetch` de `createAg
 
 `pnpm lint` solo cubre `apps/admin` y `apps/web`. El resto depende de `pnpm typecheck` y `pnpm test`, y `apps/demo` queda fuera de `typecheck`.
 
-Las validaciones se ejecutan en el worktree local. `.github/workflows/cd.yml` corre build y typecheck en cada push a `main` y dispara los deploy hooks de Render para los servicios de `render.yaml` (web, broker, MCP y coordinación).
+Las validaciones se ejecutan en el worktree local. El CI del repo del hackathon corre build y typecheck en cada push a `main`, sin disparar deploys.
 
 ## ⚠️ Al agregar infra o configuración nueva
 
