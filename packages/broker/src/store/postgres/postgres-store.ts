@@ -53,6 +53,7 @@ function readRequest(row: typeof requests.$inferSelect): RequestRow {
     purpose: row.purpose ?? undefined,
     status: parseStored(RequestStatus, row.status),
     outcome: row.outcome === null ? undefined : parseStored(FinalOutcome, row.outcome),
+    approvedOnce: row.approvedOnce ?? undefined,
     decisionReason: row.decisionReason ?? undefined,
     internalReason: row.internalReason ?? undefined,
     result: row.result === null ? undefined : parseStored<ToolResult>(ToolResultSchemas[tool], row.result),

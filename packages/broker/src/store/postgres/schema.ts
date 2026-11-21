@@ -40,6 +40,7 @@ export const requests = nexo.table("requests", {
   status: text("status").notNull(),
   outcome: text("outcome"),
   allowedFields: text("allowed_fields").array().notNull(),
+  approvedOnce: boolean("approved_once"),
   guidance: text("guidance").notNull(),
   rule: text("rule").notNull(),
   decisionReason: text("decision_reason"),
