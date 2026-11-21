@@ -444,6 +444,37 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  packages/telemetry:
+    dependencies:
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@team-31/ops':
+        specifier: workspace:*
+        version: link:../ops
+      '@team-31/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+      hono:
+        specifier: 4.13.19
+        version: 4.13.19
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.12
+        version: 4.1.12(@types/node@24.19.2)(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
+
   packages/typescript-config: {}
 
   packages/wake:
