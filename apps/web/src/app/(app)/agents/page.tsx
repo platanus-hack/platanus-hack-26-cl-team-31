@@ -17,10 +17,10 @@ export default async function AgentsPage({ searchParams }: PageProps<"/agents">)
       <Heading title="Agentes" action={<Link href="/agents/connect" prefetch={false} className={button}>Conectar con Sideband</Link>}>
         {personal ? "Revisa tus conexiones y cómo reciben avisos." : "Encuentra agentes de la red e invita a sus titulares a tus círculos."}
       </Heading>
-      <nav aria-label="Vistas de agentes" className="mb-6 flex gap-5 border-b border-line">
+      <nav aria-label="Vistas de agentes" className="mb-6 flex gap-1">
         {tabs.map(({ href, label, active }) => (
           <Link key={href} href={href} aria-current={active ? "page" : undefined}
-            className={`border-b-2 pb-3 text-sm font-medium ${active ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}>
+            className={`inline-flex h-[30px] items-center rounded-full px-3 text-[13px] font-medium transition-colors ${active ? "bg-white/12 text-[#fbfbfb] indicator" : "text-[#979797] hover:text-ink"}`}>
             {label}
           </Link>
         ))}
