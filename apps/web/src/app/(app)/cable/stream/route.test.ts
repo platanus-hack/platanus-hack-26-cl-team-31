@@ -1,11 +1,11 @@
 import { createTelemetry, memorySink } from "@team-31/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getSession } from "../../../../lib/auth";
+import { getStreamSession } from "../../../../lib/auth";
 import { signServiceToken } from "../../../../lib/broker";
 import { GET } from "./route";
 
-vi.mock("../../../../lib/auth", () => ({ getSession: vi.fn() }));
+vi.mock("../../../../lib/auth", () => ({ getStreamSession: vi.fn() }));
 vi.mock("../../../../lib/broker", () => ({
   brokerUrl: () => "https://broker.example.test",
   brokerFetch: () => (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),
@@ -35,7 +35,7 @@ const versionId = "Z".repeat(43);
 const streamUrl = "https://web.example.test/cable/stream";
 
 function session(userId: string) {
-  vi.mocked(getSession).mockResolvedValue({ user: { id: userId } } as NonNullable<Awaited<ReturnType<typeof getSession>>>);
+  vi.mocked(getStreamSession).mockResolvedValue({ user: { id: userId }, session: { id: "s1" } } as NonNullable<Awaited<ReturnType<typeof getStreamSession>>>);
   vi.mocked(signServiceToken).mockResolvedValue("server-jwt");
 }
 
@@ -62,7 +62,7 @@ afterEach(() => {
 
 describe("GET /cable/stream", () => {
   it("rejects unauthenticated requests before minting a token or opening the broker stream", async () => {
-    vi.mocked(getSession).mockResolvedValue(null);
+    vi.mocked(getStreamSession).mockResolvedValue(null);
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
 
@@ -111,6 +111,20 @@ describe("GET /cable/stream", () => {
         direction: "sent",
       })}\n\n: heartbeat\n\n`,
     );
+  });
+
+  it("ends the open stream without forwarding new activity after sign-out", async () => {
+    session("bob");
+    let send!: (chunk: Uint8Array) => void;
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ start(c) { send = (chunk) => c.enqueue(chunk); }, cancel });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { headers: { "Content-Type": "text/event-stream" } })));
+    const response = await GET(new Request(streamUrl));
+    vi.mocked(getStreamSession).mockResolvedValue(null);
+    send(new TextEncoder().encode(`event: activity\ndata: ${JSON.stringify({ ...activity, direction: "received" })}\n\n`));
+    expect(await response.text()).toBe("");
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+    expect(sink.find("auth.token.rejected")[0]?.attrs.reason).toBe("access_ended");
   });
 
   it("preserves private reasons for the receiving owner", async () => {
