@@ -1,4 +1,4 @@
-name: CD
+name: CI
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: cd-${{ github.ref }}
+  group: verify-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -22,30 +22,3 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run build --filter=@team-31/web... --filter=@team-31/broker-service... --filter=@team-31/mcp... --filter=@team-31/server...
       - run: pnpm turbo run typecheck --filter=@team-31/web... --filter=@team-31/broker-service... --filter=@team-31/mcp... --filter=@team-31/server...
-
-  deploy:
-    needs: verify
-    runs-on: ubuntu-latest
-    environment: production
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - service: broker
-            hook: RENDER_DEPLOY_HOOK_BROKER
-          - service: coordination
-            hook: RENDER_DEPLOY_HOOK_COORDINATION
-          - service: mcp
-            hook: RENDER_DEPLOY_HOOK_MCP
-          - service: web
-            hook: RENDER_DEPLOY_HOOK_WEB
-    steps:
-      - name: Deploy ${{ matrix.service }}
-        env:
-          HOOK_URL: ${{ secrets[matrix.hook] }}
-        run: |
-          if [ -z "$HOOK_URL" ]; then
-            echo "::error::Falta el secret ${{ matrix.hook }}"
-            exit 1
-          fi
-          curl -fsS -X POST "$HOOK_URL&ref=${{ github.sha }}"
