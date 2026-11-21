@@ -11,7 +11,8 @@ import {
   type PostgresStore,
 } from "@team-31/broker/postgres"
 import { applyOpsMigrations } from "@team-31/ops"
-import pg from "pg"
+import { createTestDatabase, type TestDatabase } from "@team-31/test-db"
+import type pg from "pg"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { z } from "zod"
 
@@ -68,8 +69,7 @@ async function expectInvalid(
 }
 
 describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
-  const databaseName = "admin_queries_test_" + randomUUID().replaceAll("-", "")
-  let admin: pg.Pool
+  let testDb: TestDatabase
   let db: pg.Pool
   let databaseUrl: string
   let store: PostgresStore
@@ -84,21 +84,9 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
   const traceId = "4bf92f3577b34da6a3ce929d0e0e4736"
 
   beforeAll(async () => {
-    const url = new URL(testDatabaseUrl)
-    const devUrl = process.env.DATABASE_URL
-    if (
-      !url.pathname.endsWith("_test") ||
-      (devUrl && url.pathname === new URL(devUrl).pathname)
-    ) {
-      throw new Error(
-        "TEST_DATABASE_URL debe apuntar a una base _test separada."
-      )
-    }
-    admin = new pg.Pool({ connectionString: testDatabaseUrl })
-    await admin.query(`CREATE DATABASE ${pg.escapeIdentifier(databaseName)}`)
-    url.pathname = "/" + databaseName
-    databaseUrl = url.toString()
-    db = new pg.Pool({ connectionString: databaseUrl })
+    testDb = await createTestDatabase("admin_queries_test")
+    databaseUrl = testDb.url
+    db = testDb.pool()
 
     // Tablas de cada módulo, como en producción. ops migra al final.
     await applyPostgresMigrations({ databaseUrl })
@@ -129,12 +117,8 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       await queries?.close()
       await revealer?.close()
       await store?.close()
-      await db?.end()
-      await admin?.query(
-        `DROP DATABASE IF EXISTS ${pg.escapeIdentifier(databaseName)} WITH (FORCE)`
-      )
     } finally {
-      await admin?.end()
+      await testDb?.drop()
     }
   })
 

@@ -1,24 +1,19 @@
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import pg from "pg";
+import { createTestDatabase, type TestDatabase } from "@team-31/test-db";
+import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createWhatsAppStore } from "./store";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 
 describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
-  const name = "whatsapp_test_" + randomUUID().replaceAll("-", "");
-  let admin: pg.Pool;
+  let testDb: TestDatabase;
   let db: pg.Pool;
   let store: ReturnType<typeof createWhatsAppStore>;
 
   beforeAll(async () => {
-    const url = new URL(testDatabaseUrl!);
-    if (!url.pathname.endsWith("_test")) throw new Error("Usa una base _test para las pruebas.");
-    admin = new pg.Pool({ connectionString: url.href });
-    await admin.query(`CREATE DATABASE ${pg.escapeIdentifier(name)}`);
-    url.pathname = name;
-    db = new pg.Pool({ connectionString: url.href });
+    testDb = await createTestDatabase("whatsapp_test");
+    db = testDb.pool();
     await db.query(`CREATE TABLE public."user" (id text PRIMARY KEY, "phoneNumber" text UNIQUE)`);
     await db.query(await readFile(new URL("../../../scripts/whatsapp.sql", import.meta.url), "utf8"));
     await db.query(`INSERT INTO public."user" (id) VALUES ('ana'), ('bob')`);
@@ -26,9 +21,7 @@ describe.skipIf(!testDatabaseUrl)("vínculo de WhatsApp en Postgres", () => {
   });
 
   afterAll(async () => {
-    await db?.end();
-    await admin?.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(name)} WITH (FORCE)`);
-    await admin?.end();
+    await testDb?.drop();
   });
 
   it("consume el código, requiere confirmación por cuenta, protege la unicidad y permite revocar", async () => {
