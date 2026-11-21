@@ -42,11 +42,11 @@ export function mountAdminMcp(app: Hono, deps: AdminMcpDeps): void {
     try {
       principal = token ? await deps.authenticate(token) : null
     } catch {
-      // TODO(admin): telemetry.error("mcp admin authenticate", error) y X-Error-Id (ADM-01).
+      // TODO(admin): telemetry.error("mcp admin authenticate", error) y X-Error-Id al conectar @team-31/telemetry en admin.
       return rpcError(c, 500, ErrorCode.InternalError, "No se pudo verificar el token.")
     }
     if (!principal) {
-      // TODO(admin): emit("auth.token.rejected", { attrs: { issuer: "admin", reason } }) (ADM-01).
+      // TODO(admin): emit("auth.token.rejected", { attrs: { issuer: "admin", reason } }) al conectar @team-31/telemetry en admin.
       return rpcError(c, 401, -32001, token ? "Token inválido, vencido o revocado." : "Falta Authorization: Bearer nxa_….", {
         "WWW-Authenticate": token ? 'Bearer realm="nexo-admin", error="invalid_token"' : 'Bearer realm="nexo-admin"',
       })
@@ -54,7 +54,7 @@ export function mountAdminMcp(app: Hono, deps: AdminMcpDeps): void {
 
     const limited = rateLimit(principal.tokenId)
     if (!limited.ok) {
-      // TODO(admin): emit("http.rate_limited", { attrs: { route: "/mcp", bucket: "admin_mcp" } }) (ADM-01).
+      // TODO(admin): emit("http.rate_limited", { attrs: { route: "/mcp", bucket: "admin_mcp" } }) al conectar @team-31/telemetry en admin.
       return rpcError(c, 429, -32002, `Límite de ${MCP_RATE_LIMIT} solicitudes por minuto por token alcanzado.`, {
         "Retry-After": String(limited.retryAfterSeconds),
       })
@@ -68,7 +68,7 @@ export function mountAdminMcp(app: Hono, deps: AdminMcpDeps): void {
       response.headers.set("Cache-Control", "no-store")
       return response
     } catch {
-      // TODO(admin): telemetry.error("mcp admin request", error) y X-Error-Id (ADM-01).
+      // TODO(admin): telemetry.error("mcp admin request", error) y X-Error-Id al conectar @team-31/telemetry en admin.
       return rpcError(c, 500, ErrorCode.InternalError, "No se pudo procesar la solicitud MCP.")
     } finally {
       // Con enableJsonResponse la respuesta ya está completa: se puede cerrar el servidor.

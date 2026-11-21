@@ -30,7 +30,7 @@ function failure(error: unknown): CallToolResult {
     return toolError(`Entrada inválida: ${error.message}`)
   }
   if (error instanceof z.ZodError) return toolError(`Entrada inválida: ${z.prettifyError(error)}`)
-  // TODO(admin): telemetry.error("mcp admin tool", error) y devolver su errorId (ADM-01).
+  // TODO(admin): telemetry.error("mcp admin tool", error) y devolver su errorId al conectar @team-31/telemetry en admin.
   return toolError("No se pudo completar la consulta por un error interno.")
 }
 
@@ -39,7 +39,7 @@ async function callTool(principal: TokenPrincipal, deps: AdminMcpDeps, spec: Adm
     await deps.audit({ actor: principal, action: `mcp:${spec.name}`, target: spec.target?.(args as never) ?? null })
   } catch {
     // Fallar cerrado: sin auditoría no se entrega ningún dato.
-    // TODO(admin): telemetry.error("mcp admin audit", error) (ADM-01).
+    // TODO(admin): telemetry.error("mcp admin audit", error) al conectar @team-31/telemetry en admin.
     return toolError("No se pudo registrar la auditoría; la consulta no se ejecutó.")
   }
 

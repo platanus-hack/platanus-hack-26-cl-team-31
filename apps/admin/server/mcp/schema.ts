@@ -53,10 +53,11 @@ const STATIC_VIEWS: Record<string, string[]> = {
 const group = (names: string[], kind: string, attrs: string[]): CatalogEvent[] =>
   names.map((name) => ({ name, kind, attrs }))
 
-// Copia de docs/admin.md sección 3. TODO(admin): reemplazar por el catálogo tipado que
-// exporta @team-31/telemetry (ADM-01) cuando esté en main.
+// Copia del catálogo de packages/telemetry/src/catalog.ts (docs/admin.md sección 3).
+// TODO(admin): reemplazar por describeCatalog() de @team-31/telemetry cuando apps/admin
+// dependa del paquete (ADM-04/ADM-08 lo agregan a package.json).
 export const EVENT_CATALOG: CatalogEvent[] = [
-  ...group(["service.started", "service.heartbeat", "service.stopping"], "lifecycle", ["version"]),
+  ...group(["service.started", "service.heartbeat", "service.stopping"], "lifecycle", ["version", "dropped"]),
   ...group(["http.request"], "http", ["method", "route", "status", "bucket"]),
   ...group(["http.rate_limited"], "http", ["route", "bucket"]),
   ...group(["auth.token.verified", "auth.token.rejected"], "auth", ["issuer", "reason"]),
@@ -72,12 +73,13 @@ export const EVENT_CATALOG: CatalogEvent[] = [
   ...group(["wake.attempt"], "wake", ["kind", "attempt", "ok", "httpStatus", "code"]),
   ...group(["wake.exhausted"], "wake", ["kind", "attempts"]),
   ...group(["coordination.tool.call"], "tool", ["tool", "outcome"]),
-  ...group(["error"], "error", ["operation", "type", "issues", "frames"]),
+  ...group(["error"], "error", ["operation", "type", "issues", "frames", "code"]),
   ...group(
     ["admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created", "admin.token.revoked", "admin.mcp.call"],
     "admin",
     ["action", "target", "tool"],
   ),
+  ...group(["telemetry.invalid_event"], "lifecycle", ["event", "issues"]),
 ]
 
 const NOTES = [
@@ -112,7 +114,7 @@ export async function loadAdminSchema(queries: AdminQueries): Promise<AdminSchem
     if (views.length > 0) return { source: "information_schema", views, events: EVENT_CATALOG, notes: NOTES }
   } catch {
     // Sin acceso a information_schema (por ejemplo, vistas aún sin migrar): lista estática.
-    // TODO(admin): telemetry.error("mcp admin schema", error) cuando exista @team-31/telemetry.
+    // TODO(admin): telemetry.error("mcp admin schema", error) al conectar @team-31/telemetry en admin.
   }
   return { source: "static", views: staticViews(), events: EVENT_CATALOG, notes: NOTES }
 }
