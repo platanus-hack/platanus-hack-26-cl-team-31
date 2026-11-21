@@ -1,76 +1,92 @@
 import Link from "next/link";
 
+import { getOwnerAccount } from "@/lib/auth-owner";
 import { getAuthBaseUrl } from "@/lib/auth-env.mjs";
 
 import { readHome } from "./actions";
-import { ActivityList } from "./activity-list";
-import { DecisionForm } from "./_home/decision-form";
+import { HomeActivity } from "./_home/home-activity";
 import { InviteActions } from "./_home/invite-actions";
-import { toolLabels } from "./labels";
-import { OwnerProfile } from "./_home/owner-profile";
-import { card, Empty, Heading, Stamp, textLink } from "./ui";
+import { FocusRequest, RequestRow } from "./_home/request-row";
+import { formatRelative } from "./labels";
+import { card } from "./ui";
+
+const sectionTitle = "text-[15px] font-medium tracking-[-0.01em]";
+const sectionLink = "text-[13px] font-medium text-accent-ink hover:underline";
+const hour = new Intl.DateTimeFormat("es-CL", { hour: "numeric", hourCycle: "h23", timeZone: "America/Santiago" });
+
+function greeting(now: number) {
+  const value = Number(hour.format(now));
+  return value < 12 ? "Buenos días" : value < 20 ? "Buenas tardes" : "Buenas noches";
+}
+
+function Tile({ href, label, value, hint, tone = "" }: { href: string; label: string; value: number; hint: string; tone?: string }) {
+  return (
+    <Link href={href} className={`${card} group flex flex-col gap-1 p-5 transition-colors hover:bg-card-hover`}>
+      <span className="text-[13px] text-muted">{label}</span>
+      <span className={`text-[32px] leading-10 font-medium tracking-[-0.02em] tabular-nums ${value ? tone || "text-white" : "text-muted"}`}>{value}</span>
+      <span className="text-xs text-muted transition-colors group-hover:text-body">{hint} ›</span>
+    </Link>
+  );
+}
 
 export default async function HomePage() {
-  const [pending, activity, invitations] = await readHome();
+  const [{ pending, activity, answered, invitations, contacts, agents, now }, account] = await Promise.all([readHome(), getOwnerAccount()]);
   const inviteUrl = new URL("/invite", new URL(getAuthBaseUrl()).origin).href;
+  const name = (account.displayName || account.user.name || "").split(" ")[0];
+  const expires = (value: string) => formatRelative(value, now).replace("dentro de ", "en ");
+  const [first, ...rest] = pending;
 
   return (
     <>
-      <Heading title="Inicio" action={<InviteActions url={inviteUrl} />}>
-        Revisa tus solicitudes, las respuestas de tus agentes y tu perfil.
-      </Heading>
-      <div className="grid items-start gap-8 lg:grid-cols-[1.35fr_1fr]">
-        <section aria-labelledby="pending-title">
-          <h2 id="pending-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Por revisar</h2>
-          {invitations.length > 0 && (
-            <Link href="/contacts" className={`${card} mb-3 flex items-center justify-between gap-3 px-5 py-4 transition hover:bg-chip`}>
-              <span className="text-sm">
-                <span className="break-all font-medium">{invitations[0]!.address}</span>
-                {invitations.length > 1 ? ` y ${invitations.length - 1} más quieren conectar contigo.` : " quiere conectar contigo."}
-              </span>
-              <span className="shrink-0 text-sm font-medium text-accent-ink">Responder ›</span>
-            </Link>
-          )}
-          {pending.length === 0 && invitations.length === 0 ? <Empty>No tienes solicitudes pendientes.</Empty> : (
-            <ul className="space-y-3">
-              {pending.map((item) => {
-                const slot = item.tool === "availability" ? item.args : undefined;
-                const interest = item.tool === "interest_check" ? item.args.interest : undefined;
-                return (
-                  <li key={item.requestId} className={`${card} p-5 has-[[data-gone]]:hidden`}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="break-all font-medium">{item.from}</h3>
-                      <p className="rounded-full bg-chip px-2.5 py-1 text-xs font-medium text-body">{toolLabels[item.tool]}</p>
-                    </div>
-                    <p className="mt-2 text-xs text-muted">Vence el <Stamp value={item.expiresAt} /></p>
-                    {slot && <p className="mt-3 text-sm text-body">{slot.date} · {slot.start} ({slot.timezone}) · {slot.durationMinutes} min</p>}
-                    {interest && <p className="mt-3 break-words text-sm text-body">Interés consultado · {interest}</p>}
-                    {item.tool === "vault_access" && <p className="mt-3 break-words text-sm text-body">Pide leer tu categoría <strong>{item.args.categoryName}</strong>. Si aceptas, podrá leer sus datos actuales y futuros. Si no existe, se creará vacía.</p>}
-                    <div className="mt-3 rounded-xl stage p-3 text-sm">
-                      <p className="font-medium text-muted">Mensaje de un tercero</p>
-                      {item.senderMessage.text || item.senderMessage.purpose ? (
-                        <blockquote className="mt-1 space-y-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
-                          {item.senderMessage.text && <p>{item.senderMessage.text}</p>}
-                          {item.senderMessage.purpose && <p>{item.senderMessage.purpose}</p>}
-                        </blockquote>
-                      ) : <p className="mt-1 text-muted">Sin mensaje.</p>}
-                    </div>
-                    <DecisionForm id={item.requestId} tool={item.tool} escalated={Boolean(item.escalated)} />
-                  </li>
-                );
-              })}
-            </ul>
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4 lg:pt-2">
+        <div>
+          <h1 className="text-2xl leading-8 font-medium tracking-[-0.02em] text-white sm:text-[28px] sm:leading-9">{greeting(now)}{name ? `, ${name}` : ""}</h1>
+          <p className="mt-1 text-sm text-body">
+            {pending.length === 0 ? "Nada espera tu decisión. Tus agentes se encargan del resto." : `Tienes ${pending.length} ${pending.length === 1 ? "solicitud esperando" : "solicitudes esperando"} tu decisión.`}
+            {invitations.length > 0 && ` ${invitations.length} ${invitations.length === 1 ? "persona quiere" : "personas quieren"} conectar contigo.`}
+          </p>
+        </div>
+        <InviteActions url={inviteUrl} />
+      </div>
+
+      <div className="mb-10 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Tile href="/activity" label="Tus agentes respondieron" value={answered} hint="En las últimas 24 h" tone="text-success" />
+        <Tile href="/contacts?vista=solicitudes" label="Quieren conectar" value={invitations.length} hint="Ver solicitudes" tone="text-accent-ink" />
+        <Tile href="/contacts" label="Contactos" value={contacts} hint="Tu red" />
+        <Tile href="/agents?vista=conexiones" label="Agentes activos" value={agents} hint="Conexiones" />
+      </div>
+
+      <div className="grid items-start gap-10 lg:grid-cols-[1.6fr_1fr]">
+        <section id="por-decidir" aria-labelledby="pending-title" className="scroll-mt-20">
+          <h2 id="pending-title" className={`${sectionTitle} mb-3`}>Lo más urgente</h2>
+          {first ? (
+            <div className="space-y-3">
+              <FocusRequest item={first} expires={expires(first.expiresAt)} />
+              {rest.length > 0 && (
+                <>
+                  <p className="pt-3 text-[13px] text-muted">Y {rest.length} más</p>
+                  <ul className={`${card} divide-y divide-line`}>
+                    {rest.map((item) => <RequestRow key={item.requestId} item={item} expires={`vence ${expires(item.expiresAt)}`} />)}
+                  </ul>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className={`${card} flex flex-col items-center gap-2 px-6 py-12 text-center`}>
+              <span aria-hidden="true" className="grid size-10 place-items-center rounded-full bg-success-bg text-success">✓</span>
+              <p className="text-sm font-medium text-ink">Nada por decidir</p>
+              <p className="text-[13px] text-muted">Cuando alguien te pregunte algo que debas aprobar, aparecerá aquí.</p>
+            </div>
           )}
         </section>
         <section aria-labelledby="activity-title">
-          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 id="activity-title" className="text-[15px] font-medium tracking-[-0.01em]">Actividad reciente</h2>
-            <Link href="/activity" className={`${textLink} text-sm`}>Ver toda <span aria-hidden="true">↗</span></Link>
+          <div className="mb-4 flex items-baseline justify-between gap-2">
+            <h2 id="activity-title" className={sectionTitle}>Actividad reciente</h2>
+            <Link href="/activity" className={sectionLink}>Ver toda ›</Link>
           </div>
-          <ActivityList items={activity} />
+          <HomeActivity items={activity} now={now} />
         </section>
       </div>
-      <OwnerProfile />
     </>
   );
 }

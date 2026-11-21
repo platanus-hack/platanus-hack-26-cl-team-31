@@ -101,7 +101,7 @@ export function TagMenu({ tags, value, custom, disabled, onChange }: {
         <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className="text-muted"><path d="m2.5 4 2.5 2.5L7.5 4" /></svg>
       </button>
       {open && (
-        <div id={menu} role="menu" className="raised absolute left-0 z-20 mt-1.5 w-56 rounded-lg border border-line bg-raised p-1 shadow-lg">
+        <div id={menu} role="menu" className="raised absolute left-0 z-20 mt-1.5 w-56 origin-top-left animate-[pop_160ms_var(--ease-smooth-out)] rounded-lg border border-line bg-raised p-1 shadow-lg">
           {tags.map((tag) => {
             const active = value.includes(tag.id);
             return (

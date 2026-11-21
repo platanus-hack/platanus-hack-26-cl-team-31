@@ -3,17 +3,28 @@
 import { VaultChange } from "@team-31/protocol";
 import { revalidatePath } from "next/cache";
 import { ownerClient } from "@/lib/broker";
+import { actionError, type Feedback } from "../action-feedback";
 import { getOwner } from "../owner";
 
-export async function changeVault(form: FormData) {
-  const owner = await getOwner();
+function parse(form: FormData) {
   const data = Object.fromEntries([...form.entries()].filter(([key]) => !key.startsWith("$ACTION_")));
   const { kind, ...fields } = data;
-  const input = fields.action === "set_tag" ? { ...fields, allowed: fields.allowed === "true" } :
-    fields.action === "put_entry" ? { ...fields, value: kind === "number" ? (String(fields.value).trim() ? Number(fields.value) : NaN) :
-      fields.value } : fields;
-  const change = VaultChange.safeParse(input);
-  if (!change.success) throw new Error("Revisa el nombre, el tipo y el valor del dato.");
-  await ownerClient().changeVault(owner, change.data);
+  if (fields.action === "set_tag") return VaultChange.safeParse({ ...fields, allowed: fields.allowed === "true" });
+  if (fields.action !== "put_entry") return VaultChange.safeParse(fields);
+  const raw = String(fields.value ?? "").trim();
+  const numeric = kind === "number" || (kind === "auto" && raw !== "" && /^-?\d+([.,]\d+)?$/.test(raw));
+  return VaultChange.safeParse({ ...fields, value: numeric ? Number(raw.replace(",", ".")) : fields.value });
+}
+
+export async function changeVault(form: FormData): Promise<Feedback> {
+  const owner = await getOwner();
+  const change = parse(form);
+  if (!change.success) return { error: "Revisa el nombre y el valor." };
+  try {
+    await ownerClient().changeVault(owner, change.data);
+  } catch (error) {
+    return actionError("changeVault", error, "No se pudo guardar. Intenta de nuevo.");
+  }
   revalidatePath("/vault");
+  return { message: "Guardado." };
 }

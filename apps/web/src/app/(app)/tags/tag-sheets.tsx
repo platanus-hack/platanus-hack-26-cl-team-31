@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import type { Sharing, Tag } from "@team-31/protocol";
-import type { TagColor } from "@team-31/protocol/constants";
+import { sameSharing, type TagColor } from "@team-31/protocol/constants";
 
 import { createTag, deleteTag, saveTag } from "../contacts/actions";
 import { describeSharing } from "../contacts/describe";
@@ -19,41 +19,46 @@ function TagSheet({ tag, onDelete }: { tag: Member; onDelete: () => void }) {
   const [color, setColor] = useState<TagColor>(tag.color);
   const [share, setShare] = useState<Sharing>(tag.categories);
   const [state, setState] = useState<{ error?: string; errorId?: string }>({});
-  const [, start] = useTransition();
+  const [pending, start] = useTransition();
+  const dirty = name.trim() !== tag.name || color !== tag.color || !sameSharing(share, tag.categories);
 
-  function save(next: { name?: string; color?: TagColor; share?: Sharing }) {
+  function save() {
     const form = new FormData();
-    form.set("name", (next.name ?? name).trim() || tag.name);
-    form.set("color", next.color ?? color);
-    for (const category of next.share ?? share) form.append("category", category);
-    start(async () => setState(await saveTag(tag.id, {}, form)));
+    form.set("name", name.trim() || tag.name);
+    form.set("color", color);
+    for (const category of share) form.append("category", category);
+    start(async () => {
+      const result = await saveTag(tag.id, {}, form);
+      setState(result);
+      if (!result.error) close();
+    });
   }
 
   const count = tag.members.length;
   return (
-    <div className="space-y-6">
+    <form onSubmit={(event) => { event.preventDefault(); save(); }} className="space-y-6">
       <div className="space-y-3">
         <label htmlFor={`tag-name-${tag.id}`} className="sr-only">Nombre de la etiqueta</label>
-        <input id={`tag-name-${tag.id}`} value={name} maxLength={80} onChange={(event) => setName(event.target.value)}
-          onBlur={() => { if (name.trim() && name.trim() !== tag.name) save({ name }); }}
-          onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
-          className={input} />
-        <ColorPicker value={color} onChange={(next) => { setColor(next); save({ color: next }); }} />
+        <input id={`tag-name-${tag.id}`} value={name} maxLength={80} required onChange={(event) => setName(event.target.value)} className={input} />
+        <ColorPicker value={color} onChange={setColor} />
       </div>
       <div className="space-y-2">
         <p className="text-[13px] font-medium text-body">Comparte</p>
-        <SharingPicker value={share} onChange={(next) => { setShare(next); save({ share: next }); }} />
+        <SharingPicker value={share} onChange={setShare} />
         <p className="text-xs text-muted">
-          Se aplica al tiro a {count === 1 ? "su contacto" : `sus ${count} contactos`}, salvo los personalizados.
+          Al guardar se aplica a {count === 1 ? "su contacto" : `sus ${count} contactos`}, salvo los personalizados.
         </p>
       </div>
       <Feedback {...state} />
-      <div className="flex items-center justify-between border-t border-line pt-4">
+      <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
         <button type="button" onClick={() => { close(); onDelete(); }}
           className="cursor-pointer text-[13px] font-medium text-danger hover:underline">Eliminar etiqueta</button>
-        <button type="button" onClick={close} className={primaryButton}>Listo</button>
+        <div className="flex gap-2">
+          <ModalCancel />
+          <button className={primaryButton} disabled={pending || !dirty || !name.trim()}>{pending ? "Guardando…" : "Guardar"}</button>
+        </div>
       </div>
-    </div>
+    </form>
   );
 }
 

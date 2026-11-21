@@ -65,3 +65,36 @@ export function Initial({ name }: { name: string }) {
   const hash = [...name].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 0);
   return <span aria-hidden="true" className={`grid size-9 shrink-0 place-items-center rounded-full text-[13px] font-medium tag ${avatarColors[hash % avatarColors.length]}`}>{name.slice(0, 1).toUpperCase()}</span>;
 }
+
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <span aria-hidden="true" className={`block animate-pulse bg-white/6 ${className.includes("rounded") ? "" : "rounded-md"} ${className}`} />;
+}
+
+export function ListSkeleton({ rows = 4, label = "Cargando" }: { rows?: number; label?: string }) {
+  return (
+    <div role="status" aria-label={label} className={`${card} divide-y divide-line`}>
+      {Array.from({ length: rows }, (_, index) => (
+        <div key={index} className="flex items-center gap-3 px-4 py-3">
+          <Skeleton className="size-9 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className={`h-3.5 ${["w-2/5", "w-1/3", "w-1/2", "w-1/4"][index % 4]}`} />
+            <Skeleton className="h-3 w-1/5" />
+          </div>
+          <Skeleton className="h-7 w-20 rounded-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function PageSkeleton({ rows = 5, tabs = false, label = "Cargando" }: { rows?: number; tabs?: boolean; label?: string }) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        {tabs ? <div className="flex gap-2"><Skeleton className="h-[30px] w-24 rounded-full" /><Skeleton className="h-[30px] w-28 rounded-full" /><Skeleton className="h-[30px] w-24 rounded-full" /></div> : <span />}
+        <Skeleton className="h-8 w-32 rounded-full" />
+      </div>
+      <ListSkeleton rows={rows} label={label} />
+    </div>
+  );
+}

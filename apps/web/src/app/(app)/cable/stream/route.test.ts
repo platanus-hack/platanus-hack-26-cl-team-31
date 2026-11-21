@@ -5,6 +5,7 @@ import { getStreamSession } from "../../../../lib/auth";
 import { signServiceToken } from "../../../../lib/broker";
 import { GET } from "./route";
 
+vi.mock("../../../../lib/frozen", () => ({ frozen: false, frozenActivity: [] }));
 vi.mock("../../../../lib/auth", () => ({ getStreamSession: vi.fn() }));
 vi.mock("../../../../lib/broker", () => ({
   brokerUrl: () => "https://broker.example.test",

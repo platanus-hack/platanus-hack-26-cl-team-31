@@ -58,3 +58,19 @@ const dateTime = new Intl.DateTimeFormat("es-CL", {
 export function formatTime(value: string) {
   return dateTime.format(new Date(value));
 }
+
+const relative = new Intl.RelativeTimeFormat("es", { numeric: "auto", style: "short" });
+
+export function formatRelative(value: string, now = Date.now()) {
+  const minutes = Math.round((new Date(value).getTime() - now) / 60_000);
+  const abs = Math.abs(minutes);
+  if (abs < 60) return relative.format(minutes, "minute");
+  if (abs < 60 * 24) return relative.format(Math.round(minutes / 60), "hour");
+  return relative.format(Math.round(minutes / (60 * 24)), "day");
+}
+
+const slotDay = new Intl.DateTimeFormat("es-CL", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+export function formatSlotDay(date: string) {
+  return slotDay.format(new Date(`${date}T12:00:00Z`));
+}
