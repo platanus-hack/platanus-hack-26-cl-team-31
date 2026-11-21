@@ -35,5 +35,25 @@ services:
       postgres:
         condition: service_healthy
 
+  mcp:
+    profiles: ["nexo"]
+    image: node:24-alpine
+    working_dir: /workspace
+    command: ["node", "apps/mcp/dist/index.js"]
+    volumes:
+      - .:/workspace:ro
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: ${MCP_PORT}
+      MCP_RESOURCE_URL: ${MCP_RESOURCE_URL}
+      AUTH_ISSUER: ${AUTH_ISSUER}
+      AUTH_JWKS_URL: ${AUTH_JWKS_URL}
+      BROKER_URL: ${BROKER_URL:-}
+      MCP_SERVICE_PRIVATE_KEY: ${MCP_SERVICE_PRIVATE_KEY:-}
+      MCP_DEV_AUTH: ${MCP_DEV_AUTH:-0}
+    ports:
+      - "127.0.0.1:${MCP_PORT}:${MCP_PORT}"
+
 volumes:
   pgdata:

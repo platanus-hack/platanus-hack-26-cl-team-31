@@ -1,10 +1,9 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
-import { SERVER_NAME, SERVER_VERSION } from "./server.js";
 
 // One stdio process per principal. Tool arguments cannot select a credential or endpoint.
 export function coordinationServer(base: string, token: string) {
-  const server = new Server({name: SERVER_NAME, version: SERVER_VERSION}, {capabilities: {tools: {}}});
+  const server = new Server({name: "team-31-mcp", version: "0.1.0"}, {capabilities: {tools: {}}});
   async function call(path: string, args?: unknown) {
     const response = await fetch(new URL(path, base), {
       method: args === undefined ? "GET" : "POST",

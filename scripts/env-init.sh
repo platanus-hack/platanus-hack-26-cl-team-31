@@ -22,6 +22,7 @@ if [ -z "$SLOT" ]; then
     grep -q "^$s " "$REGISTRY" && continue
     port_busy $((3000 + s)) && continue
     port_busy $((54320 + s)) && continue
+    port_busy $((4100 + s)) && continue
     port_busy $((4310 + s)) && continue
     SLOT=$s; break
   done
@@ -31,8 +32,11 @@ echo "$SLOT $ROOT" >>"$REGISTRY"
 
 # --- Puertos: BASE + SLOT. Al agregar un servicio, agrega su variable aquí. ---
 WEB_PORT=$((3000 + SLOT))
+MCP_PORT=$((4100 + SLOT))
 POSTGRES_PORT=$((54320 + SLOT))
 COORDINATION_PORT=$((4310 + SLOT))
+BETTER_AUTH_URL=http://127.0.0.1:$WEB_PORT
+AUTH_ISSUER=$BETTER_AUTH_URL/api/auth
 
 cat >"$ENV_FILE" <<ENV
 # GENERADO por scripts/env-init.sh — no editar a mano (secretos van en .env.local)
@@ -40,7 +44,11 @@ SLOT=$SLOT
 COMPOSE_PROJECT_NAME=team31-$SLOT
 
 WEB_PORT=$WEB_PORT
-BETTER_AUTH_URL=http://127.0.0.1:$WEB_PORT
+BETTER_AUTH_URL=$BETTER_AUTH_URL
+MCP_PORT=$MCP_PORT
+MCP_RESOURCE_URL=http://127.0.0.1:$MCP_PORT/mcp
+AUTH_ISSUER=$AUTH_ISSUER
+AUTH_JWKS_URL=$AUTH_ISSUER/jwks
 POSTGRES_PORT=$POSTGRES_PORT
 COORDINATION_PORT=$COORDINATION_PORT
 COORDINATION_API_URL=http://127.0.0.1:$COORDINATION_PORT
@@ -50,4 +58,4 @@ TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app_te
 ENV
 
 [ -f "$ROOT/.env.local" ] || cp "$ROOT/.env.local.example" "$ROOT/.env.local"
-echo "✔ .env listo (slot $SLOT): web :$WEB_PORT · postgres :$POSTGRES_PORT"
+echo "✔ .env listo (slot $SLOT): web :$WEB_PORT · mcp :$MCP_PORT · postgres :$POSTGRES_PORT"
