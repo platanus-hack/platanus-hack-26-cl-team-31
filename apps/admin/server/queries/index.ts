@@ -11,8 +11,6 @@ import {
   AgentRow,
   AuditEntry,
   ErrorGroup,
-  FlowRequestRef,
-  FlowSnapshot,
   Overview,
   RequestDetail,
   RequestSummary,
@@ -52,6 +50,7 @@ import {
   Where,
   type Db,
 } from "./db.js"
+import { flowSnapshot, latestEventId, requestRefs } from "./flow.js"
 import { checkReadOnlySql, SQL_MAX_ROWS, wrapWithLimit } from "./sql-guard.js"
 
 export {
@@ -73,19 +72,12 @@ const WINDOWS: Record<Window, string> = {
   "7d": "7 days",
 }
 
-const OPEN_STATUSES = ["awaiting_agent", "awaiting_owner"]
+const OPEN_STATUSES = ["awaiting_agent", "awaiting_owner"] satisfies RequestStatus[]
 const AUDIT_PAGE = 50
 const TIMELINE_EVENTS = 500
 const TRACE_SPANS = 2000
 const RECENT_REQUESTS = 20
 const LIST_LIMIT = 500
-// Foto del flujo en vivo (página Flujo): límites por lista y ventana de solicitudes recientes.
-const FLOW_USERS = 1000
-const FLOW_AGENTS = 2000
-const FLOW_REQUESTS = 300
-const FLOW_REFS = 200
-const FLOW_REQUEST_COLUMNS = "id, from_address, to_address, target_agent_id, answered_by_agent_id, status, created_at"
-
 // ---------- Filas de las vistas ----------
 
 type Row = Record<string, unknown>
@@ -143,18 +135,6 @@ function toRequestSummary(row: Row): RequestSummary {
     closedAt: isoOrNull(row.closed_at as Time | null),
     durationMs: numOrNull(row.duration_ms as Numeric | null),
     stuck: row.stuck,
-  })
-}
-
-function toFlowRequestRef(row: Row): FlowRequestRef {
-  return FlowRequestRef.parse({
-    id: row.id,
-    fromAddress: row.from_address,
-    toAddress: row.to_address,
-    targetAgentId: row.target_agent_id ?? null,
-    answeredByAgentId: row.answered_by_agent_id ?? null,
-    status: row.status,
-    createdAt: iso(row.created_at as Time),
   })
 }
 
@@ -638,13 +618,7 @@ export function createPgAdminQueries({
         return rows.map(toTelemetryEvent)
       }),
 
-    latestEventId: () =>
-      ro(async (db) => {
-        const { rows } = await db.query<{ id: string | null }>(
-          "SELECT max(id)::text AS id FROM ops.v_events"
-        )
-        return rows[0]?.id ?? null
-      }),
+    latestEventId: () => ro(latestEventId),
 
     errors: (filters) => ro((db) => errorGroups(db, filters, 100)),
 
@@ -785,70 +759,8 @@ export function createPgAdminQueries({
         return rows.map(toWakeJob)
       }),
 
-    flowSnapshot: () =>
-      ro(async (db) => {
-        // El cursor va primero: lo que se escriba mientras se leen las listas llega por el stream
-        // (y el cliente descarta duplicados).
-        const [cursor, users, agents, requests, now] = await inOrder(
-          async () =>
-            db.query<{ id: string | null }>("SELECT max(id)::text AS id FROM ops.v_events"),
-          async () =>
-            db.query(
-              `SELECT user_id, address, display_name FROM ops.v_users
-               ORDER BY address IS NULL, created_at DESC, user_id LIMIT ${FLOW_USERS + 1}`
-            ),
-          async () =>
-            db.query(
-              `SELECT user_id, agent_id, label, wake_kind, verified_at, revoked_at, created_at
-               FROM ops.v_agent_connections
-               WHERE revoked_at IS NULL OR revoked_at > now() - interval '24 hours'
-               ORDER BY created_at DESC, user_id, agent_id LIMIT ${FLOW_AGENTS + 1}`
-            ),
-          async () =>
-            db.query(
-              `SELECT ${FLOW_REQUEST_COLUMNS} FROM ops.v_requests
-               WHERE status = ANY($1::text[]) OR created_at > now() - interval '15 minutes'
-                 OR closed_at > now() - interval '15 minutes'
-               ORDER BY created_at DESC, id LIMIT ${FLOW_REQUESTS + 1}`,
-              [OPEN_STATUSES]
-            ),
-          async () => db.query<{ now: Date }>("SELECT now() AS now")
-        )
-        return FlowSnapshot.parse({
-          generatedAt: iso(now.rows[0]!.now),
-          cursor: cursor.rows[0]?.id ?? null,
-          users: users.rows.slice(0, FLOW_USERS).map((row) => ({
-            userId: row.user_id,
-            address: row.address ?? null,
-            displayName: row.display_name ?? null,
-          })),
-          agents: agents.rows.slice(0, FLOW_AGENTS).map((row) => ({
-            userId: row.user_id,
-            agentId: row.agent_id,
-            label: row.label,
-            wakeKind: row.wake_kind,
-            verifiedAt: isoOrNull(row.verified_at),
-            revokedAt: isoOrNull(row.revoked_at),
-            createdAt: iso(row.created_at),
-          })),
-          requests: requests.rows.slice(0, FLOW_REQUESTS).map(toFlowRequestRef),
-          truncated:
-            users.rows.length > FLOW_USERS ||
-            agents.rows.length > FLOW_AGENTS ||
-            requests.rows.length > FLOW_REQUESTS,
-        })
-      }),
-
-    requestRefs: (ids) =>
-      ro(async (db) => {
-        const wanted = [...new Set(ids)].slice(0, FLOW_REFS)
-        if (wanted.length === 0) return []
-        const { rows } = await db.query(
-          `SELECT ${FLOW_REQUEST_COLUMNS} FROM ops.v_requests WHERE id = ANY($1::text[])`,
-          [wanted]
-        )
-        return rows.map(toFlowRequestRef)
-      }),
+    flowSnapshot: () => ro((db) => flowSnapshot(db, OPEN_STATUSES)),
+    requestRefs: (ids) => ro((db) => requestRefs(db, ids)),
 
     audit: (cursor) =>
       ro(async (db) => {
