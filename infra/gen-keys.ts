@@ -57,6 +57,7 @@ function prepareKeys() {
   randomKey("NONCE_KEY");
   randomKey("WAKE_SECRETS_KEY");
   randomKey("BETTER_AUTH_SECRET");
+  if (!values.BROKER_DATABASE_PASSWORD) additions.set("BROKER_DATABASE_PASSWORD", randomBytes(32).toString("hex"));
 }
 
 function writeKeys() {

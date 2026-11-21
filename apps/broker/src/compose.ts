@@ -1,6 +1,6 @@
 import { createPrivateKey } from "node:crypto";
 import { createBroker, createMemoryStore } from "@team-31/broker";
-import { applyPostgresMigrations, createPostgresStore } from "@team-31/broker/postgres";
+import { createPostgresStore } from "@team-31/broker/postgres";
 import { createWaker } from "@team-31/wake";
 import type { BrokerEnv } from "./env.js";
 
@@ -10,7 +10,6 @@ async function openStore(env: BrokerEnv) {
     return { store: createMemoryStore(), close: async () => {} };
   }
   if (!env.WAKE_SECRETS_KEY) throw new Error("Se requiere WAKE_SECRETS_KEY con DATABASE_URL.");
-  if (env.NODE_ENV !== "production") await applyPostgresMigrations({ databaseUrl: env.DATABASE_URL });
   const store = createPostgresStore({ databaseUrl: env.DATABASE_URL, secretsKey: env.WAKE_SECRETS_KEY });
   return { store, close: () => store.close() };
 }

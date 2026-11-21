@@ -9,7 +9,7 @@ Varios devs/agentes trabajan en paralelo, cada uno en su propio worktree. Cada w
 ```bash
 git worktree add ../team-31-<nombre> -b <rama>   # fuera del repo, no anidado
 cd ../team-31-<nombre>
-pnpm bootstrap      # instala, asigna un slot, prepara llaves y esquema OAuth, y levanta Postgres
+pnpm bootstrap      # instala, asigna un slot, levanta Postgres y prepara llaves y esquemas
 pnpm dev            # todas las apps; una sola: pnpm dev --filter @team-31/web
 ```
 
@@ -58,6 +58,7 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 
 - Después de `pnpm bootstrap`, inicia solo el broker con `pnpm dev --filter @team-31/broker-service`. `pnpm env:init` actualiza worktrees existentes y genera `BROKER_PORT` y `BROKER_URL`.
 - Conserva en `.env.local` las llaves que generó `pnpm bootstrap`. Configura `REQUEST_TTL_SECONDS` o `WAKE_RETRY_DELAYS_MS` para probar plazos y reintentos más cortos.
+- `pnpm bootstrap` genera `BROKER_DATABASE_PASSWORD`, aplica las migraciones del broker y prepara el rol `nexo_broker`. El broker local se conecta con ese rol. `DATABASE_URL` del worktree se usa para migrar y para los demás servicios que ya la consumen. Para repetir la preparación de la base del broker, ejecuta `pnpm nexo:broker:migrate`.
 - `BROKER_HOST` usa `127.0.0.1` por defecto. Para correrlo en Docker, compila con `pnpm build --filter @team-31/broker-service` y ejecuta `docker compose --env-file .env --env-file .env.local --profile nexo up -d broker`. Compose solo publica el puerto en loopback.
 - `WAKE_ALLOW_INSECURE=1` permite avisos HTTP locales durante el desarrollo. Consulta [la guía del broker](apps/broker/README.md) para los detalles de Postgres, los avisos y el stream de actividad.
 

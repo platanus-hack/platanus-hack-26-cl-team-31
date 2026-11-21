@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Principal, WakeTarget } from "@team-31/protocol";
 import pg from "pg";
@@ -306,11 +306,13 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   it("grants a separate runtime role only the privileges needed by the Store", async () => {
     const runtimeRole = "nexo_test_" + randomUUID().replaceAll("-", "");
-    await isolated.query(`CREATE ROLE ${pg.escapeIdentifier(runtimeRole)}`);
+    const runtimePassword = randomBytes(32).toString("hex");
     try {
-      await applyPostgresMigrations({ databaseUrl, runtimeRole });
+      await applyPostgresMigrations({ databaseUrl, runtimeRole, runtimePassword });
+      await applyPostgresMigrations({ databaseUrl, runtimeRole, runtimePassword });
       const runtimeUrl = new URL(databaseUrl);
-      runtimeUrl.searchParams.set("options", "-c role=" + runtimeRole);
+      runtimeUrl.username = runtimeRole;
+      runtimeUrl.password = runtimePassword;
       const runtime = createPostgresStore({ databaseUrl: runtimeUrl.toString(), secretsKey });
       try {
         await createParticipants();
@@ -330,7 +332,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       expect(privileges?.can_mutate).toBe(false);
     } finally {
       await isolated.query(`DROP OWNED BY ${pg.escapeIdentifier(runtimeRole)}`);
-      await isolated.query(`DROP ROLE ${pg.escapeIdentifier(runtimeRole)}`);
+      await isolated.query(`DROP ROLE IF EXISTS ${pg.escapeIdentifier(runtimeRole)}`);
     }
   });
 });

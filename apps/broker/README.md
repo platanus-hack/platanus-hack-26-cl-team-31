@@ -7,7 +7,7 @@ Desde la raíz, ejecuta `pnpm bootstrap`, configura los valores de [`.env.exampl
 - `REQUEST_TTL_SECONDS` vale 900 por defecto. El primer aviso está disponible de inmediato. `WAKE_RETRY_DELAYS_MS` indica el tiempo antes del segundo y tercer intento, respectivamente, con `10000,30000` por defecto. El worker revisa la cola una vez por segundo.
 - `WAKE_ALLOW_INSECURE=1` permite HTTP local en desarrollo. El broker rechaza esta configuración en producción.
 
-Con `DATABASE_URL`, los datos se guardan en Postgres. El arranque de desarrollo aplica las migraciones del esquema `nexo`. En producción, [aplica las migraciones con el rol dueño del esquema](../../packages/broker/drizzle/README.md) antes del arranque y usa la URL del rol de ejecución. Para una sesión en memoria, define `DATABASE_URL=''` en `.env.local`.
+En el worktree, `pnpm bootstrap` aplica las migraciones del esquema `nexo` con el rol dueño y genera `BROKER_DATABASE_PASSWORD` en `.env.local`. El broker usa el rol `nexo_broker` para consultar Postgres y añadir eventos a la bitácora. Para preparar nuevamente un volumen local, ejecuta `pnpm nexo:broker:migrate`. Si configuras otra base, [aplica las migraciones con el rol dueño del esquema](../../packages/broker/drizzle/README.md) y suministra al broker la URL de un rol limitado. Para una sesión en memoria, define `DATABASE_URL=''` en `.env.local`.
 
 Para usar Docker, ejecuta `pnpm build --filter @team-31/broker-service` y después `docker compose --env-file .env --env-file .env.local --profile nexo up -d broker` desde la raíz. El puerto del broker queda publicado en el loopback del host.
 

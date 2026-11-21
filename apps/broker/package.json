@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm -w build --filter '@team-31/broker-service^...' && tsx watch src/index.ts",
+    "dev": "pnpm -w build --filter '@team-31/broker-service^...' && bash scripts/run.sh tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js",
+    "start": "bash scripts/run.sh node dist/index.js",
+    "db:prepare": "node scripts/prepare-db.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "clean": "rm -rf dist .turbo node_modules"
