@@ -2,7 +2,7 @@ import "server-only";
 
 import { ownerClient } from "@/lib/broker";
 
-import { getOwner, requireAddress } from "../../owner";
+import { getOwner, readAsOwner, requireAddress } from "../../owner";
 
 export async function connectContext() {
   await requireAddress();
@@ -10,6 +10,6 @@ export async function connectContext() {
 }
 
 export async function listConnections() {
-  const { owner, broker } = await connectContext();
-  return (await broker.agents(owner)).filter((agent) => !agent.revokedAt);
+  const { data: agents } = await readAsOwner((owner) => ownerClient().agents(owner));
+  return agents.filter((agent) => !agent.revokedAt);
 }

@@ -9,6 +9,11 @@
       "@team-31/source": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./constants": {
+      "types": "./src/constants.ts",
+      "@team-31/source": "./src/constants.ts",
+      "default": "./dist/constants.js"
+    },
     "./http": {
       "types": "./src/http.ts",
       "@team-31/source": "./src/http.ts",

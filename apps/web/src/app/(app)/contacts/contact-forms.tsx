@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import { contactTags, ContactTag, type Contact, type Invitation, type Sharing, type TagPresets } from "@team-31/protocol";
+import type { Contact, Invitation, Sharing, TagPresets } from "@team-31/protocol";
+import { contactTagNames, contactTags, type ContactTag } from "@team-31/protocol/constants";
 
 import { answerInvitation, removeContact, saveContactTag, saveSharing, saveTagPreset, sendInvitation } from "../actions";
 import { button, card, Feedback, input, primaryButton } from "../ui";
@@ -167,7 +168,7 @@ export function TagPresetsEditor({ presets }: { presets: TagPresets }) {
       </button>
       {open && (
         <div className="divide-y divide-line border-t border-line">
-          {ContactTag.options.map((tag) => <TagPresetEditor key={`${tag}:${presets[tag].join()}`} tag={tag} value={presets[tag]} />)}
+          {contactTagNames.map((tag) => <TagPresetEditor key={`${tag}:${presets[tag].join()}`} tag={tag} value={presets[tag]} />)}
         </div>
       )}
     </section>

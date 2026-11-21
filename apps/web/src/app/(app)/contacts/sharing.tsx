@@ -1,7 +1,8 @@
 "use client";
 
 import { useId } from "react";
-import { categories, Category, type Sharing } from "@team-31/protocol";
+import { categories, categoryNames, type Category } from "@team-31/protocol/constants";
+import type { Sharing } from "@team-31/protocol";
 
 const hints: Record<Category, string> = {
   availability: "Puede preguntar si estás libre y por tus horarios.",
@@ -32,7 +33,7 @@ function Switch({ category, checked, onChange }: {
 export function SharingPicker({ value, onChange }: { value: Sharing; onChange: (value: Sharing) => void }) {
   return (
     <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-stage">
-      {Category.options.map((category) => (
+      {categoryNames.map((category) => (
         <Switch key={category} category={category} checked={value.includes(category)}
           onChange={(checked) => onChange(checked ? [...value, category] : value.filter((item) => item !== category))} />
       ))}

@@ -3,15 +3,14 @@ import Link from "next/link";
 import { getAuth } from "@/lib/auth";
 import { ownerClient } from "@/lib/broker";
 
-import { getOwner, requireAddress } from "../owner";
+import { readAsOwner } from "../owner";
 import { button, card, Empty, input, secondaryText, textLink } from "../ui";
 import { CirclePicker } from "./circle-picker";
 
 async function readAgentDirectory() {
-  const address = await requireAddress();
-  const owner = await getOwner();
   const broker = ownerClient();
-  const [agents, circles] = await Promise.all([broker.agentDirectory(owner), broker.circles(owner)]);
+  const { address, data: [agents, circles] } = await readAsOwner((owner) =>
+    Promise.all([broker.agentDirectory(owner), broker.circles(owner)]));
   const clientIds = [...new Set(agents.filter((agent) => agent.agentId === agent.label).map((agent) => agent.agentId))];
   const { adapter } = await getAuth().$context;
   const clients = clientIds.length ? await adapter.findMany<{ clientId: string; name?: string }>({

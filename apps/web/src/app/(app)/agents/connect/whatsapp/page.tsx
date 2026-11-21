@@ -2,14 +2,12 @@ import Link from "next/link";
 import { config } from "@/lib/whatsapp/kapso";
 import { askExample } from "@/lib/whatsapp/commands";
 import { whatsappStore } from "@/lib/whatsapp/runtime";
-import { getOwner, requireAddress } from "../../../owner";
+import { readAsOwner } from "../../../owner";
 import { card, Heading, secondaryText, textLink } from "../../../ui";
 import { LinkForm } from "./link-form";
 
 export default async function WhatsAppPage() {
-  await requireAddress();
-  const { userId } = await getOwner();
-  const state = await whatsappStore().state(userId);
+  const { data: state } = await readAsOwner(({ userId }) => whatsappStore().state(userId));
   const kapso = config();
   return (
     <>

@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { authClient } from "@/lib/auth-client";
+import { useEffect, useState } from "react";
+import { loadAuthClient } from "@/lib/load-auth-client";
 import { reportBrowserFailure } from "@/lib/browser-feedback";
 
 export function GoogleButton({ callbackURL, errorCallbackURL }: { callbackURL: string; errorCallbackURL: string }) {
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
+  useEffect(() => { loadAuthClient().catch(() => undefined); }, []);
 
   async function signIn() {
     setPending(true);
     setFailed(false);
     try {
+      const authClient = await loadAuthClient();
       const result = await authClient.signIn.social({
         provider: "google",
         callbackURL,

@@ -1,6 +1,6 @@
 "use client";
 
-import { ADDRESS_DOMAIN } from "@team-31/protocol";
+import { ADDRESS_DOMAIN } from "@team-31/protocol/constants";
 import { useActionState, useState } from "react";
 
 import type { OnboardingSource } from "@/lib/onboarding-flow";
