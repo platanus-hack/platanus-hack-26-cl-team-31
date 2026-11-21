@@ -11,13 +11,58 @@ El MVP conserva MCP, server y broker como servicios separados, con bóvedas aloj
 | `apps/web` | Login OAuth, interfaz del titular y dashboard local `/demo`. | Conservar como interfaz. El dashboard y la CLI deben consumir las mismas operaciones. |
 | `apps/mcp` | Expone las tools de Nexo a los asistentes y llama al broker con la identidad delegada. | Conservar como adaptador MCP común, incluidas las consultas a contactos. |
 | `apps/broker`, `packages/broker` | La app expone HTTP y arranca el worker. El paquete implementa reglas de acceso, solicitudes, aprobación del titular, almacenamiento y clientes. | Conservar como autoridad sobre permisos, solicitudes y entrega de resultados. |
-| `apps/server` | API de coordinación con contactos, membresías, calendario, publicaciones y reuniones en PostgreSQL. Hoy también autentica tokens de la seed y expone su propio adaptador MCP. | Conservar bóvedas, grupos, directorio y reuniones. Migrar los consumidores y el historial antes de retirar `people.token_hash`, `availability_requests` y `apps/server/src/mcp.ts`. |
+| `apps/server` | API de coordinación con contactos, membresías, calendario, publicaciones y reuniones en PostgreSQL. Hoy también autentica tokens de la seed y expone su propio adaptador MCP. | Conservar bóvedas, grupos y reuniones. Retirar el directorio y las publicaciones. Migrar los consumidores y el historial antes de retirar `people.token_hash`, `availability_requests` y `apps/server/src/mcp.ts`. |
 | `packages/protocol`, `packages/auth`, `packages/wake` | `protocol` define herramientas, reglas y mensajes. `auth` implementa OAuth y JWT de servicio. `wake` envía avisos a agentes. | Conservar y reutilizar desde los servicios y sus clientes. |
 | `apps/admin`, `packages/telemetry`, `packages/ops` | Panel y MCP de administración, instrumentación y esquema operativo de PostgreSQL. | Conservar para seguir las solicitudes por `requestId`. |
 | `apps/demo` | Ejecuta el escenario local de Contactos de Ana desde la CLI y el dashboard. | Conservar el escenario y los datos de prueba. Al conectarlo al stack persistente, retirar el arranque del broker por sesión y la traducción de `demo_profiles.interest_readers` a reglas. |
 | `infra/`, `scripts/`, `packages/typescript-config`, `e2e/` | Preparación del entorno, comandos de desarrollo y ensayos, configuración TypeScript y pruebas del stack. | Conservar como soporte. Para probar OAuth, web, MCP y broker juntos, usar el [guion de scripts/demo](docs/demo.md). |
 
 Las guías viven en `docs/`. [docs/poc](docs/poc/README.md) conserva el prototipo anterior al monorepo como referencia histórica.
+
+## Modelo de producto
+
+Un titular pregunta al agente de otro titular. El broker decide si la pregunta llega y qué campos de la respuesta vuelven.
+
+### Permisos
+
+`SharingRules` (`packages/protocol/src/rules.ts`) es el único modelo de permisos. Cada titular guarda las suyas en el broker y `evaluate` (`packages/broker/src/policy/evaluate.ts`) decide por remitente, tool y campos. Un permiso nuevo es una tool o un campo en `packages/protocol/src/tools.ts` más una regla en `SharingRules`.
+
+Decisión del 2026-11-21: Nexo deja de publicar información. Estas piezas se retiran y solo reciben cambios que las migren:
+
+- `publicProfile` y la tool `profile`, que el broker responde sin consultar al agente del titular.
+- El directorio y `interests.audience` en `apps/server`.
+- `memberships.can_ask` y `can_share` en `apps/server`, que pasan a `circles` y `grants`.
+- `demo_profiles.interest_readers` en `apps/demo`, que pasa a `people`.
+
+### Vocabulario
+
+Usa un término por concepto, en el código y en los textos.
+
+| Término | En el código | Qué es |
+| --- | --- | --- |
+| Titular | `Owner`, `userId` | Persona que define sus reglas y responde por sus datos. «Dueño» en textos anteriores. |
+| Agente | `Principal`, `agentId` | Asistente conectado que actúa por un titular con sus `scopes`. |
+| Dirección Nexo | `Address` | Identificador `nombre@dominio` con el que otros titulares le escriben. |
+| Solicitud | `AskInput`, `requestId` | Pregunta de un titular a otro con una tool. Termina en un `FinalOutcome`. |
+| Tool | `ToolName` | Operación que se puede pedir: `availability`, `question`, `interest_check`. `profile` está en retiro. |
+| Regla | `SharingRules` | Lo que un titular permite: `circles`, `grants`, `people`, `blocked` y `defaultForUnknown`. |
+| Círculo | `circles` | Lista de direcciones con nombre que arma el titular. |
+| Permiso | entrada de `grants` o `people` | Una tool, los campos de respuesta permitidos y una guía para el agente. |
+| Aviso | `WakeTarget`, `WakeNotice` | Notificación al agente del destinatario de que tiene una solicitud. |
+| Bandeja | `InboxItem` | Solicitudes pendientes que lee el agente del destinatario. |
+
+### Invariantes
+
+Todo cambio en `packages/broker`, `packages/protocol` o `apps/mcp` conserva estas seis. Sus pruebas viven en `packages/broker/src/core/broker.test.ts`; si cambias una, cambia su prueba en el mismo PR.
+
+1. La identidad del remitente sale del token. `AskInput` carece de campo de remitente.
+2. Una denegación llega firmada y sin motivo, y la solicitud nunca despierta al destinatario.
+3. La respuesta pasa por `filterResult` y sale solo con los campos permitidos.
+4. Antes de entregar, `stillAuthorized` evalúa de nuevo las reglas. Revocar a mitad de camino impide la entrega.
+5. Cada solicitud termina en un solo estado final. Una segunda respuesta recibe `conflict`.
+6. El aviso lleva solo `requestId` y `event`. El contenido se lee de la bandeja con la identidad del destinatario.
+
+La revisión completa está en [docs/security.md](docs/security.md).
 
 ## Antes de escribir código
 
