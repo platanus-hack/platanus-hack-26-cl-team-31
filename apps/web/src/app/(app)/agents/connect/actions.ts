@@ -1,6 +1,6 @@
 "use server";
 
-import { WakeTarget } from "@team-31/protocol";
+import { isSystemSender, WakeTarget } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -85,7 +85,7 @@ export async function readPingStatus(requestId: string) {
     try {
       const items = await broker.activity(owner, 100);
       const ping = items.find((item) =>
-        item.requestId === requestId && item.direction === "received" && item.from.startsWith("system@"));
+        item.requestId === requestId && item.direction === "received" && isSystemSender(item.from));
       if (!ping) return;
 
       // El titular también puede responder una prueba escalada. La verificación exige la respuesta final del agente.

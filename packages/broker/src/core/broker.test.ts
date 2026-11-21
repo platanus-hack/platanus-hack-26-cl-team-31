@@ -19,7 +19,7 @@ import { createTelemetry, memorySink } from "@team-31/telemetry";
 import { createWaker } from "@team-31/wake";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
-import { createOwnerRuntime, localQuestionSource, localReadTool } from "../client/runtime.js";
+import { createOwnerRuntime, localQuestionSource, localReadTool } from "@team-31/broker-client";
 import { deriveNonce, verifyJson } from "./crypto.js";
 
 const principals: Record<"alice" | "bruno" | "carla", Principal> = {
@@ -603,6 +603,18 @@ describe("ejecución en el runtime del titular", () => {
     expect(await broker.agent.status(alice, request.requestId)).toMatchObject({ decision: "deny" });
   });
 
+  it("shares a failed wake with overlapping callers and retries the next delivery", async () => {
+    const request = await askAvailability();
+    const read = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ available: true });
+    const onWake = createOwnerRuntime(broker.agent, bruno, [localReadTool("availability", read)]);
+    const wake = notice(request.requestId);
+    const settled = await Promise.allSettled([onWake(wake), onWake(wake)]);
+    expect(settled).toMatchObject([{ status: "rejected", reason: { message: "offline" } }, { status: "rejected", reason: { message: "offline" } }]);
+    expect(read).toHaveBeenCalledOnce();
+    await onWake(wake);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it("filtra la salida antes de enviarla al broker y procesa un aviso repetido una sola vez", async () => {
     const request = await askAvailability();
     const reply = vi.fn(broker.agent.reply);
@@ -627,6 +639,21 @@ describe("solicitudes de conexión", () => {
     const item = await inboxItem(bruno, request.requestId);
     return { request, item };
   }
+
+  it("preserves the original tag and sharing offer across conflicting invitation retries", async () => {
+    const to = "bruno@sideband.app";
+    const first = await broker.owner.connect(carla, { to, share: [], tag: "work" });
+    expect((await broker.owner.connect(carla, { to, share: [], tag: "work" })).requestId).toBe(first.requestId);
+    expect((await broker.owner.connect(carla, { to, tag: "work" })).requestId).toBe(first.requestId);
+    await expect(broker.owner.connect(carla, { to, share: ["availability"] })).rejects.toMatchObject({ code: "conflict" });
+    await expect(broker.owner.connect(carla, { to, tag: "family" })).rejects.toMatchObject({ code: "conflict" });
+    await broker.owner.answerInvitation(bruno, first.requestId, { accept: true, share: [] });
+    expect((await broker.owner.contacts(carla)).contacts).toMatchObject([{ address: to, gives: [], tag: "work" }]);
+    await broker.owner.removeContact(carla, to);
+    const grant = await broker.owner.setGrant(carla, { grantee: to, category: "general" });
+    await broker.owner.removeContact(carla, to);
+    expect(await broker.owner.grants(carla)).toContainEqual(grant);
+  });
 
   it("sin elección explícita el agente no acepta; el titular aún puede aceptar desde Contactos", async () => {
     const { request, item } = await invite();

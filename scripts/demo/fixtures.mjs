@@ -32,7 +32,7 @@ export async function createFixtures({ run, withSessions = false } = {}) {
   const [{ createAuth, migrateAuth }, { mintServiceToken }, { createOwnerClient }, { betterAuth }, { testUtils }, pg] = await Promise.all([
     load("web", "@team-31/auth/server"),
     load("web", "@team-31/auth/service"),
-    load("web", "@team-31/broker/client"),
+    load("web", "@team-31/broker-client"),
     load("web", "better-auth"),
     load("web", "better-auth/plugins"),
     import(createRequire(new URL("../../packages/auth/package.json", import.meta.url)).resolve("pg")),

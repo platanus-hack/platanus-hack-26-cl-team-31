@@ -92,8 +92,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
     case "owner.revokeAgent":
       return owner.revokeAgent(c.get("web"), parseInput(route.params, c.req.param()).agentId);
     case "owner.connect": {
-      const { to, share, tag } = await parseBody(c, route.body);
-      return owner.connect(c.get("web"), to, share, tag);
+      return owner.connect(c.get("web"), await parseBody(c, route.body));
     }
     case "owner.contacts":
       return owner.contacts(c.get("web"));

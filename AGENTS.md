@@ -10,7 +10,7 @@ El MVP conserva MCP, server y broker como servicios separados, con bóvedas aloj
 | --- | --- | --- |
 | `apps/web` | Login OAuth, interfaz del titular y dashboard local `/demo`. | Conservar como interfaz. El dashboard y la CLI deben consumir las mismas operaciones. |
 | `apps/mcp` | Expone las tools de Sideband a los asistentes y llama al broker con la identidad delegada. | Conservar como adaptador MCP común, incluidas las consultas a contactos. |
-| `apps/broker`, `packages/broker` | La app expone HTTP y arranca el worker. El paquete implementa grants, solicitudes, aprobación del titular, almacenamiento y clientes. | Conservar como autoridad sobre permisos, solicitudes y entrega de resultados. |
+| `apps/broker`, `packages/broker`, `packages/broker-client` | La app expone HTTP y arranca el worker. El paquete implementa grants, solicitudes, aprobación del titular, almacenamiento. `broker-client` implementa los clientes HTTP y el runtime del titular. | Conservar como autoridad sobre permisos, solicitudes y entrega de resultados. |
 | `apps/server` | API de coordinación con contactos, membresías, calendario, publicaciones y reuniones en PostgreSQL. Hoy también autentica tokens de la seed y expone su propio adaptador MCP. | Conservar bóvedas, grupos y reuniones. Retirar el directorio y las publicaciones. Migrar los consumidores y el historial antes de retirar `people.token_hash`, `availability_requests` y `apps/server/src/mcp.ts`. |
 | `packages/protocol`, `packages/auth`, `packages/wake` | `protocol` define herramientas, grants y mensajes. `auth` implementa OAuth y JWT de servicio. `wake` envía avisos a agentes. | Conservar y reutilizar desde los servicios y sus clientes. |
 | `apps/admin`, `packages/telemetry`, `packages/ops` | Panel y MCP de administración, instrumentación y esquema operativo de PostgreSQL. | Conservar para seguir las solicitudes por `requestId`. |
@@ -101,7 +101,7 @@ Cada capacidad tiene un dueño. Búscalo con `git grep` antes de crear un archiv
 | Necesitas | Ya existe en |
 | --- | --- |
 | Rutas HTTP del broker con sus esquemas y emisor | `routes` de `@team-31/protocol/http` |
-| Llamar al broker | `createAgentClient` y `createOwnerClient` de `@team-31/broker/client` |
+| Llamar al broker | `createAgentClient` y `createOwnerClient` de `@team-31/broker-client`. El export anterior `@team-31/broker/client` sigue disponible por compatibilidad |
 | Firmar o verificar un JWT de servicio | `mintServiceToken` y `verifyServiceToken` de `@team-31/auth/service` |
 | Verificar un access token OAuth | `createMcpGuard` de `@team-31/auth/resource` |
 | Enviar un aviso o verificar su firma | `createWaker` y `verifyWebhookSignature` de `@team-31/wake` |

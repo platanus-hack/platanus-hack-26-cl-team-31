@@ -32,13 +32,13 @@ export async function sendInvitation(_: Feedback, form: FormData): Promise<Feedb
   if (!tag.success) return { error: "Elige una etiqueta." };
 
   try {
-    const view = await ownerClient().connect(owner, to.data, undefined, tag.data);
+    const view = await ownerClient().connect(owner, { to: to.data, tag: tag.data });
     contactsChanged();
     if (view.final && view.decision === "deny") return { error: "No encontramos a nadie con esa dirección." };
     if (view.final) return { message: `Ya estás conectado con ${to.data}.` };
   } catch (error) {
-    if (error instanceof BrokerError && error.code === "invalid_input") return { error: error.message };
-    return { error: actionError("sendInvitation", error, "No se pudo enviar la invitación. Intenta de nuevo.") };
+    if (error instanceof BrokerError && error.code === "invalid_input") return { error: error.message, ...(error.errorId && { errorId: error.errorId }) };
+    return actionError("sendInvitation", error, "No se pudo enviar la invitación. Intenta de nuevo.");
   }
   return { message: `Invitación enviada a ${to.data}.` };
 }
@@ -47,7 +47,7 @@ async function changeContact(operation: string, fallback: string, run: () => Pro
   try {
     await run();
   } catch (error) {
-    return { error: actionError(operation, error, fallback) };
+    return actionError(operation, error, fallback);
   }
   contactsChanged();
   return success;

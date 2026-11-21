@@ -47,6 +47,27 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("isolates two owners' tags and presets for the same contact", async () => {
+      await store.tx(async (tx) => {
+        for (const user of ["alice", "bruno"]) {
+          await tx.addContact(user, "carla@sideband.app");
+          await tx.setContactTag(user, "carla@sideband.app", "family");
+        }
+        await tx.putTagPreset("alice", "family", ["general"]);
+        await tx.putTagPreset("bruno", "family", ["interests"]);
+      });
+      await store.tx(async (tx) => {
+        await tx.setContactTag("alice", "carla@sideband.app", null);
+        await tx.putTagPreset("alice", "family", ["availability"]);
+      });
+      await store.tx(async (tx) => {
+        expect((await tx.listContactTags("alice")).has("carla@sideband.app")).toBe(false);
+        expect((await tx.listContactTags("bruno")).get("carla@sideband.app")).toBe("family");
+        expect((await tx.listTagPresets("alice")).family).toEqual(["availability"]);
+        expect((await tx.listTagPresets("bruno")).family).toEqual(["interests"]);
+      });
+    });
+
     it("rolls back addresses, grants, requests and their events when a transaction rejects", async () => {
       const row = await makeRequest();
       await expect(store.tx(async (tx) => {

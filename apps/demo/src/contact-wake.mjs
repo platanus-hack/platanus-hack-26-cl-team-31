@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import pg from "pg";
-import { createOwnerRuntime, localReadTool } from "@team-31/broker/client";
+import { createOwnerRuntime, localReadTool } from "@team-31/broker-client";
 import { LocalPart, WakeNotice } from "@team-31/protocol";
 import { verifyWebhookSignature } from "@team-31/wake";
 import { z } from "zod";

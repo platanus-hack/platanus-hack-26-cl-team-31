@@ -107,6 +107,22 @@ describe("HTTP interno del broker", () => {
     for (const response of [allowed, rejected]) expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
+  it("distinguishes an omitted invitation offer from an explicitly empty one over HTTP", async () => {
+    const { broker } = fixture();
+    const app = createHttpServer({ broker, publicKeys });
+    const token = await owner("alice");
+    for (const localPart of ["alice", "bruno", "carla"]) {
+      await call(app, routes.ownerClaimAddress, { token: await owner(localPart), body: { localPart } });
+    }
+    const preset = await call(app, routes.ownerConnect, { token, body: { to: "bruno@sideband.app", tag: "work" } });
+    const empty = await call(app, routes.ownerConnect, { token, body: { to: "carla@sideband.app", tag: "work", share: [] } });
+    const { outgoing } = await call(app, routes.ownerContacts, { token });
+    expect(outgoing).toEqual(expect.arrayContaining([
+      expect.objectContaining({ requestId: preset.requestId, offer: ["availability"] }),
+      expect.objectContaining({ requestId: empty.requestId, offer: [] }),
+    ]));
+  });
+
   it("comparte por MCP las solicitudes del titular, sin saltarse los permisos", async () => {
     const { broker, waker } = fixture();
     const app = createHttpServer({ broker, publicKeys });

@@ -3,7 +3,7 @@ import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
 import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
-import { ActivityItem, AgentConnection, AgentContacts, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent } from "./owner.js";
+import { ActivityItem, AgentConnection, AgentContacts, ContactsView, ConnectInput, InvitationAnswer, OwnerDecision, OwnerPendingItem, PublicAgent } from "./owner.js";
 import { ContactTag, Sharing } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
@@ -211,7 +211,7 @@ export const routes = {
   ownerConnect: {
     method: "POST",
     path: "/v1/owner/connections",
-    body: z.object({ to: Address, share: Sharing.optional(), tag: ContactTag.optional() }),
+    body: ConnectInput,
     response: RequesterViewSchema,
     iss: "web",
     port: "owner.connect",

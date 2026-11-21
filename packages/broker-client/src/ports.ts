@@ -13,6 +13,7 @@ import type {
   AskArguments,
   ChannelName,
   ContactsView,
+  ConnectInput,
   ContactTag,
   InboxItem,
   InvitationAnswer,
@@ -72,6 +73,8 @@ export interface OwnerPort {
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;
   revokeAgent(o: Owner, agentId: string): Promise<void>;
   // With a tag and no share, the invitation offers the tag's preset and the contact gets the tag.
+  connect(o: Owner, input: ConnectInput): Promise<RequesterView>;
+  /** @deprecated Pass an invitation object with to, share and tag. */
   connect(o: Owner, to: Address, share?: Sharing, tag?: ContactTag): Promise<RequesterView>;
   contacts(o: Owner): Promise<ContactsView>;
   setSharing(o: Owner, contact: Address, sharing: Sharing): Promise<void>;

@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { mintServiceToken } from "@team-31/auth/service";
-import { createAgentClient, createOwnerClient } from "@team-31/broker/client";
+import { createAgentClient, createOwnerClient } from "@team-31/broker-client";
 import { ADDRESS_DOMAIN, LocalPart } from "@team-31/protocol";
 import { consoleSink, createTelemetry, tracedFetch } from "@team-31/telemetry";
 

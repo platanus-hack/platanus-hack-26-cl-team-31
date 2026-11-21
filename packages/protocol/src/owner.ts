@@ -7,6 +7,9 @@ import { WakeKind } from "./wake.js";
 
 const datetime = z.iso.datetime({ offset: true });
 
+export const ConnectInput = z.object({ to: Address, share: Sharing.optional(), tag: ContactTag.optional() });
+export type ConnectInput = z.infer<typeof ConnectInput>;
+
 export const OwnerDecision = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("approve_once") }),
   z.object({ kind: z.literal("deny") }),

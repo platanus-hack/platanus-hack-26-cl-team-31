@@ -1,4 +1,4 @@
-import { Owner } from "@team-31/protocol";
+import { Owner, type Address, type ConnectInput, type ContactTag, type Sharing } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import type { OwnerPort } from "./ports.js";
 import { createHttpClient, type ClientOptions } from "./http.js";
@@ -33,7 +33,8 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     setChannel: (owner, name, body) => request(routes.ownerSetChannel, owner, { params: { name }, body }),
     ping: (owner, agentId) => request(routes.ownerPing, owner, { params: { agentId } }),
     revokeAgent: (owner, agentId) => request(routes.ownerRevokeAgent, owner, { params: { agentId } }),
-    connect: (owner, to, share, tag) => request(routes.ownerConnect, owner, { body: { to, share, tag } }),
+    connect: (owner, to: Address | ConnectInput, share?: Sharing, tag?: ContactTag) =>
+      request(routes.ownerConnect, owner, { body: typeof to === "string" ? { to, share, tag } : to }),
     contacts: (owner) => request(routes.ownerContacts, owner),
     setSharing: (owner, address, body) => request(routes.ownerSetSharing, owner, { params: { address }, body }),
     setContactTag: (owner, address, tag) => request(routes.ownerSetContactTag, owner, { params: { address }, body: { tag } }),
