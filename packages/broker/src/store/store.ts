@@ -77,7 +77,16 @@ export type WakeJob = {
   lastResult?: WakeResult;
 };
 
-export type WakeClaim = WakeJob & { state: "running"; recovered: boolean; dueAt: Date };
+export type WakeClaim = Omit<WakeJob, "runAt" | "state"> & {
+  state: "running";
+  leaseUntil: Date;
+  dueAt: Date;
+  recovered: boolean;
+};
+
+export function wakeClaim({ runAt, ...job }: WakeJob, recovered: boolean, dueAt: Date): WakeClaim {
+  return { ...job, state: "running", leaseUntil: runAt, recovered, dueAt };
+}
 
 export type AgentConnectionRow = {
   userId: string;
@@ -197,8 +206,8 @@ export interface StoreTx {
   // onCreated runs only when this call inserted the row (presence telemetry).
   ensureAgentConnection(row: AgentConnectionRow, onCreated?: () => void): Promise<AgentConnectionRow>;
   upsertAgentConnection(row: AgentConnectionRow): Promise<void>;
-  // Oldest first, then by agent ID in UTF-8 byte order.
   listPublicAgents(): Promise<PublicAgent[]>;
+  // Oldest first, then by agent ID in UTF-8 byte order.
   listAgentConnections(userId: string): Promise<AgentConnectionRow[]>;
   getAgentConnection(userId: string, agentId: string, forUpdate?: boolean): Promise<AgentConnectionRow | null>;
 

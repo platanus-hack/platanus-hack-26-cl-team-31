@@ -5,7 +5,7 @@ import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createBroker, type BrokerDeps } from "../../index.js";
 import { runStoreContractTests } from "../contract.js";
-import type { RequestRow, WakeJob } from "../store.js";
+import type { RequestRow, WakeClaim, WakeJob } from "../store.js";
 import { applyPostgresMigrations, createPostgresStore, type PostgresStore } from "./index.js";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? "";
@@ -176,14 +176,14 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       for (const job of jobs) await tx.enqueueWake(job);
     });
 
-    const claimed = deferred<WakeJob[]>();
+    const claimed = deferred<WakeClaim[]>();
     const release = deferred<void>();
     const first = store.tx(async (tx) => {
       claimed.resolve(await tx.claimDueWakes(now, leaseUntil, 1));
       await release.promise;
     });
     const timeout = new AbortController();
-    let second: Promise<WakeJob[]> | undefined;
+    let second: Promise<WakeClaim[]> | undefined;
     try {
       expect(await Promise.race([claimed.promise, first])).toMatchObject([{ id: "first", state: "running" }]);
       second = store.tx((tx) => tx.claimDueWakes(now, leaseUntil, 1));

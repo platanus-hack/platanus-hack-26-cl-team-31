@@ -365,6 +365,36 @@ describe("cierre y avisos", () => {
     await expectFinal(alice, second.requestId, "unanswered", "delivery_failed");
   });
 
+  it("espera a los avisos en curso antes de propagar el error de otro aviso", async () => {
+    await broker.agent.connectWake(bruno, webhook);
+    const failed = await askAvailability();
+    await askAvailability();
+    const tx = deps.store.tx.bind(deps.store);
+    vi.spyOn(deps.store, "tx").mockImplementation((run) => tx((store) => run({
+      ...store,
+      getRequest(id, ...args) {
+        if (id === failed.requestId) throw new Error("Error de lectura");
+        return store.getRequest(id, ...args);
+      },
+    })));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    wake.mockImplementationOnce(async () => {
+      await pending;
+      return { ok: true, retryable: false, ms: 1 };
+    });
+    const settled = vi.fn();
+    const ticking = broker.tick(now).catch(settled);
+    try {
+      await vi.waitFor(() => expect(wake).toHaveBeenCalledOnce());
+      expect(settled).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await ticking;
+    }
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ message: "Error de lectura" }));
+  });
+
   it("preserva una respuesta que llega mientras dos trabajadores compiten por el aviso", async () => {
     await broker.agent.inbox(bruno);
     await broker.owner.setWake(bruno, bruno.agentId, webhook);

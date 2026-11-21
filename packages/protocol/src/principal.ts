@@ -5,6 +5,18 @@ export type Scope = z.infer<typeof Scope>;
 
 export const WAKE_SUBSCRIPTION_SCOPE = "sideband:inbox" satisfies Scope;
 
+export const agentScopes = {
+  capabilities: "sideband:ask",
+  ask: "sideband:ask",
+  contacts: "sideband:ask",
+  inbox: "sideband:inbox",
+  reply: "sideband:reply",
+  "reply.connect": "sideband:accept",
+  status: "sideband:status",
+  connectWake: WAKE_SUBSCRIPTION_SCOPE,
+  disconnectWake: WAKE_SUBSCRIPTION_SCOPE,
+} as const satisfies Record<string, Scope>;
+
 export const Principal = z.object({
   userId: z.string(),
   agentId: z.string(),

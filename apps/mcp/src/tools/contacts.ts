@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AgentPort } from "@team-31/broker/client";
-import type { Principal } from "@team-31/protocol";
+import { agentScopes, type Principal } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { z } from "zod";
 import { runTool, type ToolTelemetry } from "./result.js";
@@ -14,7 +14,7 @@ export function registerContacts(server: McpServer, principal: Principal, agent:
     annotations: { readOnlyHint: true },
     inputSchema: z.object({}),
     outputSchema: routes.agentContacts.response,
-  }, () => runTool(telemetry, principal, { tool: "sideband_contacts", scope: "sideband:ask" },
+  }, () => runTool(telemetry, principal, { tool: "sideband_contacts", scope: agentScopes.contacts },
     () => agent.contacts(principal)));
   server.registerTool("sideband_network_users", {
     description: "Lista las direcciones de quienes conectaron un agente a Sideband alguna vez, incluidos quienes no son contactos. Para la página siguiente pasa nextCursor como after.",

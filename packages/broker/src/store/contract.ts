@@ -311,12 +311,12 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         });
         return tx.claimDueWakes(now, leaseUntil, 10);
       });
-      expect(first).toMatchObject({ id, runAt: leaseUntil, attempt: 1, recovered: false });
+      expect(first).toMatchObject({ id, leaseUntil, attempt: 1, recovered: false });
       await store.tx(async (tx) => {
         const extended = new Date(leaseUntil.getTime() + 60_000);
         expect(await tx.recordWakeAttempt(first!, leaseUntil, result, null)).toBe(false);
         const [second] = await tx.claimDueWakes(leaseUntil, extended, 10);
-        expect(second).toMatchObject({ id, runAt: extended, attempt: 2, recovered: true });
+        expect(second).toMatchObject({ id, leaseUntil: extended, attempt: 2, recovered: true });
         expect(await tx.recordWakeAttempt(first!, leaseUntil, result, null)).toBe(false);
         expect(await tx.recordWakeAttempt(second!, leaseUntil, result, null)).toBe(true);
         expect(await tx.claimDueWakes(extended, extended, 10)).toEqual([]);

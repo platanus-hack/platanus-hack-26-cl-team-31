@@ -1,5 +1,6 @@
 import type { Address, ContactGroups, ContactTag, Sharing, OwnerVault } from "@team-31/protocol";
 import { activeAgentConflict, BrokerError } from "../errors.js";
+import { wakeClaim } from "./store.js";
 import type {
   AgentConnectionRow, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "./store.js";
@@ -331,7 +332,7 @@ function transaction(state: State): StoreTx {
         job.state = "running";
         job.runAt = structuredClone(leaseUntil);
         if (recovered) job.attempt++;
-        return structuredClone({ ...job, state: "running", recovered, dueAt });
+        return structuredClone(wakeClaim(job, recovered, dueAt));
       });
     },
     async recordWakeAttempt(claim, now, result, nextRunAt) {

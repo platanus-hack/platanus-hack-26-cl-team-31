@@ -22,13 +22,12 @@ import {
   OwnerDecision,
   ReplyInput,
   WakeTarget,
-  WAKE_SUBSCRIPTION_SCOPE,
+  agentScopes,
   ChannelName,
   type FinalOutcome,
   type Principal,
   type ReplyReceipt,
   type RequesterView,
-  type Scope,
   type ToolResult,
   ContactGroupChange,
 } from "@team-31/protocol";
@@ -89,10 +88,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   const grants = createGrantWriter(clock, record);
   const systemAddress = Address.parse(`system@${config.addressDomain}`);
 
-  function requireScope(principal: Principal, scope: Scope, operation: string): void {
+  function requireScope(principal: Principal, operation: keyof typeof agentScopes): void {
+    const scope = agentScopes[operation];
     if (principal.scopes.includes(scope)) return;
     events.emit("auth.scope.denied", {
-      userId: principal.userId, agentId: principal.agentId, attrs: { scope, operation },
+      userId: principal.userId, agentId: principal.agentId, attrs: { scope, operation: `agent.${operation}` },
     });
     throw new BrokerError("forbidden", "El agente no tiene permiso para esta acción.");
   }
@@ -307,7 +307,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       const decisionReason = recipient ? "Sin permiso para esta categoría." : "Dirección sin destinatario.";
       row = await finalize({ ...row, decisionReason }, "denied", now);
     }
-    await recordNew(tx, row, now, ruleCode, agentId);
+    await persistNewRequest(tx, row, now, ruleCode, agentId);
     return toRequesterView(row);
   }
 
@@ -330,7 +330,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     });
   }
 
-  async function recordNew(tx: StoreTx, row: RequestRow, now: Date, rule: string, agentId?: string) {
+  async function persistNewRequest(tx: StoreTx, row: RequestRow, now: Date, rule: string, agentId?: string) {
     await tx.insertRequest(row);
     record(tx, "broker.request.created", {
       requestId: row.id,
@@ -498,7 +498,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
       async capabilities(p, to) {
-        requireScope(p, "sideband:ask", "agent.capabilities");
+        requireScope(p, "capabilities");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           const from = (await tx.getUser(p.userId))?.address;
@@ -518,12 +518,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async ask(p, input) {
-        requireScope(p, "sideband:ask", "agent.ask");
+        requireScope(p, "ask");
         return ask(p.userId, input, { principal: p });
       },
 
       async inbox(p, includeInvitations = false) {
-        requireScope(p, "sideband:inbox", "agent.inbox");
+        requireScope(p, "inbox");
         return store.tx(async (tx) => {
           await ensureActiveAgentConnection(tx, p);
           const address = (await tx.getUser(p.userId))?.address;
@@ -538,7 +538,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async reply(p, input) {
-        requireScope(p, "sideband:reply", "agent.reply");
+        requireScope(p, "reply");
         const parsed = ReplyInput.safeParse(input);
         if (!parsed.success) {
           telemetry?.emit("broker.reply.rejected", {
@@ -577,7 +577,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             if (!parsed.data.share || ToolResultSchemas.connect.safeParse(parsed.data.result).data?.accepted !== true) {
               return reject(new BrokerError("invalid_input", "Para aceptar, incluye accepted: true y las categorías elegidas por tu titular."));
             }
-            requireScope(p, "sideband:accept", "agent.reply.connect");
+            requireScope(p, "reply.connect");
           } else if (parsed.data.share !== undefined) {
             return reject(new BrokerError("invalid_input", "Solo una aceptación lleva categorías para compartir."));
           }
@@ -622,7 +622,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
       async contacts(p) {
-        requireScope(p, "sideband:ask", "agent.contacts");
+        requireScope(p, "contacts");
         return store.tx(async (tx) => {
           await ensureActiveAgentConnection(tx, p);
           const me = (await tx.getUser(p.userId))?.address;
@@ -640,12 +640,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async status(p, id) {
-        requireScope(p, "sideband:status", "agent.status");
+        requireScope(p, "status");
         return status(p.userId, id, p);
       },
 
       async connectWake(p, target) {
-        requireScope(p, WAKE_SUBSCRIPTION_SCOPE, "agent.connectWake");
+        requireScope(p, "connectWake");
         const parsed = WakeTarget.safeParse(target);
         if (!parsed.success) throw new BrokerError("invalid_input", "La configuración del aviso no es válida.");
         const wakeTarget = parsed.data;
@@ -670,7 +670,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async disconnectWake(p, subscriptionId) {
-        requireScope(p, WAKE_SUBSCRIPTION_SCOPE, "agent.disconnectWake");
+        requireScope(p, "disconnectWake");
         await store.tx(async (tx) => {
           const connection = await ensureActiveAgentConnection(tx, p);
           if (connection.wakeTarget.kind !== "mcp_events" || connection.wakeTarget.subscriptionId !== subscriptionId) {
@@ -829,7 +829,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             rule: "Prueba de conexión solicitada por el dueño",
             allowedFields: fieldsOf("question"),
           };
-          await recordNew(tx, row, now, "ping");
+          await persistNewRequest(tx, row, now, "ping");
           return { requestId: row.id };
         });
       },

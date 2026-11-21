@@ -7,6 +7,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { activeAgentConflict, BrokerError } from "../../errors.js";
+import { wakeClaim } from "../store.js";
 import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
@@ -396,10 +397,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       }
       return jobs.map((job) => {
         const recovered = job.state === "running";
-        return {
-          ...readWake(job), state: "running", runAt: leaseUntil, recovered, dueAt: job.runAt,
-          attempt: job.attempt + Number(recovered),
-        };
+        return wakeClaim({ ...readWake(job), runAt: leaseUntil, attempt: job.attempt + Number(recovered) }, recovered, job.runAt);
       });
     },
 

@@ -58,7 +58,7 @@ export interface OwnerPort {
   me(o: Owner): Promise<{ userId: string; address?: Address; displayName?: string }>;
   claimAddress(o: Owner, localPart: string): Promise<Address>;
   grants(o: Owner): Promise<Grant[]>;
-  // Replaces the fields of the owner's live grant for the same grantee and tool.
+  // Returns the live grant for this grantee and category, creating one if needed.
   setGrant(o: Owner, input: GrantInput): Promise<Grant>;
   revokeGrant(o: Owner, grantId: string): Promise<void>;
   pending(o: Owner): Promise<OwnerPendingItem[]>;

@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { BrokerError, type AgentPort } from "@team-31/broker/client";
-import { AskInput, ToolArgs, ToolName, type Principal } from "@team-31/protocol";
+import { agentScopes, AskInput, ToolArgs, ToolName, type Principal } from "@team-31/protocol";
 import { z } from "zod";
 import { runTool, type ToolTelemetry } from "./result.js";
 
@@ -14,7 +14,7 @@ export function registerAsk(server: McpServer, principal: Principal, agent: Agen
   server.registerTool("sideband_ask", {
     description: "Pide a otra persona disponibilidad (availability), coincidencia de interés (interest_check), una respuesta (question) o conectar como amigos (connect, con args vacío). Una question indica en args.category sobre qué pregunta: sideband_capabilities lista las categorías que esa persona te comparte. Consulta el resultado con sideband_check.",
     inputSchema,
-  }, (args) => runTool(telemetry, principal, { tool: "sideband_ask", scope: "sideband:ask" }, () => {
+  }, (args) => runTool(telemetry, principal, { tool: "sideband_ask", scope: agentScopes.ask }, () => {
     const input = AskInput.safeParse(args);
     if (!input.success) throw new BrokerError("invalid_input", "Los argumentos no corresponden a la herramienta.");
     return agent.ask(principal, input.data);
