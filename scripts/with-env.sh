@@ -2,9 +2,18 @@
 # Ejecuta un comando con .env y .env.local de la raíz exportados.
 set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
-[ -f "$ROOT/.env" ] || { echo "Falta .env — corre: pnpm bootstrap" >&2; exit 1; }
+if [ "${1:-}" = "--optional-env" ]; then
+  shift
+elif [ ! -f "$ROOT/.env" ]; then
+  echo "Falta .env — corre: pnpm bootstrap" >&2
+  exit 1
+fi
 set -a
-. "$ROOT/.env"
-[ -f "$ROOT/.env.local" ] && . "$ROOT/.env.local"
+if [ -f "$ROOT/.env" ]; then
+  . "$ROOT/.env"
+fi
+if [ -f "$ROOT/.env.local" ]; then
+  . "$ROOT/.env.local"
+fi
 set +a
 exec "$@"
