@@ -1,0 +1,139 @@
+import { randomUUID } from "node:crypto";
+import { applyOpsMigrations } from "@team-31/ops";
+import pg from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createTelemetry } from "../telemetry.js";
+import type { TelemetryRecord } from "../types.js";
+import { postgresSink, type Queryable } from "./postgres.js";
+
+function record(name: string): TelemetryRecord {
+  return {
+    at: new Date(), service: "broker", instance: "test:1", kind: "lifecycle", name, level: "info",
+    traceId: null, spanId: null, parentSpanId: null, requestId: null, userId: null, agentId: null,
+    durationMs: null, status: null, errorId: null, attrs: {},
+  };
+}
+
+describe("postgresSink: cola", () => {
+  it("con la cola llena descarta y cuenta dropped", async () => {
+    const inserted: number[] = [];
+    const pool: Queryable = {
+      async query(_text, values) { inserted.push((values[0] as unknown[]).length); },
+      async end() {},
+    };
+    const sink = postgresSink({ pool, maxQueue: 5, batchSize: 200, flushIntervalMs: 60_000 });
+    for (let i = 0; i < 8; i++) sink.write(record("service.heartbeat"));
+    expect(sink.stats()).toEqual({ queued: 5, dropped: 3, failed: 0, written: 0 });
+    await sink.flush();
+    expect(inserted).toEqual([5]);
+    expect(sink.stats()).toEqual({ queued: 0, dropped: 3, failed: 0, written: 5 });
+    await sink.close();
+    sink.write(record("service.heartbeat"));
+    expect(sink.stats().dropped).toBe(4);
+  });
+
+  it("escribe por lotes de batchSize y cuenta los lotes que fallan sin lanzar", async () => {
+    const sizes: number[] = [];
+    let calls = 0;
+    const pool: Queryable = {
+      async query(_text, values) {
+        calls += 1;
+        if (calls === 2) throw Object.assign(new Error("password authentication failed for user x"), { code: "28P01" });
+        sizes.push((values[0] as unknown[]).length);
+      },
+      async end() {},
+    };
+    const stderr = process.stderr.write;
+    const lines: string[] = [];
+    process.stderr.write = ((chunk: string) => { lines.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try {
+      const sink = postgresSink({ pool, batchSize: 3, flushIntervalMs: 60_000 });
+      for (let i = 0; i < 7; i++) sink.write(record("service.heartbeat"));
+      await sink.flush();
+      expect(sizes).toEqual([3, 1]);
+      expect(sink.stats()).toEqual({ queued: 0, dropped: 0, failed: 3, written: 4 });
+    } finally {
+      process.stderr.write = stderr;
+    }
+    expect(lines.join("")).toContain("28P01");
+    expect(lines.join("")).not.toContain("password");
+  });
+});
+
+const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? "";
+
+describe.skipIf(!testDatabaseUrl)("postgresSink contra TEST_DATABASE_URL", () => {
+  const databaseName = "telemetry_test_" + randomUUID().replaceAll("-", "");
+  let admin: pg.Pool;
+  let db: pg.Pool;
+  let databaseUrl: string;
+
+  beforeAll(async () => {
+    const url = new URL(testDatabaseUrl);
+    const devUrl = process.env.DATABASE_URL;
+    if (!url.pathname.endsWith("_test") || (devUrl && url.pathname === new URL(devUrl).pathname)) {
+      throw new Error("TEST_DATABASE_URL debe apuntar a una base _test separada.");
+    }
+    // Base propia para no chocar con otras suites que usan app_test en paralelo.
+    admin = new pg.Pool({ connectionString: testDatabaseUrl });
+    await admin.query(`CREATE DATABASE ${pg.escapeIdentifier(databaseName)}`);
+    url.pathname = "/" + databaseName;
+    databaseUrl = url.toString();
+    await applyOpsMigrations({ databaseUrl });
+    db = new pg.Pool({ connectionString: databaseUrl });
+  });
+
+  afterAll(async () => {
+    await db?.end();
+    await admin?.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(databaseName)} WITH (FORCE)`);
+    await admin?.end();
+  });
+
+  it("escribe eventos, spans y errores en ops.events", async () => {
+    const telemetry = createTelemetry({ service: "worker", version: "0.9.0", sink: postgresSink(databaseUrl) });
+    let traceId = "";
+    let errorId = "";
+    await telemetry.span("wake.attempt", { requestId: "req_pg", userId: "u_1", agentId: "a_1" }, async (span) => {
+      traceId = span.traceId;
+      span.set({ kind: "webhook", attempt: 1, ok: false, httpStatus: 503 });
+      telemetry.emit("broker.request.status_changed", { attrs: { from: "queued", to: "awaiting_agent", by: "broker" } });
+      errorId = telemetry.error("wake.deliver", Object.assign(new Error("503 from https://hook.example/secret"), { code: "EWAKE" }));
+    });
+    await telemetry.shutdown();
+    expect(telemetry.stats()).toMatchObject({ queued: 0, dropped: 0, failed: 0 });
+
+    const { rows } = await db.query(
+      "SELECT service, instance, kind, name, level, trace_id, span_id, parent_span_id, request_id, user_id, agent_id, duration_ms, status, error_id, attrs FROM ops.events ORDER BY id",
+    );
+    expect(rows.map((row) => row.name)).toEqual([
+      "service.started", "service.heartbeat", "broker.request.status_changed", "error", "wake.attempt", "service.stopping",
+    ]);
+    const byName = Object.fromEntries(rows.map((row) => [row.name, row]));
+    expect(byName["service.started"]).toMatchObject({ service: "worker", kind: "lifecycle", trace_id: null, attrs: { version: "0.9.0" } });
+    expect(byName["wake.attempt"]).toMatchObject({
+      kind: "wake", trace_id: traceId, request_id: "req_pg", user_id: "u_1", agent_id: "a_1", status: "ok",
+      attrs: { kind: "webhook", attempt: 1, ok: false, httpStatus: 503 },
+    });
+    expect(byName["wake.attempt"].duration_ms).toBeGreaterThanOrEqual(0);
+    expect(byName["broker.request.status_changed"]).toMatchObject({ trace_id: traceId, parent_span_id: byName["wake.attempt"].span_id });
+    expect(byName.error).toMatchObject({ kind: "error", level: "error", error_id: errorId, request_id: "req_pg", attrs: { operation: "wake.deliver", type: "Error", code: "EWAKE" } });
+    expect(JSON.stringify(rows)).not.toContain("hook.example");
+  });
+
+  it("si la base rechaza el lote cuenta failed y no lanza", async () => {
+    const sink = postgresSink({ connectionString: databaseUrl, flushIntervalMs: 60_000 });
+    const lines: string[] = [];
+    const stderr = process.stderr.write;
+    process.stderr.write = ((chunk: string) => { lines.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try {
+      // service fuera del CHECK: Postgres rechaza el INSERT completo.
+      sink.write({ ...record("service.heartbeat"), service: "nope" as never });
+      await sink.flush();
+      expect(sink.stats()).toMatchObject({ failed: 1, written: 0 });
+    } finally {
+      process.stderr.write = stderr;
+      await sink.close();
+    }
+    expect(lines.join("")).toContain("23514");
+  });
+});
