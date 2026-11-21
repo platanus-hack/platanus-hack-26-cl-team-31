@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readIdentityToken } from "../../../../../../scripts/coordination-fixture.mjs";
 import { checkContactRuntime, reportContactError, runContactSession } from "@team-31/demo/contact-session";
 import { resolve } from "node:path";
 import { IncompleteModelReply, readHistory, runDemoAgent, selectTools } from "../../../lib/demo-chat";
@@ -32,12 +32,8 @@ const modelName = () => {
   return name.split("/").at(-1)?.includes(":") ? name : `${name}:latest`;
 };
 
-async function tokenFor(person: Person) {
-  // Next runs from apps/web. These are the worktree's seeded demo credentials.
-  const file = resolve(process.cwd(), "../../.agents-local", `${person}.json`);
-  const token: unknown = JSON.parse(await readFile(file, "utf8")).mcpServers.coordination.env.AGENT_TOKEN;
-  if (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)) throw new Error("Credencial de demo inválida.");
-  return token;
+function tokenFor(person: Person) {
+  return readIdentityToken(resolve(process.cwd(), "../../.agents-local"), person);
 }
 
 async function checkApi() {

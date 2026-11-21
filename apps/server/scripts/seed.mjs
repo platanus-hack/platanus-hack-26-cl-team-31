@@ -1,16 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { contactsOf, fixtureArgs, outsider } from "../../../scripts/coordination-fixture.mjs";
+import { contactsOf, fixtureArgs, identityPath, outsider, readIdentityToken } from "../../../scripts/coordination-fixture.mjs";
 
-async function readOrCreateToken(path) {
+async function readOrCreateToken(directory, person) {
   try {
-    const config = JSON.parse(await readFile(path, "utf8"));
-    const token = config.mcpServers.coordination.env.AGENT_TOKEN;
-    if (!token) throw new Error(`Credencial inválida en ${path}`);
-    return token;
+    return await readIdentityToken(directory, person);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
     return randomBytes(32).toString("hex");
@@ -51,8 +48,8 @@ try {
   const roster = [...people, outsider];
   const newProfiles = new Set();
   for (const person of roster) {
-    const path = join(configDir, `${person.id}.json`);
-    const token = await readOrCreateToken(path);
+    const path = identityPath(configDir, person.id);
+    const token = await readOrCreateToken(configDir, person.id);
     await seedPerson(db, person, token);
     const readers = person.privateInterests ? [] : contactsOf(person.id);
     const profile = await db.query(`

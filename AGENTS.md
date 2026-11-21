@@ -29,13 +29,13 @@ Un titular pregunta al agente de otro titular. El broker autoriza la pregunta se
 
 Un grant permite a una dirección Sideband preguntar sobre una categoría de información. Los permisos de un círculo compartido se suman a los grants directos.
 
-- Una categoría es el tema de la información y una tool es la forma de preguntar. El catálogo `categories` (`packages/protocol/src/categories.ts`) lista las tools de cada categoría: Disponibilidad horaria (`availability`), Intereses (`interests`), Salud (`health`) y Preguntas abiertas (`general`).
+- Una categoría es el tema de la información y una tool es la forma de preguntar. El catálogo `categories` (`packages/protocol/src/constants.ts`) lista las tools de cada categoría: Disponibilidad horaria (`availability`), Intereses (`interests`), Salud (`health`) y Preguntas abiertas (`general`).
 - Un grant cubre todas las tools de su categoría y todos los campos de sus respuestas.
 - `availability` e `interest_check` pertenecen a una sola categoría. `question` sirve a todas y lleva la suya en `args.category`. Sin categoría es una pregunta abierta (`general`).
 - El broker no lee el texto de una `question`. El agente del destinatario recibe la categoría y responde solo sobre ella.
 - El tipo es `Grant` (`packages/protocol/src/grants.ts`) y se guarda en `sideband.grants`. Un titular tiene un solo grant vivo por dirección y categoría.
 - El titular los administra con `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`). Web los muestra por contacto en `/contacts`.
-- Una categoría nueva es una entrada en `categories`. Una tool nueva solo hace falta para una respuesta con otra forma, y se agrega a su categoría.
+- Para agregar una categoría, declara su nombre en `categoryNames` y su etiqueta y tools en `categories` de `packages/protocol/src/constants.ts`. Contactos recorre el catálogo y necesita el texto de ayuda en `contacts/sharing.tsx`. En WhatsApp actualiza el texto de denegación y el vocabulario de invitaciones en `whatsapp/commands.ts`, y la guía del clasificador en `whatsapp/claude.ts`. Una tool nueva solo hace falta para una respuesta con otra forma, y se agrega a su categoría.
 - Los grants no se componen. Que Bob le dé un grant a Ana y Ana a Carla no le da a Carla nada de Bob.
 - La política base son las categorías que comparten los miembros de un círculo y las que vienen marcadas al conectar: `availability` e `interests`. Vive en `basicSharing` (`packages/protocol/src/sharing.ts`).
 - Un círculo es un conjunto con nombre (`Circle`, `/v1/owner/circles`). Solo quien lo creó invita, saca a otros y lo elimina, y cada invitado acepta antes de entrar. Mientras dos titulares estén en el mismo círculo se dan la política base. Web los administra en `/circles`.
