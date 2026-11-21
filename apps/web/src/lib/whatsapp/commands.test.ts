@@ -20,7 +20,7 @@ it("envía la pregunta original con una dirección explícita, aunque no use un 
   const { broker, report } = fixture();
   const text = "simon@sideband.app puede ir a tomar café en una hora?";
   await runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: to, category: "availability" }));
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } });
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } }, "whatsapp");
   expect(broker.contacts).not.toHaveBeenCalled();
 });
 
@@ -54,7 +54,7 @@ it("mantiene las preguntas explícitas sin Claude y los comandos de estado no us
   expect(interpret).not.toHaveBeenCalled();
   expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, {
     to, tool: "question", args: { text: "si puede ir a tomar café", category: "general" },
-  });
+  }, "whatsapp");
   expect(broker.status).toHaveBeenCalledOnce();
 });
 
@@ -62,10 +62,11 @@ it("clasifica preguntas explícitas sin dejar que el modelo cambie la dirección
   const { broker, report } = fixture();
   const text = "si puede juntarse hoy";
   broker.ask.mockResolvedValue({ ...pending, decision: "deny", final: true });
+  broker.contacts.mockResolvedValue({ contacts: [{ address: to, gives: [], receives: ["availability"] }] });
   const result = await runCommand(broker, owner, `Pregunta a ${to} ${text}`, report,
     async () => ({ action: "ask", recipient: "otro@sideband.app", category: "availability" }));
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } });
-  expect(result).toContain("No se pudo compartir");
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } }, "whatsapp");
+  expect(result).toBe(`No se pudo obtener una respuesta de ${to}.`);
 });
 
 it("pide reformular una pregunta con varias categorías sin enviar nada", async () => {
@@ -95,4 +96,16 @@ it("lista los contactos con lo que cada uno comparte, con o sin Claude", async (
 it("avisa cuando todavía no hay contactos", async () => {
   const { broker, report } = fixture([]);
   await expect(runCommand(broker, owner, "contactos", report)).resolves.toContain("Aún no tienes contactos");
+});
+
+it("explica una denegación con lo que el contacto no comparte, según la agenda del titular", async () => {
+  const { broker, report } = fixture();
+  broker.ask.mockResolvedValue({ ...pending, decision: "deny", final: true });
+  broker.contacts.mockResolvedValue({ contacts: [{ address: to, gives: [], receives: ["availability", "interests"] }] });
+  const health = async () => ({ action: "ask" as const, recipient: to, category: "health" as const });
+  await expect(runCommand(broker, owner, `${to} tiene sangre O negativo?`, report, health))
+    .resolves.toBe(`${to} no te comparte su información de salud.`);
+  broker.contacts.mockResolvedValue({ contacts: [] });
+  await expect(runCommand(broker, owner, `${to} tiene sangre O negativo?`, report, health))
+    .resolves.toBe(`${to} no está entre tus contactos.`);
 });

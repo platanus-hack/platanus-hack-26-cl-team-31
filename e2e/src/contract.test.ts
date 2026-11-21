@@ -93,22 +93,25 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     await grantTo(ownerPort, recipient.owner, [sender.address], "general");
 
     // Use the same command handler as the signed webhook, with no call to Kapso.
-    const command = (text: string) => runCommand(ownerPort, sender.owner, text, () => {});
+    let requestId: string | undefined;
+    const command = (text: string) => runCommand(ownerPort, sender.owner, text, (_action, view) => {
+      requestId = view.requestId;
+    });
     const question = "¿Puedes jugar el sábado?";
-    const acknowledgement = await command(`Pregunta a ${recipient.address} ${question}`);
-    const followUp = /^(estado (\S+))$/m.exec(acknowledgement);
-    if (!followUp?.[1] || !followUp[2]) throw new Error("Falta el comando de estado en el acuse de WhatsApp.");
-    const [, check, requestId] = followUp;
+    const pending = `Le pregunté a ${recipient.address}. Te aviso apenas responda.`;
+    expect(await command(`Pregunta a ${recipient.address} ${question}`)).toBe(pending);
+    if (!requestId) throw new Error("WhatsApp no creó la solicitud.");
+    const check = `estado ${requestId}`;
     const item = await inboxItem(recipient.agent, requestId);
     expect(item.senderMessage.text).toBe(question);
-    expect(await command(check)).toContain("pendiente de respuesta");
+    expect(await command(check)).toBe(pending);
 
     const answer = "Sí, puedo jugar a las diez.";
     expect(await recipient.agent.reply({
       requestId: item.requestId, nonce: item.nonce, outcome: "answered", result: { answer },
     })).toMatchObject({ status: "answered", deliveredFields: ["answer"] });
     expect(await sender.agent.check(item.requestId)).toMatchObject({ decision: "allow", result: { answer } });
-    const expected = `Respuesta de ${recipient.address}:\n${answer}\n\nSolicitud: ${item.requestId}`;
+    const expected = `Respuesta de ${recipient.address}:\n${answer}`;
     expect(await command(check)).toBe(expected);
     expect(await command("estado")).toBe(expected);
   });

@@ -78,6 +78,8 @@ function prepareKeys() {
   randomKey("NONCE_KEY");
   randomKey("WAKE_SECRETS_KEY");
   randomKey("BETTER_AUTH_SECRET");
+  // Standard Webhooks secret: the broker signs the notices it sends to web's WhatsApp channel.
+  if (!values.WHATSAPP_NOTICE_SECRET) additions.set("WHATSAPP_NOTICE_SECRET", `whsec_${randomBytes(32).toString("base64")}`);
   if (!values.BROKER_DATABASE_PASSWORD) additions.set("BROKER_DATABASE_PASSWORD", randomBytes(32).toString("hex"));
 }
 

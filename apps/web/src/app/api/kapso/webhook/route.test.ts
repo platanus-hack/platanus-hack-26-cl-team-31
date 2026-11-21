@@ -4,8 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { POST } from "./route";
 
 const { store, broker } = vi.hoisted(() => ({
-  store: { claim: vi.fn(), detect: vi.fn(), whileLinked: vi.fn() },
-  broker: { ask: vi.fn(), status: vi.fn(), activity: vi.fn(), contacts: vi.fn() },
+  store: { claim: vi.fn(), detect: vi.fn(), whileLinked: vi.fn(), pending: vi.fn(), clearPending: vi.fn(), assignLinkId: vi.fn() },
+  broker: { ask: vi.fn(), status: vi.fn(), activity: vi.fn(), contacts: vi.fn(), setChannel: vi.fn() },
 }));
 vi.mock("next/server", () => ({ after: vi.fn() }));
 vi.hoisted(() => vi.stubEnv("TELEMETRY_SINK", "off"));
@@ -39,9 +39,12 @@ beforeEach(() => {
   vi.stubEnv("KAPSO_WHATSAPP_NUMBER", "+15555550123");
   vi.stubEnv("BETTER_AUTH_URL", "https://sideband.test");
   vi.stubEnv("ANTHROPIC_API_KEY", undefined);
+  // A local .env.local may point the SDK at a proxy; these tests intercept the public API.
+  vi.stubEnv("ANTHROPIC_BASE_URL", undefined);
   vi.stubGlobal("fetch", send.mockImplementation(() => Promise.resolve(new Response(null, { status: 200 }))));
   linkedUser = undefined;
   store.claim.mockResolvedValue(true);
+  store.pending.mockResolvedValue([]);
   store.whileLinked.mockImplementation((_phone, _timestamp, callback) => callback(linkedUser));
 });
 
@@ -84,10 +87,11 @@ it("crea y consulta como el titular vinculado; desvinculado no puede consultar",
     await (vi.mocked(after).mock.calls.at(-1)?.[0] as () => Promise<void>)();
     return JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body;
   }
-  expect(await message("Pregunta a carla@sideband.app si puede jugar")).toContain(requestId);
+  expect(await message("Pregunta a carla@sideband.app si puede jugar"))
+    .toBe("Le pregunté a carla@sideband.app. Espera su aprobación; te aviso apenas responda.");
   expect(broker.ask).toHaveBeenCalledWith({ userId: "user-a" }, {
     to: "carla@sideband.app", tool: "question", args: { text: "si puede jugar", category: "general" },
-  });
+  }, "whatsapp");
   expect(await message("¿ya respondió?")).toContain("Sí, puedo.");
   expect(broker.status).toHaveBeenCalledWith({ userId: "user-a" }, requestId);
   broker.status.mockResolvedValue({ requestId, to: "carla@sideband.app", tool: "connect", decision: "allow", result: { accepted: true } });
@@ -95,6 +99,18 @@ it("crea y consulta como el titular vinculado; desvinculado no puede consultar",
   linkedUser = undefined;
   expect(await message("estado")).toContain("Vincula tu WhatsApp");
   expect(broker.status).toHaveBeenCalledTimes(2);
+});
+
+it("envía primero las respuestas que quedaron fuera de la ventana de 24 horas", async () => {
+  linkedUser = "user-a";
+  store.pending.mockResolvedValue([requestId]);
+  broker.status.mockResolvedValue({ requestId, to: "carla@sideband.app", tool: "question", final: true, decision: "allow", result: { answer: "Sí, puedo." } });
+  expect((await POST(inbound("contactos"))).status).toBe(200);
+  broker.contacts.mockResolvedValue({ contacts: [] });
+  await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
+  const texts = send.mock.calls.map(([, init]) => JSON.parse(init.body).text.body);
+  expect(texts).toEqual([expect.stringContaining("Sí, puedo."), expect.stringContaining("Aún no tienes contactos")]);
+  expect(store.clearPending).toHaveBeenCalledWith("user-a", requestId);
 });
 
 it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pregunta inventada", async () => {
@@ -120,8 +136,8 @@ it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pre
   expect((await POST(inbound(question))).status).toBe(200);
   await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
   expect(broker.contacts).toHaveBeenCalledWith({ userId: "user-a" });
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question, category: "availability" } });
-  expect(JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body).toContain("pendiente de respuesta");
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question, category: "availability" } }, "whatsapp");
+  expect(JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body).toBe(`Le pregunté a ${to}. Te aviso apenas responda.`);
 });
 
 it("no comparte con Claude los mensajes de números sin vínculo", async () => {
@@ -132,4 +148,24 @@ it("no comparte con Claude los mensajes de números sin vínculo", async () => {
   expect(String(send.mock.calls[0]?.[0])).toContain("api.kapso.ai");
   expect(broker.contacts).not.toHaveBeenCalled();
   expect(broker.ask).not.toHaveBeenCalled();
+});
+
+it("registra el canal de un vínculo anterior a los avisos con el primer mensaje", async () => {
+  linkedUser = "user-a";
+  vi.stubEnv("WHATSAPP_NOTICE_SECRET", "whsec_dGVzdC1ub3RpY2Utc2VjcmV0LW5vdC1wcm9kdWN0aW9u");
+  const linkId = "0b6f3c1e-8d2a-4f6b-9c1d-2e3f4a5b6c7d";
+  store.assignLinkId.mockResolvedValueOnce({ userId: "user-a", linkId });
+  broker.contacts.mockResolvedValue({ contacts: [] });
+  await POST(inbound("contactos"));
+  await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
+  expect(store.assignLinkId).toHaveBeenCalledWith(`+${phone}`);
+  expect(broker.setChannel).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, "whatsapp", {
+    kind: "standard_webhook", url: `https://sideband.test/api/whatsapp/notice/${linkId}`,
+    secret: "whsec_dGVzdC1ub3RpY2Utc2VjcmV0LW5vdC1wcm9kdWN0aW9u",
+  });
+
+  vi.mocked(after).mockClear();
+  await POST(inbound("contactos"));
+  await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
+  expect(broker.setChannel).toHaveBeenCalledOnce();
 });

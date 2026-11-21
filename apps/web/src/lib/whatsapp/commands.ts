@@ -3,6 +3,14 @@ import { Address, AskInput, type Category, type Owner, type RequesterView } from
 import { describeSharing } from "../../app/(app)/contacts/describe";
 import type { InterpretMessage } from "./claude";
 
+// What a denial means when the contact does not share the category asked about.
+const notShared: Record<Category, string> = {
+  availability: "su disponibilidad horaria",
+  interests: "sus intereses",
+  health: "su información de salud",
+  general: "respuestas a preguntas abiertas",
+};
+
 export const askExample = "Pregunta a carla@sideband.app si puede jugar el sábado";
 const askHelp = `Prueba: «${askExample}», escribe «estado» para revisar tu última solicitud enviada o «contactos» para ver tu agenda.`;
 type WhatsAppBroker = Pick<OwnerPort, "ask" | "status" | "activity" | "contacts">;
@@ -25,16 +33,16 @@ async function resolveRecipient(broker: WhatsAppBroker, owner: Owner, text: stri
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-function summarize(view: RequesterView): string {
-  const reference = `\n\nSolicitud: ${view.requestId}`;
-  if (view.decision === "deny") return "No se pudo compartir una respuesta a esta solicitud." + reference;
+export function summarize(view: RequesterView): string {
+  if (view.decision === "deny") return `No se pudo obtener una respuesta de ${view.to}.`;
   if (view.decision === "pending") {
-    const waiting = view.waitingFor === "owner" ? "de aprobación" : "de respuesta";
-    return `Solicitud a ${view.to} pendiente ${waiting}. Para consultar la respuesta, envía:\n\nestado ${view.requestId}`;
+    return view.waitingFor === "owner"
+      ? `Le pregunté a ${view.to}. Espera su aprobación; te aviso apenas responda.`
+      : `Le pregunté a ${view.to}. Te aviso apenas responda.`;
   }
   if (view.decision === "unanswered") {
-    return { no_data: "No hay datos para responder.", expired: "La solicitud venció.",
-      delivery_failed: "No se pudo entregar la solicitud." }[view.outcome] + reference;
+    return { no_data: `${view.to} no tiene datos para responder eso.`, expired: `Tu pregunta a ${view.to} venció sin respuesta.`,
+      delivery_failed: `No se pudo entregar tu pregunta a ${view.to}.` }[view.outcome];
   }
   const result = view.result;
   const answer = "answer" in result ? result.answer :
@@ -42,7 +50,7 @@ function summarize(view: RequesterView): string {
     "available" in result ? `${result.available ? "Disponible." : "No disponible."}${result.freeSlots?.length ? ` Horarios: ${result.freeSlots.join(", ")}.` : ""}` :
     "accepted" in result ? result.accepted ? "Aceptó la solicitud de conexión." : "No aceptó la solicitud de conexión." :
     [result.displayName, result.headline].filter(Boolean).join(" — ");
-  return `Respuesta de ${view.to}:\n${answer}` + reference;
+  return `Respuesta de ${view.to}:\n${answer}`;
 }
 
 export async function runCommand(
@@ -75,8 +83,14 @@ export async function runCommand(
   async function ask(to: string, question: string, category: Category) {
     const input = AskInput.safeParse({ to, tool: "question", args: { text: question, category } });
     if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
-    const view = await broker.ask(owner, input.data);
+    const view = await broker.ask(owner, input.data, "whatsapp");
     onResult("ask", view);
+    if (view.decision !== "deny") return summarize(view);
+    // The broker denies without a reason. What the contact shares is already in the owner's own
+    // contacts view, so naming the missing category reveals nothing new.
+    const contact = (await broker.contacts(owner)).contacts.find(({ address }) => address === to);
+    if (!contact) return `${to} no está entre tus contactos.`;
+    if (!contact.receives.includes(category)) return `${to} no te comparte ${notShared[category]}.`;
     return summarize(view);
   }
 

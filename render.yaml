@@ -90,6 +90,8 @@ services:
         sync: false
       - key: KAPSO_WEBHOOK_SECRET
         sync: false
+      - key: WHATSAPP_NOTICE_SECRET
+        sync: false
 
   # Broker: servicio privado, solo alcanzable desde la red interna de Render.
   - type: pserv

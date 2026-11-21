@@ -11,6 +11,13 @@ export function config() {
   return { apiKey, numberId, number, secret, connectUrl: new URL("/agents/connect/whatsapp", webUrl).href };
 }
 
+// Where the broker notifies a linked phone. Without a notice secret, replies wait for «estado».
+export function noticeTarget(linkId: string) {
+  const { WHATSAPP_NOTICE_SECRET: secret, BETTER_AUTH_URL: webUrl } = process.env;
+  if (!secret?.startsWith("whsec_") || !webUrl) return;
+  return { kind: "standard_webhook" as const, url: new URL(`/api/whatsapp/notice/${linkId}`, webUrl).href, secret };
+}
+
 export function validSignature(body: Buffer, signature: string | null, secret: string) {
   if (!signature || !/^[a-f\d]{64}$/i.test(signature)) return false;
   return timingSafeEqual(Buffer.from(signature, "hex"), createHmac("sha256", secret).update(body).digest());

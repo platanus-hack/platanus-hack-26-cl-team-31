@@ -105,6 +105,11 @@ export const catalog = [
     attrs: {},
   }),
   defineEvent({
+    name: "whatsapp.delivery", kind: "lifecycle",
+    description: "Aviso del broker entregado al teléfono, guardado fuera de la ventana de 24 horas, enviado después o descartado. Sin el contenido ni el número.",
+    attrs: { state: z.enum(["sent", "pending", "flushed", "dropped"]), decision: code() },
+  }),
+  defineEvent({
     name: "whatsapp.interpret", kind: "http", description: "Interpretación en Claude, sin guardar texto ni destinatario.",
     attrs: { action: z.enum(["ask", "status", "contacts", "help"]), category: code() },
   }),
