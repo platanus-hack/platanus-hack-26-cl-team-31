@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { BrokerError, type AgentPort } from "@team-31/broker/client";
-import { WAKE_EVENT, type Principal, type Waker } from "@team-31/protocol";
+import { WAKE_EVENT, WAKE_SUBSCRIPTION_SCOPE, type Principal, type Waker } from "@team-31/protocol";
 import { z } from "zod";
 
 const eventDefinition = {
@@ -64,6 +64,7 @@ export function registerEvents(server: McpServer, principal: Principal, agent: A
   server.server.setRequestHandler(
     z.object({ method: z.literal("events/subscribe"), params: z.unknown() }),
     async ({ params }) => {
+      requireWakeScope(principal);
       const parsed = subscribe.safeParse(params);
       if (!parsed.success) {
         throw new McpError(ErrorCode.InvalidParams, "Indica el evento, la URL del webhook y un secreto whsec_ de 24 a 64 bytes en base64.");
@@ -93,6 +94,7 @@ export function registerEvents(server: McpServer, principal: Principal, agent: A
   server.server.setRequestHandler(
     z.object({ method: z.literal("events/unsubscribe"), params: z.unknown() }),
     async ({ params }) => {
+      requireWakeScope(principal);
       const parsed = unsubscribe.safeParse(params);
       if (!parsed.success) {
         throw new McpError(ErrorCode.InvalidParams, "Indica la suscripción o el evento con su URL de webhook.");
@@ -107,6 +109,13 @@ export function registerEvents(server: McpServer, principal: Principal, agent: A
       return {};
     },
   );
+}
+
+function requireWakeScope(principal: Principal) {
+  // TODO(admin): registrar la decisión de permiso MCP con userId y agentId.
+  if (!principal.scopes.includes(WAKE_SUBSCRIPTION_SCOPE)) {
+    throw eventError(new BrokerError("forbidden", "Se requiere el permiso de bandeja para gestionar avisos."));
+  }
 }
 
 function eventError(error: unknown) {

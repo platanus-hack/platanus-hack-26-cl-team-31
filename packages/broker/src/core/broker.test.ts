@@ -376,6 +376,9 @@ describe("conexiones y prueba de aviso", () => {
     const target: WakeTarget = {
       kind: "mcp_events", callbackUrl: "https://example.com/mcp", secret: "whsec_demo", subscriptionId: "sub", refreshBefore: null,
     };
+    const limited: Principal = { ...bruno, scopes: ["nexo:status"] };
+    await expect(broker.agent.connectWake(limited, target)).rejects.toMatchObject({ code: "forbidden" });
+    expect(verifyCallback).not.toHaveBeenCalled();
     verifyCallback.mockResolvedValueOnce({ ok: false, reason: "challenge_failed" });
     await expect(broker.agent.connectWake(bruno, target)).rejects.toMatchObject({ code: "invalid_input", message: "challenge_failed" });
     expect((await broker.owner.agents(bruno))[0]).toMatchObject({ wakeKind: "none" });
@@ -383,6 +386,8 @@ describe("conexiones y prueba de aviso", () => {
     expect(verifyCallback).toHaveBeenLastCalledWith(target);
     expect(connected).toMatchObject({ wakeKind: "mcp_events" });
     expect(JSON.stringify(connected)).not.toContain(target.secret);
+    await expect(broker.agent.disconnectWake(limited, target.subscriptionId)).rejects.toMatchObject({ code: "forbidden" });
+    expect((await broker.owner.agents(bruno))[0]).toMatchObject({ wakeKind: "mcp_events" });
     await expect(broker.agent.disconnectWake(carla, target.subscriptionId)).rejects.toMatchObject({ code: "not_found" });
     await broker.agent.disconnectWake(bruno, target.subscriptionId);
     expect((await broker.owner.agents(bruno))[0]).toMatchObject({ wakeKind: "none" });

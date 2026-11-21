@@ -1,6 +1,6 @@
 # MCP de Nexo
 
-El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `nexo_ask`, `nexo_inbox`, `nexo_reply` y `nexo_check`. El evento `nexo.request.created` se suscribe por webhook y entrega solo el `requestId`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
+El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone `nexo_ask`, `nexo_inbox`, `nexo_reply` y `nexo_check`. El evento `nexo.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `nexo:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
 
 ## Arranque local
 

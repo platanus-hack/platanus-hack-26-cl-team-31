@@ -176,11 +176,14 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
   }));
   const origin = await listen(createHttpServer({ audience, issuer, jwksUrl: `${jwksOrigin}/jwks` }, agent));
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
-  const jwt = `${encode({ typ: "at+jwt", alg: "EdDSA", kid: "oauth-test" })}.${encode({
-    iss: issuer, aud: audience, sub: "oauth-user", azp: "oauth-agent",
-    scope: "nexo:inbox nexo:status", exp: Math.floor(Date.now() / 1000) + 60,
-  })}`;
-  const client = await connect(`${origin}/mcp`, `${jwt}.${sign(null, Buffer.from(jwt), privateKey).toString("base64url")}`);
+  function token(scope: string) {
+    const jwt = `${encode({ typ: "at+jwt", alg: "EdDSA", kid: "oauth-test" })}.${encode({
+      iss: issuer, aud: audience, sub: "oauth-user", azp: "oauth-agent",
+      scope, exp: Math.floor(Date.now() / 1000) + 60,
+    })}`;
+    return `${jwt}.${sign(null, Buffer.from(jwt), privateKey).toString("base64url")}`;
+  }
+  const client = await connect(`${origin}/mcp`, token("nexo:inbox nexo:status"));
 
   expect(await client.callTool({ name: "nexo_ask", arguments: { to: "bob@nexo.app", tool: "profile", args: {} } }))
     .toMatchObject({
@@ -197,6 +200,16 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
     isError: true,
     structuredContent: { ok: false, error: { code: "not_found", message: "No se encontró la solicitud." } },
   });
+
+  const limited = await connect(`${origin}/mcp`, token("nexo:status"));
+  await expect(limited.request({
+    method: "events/subscribe",
+    params: { name: WAKE_EVENT, delivery: { mode: "webhook", url: "https://callback.example.test/nexo", secret: `whsec_${Buffer.alloc(32).toString("base64")}` } },
+  }, z.looseObject({}))).rejects.toMatchObject({ code: -32000, data: { code: "forbidden" } });
+  await expect(limited.request({ method: "events/unsubscribe", params: { id: "sub_0123456789abcdef" } }, z.looseObject({})))
+    .rejects.toMatchObject({ code: -32000, data: { code: "forbidden" } });
+  expect(agent.connectWake).not.toHaveBeenCalled();
+  expect(agent.disconnectWake).not.toHaveBeenCalled();
 });
 
 it("anuncia eventos, valida suscripciones, devuelve los errores de callback y cancela por identidad", async () => {

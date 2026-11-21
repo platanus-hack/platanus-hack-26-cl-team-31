@@ -10,6 +10,7 @@ import {
   ReplyInput,
   SharingRules,
   WakeTarget,
+  WAKE_SUBSCRIPTION_SCOPE,
   type FinalOutcome,
   type Principal,
   type ReplyReceipt,
@@ -292,6 +293,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async connectWake(p, target) {
+        // TODO(admin): registrar la decisión de permiso de suscripción con userId y agentId.
+        requireScope(p, WAKE_SUBSCRIPTION_SCOPE);
         const parsed = WakeTarget.safeParse(target);
         if (!parsed.success) throw new BrokerError("invalid_input", "La configuración del aviso no es válida.");
         const wakeTarget = parsed.data;
@@ -309,6 +312,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async disconnectWake(p, subscriptionId) {
+        // TODO(admin): registrar la decisión de permiso de cancelación con userId y agentId.
+        requireScope(p, WAKE_SUBSCRIPTION_SCOPE);
         await store.tx(async (tx) => {
           const connection = await activeAgent(tx, p);
           if (connection.wakeTarget.kind !== "mcp_events" || connection.wakeTarget.subscriptionId !== subscriptionId) {
