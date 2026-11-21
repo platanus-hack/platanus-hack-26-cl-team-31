@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { setTimeout } from "node:timers/promises";
 import test from "node:test";
 import pg from "pg";
+import { contactTools } from "../dist/contacts.js";
 import { availabilityTools } from "../dist/availability.js";
 
 async function database(t) {
@@ -23,12 +24,13 @@ async function database(t) {
   await db.query(`CREATE SCHEMA ${schema}`);
   for (const client of [db, owner]) await client.query(`SET search_path TO ${schema}`);
   await db.query(await readFile(new URL("../sql/01-core.sql", import.meta.url), "utf8"));
+  await db.query(await readFile(new URL("../sql/03-contacts.sql", import.meta.url), "utf8"));
   await db.query(`INSERT INTO people VALUES ('ana','a'),('bob','b'),('eva','e');
     INSERT INTO memberships VALUES ('ana','futbol',true,false),('bob','futbol',false,true)`);
   return { db, owner };
 }
 
-const run = (client, name, me, args) => availabilityTools.find(tool => tool.name === name).run(client, me, args);
+const run = (client, name, me, args) => [...availabilityTools, ...contactTools].find(tool => tool.name === name).run(client, me, args);
 const query = { recipient: "bob", group: "futbol", slot: "2026-11-28T19:00:00Z", minutes: 60 };
 const denied = { status: "not_shareable" };
 
@@ -93,4 +95,62 @@ test("discovery respects the published audience and confers no calendar access",
   assert.deepEqual(await run(db, "interest_search", "eva", listing), empty);
   await run(owner, "group_leave", "bob", { group: "futbol" });
   assert.deepEqual(await run(db, "interest_search", "ana", groupListing), empty);
+});
+
+test("the per-agent catalog describes callable tools and follows each domain's current permissions", async t => {
+  const { db, owner } = await database(t);
+  const bob = { recipient: "Bob" };
+  const catalog = me => run(db, "agent_capabilities", me, bob);
+  const before = await catalog("ana");
+  assert.deepEqual(before.tools.map(t => t.name), ["availability_check"]);
+  const { properties, required } = before.tools[0].inputSchema;
+  assert.equal(properties.recipient.const, "bob");
+  assert.deepEqual(properties.group.enum, ["futbol"]);
+  assert.deepEqual(required.sort(), ["group", "minutes", "recipient", "slot"]);
+  assert.deepEqual(await catalog("eva"), { tools: [] });
+  assert.deepEqual(await run(db, "agent_capabilities", "ana", { recipient: "nobody" }), { tools: [] });
+
+  const listing = { interest: "guitarra", group: "futbol" };
+  await run(owner, "interest_publish", "bob", listing);
+  await run(owner, "group_permission", "bob", { group: "futbol", can_share: false });
+  const after = await catalog("ana");
+  assert.deepEqual(after.tools.map(t => t.name), ["agent_interests"]);
+  assert.deepEqual(await run(db, after.tools[0].name, "ana", bob), { interests: ["guitarra"] });
+  assert.deepEqual(await run(db, before.tools[0].name, "ana", query), denied);
+  assert.deepEqual(await run(db, "agent_interests", "eva", bob), { interests: [] });
+  await run(owner, "interest_withdraw", "bob", listing);
+  assert.deepEqual(await catalog("ana"), { tools: [] });
+});
+
+test("contact search intersects the caller's own address book and the publisher's audience", async t => {
+  const { db } = await database(t);
+  const bob = { recipient: "Bob" };
+  const interest = { interest: "piano" };
+  const groupInterest = { ...interest, group: "futbol" };
+  const search = me => run(db, "contact_interest_search", me, interest);
+  const foundBob = { entries: [{ person: "bob", ...interest }] };
+  const empty = { entries: [] };
+
+  await run(db, "interest_publish", "bob", groupInterest);
+  await run(db, "interest_publish", "eva", interest);
+  assert.deepEqual(await search("ana"), empty);
+  assert.deepEqual(await run(db, "contact_connect", "ana", bob), await run(db, "agent_capabilities", "ana", bob));
+  assert.deepEqual(await search("ana"), foundBob);
+  assert.deepEqual(await run(db, "contact_connect", "eva", bob), { tools: [] });
+  assert.deepEqual(await search("eva"), empty);
+  assert.deepEqual(await run(db, "availability_check", "eva", query), denied);
+
+  await run(db, "interest_publish", "ana", interest);
+  assert.deepEqual(await search("bob"), empty); // Ana saving Bob does not add Ana to Bob's address book.
+  await run(db, "interest_publish", "bob", interest);
+  assert.deepEqual(await search("ana"), foundBob); // Public + group is one match.
+  assert.deepEqual(await search("eva"), foundBob);
+  await run(db, "interest_withdraw", "bob", interest);
+  assert.deepEqual(await search("eva"), empty);
+  await run(db, "group_leave", "ana", { group: "futbol" });
+  assert.deepEqual(await search("ana"), empty);
+  await run(db, "interest_publish", "bob", interest);
+  await run(db, "contact_remove", "ana", bob);
+  assert.deepEqual(await search("ana"), empty);
+  assert.deepEqual(await search("eva"), foundBob);
 });

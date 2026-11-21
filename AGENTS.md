@@ -68,6 +68,10 @@ El servidor usa `DATABASE_URL`. Cada adaptador MCP recibe `COORDINATION_API_URL`
 
 Ctrl+C detiene la API del host y `pnpm infra:down` detiene PostgreSQL conservando el volumen. Después de preparar el esquema, las cuentas y el build, también puedes iniciar la API en segundo plano con `docker compose --profile agents up -d coordination` con el puerto del host libre. Para detener ese stack usa `docker compose --profile agents down`.
 
+## Consultas resueltas por el runtime del titular
+
+Con Claude Code autenticado y un arreglo JSON de intereses de Bob en `.agents-local/bob-interests.json`, ejecuta `corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica?"`. Dos sesiones de Claude usan identidades distintas de Nexo. El broker autoriza la operación y envía un webhook firmado a Bob. Su herramienta consulta su archivo privado y el broker valida la respuesta para Ana. La cola de esta demo es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md) para usar otro archivo o abrir a Ana en modo interactivo.
+
 ## Comandos
 
 `pnpm dev` · `pnpm build` · `pnpm test` · `pnpm lint` · `pnpm typecheck`. Antes de dar algo por listo: `pnpm lint && pnpm typecheck` (y `pnpm test` si aplica).

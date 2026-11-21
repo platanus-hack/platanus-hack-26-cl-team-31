@@ -10,8 +10,9 @@ import {
   type WakeTarget,
   type Waker,
 } from "@team-31/protocol";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
+import { createOwnerRuntime, localReadTool } from "../client/runtime.js";
 import { deriveNonce, verifyJson } from "./crypto.js";
 
 const principals: Record<"alice" | "bruno" | "carla", Principal> = {
@@ -385,5 +386,65 @@ describe("conexiones y prueba de aviso", () => {
     await expect(broker.agent.disconnectWake(carla, target.subscriptionId)).rejects.toMatchObject({ code: "not_found" });
     await broker.agent.disconnectWake(bruno, target.subscriptionId);
     expect((await broker.owner.agents(bruno))[0]).toMatchObject({ wakeKind: "none" });
+  });
+});
+
+
+describe("ejecución en el runtime del titular", () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now); });
+  afterEach(() => vi.useRealTimers());
+  const notice = (requestId: string) => ({ event: WAKE_EVENT, requestId });
+  const revoke = () => broker.owner.setRules(bruno, { ...defaultRules, blocked: ["alice@nexo.app"] });
+
+  it("descubre las dos fuentes y ofrece sólo las capacidades autorizadas al solicitante", async () => {
+    const { tools } = await broker.agent.capabilities(alice, availability.to);
+    expect(tools).toMatchObject([
+      { tool: "profile", execution: "stored", inputSchema: { type: "object" } },
+      { tool: "availability", execution: "owner_runtime", allowedFields: ["available"] },
+    ]);
+    await revoke();
+    expect(await broker.agent.capabilities(alice, availability.to)).toEqual({ tools: [] });
+  });
+
+  it("un aviso tardío tras una revocación no ejecuta el conector", async () => {
+    const request = await askAvailability();
+    await revoke();
+    const read = vi.fn(async () => ({ available: true }));
+    const onWake = createOwnerRuntime(broker.agent, bruno, [localReadTool("availability", read)]);
+    await onWake(notice(request.requestId));
+    expect(read).not.toHaveBeenCalled();
+    expect(await broker.agent.status(alice, request.requestId)).toMatchObject({ decision: "deny" });
+  });
+
+  it("revocar mientras el conector lee impide entregar su respuesta", async () => {
+    const request = await askAvailability();
+    const onWake = createOwnerRuntime(broker.agent, bruno, [localReadTool("availability", async () => {
+      await revoke();
+      return { available: true };
+    })]);
+    await expect(onWake(notice(request.requestId))).rejects.toMatchObject({ code: "conflict" });
+    expect(await broker.agent.status(alice, request.requestId)).toMatchObject({ decision: "deny" });
+  });
+
+  it("requiere una herramienta registrada por el titular además del permiso del broker", async () => {
+    const request = await askAvailability();
+    const onWake = createOwnerRuntime(broker.agent, bruno, []);
+    await expect(onWake({ ...notice(request.requestId), tool: "question" })).rejects.toThrow();
+    await onWake(notice(request.requestId));
+    expect(await broker.agent.status(alice, request.requestId)).toMatchObject({ decision: "deny" });
+  });
+
+  it("filtra la salida antes de enviarla al broker y procesa un aviso repetido una sola vez", async () => {
+    const request = await askAvailability();
+    const reply = vi.fn(broker.agent.reply);
+    const read = vi.fn(async () => ({ available: true, freeSlots: ["13:00-14:00"] }));
+    const onWake = createOwnerRuntime({ inbox: broker.agent.inbox, reply }, bruno, [localReadTool("availability", read)]);
+    await Promise.all([onWake(notice(request.requestId)), onWake(notice(request.requestId))]);
+    await onWake(notice(request.requestId));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(reply.mock.calls[0]?.[1].result).toEqual({ available: true });
+    expect(await broker.agent.status(alice, request.requestId)).toMatchObject({ result: { available: true } });
+    await revoke();
+    expect(await expectFinal(alice, request.requestId, "deny", "deny")).not.toHaveProperty("result");
   });
 });

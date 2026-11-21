@@ -7,12 +7,12 @@ import { runTool } from "./result.js";
 // The SDK advertises a top-level object. AskInput checks the tool/args pairing.
 const inputSchema = AskInput.options[0].extend({
   tool: ToolName,
-  args: z.union([ToolArgs.profile, ToolArgs.availability, ToolArgs.question]),
+  args: z.union(Object.values(ToolArgs)),
 });
 
 export function registerAsk(server: McpServer, principal: Principal, agent: AgentPort) {
   server.registerTool("nexo_ask", {
-    description: "Pide a otra persona su perfil público (profile), disponibilidad (availability) o una respuesta (question). Consulta el resultado con nexo_check.",
+    description: "Pide a otra persona su perfil público (profile), disponibilidad (availability), coincidencia de interés (interest_check) o una respuesta (question). Consulta el resultado con nexo_check.",
     inputSchema,
   }, (args) => runTool(principal, "nexo:ask", () => {
     const input = AskInput.safeParse(args);

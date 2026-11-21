@@ -1,6 +1,7 @@
 import type { KeyObject, webcrypto } from "node:crypto";
 import type {
   ActivityItem,
+  Capability,
   Address,
   AgentConnection,
   AskInput,
@@ -19,6 +20,7 @@ import type {
 import type { Store } from "./store/store.js";
 
 export interface AgentPort {
+  capabilities(p: Principal, to: Address): Promise<{ tools: Capability[] }>;
   ask(p: Principal, input: AskInput): Promise<RequesterView>;
   inbox(p: Principal): Promise<InboxItem[]>;
   reply(p: Principal, input: ReplyInput): Promise<ReplyReceipt>;

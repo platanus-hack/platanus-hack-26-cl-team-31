@@ -8,6 +8,7 @@ const askBase = z.object({
 });
 
 export const AskInput = z.discriminatedUnion("tool", [
+  askBase.extend({ tool: z.literal("interest_check"), args: ToolArgs.interest_check }),
   askBase.extend({ tool: z.literal("profile"), args: ToolArgs.profile }),
   askBase.extend({ tool: z.literal("availability"), args: ToolArgs.availability }),
   askBase.extend({ tool: z.literal("question"), args: ToolArgs.question }),

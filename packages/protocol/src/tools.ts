@@ -1,7 +1,19 @@
 import { z } from "zod";
 
-export const ToolName = z.enum(["profile", "availability", "question"]);
+export const ToolName = z.enum(["profile", "availability", "question", "interest_check"]);
 export type ToolName = z.infer<typeof ToolName>;
+
+// Execution is fixed by the service contract. It is never an argument supplied by the sender.
+export const toolExecution = {
+  profile: "stored",
+  availability: "owner_runtime",
+  question: "owner_runtime",
+  interest_check: "owner_runtime",
+} as const satisfies Record<ToolName, "stored" | "owner_runtime">;
+
+export type RuntimeTool = {
+  [K in ToolName]: (typeof toolExecution)[K] extends "owner_runtime" ? K : never;
+}[ToolName];
 
 const timePattern = "(?:[01][0-9]|2[0-3]):[0-5][0-9]";
 const time = z.string().regex(new RegExp(`^${timePattern}$`));
@@ -24,6 +36,7 @@ const timezone = z.string().refine(
 
 export const ToolArgs = {
   profile: z.strictObject({}),
+  interest_check: z.strictObject({ interest: z.string().trim().min(1).max(128) }),
   availability: z.strictObject({
     date: z.iso.date(),
     start: time,
@@ -34,6 +47,7 @@ export const ToolArgs = {
 } as const;
 
 export const ToolResultSchemas = {
+  interest_check: z.object({ matches: z.boolean() }),
   profile: z.object({
     displayName: z.string(),
     headline: z.string().optional(),
@@ -49,9 +63,22 @@ export const ToolResult = z.union([
   ToolResultSchemas.profile,
   ToolResultSchemas.availability,
   ToolResultSchemas.question,
+  ToolResultSchemas.interest_check,
 ]);
 export type ToolResult = z.infer<typeof ToolResult>;
 
 export function fieldsOf(tool: ToolName): string[] {
   return Object.keys(ToolResultSchemas[tool].shape);
+}
+
+export const Capability = z.object({
+  tool: ToolName,
+  execution: z.enum(["stored", "owner_runtime"]),
+  inputSchema: z.record(z.string(), z.unknown()),
+  allowedFields: z.array(z.string()),
+});
+export type Capability = z.infer<typeof Capability>;
+
+export function describeTool(tool: ToolName, allowedFields: string[]): Capability {
+  return { tool, execution: toolExecution[tool], inputSchema: z.toJSONSchema(ToolArgs[tool]), allowedFields };
 }

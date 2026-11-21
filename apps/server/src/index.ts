@@ -3,9 +3,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import pg from "pg";
 import { z } from "zod";
 import { availabilityTools } from "./availability.js";
+import { contactTools } from "./contacts.js";
 import { meetingTools } from "./meetings.js";
 
-const tools = [...availabilityTools, ...meetingTools];
+const tools = [...availabilityTools, ...meetingTools, ...contactTools];
 const byName = new Map(tools.map(tool => [tool.name, tool]));
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL requerida");
 const pool = new pg.Pool({connectionString: process.env.DATABASE_URL});

@@ -7,6 +7,7 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
   const request = createHttpClient(options, Principal);
 
   return {
+    capabilities: (principal, to) => request(routes.agentCapabilities, principal, { query: { to } }),
     ask: (principal, body) => request(routes.agentAsk, principal, { body }),
     inbox: async (principal) => (await request(routes.agentInbox, principal)).items,
     reply: (principal, body) => request(routes.agentReply, principal, { body }),

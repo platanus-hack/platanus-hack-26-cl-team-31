@@ -49,10 +49,36 @@ claude --strict-mcp-config --mcp-config .agents-local/bob.json --tools ""
 
 La bandeja se consulta cuando activas la sesión. Los agentes comparten una API HTTP que verifica la credencial, y el broker comprueba membresía y permisos antes de leer disponibilidad y entregar el resultado. La decisión de asistir se registra por participante. Los archivos de configuración son privados del usuario local y dan acceso a la identidad que contienen.
 
+### Consultar a un contacto
+
+Ana envía su pregunta al servidor a través de MCP. El servicio verifica la identidad de Ana y consulta PostgreSQL. Bob puede estar desconectado. Para buscar una afición, Bob debe haberla publicado previamente. La audiencia se comprueba en cada lectura.
+
+1. **Ana** — «Guarda a Bob en mis contactos y dime qué le puedo preguntar». `contact_connect` guarda la dirección sólo para Ana y devuelve las consultas permitidas, con su nombre y un JSON Schema de argumentos. `agent_capabilities` permite volver a consultar ese catálogo sin modificar los contactos.
+2. **Bob** — «Publica mi interés en guitarra para el grupo futbol». Bob elige la audiencia. Si omite el grupo, todos los usuarios autenticados pueden encontrar la publicación.
+3. **Ana** — «¿Quién de mis contactos tiene interés en guitarra?». `contact_interest_search` devuelve las coincidencias entre su lista personal y las publicaciones visibles para ella. `agent_interests` permite consultar los intereses visibles de una persona concreta.
+
+La lista de contactos empieza vacía. Guardar una dirección es unilateral. La disponibilidad sigue las reglas de la agenda y cada interés conserva su audiencia. Un catálogo vacío se devuelve tanto para una dirección desconocida como para una persona que no comparte información con el solicitante.
+
+### Cuando la respuesta necesita al runtime de Bob
+
+La demo inicia dos sesiones de Claude Code usando tu login local. Ana tiene las herramientas MCP `ask_bob` y `await_bob`. Bob recibe sólo `check_interest`, que lee el archivo elegido por su operador.
+
+1. Prepara un archivo JSON privado de Bob con una lista de intereses. Por ejemplo, `["cerámica", "senderismo"]`. La ruta predeterminada es `.agents-local/bob-interests.json`.
+2. Desde la raíz, ejecuta `corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica?"`. Puedes indicar otra ruta como segundo argumento. Ejecuta el comando sin argumentos para conversar con Ana.
+3. Cambia los intereses en el archivo de Bob y repite la pregunta. Una lista vacía devuelve `matches: false`. Si falta el archivo, el resultado es `no_data`.
+
+Ana envía la operación `interest_check` a la dirección de Bob. El broker verifica la regla de Bob para Ana, encola el aviso y entrega un ID pendiente. El worker envía un webhook HTTP firmado al receptor local registrado para `bob-bot`. El receptor devuelve HTTP 202 y usa su identidad para buscar la solicitud en la bandeja. Claude Code ejecuta la lectura aprobada y devuelve el JSON observado. La herramienta compara el interés solicitado con la lista sin distinguir mayúsculas. La lista completa permanece en el equipo.
+
+El broker comprueba titular, nonce, vigencia, esquema y campos autorizados antes de firmar el resultado. Ana lo obtiene con el ID de la solicitud. La última línea de la demo en modo comando muestra el resultado leído del broker. Si Bob falla antes de responder, la solicitud queda pendiente hasta vencer.
+
+Las dos sesiones usan el mismo login de Claude Code y distintas identidades de la demo. El receptor escucha en loopback en un puerto efímero. Esta prueba crea una regla inicial que permite a Ana consultar `matches` y mantiene la cola en memoria durante la sesión. La demo MCP de coordinación con PostgreSQL descrita arriba se ejecuta por separado.
+
 ### Herramientas
 
 | Acción | Herramientas |
 |---|---|
+| Mis contactos y consultas permitidas | `contact_connect`, `contact_remove`, `agent_capabilities` |
+| Intereses visibles por persona o entre mis contactos | `agent_interests`, `contact_interest_search` |
 | Disponibilidad y relectura | `availability_check`, `request_get` |
 | Permisos y membresía del titular | `group_permission`, `group_leave` |
 | Publicación con audiencia | `interest_publish`, `interest_search`, `interest_withdraw` |

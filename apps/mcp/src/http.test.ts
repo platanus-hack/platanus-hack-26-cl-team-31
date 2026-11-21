@@ -25,6 +25,7 @@ async function listen(server: Server) {
 
 function testPort(): AgentPort {
   return {
+    capabilities: vi.fn(),
     ask: vi.fn(),
     inbox: vi.fn(),
     reply: vi.fn(),
