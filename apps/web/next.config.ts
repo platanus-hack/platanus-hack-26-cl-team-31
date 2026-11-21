@@ -1,10 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Solo /embed/* se puede enmarcar desde otro origen (presentaciones con iframe). No hay otra cabecera
-  // de enmarcado en la app, así que el resto conserva el comportamiento por defecto.
   async headers() {
-    return [{ source: "/embed/:path*", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors *" }] }];
+    const key = "Content-Security-Policy";
+    return [
+      { source: "/:path*", headers: [{ key, value: "frame-ancestors 'none'" }] },
+      // Next aplica la última coincidencia: solo la repetición pública admite iframe.
+      { source: "/embed/flujo", headers: [{ key, value: "frame-ancestors *" }] },
+    ];
   },
   async redirects() {
     return ["/rules", "/grants", "/friends"].map((source) => ({ source, destination: "/contacts", permanent: false }));

@@ -56,4 +56,4 @@ Para una diapositiva, incrusta `/embed/flujo` con un iframe (`allowfullscreen` h
 
 Ejemplo de kiosco: `/embed/flujo?controls=0&panels=0&speed=1.5`. El grafo escala desde un lienzo de 1440 × 810 para leerse en un proyector y respeta `prefers-reduced-motion`: sin pulsos ni rebotes, con cambios de estado y la línea de tiempo.
 
-`next.config.ts` agrega `Content-Security-Policy: frame-ancestors *` solo en `/embed/*`. La app no envía otras cabeceras de enmarcado, así que el resto mantiene su comportamiento.
+`next.config.ts` permite enmarcar solo `/embed/flujo`. El resto de la web envía `Content-Security-Policy: frame-ancestors 'none'`, incluidas las pantallas de consentimiento y contactos.
