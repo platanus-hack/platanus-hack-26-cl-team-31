@@ -1,18 +1,18 @@
 import type { BrokerCore } from "@team-31/broker";
-import { logFailure } from "./log.js";
+import type { Telemetry } from "@team-31/telemetry";
 
-export function startWorker(broker: Pick<BrokerCore, "tick">) {
+export function startWorker(broker: Pick<BrokerCore, "tick">, telemetry: Pick<Telemetry, "error">, runInWorker: <T>(fn: () => T) => T = (fn) => fn()) {
   let running: Promise<void> | undefined;
   const timer = setInterval(() => {
     if (running) return;
-    running = (async () => {
+    running = runInWorker(async () => {
       try {
         const report = await broker.tick(new Date());
         if (Object.values(report).some((count) => count !== 0)) console.info("[broker] Worker", report);
       } catch (error) {
-        logFailure("worker.tick", error);
+        telemetry.error("worker.tick", error);
       }
-    })().finally(() => { running = undefined; });
+    }).finally(() => { running = undefined; });
   }, 1_000);
 
   return async function stopWorker() {
