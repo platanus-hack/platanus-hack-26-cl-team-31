@@ -32,7 +32,7 @@ export function whatsappMessage(
       ownVault: async categoryId => {
         const { categories } = await broker.vault(owner);
         if (categoryId) return { categories: categories.filter(c => c.id === categoryId) };
-        return { categories: categories.map(({ id, name, description, tags }) => ({ id, name, description, tags })) };
+        return { categories: categories.map(({ id, name, description, visibility, tags }) => ({ id, name, description, visibility, tags })) };
       },
       searchProfiles: query => broker.searchPublicProfiles(owner, query),
     },

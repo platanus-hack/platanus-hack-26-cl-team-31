@@ -41,6 +41,7 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
   const [name, setName] = useState(category.name);
   const [description, setDescription] = useState(category.description ?? "");
   const [allowed, setAllowed] = useState<string[]>(category.tags);
+  const [isPublic, setIsPublic] = useState(category.visibility === "public");
   const [entries, setEntries] = useState(category.entries);
   const [label, setLabel] = useState("");
   const [value, setValue] = useState("");
@@ -50,6 +51,11 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
     const on = !allowed.includes(tag.id);
     setAllowed(on ? [...allowed, tag.id] : allowed.filter((id) => id !== tag.id));
     run({ ...base, action: "set_tag", tagId: tag.id, allowed: String(on) });
+  }
+
+  function togglePublic() {
+    setIsPublic(!isPublic);
+    run({ ...base, action: "set_visibility", visibility: isPublic ? "private" : "public" });
   }
 
   function add(event: React.FormEvent) {
@@ -110,6 +116,16 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
       </Section>
 
       <Section title="Quién puede leer">
+        <button type="button" role="switch" aria-checked={isPublic} onClick={togglePublic}
+          className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl bg-stage px-3.5 py-2.5 text-left">
+          <span>
+            <span className="block text-sm font-medium text-ink">Pública</span>
+            <span className="block text-xs text-muted">Todos tus contactos pueden leerla.</span>
+          </span>
+          <span aria-hidden="true" className={`relative h-7 w-12 shrink-0 rounded-full transition ${isPublic ? "bg-accent" : "bg-line-strong"}`}>
+            <span className={`absolute top-0.5 left-0.5 size-6 rounded-full bg-white shadow transition-transform ${isPublic ? "translate-x-5" : ""}`} />
+          </span>
+        </button>
         <div className="flex flex-wrap gap-2">
           {tags.map((tag) => {
             const on = allowed.includes(tag.id);
@@ -128,7 +144,7 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
             <div className="flex -space-x-2">{category.members.slice(0, 5).map((address) => <span key={address} className="rounded-full ring-2 ring-menu"><Initial name={address} /></span>)}</div>
             <p className="text-xs text-muted">{category.members.length === 1 ? `${category.members[0]} puede leerla` : `${category.members.length} personas pueden leerla`}</p>
           </div>
-        ) : <p className="text-xs text-muted">{allowed.length ? "Ningún contacto tiene esas etiquetas todavía." : "Solo tú. Elige etiquetas para compartirla."}</p>}
+        ) : <p className="text-xs text-muted">{isPublic ? "Aún no tienes contactos." : allowed.length ? "Ningún contacto tiene esas etiquetas todavía." : "Solo tú. Hazla pública o elige etiquetas para compartirla."}</p>}
       </Section>
 
       <Feedback error={state.error} errorId={state.errorId} />
@@ -160,21 +176,22 @@ export function CategoryRow({ category, tags }: { category: Category; tags: Tag[
 
   const shared = tags.filter((tag) => category.tags.includes(tag.id));
   const count = category.entries.length;
+  const open = category.visibility === "public" || shared.length > 0;
   return (
     <li>
       <Modal label={`Abrir ${category.name}`} title={category.name} wide
         triggerClassName="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/3"
         trigger={<>
-          <span aria-hidden="true" className={`grid size-9 shrink-0 place-items-center rounded-full ${shared.length ? "bg-accent-soft text-accent-ink" : "bg-white/6 text-muted"}`}>
+          <span aria-hidden="true" className={`grid size-9 shrink-0 place-items-center rounded-full ${open ? "bg-accent-soft text-accent-ink" : "bg-white/6 text-muted"}`}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              {shared.length ? <><circle cx="6" cy="6" r="2.2" /><circle cx="11" cy="7" r="1.8" /><path d="M2 13c.6-2 2.1-3 4-3s3.4 1 4 3M10 10.2c1.6 0 2.8.9 3.4 2.6" /></> : <><rect x="3" y="7" width="10" height="7" rx="2" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></>}
+              {open ? <><circle cx="6" cy="6" r="2.2" /><circle cx="11" cy="7" r="1.8" /><path d="M2 13c.6-2 2.1-3 4-3s3.4 1 4 3M10 10.2c1.6 0 2.8.9 3.4 2.6" /></> : <><rect x="3" y="7" width="10" height="7" rx="2" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></>}
             </svg>
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-ink">{category.name}</span>
             {category.description && <span className="block truncate text-xs text-body">{category.description}</span>}
             <span className="block truncate text-xs text-muted">
-              {count === 0 ? "Sin datos" : count === 1 ? "1 dato" : `${count} datos`} · {shared.length ? `Compartida con ${shared.map((tag) => tag.name).join(", ")}` : "Privada"}
+              {count === 0 ? "Sin datos" : count === 1 ? "1 dato" : `${count} datos`} · {category.visibility === "public" ? "Pública" : shared.length ? `Compartida con ${shared.map((tag) => tag.name).join(", ")}` : "Privada"}
             </span>
           </span>
           <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted"><path d="m4.5 2.5 3.5 3.5-3.5 3.5" /></svg>
