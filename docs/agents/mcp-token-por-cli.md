@@ -1,170 +1,146 @@
 # Token pre-emitido por CLI
 
-Pregunta: ¿cada CLI de agente puede usar un access token OAuth ya emitido contra el MCP remoto, sin login en el navegador? Respuesta corta: **sí, los tres**.
+Cómo registrar el MCP remoto de Sideband en `claude`, `codex` y `pi` con un access token ya
+emitido, sin login interactivo ni navegador. Es lo que necesita `infra/titular/config-mcp.sh`
+para la imagen del titular.
 
-Verificado el 2026-11-21 contra el MCP del worktree publicado por Tailscale (`https://<host>.ts.net:8443/mcp`, TLS real, `NODE_ENV=production`), con tokens de `POST /api/dev-token` y un titular recién creado.
+Verificado el 2026-11-21 contra `claude` 2.1.330, `codex-cli` 0.162.1 y `pi` 1.4.0, apuntando al
+MCP real (`https://…tail88af94.ts.net:8443/mcp`, TLS, `NODE_ENV=production`).
 
-| CLI | Token pre-emitido | Header arbitrario | `${VAR}` en la config | Abre el stream GET |
-| --- | --- | --- | --- | --- |
-| claude 2.1.330 | sí | sí | sí | sí (tolera 405) |
-| codex 0.162.1 | sí | no, solo bearer | sí (`bearer_token_env_var`) | no |
-| pi 1.4.0 | sí | sí | sí | sí (tolera 405) |
+| CLI | ¿Acepta un token pre-emitido? | Dónde vive la configuración |
+| --- | --- | --- |
+| `claude` | Sí, encabezado estático `Authorization` | `$CLAUDE_CONFIG_DIR/.claude.json` (por defecto `$HOME/.claude.json`) |
+| `codex` | Sí, `bearer_token_env_var` | `$CODEX_HOME/config.toml` (por defecto `$HOME/.codex/config.toml`) |
+| `pi` | Sí, `--bearer-token-env-var` | `$HOME/.pi/agent/mcp.json` |
 
-Ninguno escribe el token en su estado: después de cada corrida, buscar el prefijo del token dentro del directorio de configuración aislado no encuentra nada. El contenedor monta la config y pasa el token por variable de entorno.
+Ninguno necesita `mcp login`. En los tres el token puede quedar **por referencia al entorno**,
+no como valor en disco.
 
 ## claude
 
-**Veredicto: sí.** Header estático por `--mcp-config`, sin `claude mcp login`.
+`claude mcp add` admite `--header`, y el valor se expande desde el entorno al conectar: basta
+guardar `Bearer ${SIDEBAND_ACCESS_TOKEN}` literal.
+
+```sh
+claude mcp add sideband --scope user --transport http \
+  "${TITULAR_MCP_URL}" \
+  --header 'Authorization: Bearer ${SIDEBAND_ACCESS_TOKEN}'
+```
+
+Escribe en `$CLAUDE_CONFIG_DIR/.claude.json` (o `$HOME/.claude.json` si no está definida):
 
 ```json
 {
   "mcpServers": {
     "sideband": {
       "type": "http",
-      "url": "https://<host>:8443/mcp",
-      "headers": { "Authorization": "Bearer ${SIDEBAND_TOKEN}" }
+      "url": "https://…tail88af94.ts.net:8443/mcp",
+      "headers": { "Authorization": "Bearer ${SIDEBAND_ACCESS_TOKEN}" }
     }
   }
 }
 ```
 
+**Ojo con `CLAUDE_CONFIG_DIR`.** `claude mcp add` ignora `HOME` si esa variable está definida en
+el entorno; escribe donde ella apunte. En el contenedor, o no la definas o apúntala al home del
+usuario del contenedor.
+
+Prueba headless (el mismo JSON, pasado con `--mcp-config` para no tocar la configuración real):
+
 ```sh
-SIDEBAND_TOKEN=<token> CLAUDE_CONFIG_DIR=/tmp/sondeo/claude-home ANTHROPIC_API_KEY=... \
-claude -p "Llama sideband_contacts sin argumentos y pega su resultado crudo." \
-  --mcp-config /tmp/sondeo/claude-mcp.json --strict-mcp-config --setting-sources "" \
-  --model claude-haiku-4-5 --allowedTools "mcp__sideband__sideband_contacts" < /dev/null
+claude -p "Llama mcp__sideband__sideband_inbox sin argumentos y pega su salida cruda." \
+  --model claude-haiku-4-5 \
+  --mcp-config ./mcp.json --strict-mcp-config --setting-sources "" \
+  --allowedTools "mcp__sideband__sideband_inbox"
 ```
 
-Salida: `Resultado:` y luego `{"contacts":[],"circles":[]}`.
+Salida real:
 
-- **Credenciales.** El header vive en el archivo que pasa `--mcp-config`; `${VAR}` se expande desde el entorno. El estado del CLI va a `CLAUDE_CONFIG_DIR`. Con token estático no se guarda nada de OAuth.
-- **Stream GET.** Sí lo abre, justo después de `notifications/initialized`, y sigue adelante con el 405. Observado en un proxy que registra cada petición:
+```json
+{"items":[]}
+```
 
-  ```
-  POST /mcp rpc=server/discover            -> 400 (Unsupported protocol version: 2026-07-28)
-  POST /mcp rpc=initialize                 -> 200
-  POST /mcp rpc=notifications/initialized  -> 202
-  GET  /mcp accept=text/event-stream       -> 405
-  POST /mcp rpc=tools/list                 -> 200
-  POST /mcp rpc=tools/call                 -> 200
-  ```
-
-  Antes de todo intenta `server/discover` con `MCP-Protocol-Version: 2026-07-28`, que el servidor rechaza con 400 y luego renegocia a `2025-11-25`. No es fatal.
+Antes de eso, con `sideband_check` el modelo leyó el esquema de la tool y pidió el `requestId`
+obligatorio: la lista de tools llega completa.
 
 ## codex
 
-**Veredicto: sí**, con una restricción: solo acepta bearer por variable de entorno. No hay opción de header arbitrario.
+`codex mcp add --url` registra un servidor Streamable HTTP y `--bearer-token-env-var` guarda el
+**nombre de la variable**, nunca el token.
+
+```sh
+codex mcp add sideband \
+  --url "${TITULAR_MCP_URL}" \
+  --bearer-token-env-var SIDEBAND_ACCESS_TOKEN
+```
+
+Escribe en `$CODEX_HOME/config.toml` (por defecto `$HOME/.codex/config.toml`):
 
 ```toml
 [mcp_servers.sideband]
-url = "https://<host>:8443/mcp"
-bearer_token_env_var = "SIDEBAND_TOKEN"
+url = "https://…tail88af94.ts.net:8443/mcp"
+bearer_token_env_var = "SIDEBAND_ACCESS_TOKEN"
 ```
 
-Equivalente: `codex mcp add sideband --url <url> --bearer-token-env-var SIDEBAND_TOKEN`.
+Prueba headless con `CODEX_HOME` aislado y el modelo OpenAI-compatible de la demo:
 
 ```sh
-CODEX_HOME=/tmp/sondeo/codex-home SIDEBAND_TOKEN=<token> OLLAMA_API_KEY=... \
-codex exec --skip-git-repo-check --sandbox read-only \
-  "Llama la tool MCP sideband_contacts sin argumentos y pega su resultado crudo." < /dev/null
+codex exec --skip-git-repo-check \
+  "Llama la herramienta MCP sideband_inbox y pega su salida cruda. Nada mas."
 ```
 
-Salida:
+Salida real:
 
 ```
-mcp: sideband/sideband_contacts started
-mcp: sideband/sideband_contacts (completed)
+mcp: sideband/sideband_inbox started
+mcp: sideband/sideband_inbox (completed)
 codex
-Here is the raw result from the `mcp__sideband_sideband_contacts` call:
-{ "contacts": [], "circles": [] }
+{"items":[]}
 ```
 
-- **Credenciales.** El archivo `config.toml` dentro de `CODEX_HOME`. El token nunca se escribe ahí: solo el nombre de la variable. `CODEX_HOME` aísla toda la configuración.
-- **Stream GET.** No lo abre. Solo POST:
+Dos trampas del `config.toml`, ajenas al MCP pero que bloquean la prueba:
 
-  ```
-  POST /mcp rpc=initialize                 -> 200
-  POST /mcp rpc=notifications/initialized  -> 202
-  POST /mcp rpc=tools/list                 -> 200
-  POST /mcp rpc=tools/call                 -> 200
-  ```
-
-- **Modelo.** `codex` solo habla OpenAI. Ollama Cloud sirve, pero 0.162 ya no acepta `wire_api = "chat"` y reserva el id `ollama`, así que el proveedor va con otro nombre y la API de Responses:
-
-  ```toml
-  model = "gpt-oss:120b"
-  model_provider = "ollama-cloud"
-
-  [model_providers.ollama-cloud]
-  name = "Ollama Cloud"
-  base_url = "https://ollama.com/v1"
-  env_key = "OLLAMA_API_KEY"
-  wire_api = "responses"
-  ```
-
-  Las claves de nivel superior van antes de cualquier tabla, o quedan dentro de `[mcp_servers.sideband]` y `codex` las ignora. `codex exec` además se queda esperando stdin: hay que cerrarlo con `< /dev/null`.
-- **No confirmado.** Si acepta el token literal en `config.toml` (alguna clave `bearer_token`) en vez de la variable.
+- Es TOML: las claves sueltas (`model`, `model_provider`, `approval_policy`) van **antes** de
+  cualquier `[tabla]`. Si las agregas al final quedan dentro de `[mcp_servers.sideband]` y codex
+  las ignora con un aviso, cayendo al proveedor por defecto.
+- `wire_api = "chat"` ya no existe en 0.162.1; usa `"responses"`. El id `ollama` está reservado:
+  nombra el proveedor de otra forma (`ollama-cloud`).
 
 ## pi
 
-**Veredicto: sí.** Header estático en `mcp.json`, sin `pi mcp login`.
-
-```json
-{
-  "mcpServers": {
-    "sideband": {
-      "url": "https://<host>:8443/mcp",
-      "headers": { "Authorization": "Bearer ${SIDEBAND_TOKEN}" }
-    }
-  }
-}
-```
-
-Equivalente: `pi mcp add sideband --url <url> --bearer-token-env-var SIDEBAND_TOKEN` (también existe `--header KEY=VALUE`).
+Ya resuelto y en uso en `infra/titular/config-mcp.sh`. Misma forma que codex:
 
 ```sh
-PI_CODING_AGENT_DIR=/tmp/sondeo/pi-home SIDEBAND_TOKEN=<token> ANTHROPIC_API_KEY=... \
-pi -p "Llama la tool MCP sideband_contacts sin argumentos y pega su resultado crudo." \
-  --no-skills --no-session --no-context-files --model claude-haiku-4-5 < /dev/null
+pi mcp add sideband --url "${TITULAR_MCP_URL}" --bearer-token-env-var SIDEBAND_ACCESS_TOKEN
 ```
 
-Salida:
+Escribe `$HOME/.pi/agent/mcp.json` con la referencia al entorno, no con el valor.
 
-```json
-{
-  "content": [{ "type": "text", "text": "{\"contacts\":[],\"circles\":[]}" }],
-  "structuredContent": { "contacts": [], "circles": [] }
-}
-```
+## Stream GET de Streamable HTTP
 
-`pi mcp list` sirve como chequeo sin gastar modelo: `sideband: connected, 15 tools (codemode, global)`.
+Medido con un proxy HTTP local que registra método y ruta entre el CLI y el MCP.
 
-- **Credenciales.** El archivo `mcp.json` dentro de `PI_CODING_AGENT_DIR`; en proyectos de confianza también `.pi/mcp.json` del proyecto.
-- **`--mcp-config` no sirve para aislar.** Es un flag que registra la extensión MCP, así que con `--no-extensions` desaparece y `pi` aborta con `Error: Unknown option: --mcp-config`. El aislamiento real es `PI_CODING_AGENT_DIR`.
-- **Stream GET.** Sí lo abre, después de `notifications/initialized`, y sigue con el 405:
+- **`claude` sí abre el GET.** Después de `initialize` emite `GET /mcp` con
+  `accept: text/event-stream`. Nuestro servidor responde 405 y el cliente sigue funcionando sin
+  error visible: la llamada a la tool se completó igual. Si algún día queremos push al titular,
+  claude ya lo pediría.
+- **`codex` no abre el GET.** Sólo POST (`initialize`, `notifications/initialized`, `tools/list`,
+  `tools/call`). Nunca intentó GET ni DELETE.
+- El servidor hoy responde 405 tanto a `GET /mcp` como a `DELETE /mcp`.
 
-  ```
-  POST /mcp rpc=initialize                 -> 200
-  POST /mcp rpc=notifications/initialized  -> 202
-  GET  /mcp accept=text/event-stream       -> 405
-  POST /mcp rpc=tools/list                 -> 200
-  POST /mcp rpc=tools/call                 -> 200
-  ```
+## Para la imagen del titular
 
-## Si se habilita push en vez de polling
+El token entra por `--env-file` como `SIDEBAND_ACCESS_TOKEN` y los tres CLI lo leen del entorno
+del proceso. El archivo de configuración se puede hornear en la imagen con la referencia
+`${SIDEBAND_ACCESS_TOKEN}`; sólo el valor es por contenedor.
 
-Dos de tres clientes ya abren el `GET /mcp` por su cuenta y aceptan el 405 sin romperse. Contestar ese GET con un stream SSE les daría notificaciones iniciadas por el servidor sin cambiar nada del lado del cliente. `codex` no lo abre, así que para él esa vía no existe y hay que dejarle el polling.
+`TITULAR_MCP_URL` debe coincidir byte a byte con `MCP_RESOURCE_URL` del servidor.
 
-## Lo que estorbó, y no fueron los CLIs
+## Notas sueltas
 
-- **409 por titular existente.** Con los titulares `Ana Prueba` y `Bob Prueba`, toda petición al MCP devuelve `409 {"code":-32000,"message":"La solicitud entra en conflicto con el estado actual."}`, incluido `initialize`. Viene de `agent.connect(principal)` en `apps/mcp/src/http.ts:142`, no del transporte. Un titular recién creado funciona y su token se reutiliza sin problema. Pendiente de revisar por quien sea dueño de `agent.connect`.
-- **El stack se cayó a media prueba** (web 500, MCP 502 durante ~25 min) por un merge en curso en otro worktree. Los 502 que aparecen en los primeros registros de `codex` son eso, no un fallo del CLI.
-
-## Aislamiento de la configuración personal
-
-Las corridas usaron `CLAUDE_CONFIG_DIR`, `CODEX_HOME` y `PI_CODING_AGENT_DIR` apuntando a `/tmp`. Comparando `stat` antes y después:
-
-- La config global de claude: sin cambios (mtime de agosto).
-- La config global de codex: sin cambios. Solo cambió la mtime de un auxiliar que `codex` extrae siempre en su directorio temporal.
-- El directorio global de pi: sin archivos nuevos ni `mcp.json`; solo cambió la mtime del directorio.
-- La extensión `context-mode` de pi sí escribió sesiones nuevas en su carpeta global, pese a `--no-session`. No contienen el token.
+- Sin encabezado `Authorization` el MCP responde 401; con uno válido, 200. La autorización no es
+  el problema en ninguno de los tres CLI.
+- Observado, causa **no confirmada**: un token del usuario fijo `Ana Prueba` devolvía 409
+  (`-32000`, «La solicitud entra en conflicto con el estado actual.») en *todos* los métodos,
+  incluido `initialize`, mientras tokens recién emitidos con nombres distintos respondían 200.
+  Persistió después de la sesión. No parece causado por el CLI; si aparece, emite un token nuevo.
