@@ -24,6 +24,7 @@ Al terminar con un worktree: `pnpm teardown` (borra sus contenedores/datos y lib
 | web      | `WEB_PORT`      | `3000 + SLOT`   |
 | agentes (HTTP local) | `COORDINATION_PORT` | `4310 + SLOT` |
 | postgres | `POSTGRES_PORT` | `54320 + SLOT`  |
+| Ollama (dashboard opcional) | `DEMO_MODEL_PORT` | `11440 + SLOT` |
 
 - Secretos/API keys: `.env.local` (gitignored). Declara cada variable nueva en `.env.local.example`.
 - `pnpm dev|build|test` cargan `.env` + `.env.local` automáticamente. Para cualquier otro comando: `pnpm with-env <cmd>` (ej. `pnpm with-env pnpm --filter @team-31/web <script>`).
@@ -52,6 +53,8 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 El servidor usa `DATABASE_URL`. Cada adaptador MCP recibe `COORDINATION_API_URL` y su propio `AGENT_TOKEN` de un archivo privado en `.agents-local/`. Conserva esa carpeta junto a la base para volver a abrir las sesiones. PostgreSQL guarda permisos, disponibilidad, publicaciones y encuentros. La política bilateral de `apps/broker` se ejecuta en el servidor. `pnpm test` usa la base separada `app_test`.
 
 Ctrl+C detiene la API del host y `pnpm infra:down` detiene PostgreSQL conservando el volumen. Después de preparar el esquema, las cuentas y el build, también puedes iniciar la API en segundo plano con `docker compose --profile agents up -d coordination` con el puerto del host libre. Para detener ese stack usa `docker compose --profile agents down`.
+
+El dashboard de desarrollo usa Ollama por loopback (`DEMO_MODEL_URL`) y `DEMO_MODEL` (por defecto `qwen3:4b`). Puedes usar el perfil Compose `demo-model` o un proceso nativo, no ambos a la vez. Los comandos están en el README. No usa credenciales de un proveedor externo.
 
 ## Comandos
 

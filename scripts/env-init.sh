@@ -23,6 +23,7 @@ if [ -z "$SLOT" ]; then
     port_busy $((3000 + s)) && continue
     port_busy $((54320 + s)) && continue
     port_busy $((4310 + s)) && continue
+    port_busy $((11440 + s)) && continue
     SLOT=$s; break
   done
   [ -z "$SLOT" ] && { echo "No hay slots libres" >&2; exit 1; }
@@ -33,6 +34,7 @@ echo "$SLOT $ROOT" >>"$REGISTRY"
 WEB_PORT=$((3000 + SLOT))
 POSTGRES_PORT=$((54320 + SLOT))
 COORDINATION_PORT=$((4310 + SLOT))
+DEMO_MODEL_PORT=$((11440 + SLOT))
 
 cat >"$ENV_FILE" <<ENV
 # GENERADO por scripts/env-init.sh — no editar a mano (secretos van en .env.local)
@@ -43,6 +45,8 @@ WEB_PORT=$WEB_PORT
 POSTGRES_PORT=$POSTGRES_PORT
 COORDINATION_PORT=$COORDINATION_PORT
 COORDINATION_API_URL=http://127.0.0.1:$COORDINATION_PORT
+DEMO_MODEL_PORT=$DEMO_MODEL_PORT
+DEMO_MODEL_URL=http://127.0.0.1:$DEMO_MODEL_PORT
 
 DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:$POSTGRES_PORT/app_test

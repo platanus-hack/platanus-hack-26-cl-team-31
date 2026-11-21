@@ -12,25 +12,16 @@ export function isPerson(value: unknown): value is Person {
   return typeof value === "string" && Object.hasOwn(people, value);
 }
 
-export type ChatReply = {
-  text: string;
-  tool?: string;
-  data?: Record<string, unknown>;
-};
+export type ToolTrace = { tool: string; input: Record<string, unknown>; data: Record<string, unknown> };
+export type ChatReply = { text: string; traces?: ToolTrace[]; error?: "model" | "api" };
+export type ChatTurn = { role: "user" | "assistant"; content: string };
 
-export const commands = {
-  available: "¿Bob está libre a las 18:00?",
-  busy: "¿Bob está libre a las 16:00?",
-  saved: "Ver consulta anterior",
-  propose: "Propón fútbol a las 16:00 o 18:00",
-  inbox: "Ver mi bandeja",
-  respond: "Responder con mi agenda",
-  get: "Ver estado del encuentro",
-  accept: "Acepto el horario",
-  decline: "Rechazo el horario",
-  revoke: "Dejar de compartir mi disponibilidad",
-  restore: "Volver a compartir mi disponibilidad",
-} as const;
+export const maxMessage = 2000;
+export const maxHistory = 12;
+
+export function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
 
 export const statuses: Record<string, string> = {
   available: "Disponible",
@@ -45,7 +36,9 @@ export const statuses: Record<string, string> = {
 };
 
 export function formatSlot(slot: string) {
+  const date = new Date(slot);
+  if (!Number.isFinite(date.getTime())) return null;
   return new Intl.DateTimeFormat("es-CL", {
     timeZone: "America/Santiago", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  }).format(new Date(slot));
+  }).format(date);
 }

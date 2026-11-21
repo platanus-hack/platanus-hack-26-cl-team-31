@@ -10,14 +10,16 @@ Track: 🔗 Multiplayer
 
 ### Dashboard con chat
 
-Con Node 24, pnpm 10 y Docker:
+Con Node 24, pnpm 10 y Docker, ejecuta `pnpm agents:up 3` y deja la API abierta. Luego levanta Ollama con **una** de estas opciones:
 
-1. Ejecuta `pnpm agents:up 3` y deja la API abierta.
-2. En otra terminal, corre `pnpm dev --filter @team-31/web` y abre la URL local que imprima Next.js.
-3. Como Ana, pregunta si Bob está libre a las 18:00. Cambia a Eva y repite la pregunta. El inspector muestra el resumen y permite copiar el JSON que devolvió la API.
-4. Como Ana, pulsa **Proponer fútbol**; como Bob y Carla, pulsa **Responder con mi agenda**. Después pulsa **Aceptar** con las tres identidades. La última aceptación devuelve `confirmed`.
+- **Docker:** `docker compose --profile demo-model up -d ollama` y luego `docker compose --profile demo-model exec ollama ollama pull qwen3:4b`.
+- **Ollama nativo** (recomendado en Mac para usar la GPU): `pnpm with-env bash -c 'OLLAMA_HOST=127.0.0.1:$DEMO_MODEL_PORT ollama serve'`. En otra terminal, `pnpm with-env bash -c 'OLLAMA_HOST=127.0.0.1:$DEMO_MODEL_PORT ollama pull "${DEMO_MODEL:-qwen3:4b}"'`.
 
-El chat usa comandos guiados, sin un modelo de IA. Las respuestas vienen de la API del worktree y los datos de la agenda son ficticios. El selector de identidades solo funciona en desarrollo local: las credenciales de `.agents-local/` no salen del servidor web.
+Si tu worktree ya tenía `.env`, ejecuta `pnpm env:init` para agregar el puerto del modelo. Inicia `pnpm dev --filter @team-31/web` y abre la URL que imprima Next.js. La primera descarga del modelo pesa alrededor de 2.5 GB.
+
+Como Ana, escribe **«¿A Bob le da para jugar tipo seis el sábado?»** y luego **«¿Y a las cuatro?»**. Cambia a Eva y repite la consulta para comparar. En cada respuesta puedes abrir **Ver datos** y copiar el JSON que devolvió la API. También puedes invitar a Bob y Carla, cambiar de identidad para responder con sus agendas y aceptar el horario con cada persona.
+
+El modelo corre localmente y no requiere API key. Usa herramientas reales de la API, que sigue decidiendo qué puede ver cada identidad. Los calendarios son ficticios, el historial está separado por identidad y las credenciales de `.agents-local/` no salen del servidor web.
 
 team-31
 
