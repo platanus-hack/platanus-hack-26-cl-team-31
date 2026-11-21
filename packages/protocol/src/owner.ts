@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { Address } from "./address.js";
-import { FinalOutcome, RequestStatus, SenderMessage } from "./request.js";
+import { FinalOutcome, RequestStatus, SenderMessage, withToolArgs } from "./request.js";
 import { ContactTag, Sharing, TagPresets } from "./sharing.js";
-import { ToolArgs, ToolName, ToolResult } from "./tools.js";
+import { ToolName, ToolResult } from "./tools.js";
 import { WakeKind } from "./wake.js";
 
 const datetime = z.iso.datetime({ offset: true });
@@ -29,18 +29,13 @@ export type AgentConnection = z.infer<typeof AgentConnection>;
 export const PublicAgent = AgentConnection.pick({ agentId: true, label: true }).extend({ address: Address });
 export type PublicAgent = z.infer<typeof PublicAgent>;
 
-export const OwnerPendingItem = z.object({
+export const OwnerPendingItem = withToolArgs({
   requestId: z.string(),
   from: Address,
-  tool: ToolName,
-  args: z.unknown(),
   senderMessage: SenderMessage,
   escalated: z.boolean().optional(),
   expiresAt: datetime,
-}).refine(
-  (item) => ToolArgs[item.tool].safeParse(item.args).success,
-  { error: "Los argumentos no corresponden a la herramienta.", path: ["args"] },
-);
+});
 export type OwnerPendingItem = z.infer<typeof OwnerPendingItem>;
 
 export const ActivityEvent = z.object({

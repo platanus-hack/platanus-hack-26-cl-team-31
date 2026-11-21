@@ -8,6 +8,8 @@ import {
   categoryOf,
   fieldsOf,
   GrantInput,
+  InboxItem,
+  OwnerPendingItem,
   ReplyInput,
   RequesterView,
   ToolArgs,
@@ -91,6 +93,30 @@ describe("tool results", () => {
 describe("request views", () => {
   const expiresAt = "2026-11-21T13:00:00.000Z";
   const base = { requestId: "request-1", to, tool: "availability", expiresAt };
+
+  it("normalizes older questions on both recipient views", () => {
+    const item = {
+      requestId: "request-1", from: to, expiresAt, tool: "question", args: { text: "Hola" },
+      senderMessage: { text: "Hola", trusted: false },
+    };
+    const inbox = InboxItem.parse({
+      ...item, nonce: "nonce", allowedFields: ["answer"], howToReply: "Responde",
+      ownerAuthorization: { rule: "grant", guidance: "", verifiedBy: "broker" },
+    });
+    for (const parsed of [inbox, OwnerPendingItem.parse(item)]) {
+      expect(parsed.args).toEqual({ text: "Hola", category: "general" });
+    }
+  });
+
+  it("selects the result schema from the answered tool", () => {
+    const view = RequesterView.parse({
+      ...base, final: true, signature: "signed", decision: "allow", outcome: "answered",
+      result: { available: true, displayName: "Otro" },
+    });
+    if (view.decision !== "allow" || view.tool !== "availability") throw new Error("Unexpected view");
+    expectTypeOf(view.result.available).toBeBoolean();
+    expect(view.result).toEqual({ available: true });
+  });
 
   it("requires a signature on a final response", () => {
     expect(RequesterView.safeParse({ ...base, final: true, decision: "deny" }).success).toBe(false);
