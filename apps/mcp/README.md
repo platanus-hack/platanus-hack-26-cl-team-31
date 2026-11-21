@@ -14,6 +14,7 @@ pnpm sideband watch --poll --mcp-url <URL-HTTPS-del-MCP>
 
 Abre en el navegador el enlace que imprime el comando y autoriza **Sideband Terminal**. No hace falta dejar abierto el navegador ni OpenCode. `--poll` consulta la bandeja mediante MCP cada 2 segundos y muestra solo los IDs que aparecen después de la primera lectura. No responde ni configura avisos. Si una solicitud sale de la bandeja antes de la siguiente consulta, puede no aparecer.
 
+- Agrega `--opencode-session <ses_…>` con `--poll` para recibir además el aviso dentro del chat local de OpenCode. El comando valida la sesión con `opencode api` al arrancar. Por solicitud, pone en cola un mensaje con el ID y activa un turno del modelo para mostrar el aviso; no pasa el texto del remitente ni le pide al agente que responda. Si la sesión está ocupada, el aviso espera su turno.
 - Para probar avisos push por webhook, omite `--poll` e instala `cloudflared` (en macOS, `brew install cloudflared`). El broker elige un solo destino: si ya hay otro agente con avisos configurados, puede recibirlos él.
 - Usa `--check` para verificar que el servidor ofrece el webhook, sin abrir un túnel ni suscribirte.
 - Para usar un túnel propio, apunta un origen HTTPS público a `127.0.0.1` y al puerto que indiques con `--webhook-origin <origen> --port <puerto>`. De lo contrario el comando abre un túnel temporal con `cloudflared`.

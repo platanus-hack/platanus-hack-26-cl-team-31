@@ -6,14 +6,16 @@ import { WAKE_EVENT } from "@team-31/protocol";
 import { z } from "zod";
 import { startReceiver } from "./watch/listener.js";
 import { authorize } from "./watch/oauth.js";
+import { openCodeNotifier, openCodeSessionId } from "./watch/opencode.js";
 import { pollInbox } from "./watch/poll.js";
 import { connect } from "./watch/remote.js";
 import { openTunnel } from "./watch/tunnel.js";
 
-const help = `Uso: sideband watch --mcp-url <URL> [--poll | --check | --webhook-origin <https://host> --port <puerto>]
+const help = `Uso: sideband watch --mcp-url <URL> [--poll [--opencode-session <ses_…>] | --check | --webhook-origin <https://host> --port <puerto>]
 
 Recibe avisos firmados en la terminal. Usa cloudflared si no indicas un túnel propio.
 --poll revisa la bandeja cada 2 segundos, sin túnel ni suscripción.
+--opencode-session envía también un aviso al chat de una sesión local de OpenCode.
 --check verifica el catálogo MCP sin abrir un túnel ni crear una suscripción.`;
 
 function printRequest(requestId: string) {
@@ -44,6 +46,7 @@ async function main() {
       help: { type: "boolean", short: "h" },
       check: { type: "boolean" },
       poll: { type: "boolean" },
+      "opencode-session": { type: "string" },
       "mcp-url": { type: "string" },
       "webhook-origin": { type: "string" },
       port: { type: "string" },
@@ -53,6 +56,10 @@ async function main() {
   if (positionals.length !== 1 || positionals[0] !== "watch") throw new Error(help);
   if (values.poll && (values.check || values["webhook-origin"] !== undefined || values.port !== undefined)) {
     throw new Error("Usa --poll sin opciones de webhook.");
+  }
+  const session = values["opencode-session"];
+  if (session !== undefined && (!values.poll || !openCodeSessionId.safeParse(session).success)) {
+    throw new Error("Usa --opencode-session con --poll y un ID de sesión de OpenCode válido.");
   }
   const url = secureUrl(values["mcp-url"]);
   const origin = values["webhook-origin"] === undefined ? undefined : secureUrl(values["webhook-origin"]);
@@ -69,6 +76,9 @@ async function main() {
   let tunnel: Awaited<ReturnType<typeof openTunnel>> | undefined;
   let id: string | undefined;
   try {
+    stage = "No se encontró la sesión de OpenCode en el servicio local";
+    const notify = session ? await openCodeNotifier(session, shutdown.signal) : undefined;
+    stage = "No se pudo iniciar la autorización OAuth";
     const authProvider = await authorize(url, shutdown.signal, (link) => {
       console.log(`Autoriza Sideband en tu navegador y vuelve acá:\n${link.href}`);
     });
@@ -77,8 +87,17 @@ async function main() {
     if (values.poll) {
       stage = "No se pudo leer la bandeja de Sideband";
       return await pollInbox({
-        inbox: remote.inbox, signal: shutdown.signal, onRequest: printRequest,
-        onReady: () => console.log("Revisando solicitudes nuevas cada 2 segundos… (Ctrl+C para salir)"),
+        inbox: remote.inbox, signal: shutdown.signal,
+        async onRequest(requestId) {
+          printRequest(requestId);
+          try {
+            await notify?.(requestId);
+          } catch {
+            // Don't repeat an ambiguous POST: the notice may already be queued.
+            if (!shutdown.signal.aborted) console.warn(`No se confirmó el aviso en OpenCode · ${requestId}`);
+          }
+        },
+        onReady: () => console.log(`Revisando solicitudes nuevas cada 2 segundos${notify ? " y avisando en OpenCode" : ""}… (Ctrl+C para salir)`),
         onRetry: () => console.warn("No se pudo leer la bandeja. Reintentando…"),
       });
     }

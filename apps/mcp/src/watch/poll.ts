@@ -9,7 +9,7 @@ export async function pollInbox({
   inbox: (signal: AbortSignal) => Promise<string[]>;
   signal: AbortSignal;
   onReady: () => void;
-  onRequest: (id: string) => void;
+  onRequest: (id: string) => void | Promise<void>;
   onRetry: () => void;
   intervalMs?: number;
 }) {
@@ -33,7 +33,7 @@ export async function pollInbox({
     }
     if (signal.aborted) return;
     for (const id of ids) {
-      if (ready && !seen.has(id)) onRequest(id);
+      if (ready && !seen.has(id)) await onRequest(id);
       seen.add(id);
     }
     if (!ready) onReady();

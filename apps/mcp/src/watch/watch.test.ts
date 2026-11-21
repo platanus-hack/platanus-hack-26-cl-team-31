@@ -5,6 +5,7 @@ import { createWaker } from "@team-31/wake";
 import { expect, it, vi } from "vitest";
 import { createHttpServer } from "../http.js";
 import { startReceiver } from "./listener.js";
+import { openCodeNotifier } from "./opencode.js";
 import { pollInbox } from "./poll.js";
 import { connect } from "./remote.js";
 
@@ -109,4 +110,24 @@ it("avisa solo por solicitudes nuevas y retoma la lectura después de un error",
   expect(events).toEqual(["nueva", "otra"]);
   expect(onReady).toHaveBeenCalledOnce();
   expect(onRetry).toHaveBeenCalledOnce();
+});
+
+it("valida la sesión e inyecta solo el ID en un aviso en cola de OpenCode", async () => {
+  const session = "ses_test";
+  const signal = new AbortController().signal;
+  const call = vi.fn<(args: string[], signal: AbortSignal) => Promise<unknown>>()
+    .mockResolvedValueOnce({ data: { id: session } })
+    .mockResolvedValueOnce({ data: { sessionID: session, type: "synthetic" } });
+  const notify = await openCodeNotifier(session, signal, call);
+  await expect(notify("contenido inesperado")).rejects.toThrow();
+  const requestId = "11111111-1111-4111-8111-111111111111";
+  await notify(requestId);
+  expect(call).toHaveBeenCalledTimes(2);
+  expect(call).toHaveBeenNthCalledWith(1, ["get", `/api/session/${session}`], signal);
+  const [args] = call.mock.calls[1]!;
+  expect(args.slice(0, 3)).toEqual(["post", `/api/session/${session}/synthetic`, "--data"]);
+  expect(JSON.parse(args[3]!)).toMatchObject({
+    text: expect.stringContaining(requestId), metadata: { source: "sideband", requestId },
+    delivery: "queue", resume: true,
+  });
 });
