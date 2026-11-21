@@ -60,10 +60,13 @@ export type WakeJob = {
   requestId: string;
   requestVersion: number;
   attempt: number;
+  // Next eligible time. A running job becomes eligible again when its lease expires.
   runAt: Date;
   state: "queued" | "running" | "done";
   lastResult?: WakeResult;
 };
+
+export type WakeClaim = WakeJob & { state: "running"; recovered: boolean };
 
 export type AgentConnectionRow = {
   userId: string;
@@ -85,6 +88,11 @@ export type GrantRow = {
   fields: string[];
   createdAt: Date;
 };
+
+export type CircleRow = { id: string; ownerUserId: string; name: string; createdAt: Date };
+
+// An invitation until the invited address joins.
+export type CircleMemberRow = { circleId: string; address: Address; joinedAt?: Date };
 
 export interface Store {
   // A rejected callback rolls back all its writes. Keep external I/O outside it.
@@ -116,8 +124,27 @@ export interface StoreTx {
   // Pending connect requests sent or received by the user, oldest first.
   listOpenInvitations(userId: string): Promise<RequestRow[]>;
 
+  insertCircle(row: CircleRow): Promise<void>;
+  getCircle(id: string): Promise<CircleRow | null>;
+  // Also deletes its members and invitations.
+  deleteCircle(id: string): Promise<void>;
+  // Circles the address has joined or is invited to, oldest first.
+  listCircles(address: Address): Promise<CircleRow[]>;
+  listCircleMembers(circleId: string): Promise<CircleMemberRow[]>;
+  // Keeps an existing row, so inviting a member or inviting twice changes nothing.
+  inviteCircleMember(circleId: string, address: Address): Promise<void>;
+  // False when the address has no pending invitation.
+  joinCircle(circleId: string, address: Address, at: Date): Promise<boolean>;
+  removeCircleMember(circleId: string, address: Address): Promise<boolean>;
+  // True when both addresses have joined the same circle.
+  shareCircle(a: Address, b: Address): Promise<boolean>;
+
   insertRequest(row: RequestRow): Promise<void>;
-  getRequest(id: string, participant?: { fromUserId: string } | { toUserId: string }): Promise<RequestRow | null>;
+  getRequest(
+    id: string,
+    participant?: { fromUserId: string } | { toUserId: string },
+    forUpdate?: boolean,
+  ): Promise<RequestRow | null>;
   // Increments version on success. The patch cannot replace id or version.
   updateRequest(id: string, patch: Partial<Omit<RequestRow, "id" | "version">>, expectedVersion: number): Promise<boolean>;
   listInbox(toAddress: Address): Promise<RequestRow[]>;
@@ -129,15 +156,19 @@ export interface StoreTx {
   listEvents(requestIds: readonly string[]): Promise<RequestEvent[]>;
 
   enqueueWake(job: WakeJob): Promise<void>;
-  // Atomically marks claimed jobs running. Attempts are one-based.
-  claimDueWakes(now: Date, limit: number): Promise<WakeJob[]>;
-  // Finishes a running job, or increments its attempt and returns it to the queue.
-  completeWake(jobId: string, result: WakeResult, nextRunAt: Date | null): Promise<void>;
+  // Reclaiming an expired lease advances the attempt and invalidates the previous worker.
+  claimDueWakes(now: Date, leaseUntil: Date, limit: number): Promise<WakeClaim[]>;
+  // Commits only for the current, unexpired lease. A retry advances the attempt.
+  recordWakeAttempt(claim: WakeClaim, now: Date, result: WakeResult, nextRunAt: Date | null): Promise<boolean>;
+  // Locks the current job so an operator and a worker cannot reschedule it concurrently.
+  getWakeForUpdate(requestId: string, requestVersion: number): Promise<WakeJob | null>;
+  expediteQueuedWake(jobId: string, now: Date): Promise<void>;
 
   // Creates the user if needed, inserts only if missing, and locks the returned row
   // until the transaction ends. Preserves the wake configuration and revocation.
   ensureAgentConnection(row: AgentConnectionRow): Promise<AgentConnectionRow>;
   upsertAgentConnection(row: AgentConnectionRow): Promise<void>;
+  // Oldest first, then by agent ID in UTF-8 byte order.
   listAgentConnections(userId: string): Promise<AgentConnectionRow[]>;
   getAgentConnection(userId: string, agentId: string, forUpdate?: boolean): Promise<AgentConnectionRow | null>;
 }

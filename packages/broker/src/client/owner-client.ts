@@ -16,6 +16,8 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     pending: async (owner) => (await request(routes.ownerPending, owner)).items,
     activity: async (owner, limit) =>
       (await request(routes.ownerActivity, owner, { query: { limit } })).items,
+    ask: (owner, body) => request(routes.ownerAsk, owner, { body }),
+    status: (owner, id) => request(routes.ownerStatus, owner, { params: { id } }),
     decide: (owner, id, body) => request(routes.ownerDecide, owner, { params: { id }, body }),
     agents: async (owner) => (await request(routes.ownerAgents, owner)).items,
     setWake: (owner, agentId, body) =>
@@ -26,6 +28,12 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     contacts: (owner) => request(routes.ownerContacts, owner),
     setSharing: (owner, address, body) => request(routes.ownerSetSharing, owner, { params: { address }, body }),
     answerInvitation: (owner, id, body) => request(routes.ownerAnswerInvitation, owner, { params: { id }, body }),
+    circles: async (owner) => (await request(routes.ownerCircles, owner)).items,
+    createCircle: (owner, name) => request(routes.ownerCreateCircle, owner, { body: { name } }),
+    deleteCircle: (owner, id) => request(routes.ownerDeleteCircle, owner, { params: { id } }),
+    inviteToCircle: (owner, id, address) => request(routes.ownerInviteToCircle, owner, { params: { id, address } }),
+    joinCircle: (owner, id) => request(routes.ownerJoinCircle, owner, { params: { id } }),
+    removeFromCircle: (owner, id, address) => request(routes.ownerRemoveFromCircle, owner, { params: { id, address } }),
     removeFriend: (owner, address) => request(routes.ownerRemoveFriend, owner, { params: { address } }),
   };
 }

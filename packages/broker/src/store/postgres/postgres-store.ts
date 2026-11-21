@@ -2,7 +2,8 @@ import {
   ActivityEvent, Address, FinalOutcome, RequestStatus, ToolArgs, ToolName,
   ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
 } from "@team-31/protocol";
-import { and, asc, desc, DrizzleQueryError, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { BrokerError } from "../../errors.js";
@@ -10,7 +11,9 @@ import type {
   AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
 import { createWakeCodec } from "./crypto.js";
-import { agentConnections, friends, grants, requestEvents, requests, users, wakeJobs } from "./schema.js";
+import {
+  agentConnections, circleMembers, circles, friends, grants, requestEvents, requests, users, wakeJobs,
+} from "./schema.js";
 
 export type PostgresStoreOptions = {
   databaseUrl: string;
@@ -225,16 +228,74 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       return rows.map(readRequest);
     },
 
+    async insertCircle(row) {
+      await db.insert(circles).values(row);
+    },
+
+    async getCircle(id) {
+      const [row] = await db.select().from(circles).where(eq(circles.id, id));
+      return row ?? null;
+    },
+
+    async deleteCircle(id) {
+      await db.delete(circles).where(eq(circles.id, id));
+    },
+
+    async listCircles(address) {
+      const rows = await db.select({ circle: circles }).from(circles)
+        .innerJoin(circleMembers, eq(circleMembers.circleId, circles.id))
+        .where(eq(circleMembers.address, address)).orderBy(asc(circles.createdAt), asc(circles.id));
+      return rows.map(({ circle }) => circle);
+    },
+
+    async listCircleMembers(circleId) {
+      const rows = await db.select().from(circleMembers)
+        .where(eq(circleMembers.circleId, circleId)).orderBy(asc(circleMembers.address));
+      return rows.map((row) => ({
+        circleId: row.circleId, address: parseStored(Address, row.address), ...(row.joinedAt ? { joinedAt: row.joinedAt } : {}),
+      }));
+    },
+
+    async inviteCircleMember(circleId, address) {
+      await db.insert(circleMembers).values({ circleId, address }).onConflictDoNothing();
+    },
+
+    async joinCircle(circleId, address, at) {
+      const joined = await db.update(circleMembers).set({ joinedAt: at })
+        .where(and(eq(circleMembers.circleId, circleId), eq(circleMembers.address, address), isNull(circleMembers.joinedAt)))
+        .returning({ address: circleMembers.address });
+      return joined.length > 0;
+    },
+
+    async removeCircleMember(circleId, address) {
+      const removed = await db.delete(circleMembers)
+        .where(and(eq(circleMembers.circleId, circleId), eq(circleMembers.address, address)))
+        .returning({ address: circleMembers.address });
+      return removed.length > 0;
+    },
+
+    async shareCircle(a, b) {
+      const other = alias(circleMembers, "other");
+      const [shared] = await db.select({ circleId: circleMembers.circleId }).from(circleMembers)
+        .innerJoin(other, eq(other.circleId, circleMembers.circleId))
+        .where(and(
+          eq(circleMembers.address, a), isNotNull(circleMembers.joinedAt),
+          eq(other.address, b), isNotNull(other.joinedAt),
+        )).limit(1);
+      return shared !== undefined;
+    },
+
     async insertRequest(row) {
       const [inserted] = await db.insert(requests).values(row).onConflictDoNothing().returning({ id: requests.id });
       if (!inserted) throw new BrokerError("conflict", "La solicitud ya existe.");
     },
 
-    async getRequest(id, participant) {
+    async getRequest(id, participant, forUpdate) {
       // The worker looks up an already claimed job's request by ID. All ports supply a participant.
       const sender = participant && "fromUserId" in participant ? eq(requests.fromUserId, participant.fromUserId) : undefined;
       const recipient = participant && "toUserId" in participant ? eq(requests.toUserId, participant.toUserId) : undefined;
-      const [row] = await db.select().from(requests).where(and(eq(requests.id, id), sender, recipient));
+      const query = db.select().from(requests).where(and(eq(requests.id, id), sender, recipient));
+      const [row] = await (forUpdate ? query.for("no key update") : query);
       return row ? readRequest(row) : null;
     },
 
@@ -287,21 +348,47 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       if (!inserted) throw new BrokerError("conflict", "El aviso ya existe.");
     },
 
-    async claimDueWakes(now, limit) {
+    async claimDueWakes(now, leaseUntil, limit) {
       const jobs = await db.select().from(wakeJobs)
-        .where(and(eq(wakeJobs.state, "queued"), lte(wakeJobs.runAt, now)))
+        .where(and(inArray(wakeJobs.state, ["queued", "running"]), lte(wakeJobs.runAt, now)))
         .orderBy(asc(wakeJobs.runAt), asc(wakeJobs.id)).limit(limit).for("update", { skipLocked: true });
       if (jobs.length > 0) {
-        await db.update(wakeJobs).set({ state: "running" }).where(inArray(wakeJobs.id, jobs.map(({ id }) => id)));
+        await db.update(wakeJobs).set({
+          state: "running", runAt: leaseUntil,
+          attempt: sql`case when ${wakeJobs.state} = 'running' then ${wakeJobs.attempt} + 1 else ${wakeJobs.attempt} end`,
+        }).where(inArray(wakeJobs.id, jobs.map(({ id }) => id)));
       }
-      return jobs.map((job) => readWake({ ...job, state: "running" }));
+      return jobs.map((job) => {
+        const recovered = job.state === "running";
+        return {
+          ...readWake(job), state: "running", runAt: leaseUntil, recovered,
+          attempt: job.attempt + Number(recovered),
+        };
+      });
     },
 
-    async completeWake(jobId, lastResult, nextRunAt) {
-      await db.update(wakeJobs).set(nextRunAt
+    async recordWakeAttempt(claim, now, lastResult, nextRunAt) {
+      const [updated] = await db.update(wakeJobs).set(nextRunAt
         ? { lastResult, state: "queued", runAt: nextRunAt, attempt: sql`${wakeJobs.attempt} + 1` }
-        : { lastResult, state: "done" })
-        .where(and(eq(wakeJobs.id, jobId), eq(wakeJobs.state, "running")));
+        : { lastResult, state: "done", runAt: now })
+        .where(and(
+          eq(wakeJobs.id, claim.id), eq(wakeJobs.state, "running"),
+          eq(wakeJobs.attempt, claim.attempt), gt(wakeJobs.runAt, now),
+        )).returning({ id: wakeJobs.id });
+      return updated !== undefined;
+    },
+
+    async getWakeForUpdate(requestId, requestVersion) {
+      const [job] = await db.select().from(wakeJobs)
+        .where(and(eq(wakeJobs.requestId, requestId), eq(wakeJobs.requestVersion, requestVersion)))
+        .limit(1).for("update");
+      return job ? readWake(job) : null;
+    },
+
+    async expediteQueuedWake(jobId, now) {
+      await db.update(wakeJobs).set({ runAt: now }).where(and(
+        eq(wakeJobs.id, jobId), eq(wakeJobs.state, "queued"), gt(wakeJobs.runAt, now),
+      ));
     },
 
     async ensureAgentConnection(row) {
@@ -322,7 +409,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
     async listAgentConnections(userId) {
       const rows = await db.select().from(agentConnections).where(eq(agentConnections.userId, userId))
-        .orderBy(asc(agentConnections.createdAt), asc(agentConnections.agentId));
+        .orderBy(asc(agentConnections.createdAt), sql`${agentConnections.agentId} COLLATE "C"`);
       return rows.map(readConnection);
     },
 

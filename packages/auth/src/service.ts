@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AdminActor, Owner, Principal } from "@team-31/protocol";
 import { importJWK, jwtVerify, SignJWT, type JWK } from "jose";
+import { z } from "zod";
 
 import { parseScopes } from "./scopes.js";
 
@@ -17,6 +18,21 @@ type MintOptions = { sub: string; privateKey: JWK } & (
 const ALGORITHM = "EdDSA";
 const AUDIENCE = "broker";
 const TTL = 60;
+const servicePrivateJwk = z.object({
+  kty: z.literal("OKP"),
+  crv: z.literal("Ed25519"),
+  x: z.base64url().length(43),
+  d: z.base64url().length(43),
+});
+
+export function parseServicePrivateKey(value: string | undefined, issuer: ServiceIssuer): JWK {
+  try {
+    return servicePrivateJwk.parse(JSON.parse(value ?? ""));
+  } catch {
+    // JSON and schema errors can include parts of the configured key.
+    throw new Error(`${issuer.toUpperCase()}_SERVICE_PRIVATE_KEY debe contener una JWK privada Ed25519.`);
+  }
+}
 
 function requireId(value: unknown): asserts value is string {
   if (typeof value !== "string" || value.trim().length === 0) {

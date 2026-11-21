@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import { fixtureUsers } from "./fixtures.js";
 import {
   ActivityItem,
   AskInput,
   fieldsOf,
-  fixtureUsers,
   GrantInput,
   ReplyInput,
   RequesterView,
@@ -76,9 +76,12 @@ describe("tool results", () => {
   });
 
   it("requires a result for an answered reply", () => {
-    expect(
-      ReplyInput.safeParse({ requestId: "request-1", nonce: "nonce-1", outcome: "answered" }).success,
-    ).toBe(false);
+    type Answered = Extract<ReplyInput, { outcome: "answered" }>;
+    expectTypeOf<undefined>().not.toExtend<Answered["result"]>();
+    const base = { requestId: "request-1", nonce: "nonce-1" };
+    expect(ReplyInput.safeParse({ ...base, outcome: "answered" }).success).toBe(false);
+    expect(ReplyInput.safeParse({ ...base, outcome: "answered", result: { answer: "Sí" } }).success).toBe(true);
+    expect(ReplyInput.safeParse({ ...base, outcome: "no_data" }).success).toBe(true);
   });
 });
 

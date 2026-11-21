@@ -86,6 +86,20 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("filters historical address matches before limiting the current recipient's activity", async () => {
+      const address = "carla@nexo.app";
+      const historical = await makeRequest({
+        toAddress: address, toUserId: null, createdAt: new Date(now.getTime() + 1),
+      });
+      await store.tx((tx) => tx.createAddress("carla", address));
+      const current = await makeRequest({ toAddress: address, toUserId: "carla" });
+      await store.tx(async (tx) => {
+        expect((await tx.listActivity(address, 1)).map(({ id }) => id)).toEqual([current.id]);
+        expect((await tx.listInbox(address)).map(({ id }) => id)).toEqual([current.id]);
+        expect((await tx.listActivity(fromAddress, 1)).map(({ id }) => id)).toEqual([historical.id]);
+      });
+    });
+
     it("lets only one update succeed for the same expected version", async () => {
       const row = await makeRequest();
       const outcomes = await Promise.all([
@@ -106,21 +120,46 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         id: randomUUID(), requestId: row.id, requestVersion: row.version, attempt: 1, runAt: now, state: "queued",
       };
       const later = new Date(now.getTime() + 10_000);
+      const leaseUntil = new Date(now.getTime() + 60_000);
       await store.tx(async (tx) => {
         await tx.enqueueWake(base);
         await tx.enqueueWake({ ...base, id: randomUUID(), runAt: later });
       });
       const claimed = (await Promise.all([
-        store.tx((tx) => tx.claimDueWakes(now, 10)),
-        store.tx((tx) => tx.claimDueWakes(now, 10)),
+        store.tx((tx) => tx.claimDueWakes(now, leaseUntil, 10)),
+        store.tx((tx) => tx.claimDueWakes(now, leaseUntil, 10)),
       ])).flat();
       expect(claimed).toMatchObject([{ id: base.id, state: "running", attempt: 1 }]);
       await store.tx(async (tx) => {
-        await tx.completeWake(base.id, { ok: false, retryable: true, ms: 1 }, later);
-        expect(await tx.claimDueWakes(now, 10)).toEqual([]);
-        expect(await tx.claimDueWakes(later, 10)).toHaveLength(2);
-        await tx.completeWake(base.id, { ok: true, retryable: false, ms: 1 }, null);
-        expect(await tx.claimDueWakes(later, 10)).toEqual([]);
+        expect(await tx.recordWakeAttempt(claimed[0]!, now, { ok: false, retryable: true, ms: 1 }, later)).toBe(true);
+        expect(await tx.claimDueWakes(now, leaseUntil, 10)).toEqual([]);
+        const retried = await tx.claimDueWakes(later, leaseUntil, 10);
+        expect(retried).toHaveLength(2);
+        const retry = retried.find(({ id }) => id === base.id)!;
+        expect(retry).toMatchObject({ attempt: 2, recovered: false });
+        expect(await tx.recordWakeAttempt(retry, later, { ok: true, retryable: false, ms: 1 }, null)).toBe(true);
+        expect(await tx.claimDueWakes(later, leaseUntil, 10)).toEqual([]);
+      });
+    });
+
+    it("recovers expired leases and rejects late results from the previous attempt", async () => {
+      const row = await makeRequest();
+      const id = randomUUID();
+      const leaseUntil = new Date(now.getTime() + 60_000);
+      const result = { ok: true, retryable: false, ms: 1 };
+      const [first] = await store.tx(async (tx) => {
+        await tx.enqueueWake({ id, requestId: row.id, requestVersion: row.version, attempt: 1, runAt: now, state: "queued" });
+        return tx.claimDueWakes(now, leaseUntil, 10);
+      });
+      expect(first).toMatchObject({ id, runAt: leaseUntil, attempt: 1, recovered: false });
+      await store.tx(async (tx) => {
+        const extended = new Date(leaseUntil.getTime() + 60_000);
+        expect(await tx.recordWakeAttempt(first!, leaseUntil, result, null)).toBe(false);
+        const [second] = await tx.claimDueWakes(leaseUntil, extended, 10);
+        expect(second).toMatchObject({ id, runAt: extended, attempt: 2, recovered: true });
+        expect(await tx.recordWakeAttempt(first!, leaseUntil, result, null)).toBe(false);
+        expect(await tx.recordWakeAttempt(second!, leaseUntil, result, null)).toBe(true);
+        expect(await tx.claimDueWakes(extended, extended, 10)).toEqual([]);
       });
     });
 
@@ -164,6 +203,49 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         const again = { ...grant, id: randomUUID() };
         expect(await tx.putGrant(again)).toEqual(again);
         expect(await tx.listGrants("bruno")).toEqual([again]);
+      });
+    });
+
+    it("lists an owner's agents by creation time and breaks ties by agent ID", async () => {
+      await store.tx(async (tx) => {
+        const agent = { userId: "alice", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now } as const;
+        await tx.ensureAgentConnection({ ...agent, agentId: "z" });
+        await tx.ensureAgentConnection({ ...agent, agentId: "A" });
+        await tx.ensureAgentConnection({ ...agent, agentId: "a" });
+        await tx.ensureAgentConnection({ ...agent, agentId: "newer", createdAt: new Date(now.getTime() + 1) });
+        await tx.ensureAgentConnection({ ...agent, agentId: "older", createdAt: new Date(now.getTime() - 1) });
+        await tx.ensureAgentConnection({ ...agent, agentId: "other", userId: "bruno" });
+        expect((await tx.listAgentConnections("alice")).map(({ agentId }) => agentId))
+          .toEqual(["older", "A", "a", "z", "newer"]);
+      });
+    });
+
+    it("shares a circle only between addresses that joined it", async () => {
+      const circle = { id: randomUUID(), ownerUserId: "alice", name: "Fútbol", createdAt: now };
+      await store.tx(async (tx) => {
+        await tx.insertCircle(circle);
+        await tx.inviteCircleMember(circle.id, fromAddress);
+        await tx.inviteCircleMember(circle.id, toAddress);
+        expect(await tx.joinCircle(circle.id, fromAddress, now)).toBe(true);
+        expect(await tx.joinCircle(circle.id, fromAddress, now)).toBe(false);
+        expect(await tx.joinCircle(circle.id, "carla@nexo.app", now)).toBe(false);
+        expect(await tx.shareCircle(fromAddress, toAddress)).toBe(false);
+        expect(await tx.listCircles(toAddress)).toEqual([circle]);
+
+        await tx.inviteCircleMember(circle.id, fromAddress);
+        expect(await tx.joinCircle(circle.id, toAddress, now)).toBe(true);
+        expect(await tx.shareCircle(toAddress, fromAddress)).toBe(true);
+        expect(await tx.listCircleMembers(circle.id)).toEqual([
+          { circleId: circle.id, address: fromAddress, joinedAt: now },
+          { circleId: circle.id, address: toAddress, joinedAt: now },
+        ]);
+
+        expect(await tx.removeCircleMember(circle.id, toAddress)).toBe(true);
+        expect(await tx.removeCircleMember(circle.id, toAddress)).toBe(false);
+        expect(await tx.shareCircle(fromAddress, toAddress)).toBe(false);
+        await tx.deleteCircle(circle.id);
+        expect(await tx.getCircle(circle.id)).toBeNull();
+        expect(await tx.listCircles(fromAddress)).toEqual([]);
       });
     });
   });

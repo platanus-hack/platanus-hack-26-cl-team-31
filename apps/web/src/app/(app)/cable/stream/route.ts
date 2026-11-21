@@ -1,7 +1,7 @@
 import { routes } from "@team-31/protocol/http";
 
 import { getSession } from "../../../../lib/auth";
-import { brokerFetch, brokerUrl, getServiceToken } from "../../../../lib/broker";
+import { brokerFetch, brokerUrl, signServiceToken } from "../../../../lib/broker";
 import { getTelemetry, observeRoute } from "../../../../lib/telemetry";
 import { activityStream } from "./activity-stream";
 
@@ -24,7 +24,7 @@ export function GET(request: Request) {
     telemetry.identify({ userId: session.user.id });
 
     try {
-      const token = await getServiceToken({ userId: session.user.id });
+      const token = await signServiceToken({ userId: session.user.id });
       const upstream = await brokerFetch()(new URL(routes.ownerStream.path, brokerUrl()), {
         headers: { Accept: "text/event-stream", Authorization: `Bearer ${token}` },
         cache: "no-store",

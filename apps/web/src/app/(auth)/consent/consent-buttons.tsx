@@ -30,7 +30,7 @@ export function ConsentButtons() {
           type="button"
           disabled={pending}
           onClick={() => submit(false)}
-          className="min-h-11 cursor-pointer rounded-xl border border-[#bbc6b6] px-4 py-2.5 font-semibold hover:bg-[#eef1e8] disabled:opacity-70"
+          className="min-h-11 cursor-pointer rounded-full bg-chip px-4 py-2.5 font-medium transition hover:bg-chip-hover disabled:opacity-70"
         >
           Cancelar
         </button>
@@ -38,12 +38,12 @@ export function ConsentButtons() {
           type="button"
           disabled={pending}
           onClick={() => submit(true)}
-          className="min-h-11 cursor-pointer rounded-xl bg-[#234c33] px-4 py-2.5 font-semibold text-white hover:bg-[#173623] disabled:opacity-70"
+          className="min-h-11 cursor-pointer rounded-full bg-ink px-4 py-2.5 font-medium text-canvas transition hover:bg-white disabled:opacity-70"
         >
           Autorizar
         </button>
       </div>
-      {failed && <p role="alert" className="mt-3 text-sm text-red-800">No se pudo enviar tu respuesta. Si el enlace venció, reinicia la conexión desde el agente.</p>}
+      {failed && <p role="alert" className="mt-3 text-sm text-danger">No se pudo enviar tu respuesta. Si el enlace venció, reinicia la conexión desde el agente.</p>}
     </div>
   );
 }

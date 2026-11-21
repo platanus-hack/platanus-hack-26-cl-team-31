@@ -11,7 +11,7 @@ async function ContactsList() {
     <div className="space-y-10">
       {incoming.length > 0 && (
         <section aria-labelledby="incoming-title">
-          <h2 id="incoming-title" className="mb-4 text-xl font-semibold tracking-tight">Invitaciones</h2>
+          <h2 id="incoming-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Invitaciones</h2>
           <ul className="space-y-3">
             {incoming.map((invitation) => <IncomingInvitation key={invitation.requestId} invitation={invitation} />)}
           </ul>
@@ -22,15 +22,15 @@ async function ContactsList() {
 
       {outgoing.length > 0 && (
         <section aria-labelledby="outgoing-title">
-          <h2 id="outgoing-title" className="mb-4 text-xl font-semibold tracking-tight">Esperando respuesta</h2>
-          <ul className={`${card} divide-y divide-[#ecefe6]`}>
+          <h2 id="outgoing-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Esperando respuesta</h2>
+          <ul className={`${card} divide-y divide-line`}>
             {outgoing.map((invitation) => (
               <li key={invitation.requestId} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
                 <div className="min-w-0">
                   <p className="break-all font-medium">{invitation.address}</p>
-                  <p className="text-xs text-[#525e50]">Le compartirás: {describeSharing(invitation.offer)}</p>
+                  <p className="text-xs text-muted">Le compartirás: {describeSharing(invitation.offer)}</p>
                 </div>
-                <p className="text-xs text-[#525e50]">Vence el <Stamp value={invitation.expiresAt} /></p>
+                <p className="text-xs text-muted">Vence el <Stamp value={invitation.expiresAt} /></p>
               </li>
             ))}
           </ul>
@@ -38,7 +38,7 @@ async function ContactsList() {
       )}
 
       <section aria-labelledby="contacts-title">
-        <h2 id="contacts-title" className="mb-4 text-xl font-semibold tracking-tight">Tus contactos</h2>
+        <h2 id="contacts-title" className="mb-4 text-[15px] font-medium tracking-[-0.01em]">Tus contactos</h2>
         {contacts.length === 0 ? <Empty>Todavía no tienes contactos. Invita a alguien con su dirección Nexo.</Empty> : (
           <ul className="space-y-2">
             {contacts.map((contact) => <ContactRow key={contact.address} contact={contact} />)}

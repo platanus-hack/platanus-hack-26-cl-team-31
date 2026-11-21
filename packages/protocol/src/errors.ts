@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WakeVerificationReason } from "./wake.js";
 
 export const ErrorCode = z.enum([
   "unauthorized",
@@ -13,7 +14,7 @@ export const ErrorCode = z.enum([
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
 export const ErrorBody = z.object({
-  error: z.object({ code: ErrorCode, message: z.string() }),
+  error: z.object({ code: ErrorCode, message: z.string(), reason: WakeVerificationReason.optional() }),
 });
 export type ErrorBody = z.infer<typeof ErrorBody>;
 

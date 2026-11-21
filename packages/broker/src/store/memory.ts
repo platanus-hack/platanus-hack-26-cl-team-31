@@ -1,11 +1,15 @@
 import type { Address } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
-import type { AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob } from "./store.js";
+import type {
+  AgentConnectionRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
+} from "./store.js";
 
 type State = {
   users: Map<string, UserRow>;
   grants: (GrantRow & { revokedAt?: Date; friendDefault?: boolean })[];
   friends: Map<string, Set<Address>>;
+  circles: Map<string, CircleRow>;
+  circleMembers: CircleMemberRow[];
   requests: Map<string, RequestRow>;
   events: RequestEvent[];
   wakes: Map<string, WakeJob>;
@@ -21,6 +25,22 @@ function byCreatedAt(a: RequestRow, b: RequestRow): number {
 }
 
 function transaction(state: State): StoreTx {
+  function findUserByAddress(address: Address): UserRow | undefined {
+    return [...state.users.values()].find((user) => user.address === address);
+  }
+
+  function listRecipientRequests(address: Address, status: "awaiting_agent" | "awaiting_owner"): RequestRow[] {
+    const ownerId = findUserByAddress(address)?.userId;
+    if (!ownerId) return [];
+    return structuredClone([...state.requests.values()]
+      .filter((row) => row.toAddress === address && row.toUserId === ownerId && row.status === status)
+      .sort(byCreatedAt));
+  }
+
+  function circleMember(circleId: string, address: Address) {
+    return state.circleMembers.find((member) => member.circleId === circleId && member.address === address);
+  }
+
   function putAgent(row: AgentConnectionRow): AgentConnectionRow {
     if (!state.users.has(row.userId)) {
       state.users.set(row.userId, { userId: row.userId, createdAt: structuredClone(row.createdAt) });
@@ -47,7 +67,7 @@ function transaction(state: State): StoreTx {
       return structuredClone(state.users.get(userId) ?? null);
     },
     async getUserByAddress(address) {
-      return structuredClone([...state.users.values()].find((user) => user.address === address) ?? null);
+      return structuredClone(findUserByAddress(address) ?? null);
     },
     async createAddress(userId, address) {
       const user = state.users.get(userId);
@@ -109,6 +129,45 @@ function transaction(state: State): StoreTx {
           (row.fromUserId === userId || row.toUserId === userId))
         .sort(byCreatedAt));
     },
+    async insertCircle(row) {
+      state.circles.set(row.id, structuredClone(row));
+    },
+    async getCircle(id) {
+      return structuredClone(state.circles.get(id) ?? null);
+    },
+    async deleteCircle(id) {
+      state.circles.delete(id);
+      state.circleMembers = state.circleMembers.filter((member) => member.circleId !== id);
+    },
+    async listCircles(address) {
+      const ids = new Set(state.circleMembers.filter((member) => member.address === address).map((member) => member.circleId));
+      return structuredClone([...state.circles.values()].filter((circle) => ids.has(circle.id))
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)));
+    },
+    async listCircleMembers(circleId) {
+      return structuredClone(state.circleMembers.filter((member) => member.circleId === circleId)
+        .sort((a, b) => a.address.localeCompare(b.address)));
+    },
+    async inviteCircleMember(circleId, address) {
+      if (!circleMember(circleId, address)) state.circleMembers.push({ circleId, address });
+    },
+    async joinCircle(circleId, address, at) {
+      const member = circleMember(circleId, address);
+      if (!member || member.joinedAt) return false;
+      member.joinedAt = structuredClone(at);
+      return true;
+    },
+    async removeCircleMember(circleId, address) {
+      const member = circleMember(circleId, address);
+      state.circleMembers = state.circleMembers.filter((current) => current !== member);
+      return member !== undefined;
+    },
+    async shareCircle(a, b) {
+      const joined = (address: Address) => state.circleMembers
+        .filter((member) => member.address === address && member.joinedAt).map((member) => member.circleId);
+      const circlesOfB = new Set(joined(b));
+      return joined(a).some((circleId) => circlesOfB.has(circleId));
+    },
     async insertRequest(row) {
       if (state.requests.has(row.id)) throw new BrokerError("conflict", "La solicitud ya existe.");
       state.requests.set(row.id, structuredClone(row));
@@ -127,16 +186,17 @@ function transaction(state: State): StoreTx {
       return true;
     },
     async listInbox(address) {
-      return structuredClone([...state.requests.values()]
-        .filter((row) => row.toAddress === address && row.status === "awaiting_agent").sort(byCreatedAt));
+      return listRecipientRequests(address, "awaiting_agent");
     },
     async listOwnerPending(address) {
-      return structuredClone([...state.requests.values()]
-        .filter((row) => row.toAddress === address && row.status === "awaiting_owner").sort(byCreatedAt));
+      return listRecipientRequests(address, "awaiting_owner");
     },
     async listActivity(address, limit) {
+      const ownerId = findUserByAddress(address)?.userId;
+      if (!ownerId) return [];
       return structuredClone([...state.requests.values()]
-        .filter((row) => row.toAddress === address || row.fromAddress === address)
+        .filter((row) => (row.toAddress === address && row.toUserId === ownerId)
+          || (row.fromAddress === address && row.fromUserId === ownerId))
         .sort((a, b) => byCreatedAt(b, a)).slice(0, limit));
     },
     async listDueForExpiry(now, limit) {
@@ -155,21 +215,34 @@ function transaction(state: State): StoreTx {
       if (state.wakes.has(job.id)) throw new BrokerError("conflict", "El aviso ya existe.");
       state.wakes.set(job.id, structuredClone(job));
     },
-    async claimDueWakes(now, limit) {
-      const jobs = [...state.wakes.values()].filter((job) => job.state === "queued" && job.runAt <= now)
+    async claimDueWakes(now, leaseUntil, limit) {
+      const jobs = [...state.wakes.values()].filter((job) => job.state !== "done" && job.runAt <= now)
         .sort((a, b) => a.runAt.getTime() - b.runAt.getTime() || a.id.localeCompare(b.id)).slice(0, limit);
-      for (const job of jobs) job.state = "running";
-      return structuredClone(jobs);
+      return jobs.map((job) => {
+        const recovered = job.state === "running";
+        job.state = "running";
+        job.runAt = structuredClone(leaseUntil);
+        if (recovered) job.attempt++;
+        return structuredClone({ ...job, state: "running", recovered });
+      });
     },
-    async completeWake(id, result, nextRunAt) {
-      const job = state.wakes.get(id);
-      if (!job || job.state !== "running") return;
+    async recordWakeAttempt(claim, now, result, nextRunAt) {
+      const job = state.wakes.get(claim.id);
+      if (!job || job.state !== "running" || job.attempt !== claim.attempt || job.runAt <= now) return false;
       job.lastResult = structuredClone(result);
       job.state = nextRunAt ? "queued" : "done";
-      if (nextRunAt) {
-        job.attempt++;
-        job.runAt = structuredClone(nextRunAt);
-      }
+      job.runAt = structuredClone(nextRunAt ?? now);
+      if (nextRunAt) job.attempt++;
+      return true;
+    },
+    async getWakeForUpdate(requestId, requestVersion) {
+      const job = [...state.wakes.values()].find((wake) =>
+        wake.requestId === requestId && wake.requestVersion === requestVersion);
+      return structuredClone(job ?? null);
+    },
+    async expediteQueuedWake(id, now) {
+      const job = state.wakes.get(id);
+      if (job?.state === "queued" && job.runAt > now) job.runAt = structuredClone(now);
     },
     async ensureAgentConnection(row) {
       const existing = state.agents.get(agentKey(row.userId, row.agentId));
@@ -179,7 +252,10 @@ function transaction(state: State): StoreTx {
       putAgent(row);
     },
     async listAgentConnections(userId) {
-      return structuredClone([...state.agents.values()].filter((row) => row.userId === userId));
+      const connections = [...state.agents.values()].filter((row) => row.userId === userId);
+      connections.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()
+        || Buffer.compare(Buffer.from(a.agentId), Buffer.from(b.agentId)));
+      return structuredClone(connections);
     },
     async getAgentConnection(userId, agentId) {
       return structuredClone(state.agents.get(agentKey(userId, agentId)) ?? null);
@@ -189,7 +265,7 @@ function transaction(state: State): StoreTx {
 
 export function createMemoryStore(): Store {
   let state: State = {
-    users: new Map(), grants: [], friends: new Map(), requests: new Map(),
+    users: new Map(), grants: [], friends: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
     events: [], wakes: new Map(), agents: new Map(),
   };
   let previous = Promise.resolve();

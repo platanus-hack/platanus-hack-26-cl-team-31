@@ -59,6 +59,10 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return { items: await owner.pending(c.get("web")) };
     case "owner.activity":
       return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query()).limit) };
+    case "owner.ask":
+      return owner.ask(c.get("web"), await parseBody(c, route.body));
+    case "owner.status":
+      return owner.status(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "owner.decide":
       return owner.decide(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
     case "owner.agents":
@@ -79,6 +83,22 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return owner.setSharing(c.get("web"), parseInput(route.params, c.req.param()).address, await parseBody(c, route.body));
     case "owner.answerInvitation":
       return owner.answerInvitation(c.get("web"), parseInput(route.params, c.req.param()).id, await parseBody(c, route.body));
+    case "owner.circles":
+      return { items: await owner.circles(c.get("web")) };
+    case "owner.createCircle":
+      return owner.createCircle(c.get("web"), (await parseBody(c, route.body)).name);
+    case "owner.deleteCircle":
+      return owner.deleteCircle(c.get("web"), parseInput(route.params, c.req.param()).id);
+    case "owner.inviteToCircle": {
+      const { id, address } = parseInput(route.params, c.req.param());
+      return owner.inviteToCircle(c.get("web"), id, address);
+    }
+    case "owner.joinCircle":
+      return owner.joinCircle(c.get("web"), parseInput(route.params, c.req.param()).id);
+    case "owner.removeFromCircle": {
+      const { id, address } = parseInput(route.params, c.req.param());
+      return owner.removeFromCircle(c.get("web"), id, address);
+    }
     case "owner.removeFriend":
       return owner.removeFriend(c.get("web"), parseInput(route.params, c.req.param()).address);
     case "admin.rewake":
@@ -118,7 +138,7 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
     app.on([route.method], [route.path], ...(route.iss ? [auth[route.iss]] : []), async (c: HttpContext) => {
       if (route.iss) {
         c.header("Cache-Control", "no-store");
-        const bucket = route.port === "agent.ask" ? "ask" : route.port === "agent.reply" ? "reply" : "other";
+        const bucket = route.port === "agent.ask" || route.port === "owner.ask" ? "ask" : route.port === "agent.reply" ? "reply" : "other";
         const caller = route.iss === "admin" ? `admin:${c.get("admin").adminId}` : c.get(route.iss).userId;
         const blocked = await limiter.consume(caller, bucket);
         if (blocked) {
@@ -141,11 +161,12 @@ export function createHttpServer({ broker, publicKeys, limiter = createMemoryRat
   app.notFound((c) => c.json(ErrorBody.parse({ error: { code: "not_found", message: "No se encontró la ruta." } }), 404));
   app.onError((error, c) => {
     if (error instanceof BrokerError && error.code !== "internal") {
-      const { code, message } = error;
+      const { code, message, reason, errorId } = error;
       if (code === "unauthorized") c.header("WWW-Authenticate", "Bearer");
       // An expected domain error is not an internal error: the span keeps its 4xx status.
+      if (errorId) c.header("X-Error-Id", errorId);
       c.error = undefined;
-      return c.json(ErrorBody.parse({ error: { code, message } }), httpStatusOf(code));
+      return c.json(ErrorBody.parse({ error: { code, message, ...(reason ? { reason } : {}) } }), httpStatusOf(code));
     }
     c.header("X-Error-Id", telemetry.error(`${c.req.method} ${routePath(c)}`, error));
     return c.json(ErrorBody.parse({ error: { code: "internal", message: "Ocurrió un error interno en el broker." } }), 500);

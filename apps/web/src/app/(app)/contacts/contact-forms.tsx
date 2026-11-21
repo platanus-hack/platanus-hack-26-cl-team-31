@@ -8,7 +8,7 @@ import { button, card, Feedback, input, primaryButton } from "../ui";
 import { describeSharing } from "./describe";
 import { SharingPicker } from "./sharing";
 
-const dangerButton = "inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg px-3.5 py-2 text-sm font-semibold text-[#902f25] transition hover:bg-[#f6e8e4] disabled:cursor-wait disabled:opacity-60";
+const dangerButton = "inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg px-3.5 py-2 text-sm font-semibold text-danger transition hover:bg-danger-bg disabled:cursor-wait disabled:opacity-60";
 
 export function InviteForm() {
   const [state, submit, pending] = useActionState(sendInvitation, {});
@@ -18,7 +18,7 @@ export function InviteForm() {
     <form action={submit} className={`${card} space-y-4 p-5 sm:p-6`}>
       <div>
         <h2 className="text-lg font-semibold">Invitar a alguien</h2>
-        <p className="text-sm text-[#525e50]">Si acepta, quedan conectados y esa persona elige qué te comparte.</p>
+        <p className="text-sm text-muted">Si acepta, quedan conectados y esa persona elige qué te comparte.</p>
       </div>
       <div className="flex flex-wrap items-start gap-2">
         <label htmlFor="invite-to" className="sr-only">Dirección Nexo</label>
@@ -28,8 +28,8 @@ export function InviteForm() {
       </div>
       <div className="space-y-2">
         <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-          <p><span className="text-[#525e50]">Le compartirás:</span> <span className="font-medium">{describeSharing(share)}</span></p>
-          <button type="button" className="cursor-pointer font-semibold text-[#28513b] hover:underline" aria-expanded={editing}
+          <p><span className="text-muted">Le compartirás:</span> <span className="font-medium">{describeSharing(share)}</span></p>
+          <button type="button" className="cursor-pointer font-semibold text-accent hover:underline" aria-expanded={editing}
             onClick={() => setEditing(!editing)}>{editing ? "Listo" : "Cambiar"}</button>
         </div>
         <div hidden={!editing}><SharingPicker value={share} onChange={setShare} /></div>
@@ -46,9 +46,9 @@ export function IncomingInvitation({ invitation }: { invitation: Invitation }) {
     <li className={`${card} space-y-4 p-5`}>
       <div>
         <h3 className="break-all font-semibold">{invitation.address}</h3>
-        <p className="text-sm text-[#525e50]">Quiere conectar contigo.</p>
+        <p className="text-sm text-muted">Quiere conectar contigo.</p>
       </div>
-      <p className="text-sm"><span className="text-[#525e50]">Te compartirá:</span> <span className="font-medium">{describeSharing(invitation.offer)}</span></p>
+      <p className="text-sm"><span className="text-muted">Te compartirá:</span> <span className="font-medium">{describeSharing(invitation.offer)}</span></p>
       <form action={submit} className="space-y-3">
         <p className="text-sm font-semibold">Tú le compartirás</p>
         <SharingPicker value={share} onChange={setShare} />
@@ -80,13 +80,13 @@ export function ContactRow({ contact }: { contact: Contact }) {
         className="flex w-full cursor-pointer items-center justify-between gap-4 px-5 py-4 text-left">
         <div className="min-w-0 space-y-1">
           <p className="break-all font-semibold">{contact.address}</p>
-          <p className="text-sm"><span className="text-[#525e50]">Le compartes:</span> {describeSharing(contact.gives)}</p>
-          <p className="text-sm"><span className="text-[#525e50]">Te comparte:</span> {describeSharing(contact.receives)}</p>
+          <p className="text-sm"><span className="text-muted">Le compartes:</span> {describeSharing(contact.gives)}</p>
+          <p className="text-sm"><span className="text-muted">Te comparte:</span> {describeSharing(contact.receives)}</p>
         </div>
-        <span aria-hidden="true" className={`text-xl text-[#8a9486] transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+        <span aria-hidden="true" className={`text-xl text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
       </button>
       {open && (
-        <div className="space-y-4 border-t border-[#dfe3d7] px-5 py-4">
+        <div className="space-y-4 border-t border-line px-5 py-4">
           <form action={submit} className="space-y-3">
             <p className="text-sm font-semibold">Lo que le compartes</p>
             <SharingPicker value={share} onChange={setShare} />
@@ -96,10 +96,10 @@ export function ContactRow({ contact }: { contact: Contact }) {
               <Feedback {...(dirty ? {} : state)} />
             </div>
           </form>
-          <form action={remove} className="flex flex-wrap items-center gap-2 border-t border-[#ecefe6] pt-4">
+          <form action={remove} className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
             {confirming ? (
               <>
-                <p className="text-sm text-[#525e50]">Ninguno podrá preguntarle nada al otro.</p>
+                <p className="text-sm text-muted">Se quitarán los permisos directos de ambos. Los permisos de círculos compartidos seguirán activos.</p>
                 <button className={dangerButton} disabled={removing}>Sí, dejar de ser contactos</button>
                 <button type="button" className={button} onClick={() => setConfirming(false)}>Cancelar</button>
               </>

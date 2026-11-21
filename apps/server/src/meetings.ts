@@ -4,16 +4,16 @@ import { groupAllowed, isFree, personId, readAvailability } from "./availability
 import { defineTool } from "./tool.js";
 
 type Status = "collecting" | "no_shared_slot" | "proposed" | "declined" | "confirmed";
-type Meeting = {
+type MeetingRow = {
   id: string;
   organizer: string;
   group_id: string;
-  participants: string[];
   slots: Date[];
   minutes: number;
   status: Status;
   selected_slot: Date | null;
 };
+type Meeting = MeetingRow & { participants: string[] };
 
 const denied = { status: "not_shareable" } as const;
 const meetingId = z.object({ id: z.uuid() });
@@ -42,7 +42,7 @@ function view(meeting: Meeting) {
   };
 }
 
-async function answerFromCalendar(db: PoolClient, meeting: Meeting, me: string) {
+async function answerFromCalendar(db: PoolClient, meeting: MeetingRow, me: string) {
   const freeSlots: string[] = [];
   for (const date of meeting.slots) {
     const slot = date.toISOString();
@@ -65,7 +65,7 @@ const propose = defineTool("meeting_propose", "Propose time options to members o
 }), async (db, me, { recipients, slots, minutes, group }) => {
   const others = [...new Set(recipients)].filter(person => person !== me);
   if (!others.length || !await groupAllowed(db, me, others, group)) return denied;
-  const { rows } = await db.query<Meeting>(
+  const { rows } = await db.query<MeetingRow>(
     "INSERT INTO meetings (organizer, group_id, slots, minutes) VALUES ($1,$2,$3,$4) RETURNING *",
     [me, group, slots, minutes],
   );

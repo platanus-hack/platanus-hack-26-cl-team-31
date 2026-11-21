@@ -2,7 +2,7 @@ import type { EventFields, EventName, Telemetry } from "@team-31/telemetry";
 import type { Store, StoreTx } from "../store/store.js";
 
 /** Optional telemetry for the core. The service injects it; the core never creates one. */
-export type BrokerTelemetry = Pick<Telemetry, "emit">;
+export type BrokerTelemetry = Pick<Telemetry, "emit"> & Partial<Pick<Telemetry, "error">>;
 
 export type RecordEvent = <N extends EventName>(tx: StoreTx, name: N, fields: EventFields<N>) => void;
 

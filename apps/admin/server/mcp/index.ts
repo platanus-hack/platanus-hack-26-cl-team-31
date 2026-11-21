@@ -3,20 +3,11 @@
 // tokens nxa_ (Authorization: Bearer) y limitado a 60 req/min por token.
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import { ErrorCode } from "@modelcontextprotocol/sdk/types.js"
+import type { Telemetry } from "@team-31/telemetry"
 import type { Context, Hono } from "hono"
-import type { AdminTokenScope } from "../../shared/contract.js"
-import type { AdminQueries } from "../../shared/queries.js"
 import { createRateLimiter } from "./rate-limit.js"
 import { createAdminMcpServer } from "./server.js"
-
-export type TokenPrincipal = { tokenId: string; label: string; createdBy: string; scopes: AdminTokenScope[] }
-
-export type AdminMcpDeps = {
-  queries: AdminQueries
-  // Devuelve null si el token no existe, venció o fue revocado. Lo implementa ADM-04.
-  authenticate(bearer: string): Promise<TokenPrincipal | null>
-  audit(entry: { actor: TokenPrincipal; action: string; target: string | null }): Promise<void>
-}
+import type { AdminMcpDeps, TokenPrincipal } from "./types.js"
 
 export const MCP_PATH = "/mcp"
 export const MCP_RATE_LIMIT = 60
@@ -33,7 +24,11 @@ function bearerToken(header: string | undefined): string | null {
   return token && token.startsWith(TOKEN_PREFIX) ? token : null
 }
 
-export function mountAdminMcp(app: Hono, deps: AdminMcpDeps): void {
+export function mountAdminMcp(
+  app: Hono,
+  deps: AdminMcpDeps,
+  telemetry: Telemetry,
+): void {
   const rateLimit = createRateLimiter(MCP_RATE_LIMIT, RATE_WINDOW_MS)
 
   app.post(MCP_PATH, async (c) => {
@@ -41,38 +36,43 @@ export function mountAdminMcp(app: Hono, deps: AdminMcpDeps): void {
     let principal: TokenPrincipal | null
     try {
       principal = token ? await deps.authenticate(token) : null
-    } catch {
-      // TODO(admin): telemetry.error("mcp admin authenticate", error) y X-Error-Id al conectar @team-31/telemetry en admin.
-      return rpcError(c, 500, ErrorCode.InternalError, "No se pudo verificar el token.")
+    } catch (error) {
+      const errorId = telemetry.error("admin.mcp.authenticate", error)
+      return rpcError(c, 500, ErrorCode.InternalError, "No se pudo verificar el token.", { "X-Error-Id": errorId })
     }
     if (!principal) {
-      // TODO(admin): emit("auth.token.rejected", { attrs: { issuer: "admin", reason } }) al conectar @team-31/telemetry en admin.
+      telemetry.emit("auth.token.rejected", { attrs: { issuer: "admin", reason: token ? "invalid_token" : "missing_token" } })
       return rpcError(c, 401, -32001, token ? "Token inválido, vencido o revocado." : "Falta Authorization: Bearer nxa_….", {
         "WWW-Authenticate": token ? 'Bearer realm="nexo-admin", error="invalid_token"' : 'Bearer realm="nexo-admin"',
       })
     }
+    telemetry.emit("auth.token.verified", { attrs: { issuer: "admin" } })
 
     const limited = rateLimit(principal.tokenId)
     if (!limited.ok) {
-      // TODO(admin): emit("http.rate_limited", { attrs: { route: "/mcp", bucket: "admin_mcp" } }) al conectar @team-31/telemetry en admin.
+      telemetry.emit("http.rate_limited", { attrs: { route: MCP_PATH, bucket: "admin_mcp" } })
       return rpcError(c, 429, -32002, `Límite de ${MCP_RATE_LIMIT} solicitudes por minuto por token alcanzado.`, {
         "Retry-After": String(limited.retryAfterSeconds),
       })
     }
 
-    const server = createAdminMcpServer(principal, deps)
+    const server = createAdminMcpServer(principal, deps, telemetry)
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     try {
       await server.connect(transport)
       const response = await transport.handleRequest(c.req.raw)
       response.headers.set("Cache-Control", "no-store")
       return response
-    } catch {
-      // TODO(admin): telemetry.error("mcp admin request", error) y X-Error-Id al conectar @team-31/telemetry en admin.
-      return rpcError(c, 500, ErrorCode.InternalError, "No se pudo procesar la solicitud MCP.")
+    } catch (error) {
+      const errorId = telemetry.error("admin.mcp.request", error)
+      return rpcError(c, 500, ErrorCode.InternalError, "No se pudo procesar la solicitud MCP.", { "X-Error-Id": errorId })
     } finally {
       // Con enableJsonResponse la respuesta ya está completa: se puede cerrar el servidor.
-      void server.close().catch(() => undefined)
+      try {
+        await server.close()
+      } catch (error) {
+        telemetry.error("admin.mcp.close", error)
+      }
     }
   })
 

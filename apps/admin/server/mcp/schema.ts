@@ -2,6 +2,7 @@
 // eventos de telemetría. Las columnas salen de information_schema a través de
 // AdminQueries.sql (que corre con el rol nexo_admin_ro, así que solo ve lo que el rol puede
 // leer). Si esa consulta falla, se usa la lista estática de docs/admin.md (sección 2.2).
+import { describeCatalog, type Telemetry } from "@team-31/telemetry"
 import type { AdminQueries } from "../../shared/queries.js"
 
 export type SchemaView = { name: string; columns: { name: string; type: string | null }[] }
@@ -42,7 +43,9 @@ const STATIC_VIEWS: Record<string, string[]> = {
     "user_id", "agent_id", "label", "wake_kind", "wake_host", "verified_at", "last_wake_at", "revoked_at", "created_at",
   ],
   v_users: ["user_id", "address", "display_name", "created_at", "rules"],
+  v_circles: ["circle_id", "name", "owner_user_id", "created_at", "members", "invitations"],
   v_identities: ["user_id", "email", "name", "created_at", "active_sessions", "has_phone_number"],
+  v_whatsapp: ["linked_accounts", "active_pairings", "inbound_receipts"],
   v_oauth_clients: ["client_id", "name", "user_id", "redirect_hosts", "created_at", "last_token_at", "active_tokens"],
   v_events: eventColumns,
   v_service_health: ["service", "instance", "version", "last_seen_at", "state"],
@@ -50,37 +53,7 @@ const STATIC_VIEWS: Record<string, string[]> = {
   v_coordination_people: ["person_id", "groups", "can_ask", "can_share"],
 }
 
-const group = (names: string[], kind: string, attrs: string[]): CatalogEvent[] =>
-  names.map((name) => ({ name, kind, attrs }))
-
-// Copia del catálogo de packages/telemetry/src/catalog.ts (docs/admin.md sección 3).
-// TODO(admin): reemplazar por describeCatalog() de @team-31/telemetry cuando apps/admin
-// dependa del paquete (ADM-04/ADM-08 lo agregan a package.json).
-export const EVENT_CATALOG: CatalogEvent[] = [
-  ...group(["service.started", "service.heartbeat", "service.stopping"], "lifecycle", ["version", "dropped"]),
-  ...group(["http.request"], "http", ["method", "route", "status", "bucket"]),
-  ...group(["http.rate_limited"], "http", ["route", "bucket"]),
-  ...group(["auth.token.verified", "auth.token.rejected"], "auth", ["issuer", "reason"]),
-  ...group(["auth.service_jwt.rejected"], "auth", ["expectedIss", "reason"]),
-  ...group(["auth.oauth.consent"], "auth", ["clientId", "granted"]),
-  ...group(["mcp.tool.call"], "tool", ["tool", "outcome"]),
-  ...group(["broker.policy.evaluated"], "policy", ["tool", "decision", "rule"]),
-  ...group(["broker.request.created"], "lifecycle", ["tool", "rule", "targetAgentId"]),
-  ...group(["broker.request.status_changed"], "lifecycle", ["from", "to", "by"]),
-  ...group(["broker.request.closed"], "lifecycle", ["outcome", "escalated"]),
-  ...group(["broker.reply.rejected"], "lifecycle", ["code"]),
-  ...group(["broker.owner.decided"], "lifecycle", ["decision"]),
-  ...group(["wake.attempt"], "wake", ["kind", "attempt", "ok", "httpStatus", "code"]),
-  ...group(["wake.exhausted"], "wake", ["kind", "attempts"]),
-  ...group(["coordination.tool.call"], "tool", ["tool", "outcome"]),
-  ...group(["error"], "error", ["operation", "type", "issues", "frames", "code"]),
-  ...group(
-    ["admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created", "admin.token.revoked", "admin.mcp.call"],
-    "admin",
-    ["action", "target", "tool"],
-  ),
-  ...group(["telemetry.invalid_event"], "lifecycle", ["event", "issues"]),
-]
+export const EVENT_CATALOG: CatalogEvent[] = describeCatalog().map(({ name, kind, attrs }) => ({ name, kind, attrs }))
 
 const NOTES = [
   "Todas las vistas ya vienen redactadas: sin tokens, nonces, secretos de aviso, args, result ni texto libre de terceros.",
@@ -107,14 +80,14 @@ function viewsFromRows(rows: unknown[][]): SchemaView[] {
   return [...views.values()]
 }
 
-export async function loadAdminSchema(queries: AdminQueries): Promise<AdminSchema> {
+export async function loadAdminSchema(queries: AdminQueries, telemetry: Telemetry): Promise<AdminSchema> {
   try {
     const result = await queries.sql(COLUMNS_SQL)
     const views = viewsFromRows(result.rows)
     if (views.length > 0) return { source: "information_schema", views, events: EVENT_CATALOG, notes: NOTES }
-  } catch {
-    // Sin acceso a information_schema (por ejemplo, vistas aún sin migrar): lista estática.
-    // TODO(admin): telemetry.error("mcp admin schema", error) al conectar @team-31/telemetry en admin.
+  } catch (error) {
+    // La lista estática permite consultar el recurso antes de terminar las migraciones.
+    telemetry.error("admin.mcp.schema", error)
   }
   return { source: "static", views: staticViews(), events: EVENT_CATALOG, notes: NOTES }
 }

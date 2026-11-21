@@ -36,24 +36,31 @@ export async function revokeConnection(tx: StoreTx, userId: string, agentId: str
   if (!connection.revokedAt) await tx.upsertAgentConnection({ ...connection, revokedAt: at });
 }
 
-export function createAdminPort({ store, clock, telemetry }: BrokerDeps, { closePending, enqueue, record }: AdminHelpers): AdminPort {
+export function createAdminPort(
+  { store, clock, telemetry }: Pick<BrokerDeps, "store" | "clock" | "telemetry">,
+  { closePending, enqueue, record }: AdminHelpers,
+): AdminPort {
   return {
     async rewake(actor, requestId, reason) {
       requireAction(actor, reason);
       await store.tx(async (tx) => {
         const row = await tx.getRequest(requestId);
         if (!row) throw notFound();
+        const job = await tx.getWakeForUpdate(row.id, row.version);
+        const current = await tx.getRequest(requestId, undefined, true);
         const now = clock.now();
-        if (row.status !== "awaiting_agent" || row.expiresAt <= now) throw invalidState();
-        // Each worker attempt leaves one wake event, so the new job continues the retry count.
-        const attempts = (await tx.listEvents([row.id]))
-          .filter((event) => event.kind === "wake" && event.code !== "admin_rewake").length;
-        // Bump the version so a queued retry of the previous version goes stale: one wake chain at a time.
-        if (!await tx.updateRequest(row.id, {}, row.version)) throw invalidState();
-        await enqueue(tx, row, now, row.version + 1, attempts + 1);
+        if (current?.version !== row.version || row.status !== "awaiting_agent" || row.expiresAt <= now) throw invalidState();
+        if (job?.state === "running" && job.runAt > now) throw invalidState();
+        if (job?.state === "queued") {
+          await tx.expediteQueuedWake(job.id, now);
+        } else if (job?.state !== "running") {
+          // The expired-lease case is already due. A completed chain needs a new request version.
+          if (!await tx.updateRequest(row.id, {}, row.version)) throw invalidState();
+          await enqueue(tx, row, now, row.version + 1, (job?.attempt ?? 0) + 1);
+        }
         await tx.appendEvent({ requestId: row.id, at: now, kind: "wake", code: "admin_rewake" });
         record(tx, "admin.action", {
-          requestId: row.id, ...(row.targetAgentId ? { agentId: row.targetAgentId } : {}),
+          requestId: row.id, userId: actor.adminId, ...(row.targetAgentId ? { agentId: row.targetAgentId } : {}),
           attrs: { action: "rewake", target: row.id },
         });
       });

@@ -154,6 +154,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
   it("skips a locked job while its claim transaction is still open", async () => {
     await createParticipants();
     const row = await makeRequest();
+    const leaseUntil = new Date(now.getTime() + 60_000);
     const jobs: WakeJob[] = ["first", "second"].map((id) => ({
       id, requestId: row.id, requestVersion: row.version, attempt: 1, runAt: now, state: "queued",
     }));
@@ -164,14 +165,14 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     const claimed = deferred<WakeJob[]>();
     const release = deferred<void>();
     const first = store.tx(async (tx) => {
-      claimed.resolve(await tx.claimDueWakes(now, 1));
+      claimed.resolve(await tx.claimDueWakes(now, leaseUntil, 1));
       await release.promise;
     });
     const timeout = new AbortController();
     let second: Promise<WakeJob[]> | undefined;
     try {
       expect(await Promise.race([claimed.promise, first])).toMatchObject([{ id: "first", state: "running" }]);
-      second = store.tx((tx) => tx.claimDueWakes(now, 1));
+      second = store.tx((tx) => tx.claimDueWakes(now, leaseUntil, 1));
       expect(await Promise.race([
         second,
         delay(2_000, undefined, { signal: timeout.signal }).then(() => {
@@ -183,7 +184,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
       release.resolve();
       await Promise.allSettled([first, second]);
     }
-    expect(await store.tx((tx) => tx.claimDueWakes(now, 10))).toEqual([]);
+    expect(await store.tx((tx) => tx.claimDueWakes(now, leaseUntil, 10))).toEqual([]);
   });
 
   it("encrypts each WakeTarget secret as bytea and restores it on read", async () => {
@@ -244,7 +245,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     await applyPostgresMigrations({ databaseUrl });
     expect(await store.tx((tx) => tx.getRequest(row.id))).toMatchObject({ id: row.id, version: 0 });
     const { rows } = await isolated.query("SELECT id FROM nexo.__drizzle_migrations");
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
   });
 
   it("recovers only legacy one-time approvals with an audit event", async () => {
@@ -263,6 +264,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
     });
     // Restore the legacy schema and migration journal while keeping the fixture rows.
     await isolated.query("ALTER TABLE nexo.requests DROP COLUMN approved_once");
+    await isolated.query("DROP TABLE nexo.circle_members, nexo.circles");
     await isolated.query("DROP TABLE nexo.friends");
     await isolated.query("DROP TABLE nexo.grants");
     await isolated.query("DELETE FROM nexo.__drizzle_migrations WHERE id > 1");

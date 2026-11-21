@@ -1,0 +1,48 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { config } from "@/lib/whatsapp/kapso";
+import { getTelemetry } from "@/lib/telemetry";
+import { whatsappStore } from "@/lib/whatsapp/runtime";
+import { getOwner, requireAddress } from "../../../owner";
+
+type Feedback = { code?: string; error?: string; message?: string };
+const path = "/agents/connect/whatsapp";
+
+export async function updatePhone(_: Feedback, form: FormData): Promise<Feedback> {
+  const { userId } = await getOwner();
+  await requireAddress();
+  const action = form.get("action");
+  const telemetry = getTelemetry();
+  try {
+    const store = whatsappStore();
+    if (action === "unlink") {
+      await store.unlink(userId);
+      telemetry.emit("whatsapp.link", { userId, attrs: { action: "unlinked" } });
+      revalidatePath(path);
+      return { message: "WhatsApp desvinculado." };
+    }
+    if (!config()) return { error: "WhatsApp aún no está disponible." };
+    if (action === "start") {
+      const code = await store.start(userId);
+      if (!code) return { error: "Tu cuenta ya tiene un número registrado." };
+      telemetry.emit("whatsapp.link", { userId, attrs: { action: "started" } });
+      revalidatePath(path);
+      return { code };
+    }
+    const id = form.get("id");
+    if (action === "confirm" && typeof id === "string" && /^[a-f0-9-]{36}$/.test(id)) {
+      if (!await store.confirm(userId, id)) return { error: "El vínculo venció o cambió. Genera otro código." };
+      telemetry.emit("whatsapp.link", { userId, attrs: { action: "confirmed" } });
+      revalidatePath(path);
+      return { message: "WhatsApp vinculado." };
+    }
+    return { error: "Acción no válida." };
+  } catch (error) {
+    const errorId = telemetry.error("whatsapp.link", error, { userId });
+    if ((error as { code?: string } | null)?.code === "23505") {
+      return { error: "Ese número ya está vinculado a otra cuenta." };
+    }
+    return { error: `No se pudo actualizar WhatsApp. Referencia: ${errorId}` };
+  }
+}

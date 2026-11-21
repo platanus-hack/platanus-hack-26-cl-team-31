@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Address, LocalPart } from "./address.js";
 import { AdminActionInput } from "./admin.js";
+import { Circle, CircleName } from "./circles.js";
 import { Grant, GrantInput } from "./grants.js";
 import { ActivityItem, AgentConnection, ContactsView, InvitationAnswer, OwnerDecision, OwnerPendingItem } from "./owner.js";
 import { Sharing } from "./sharing.js";
@@ -13,6 +14,7 @@ const requestParams = z.object({ id: z.string() });
 const agentParams = z.object({ agentId: z.string() });
 const adminAgentParams = z.object({ userId: z.string(), agentId: z.string() });
 const noContent = { status: 204, response: z.undefined() } as const;
+const circleMemberParams = z.object({ id: z.string(), address: Address });
 
 export const routes = {
   agentCapabilities: {
@@ -119,6 +121,14 @@ export const routes = {
     iss: "web",
     port: "owner.activity",
   },
+  ownerAsk: {
+    method: "POST", path: "/v1/owner/requests", body: AskInput,
+    response: RequesterViewSchema, iss: "web", port: "owner.ask",
+  },
+  ownerStatus: {
+    method: "GET", path: "/v1/owner/requests/:id", params: requestParams,
+    response: RequesterViewSchema, iss: "web", port: "owner.status",
+  },
   ownerDecide: {
     method: "POST",
     path: "/v1/owner/requests/:id/decision",
@@ -200,6 +210,53 @@ export const routes = {
     ...noContent,
     iss: "web",
     port: "owner.removeFriend",
+  },
+  ownerCircles: {
+    method: "GET",
+    path: "/v1/owner/circles",
+    response: z.object({ items: z.array(Circle) }),
+    iss: "web",
+    port: "owner.circles",
+  },
+  ownerCreateCircle: {
+    method: "POST",
+    path: "/v1/owner/circles",
+    body: z.object({ name: CircleName }),
+    response: Circle,
+    iss: "web",
+    port: "owner.createCircle",
+  },
+  ownerDeleteCircle: {
+    method: "DELETE",
+    path: "/v1/owner/circles/:id",
+    params: requestParams,
+    ...noContent,
+    iss: "web",
+    port: "owner.deleteCircle",
+  },
+  ownerInviteToCircle: {
+    method: "PUT",
+    path: "/v1/owner/circles/:id/members/:address",
+    params: circleMemberParams,
+    ...noContent,
+    iss: "web",
+    port: "owner.inviteToCircle",
+  },
+  ownerJoinCircle: {
+    method: "POST",
+    path: "/v1/owner/circles/:id/join",
+    params: requestParams,
+    ...noContent,
+    iss: "web",
+    port: "owner.joinCircle",
+  },
+  ownerRemoveFromCircle: {
+    method: "DELETE",
+    path: "/v1/owner/circles/:id/members/:address",
+    params: circleMemberParams,
+    ...noContent,
+    iss: "web",
+    port: "owner.removeFromCircle",
   },
   ownerStream: {
     method: "GET",

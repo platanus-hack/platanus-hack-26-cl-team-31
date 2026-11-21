@@ -1,6 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { createTelemetry, memorySink } from "@team-31/telemetry"
+import { honoTelemetry } from "@team-31/telemetry/hono"
 import { Hono } from "hono"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { z } from "zod"
@@ -19,7 +21,8 @@ import {
   type WakeJobRow,
 } from "../../shared/contract.js"
 import { AdminQueryError, type AdminQueries } from "../../shared/queries.js"
-import { mountAdminMcp, type AdminMcpDeps, type TokenPrincipal } from "./index.js"
+import { mountAdminMcp } from "./index.js"
+import type { AdminMcpDeps, TokenPrincipal } from "./types.js"
 import type { AdminSchema } from "./schema.js"
 
 // ---------- Fixtures válidas según el contrato ----------
@@ -168,8 +171,11 @@ function setup(queries: AdminQueries = fakeQueries()) {
     audit: vi.fn(async () => {}),
   } satisfies AdminMcpDeps
   const app = new Hono()
-  mountAdminMcp(app, deps)
-  return { app, deps, queries }
+  const sink = memorySink()
+  const telemetry = createTelemetry({ service: "admin", sink, lifecycle: false })
+  app.use(honoTelemetry(telemetry))
+  mountAdminMcp(app, deps, telemetry)
+  return { app, deps, queries, sink }
 }
 
 const clients: Client[] = []
@@ -337,6 +343,23 @@ describe("tools", () => {
     expect(internal.isError).toBe(true)
     expect(textOf(internal)).not.toContain("ECONNREFUSED")
   })
+
+  it("correlaciona las respuestas inválidas del servidor con la telemetría", async () => {
+    const queries = fakeQueries()
+    vi.mocked(queries.services).mockResolvedValueOnce([{ ...service, state: "invalid" as never }])
+    const { app, sink } = setup(queries)
+    const client = await connect(app)
+
+    const result = await client.callTool({ name: "admin_services", arguments: {} }) as CallToolResult
+    const [event] = sink.find("error")
+
+    expect(event).toMatchObject({
+      service: "admin", attrs: { operation: "admin.mcp.output" }, errorId: expect.any(String),
+    })
+    expect(result.isError).toBe(true)
+    expect(result.structuredContent).toBeUndefined()
+    expect(textOf(result)).toContain(`La consulta devolvió una respuesta inválida. Referencia: ${event?.errorId}.`)
+  })
 })
 
 describe("autenticación y límites", () => {
@@ -427,7 +450,7 @@ describe("auditoría", () => {
     expect(deps.audit).toHaveBeenNthCalledWith(1, { actor: tokens.nxa_read, action: "mcp:admin_get_request", target: "req_8f2a" })
     expect(deps.audit).toHaveBeenNthCalledWith(2, { actor: tokens.nxa_read, action: "mcp:admin_overview", target: null })
     // También queda auditado el intento sin scope.
-    expect(deps.audit).toHaveBeenNthCalledWith(3, { actor: tokens.nxa_read, action: "mcp:admin_sql", target: "select 1" })
+    expect(deps.audit).toHaveBeenNthCalledWith(3, { actor: tokens.nxa_read, action: "mcp:admin_sql", target: null })
   })
 
   it("no audita tools/list y falla cerrado si la auditoría no se puede escribir", async () => {

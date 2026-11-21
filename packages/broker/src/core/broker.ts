@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   Address,
   AskInput,
+  CircleName,
   fieldsOf,
   describeTool,
   basicSharing,
@@ -19,17 +20,19 @@ import {
   ReplyInput,
   WakeTarget,
   WAKE_SUBSCRIPTION_SCOPE,
+  type Circle,
   type FinalOutcome,
   type Principal,
   type ReplyReceipt,
   type RequesterView,
   type Scope,
+  type ToolName,
   type ToolResult,
 } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import { filterResult } from "../policy/index.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
-import type { RequestRow, StoreTx } from "../store/store.js";
+import type { CircleRow, RequestRow, StoreTx } from "../store/store.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
 import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
@@ -43,12 +46,31 @@ const connectionFields = fieldsOf("connect");
 const connectionGuidance =
   "Cuéntale a tu titular quién quiere conectar. Solo tu titular acepta o rechaza desde la App Nexo: responde needs_owner.";
 
-// A request stays authorized while the recipient's grant to the sender still covers its fields.
+// Fields shared by members of the same circle.
+const basePolicy = [
+  { tool: "availability", fields: ["available", "freeSlots"] },
+  { tool: "interest_check", fields: ["matches"] },
+] satisfies Pick<GrantInput, "tool" | "fields">[];
+
+// What the recipient lets the sender receive for a tool: the fields of their grant, plus the base
+// policy while both have joined the same circle.
+async function sharedFields(tx: StoreTx, toUserId: string, toAddress: Address, from: Address, tool: ToolName) {
+  const grant = await tx.getGrant(toUserId, from, tool);
+  const base = basePolicy.find((entry) => entry.tool === tool);
+  const circle = base && await tx.shareCircle(toAddress, from) ? base.fields : [];
+  return {
+    fields: [...new Set([...(grant?.fields ?? []), ...circle])],
+    // Stable rule code for telemetry.
+    rule: grant ? "grant" : circle.length > 0 ? "circle" : "no_grant",
+  };
+}
+
+// A request stays authorized while the recipient still shares its fields with the sender.
 async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
   // Invitations, connection tests and one-time owner approvals have their own consent flow.
   if (row.tool === "connect" || row.fromUserId === null || row.approvedOnce) return true;
-  const grant = await tx.getGrant(toUserId, row.fromAddress, row.tool);
-  return grant !== null && row.allowedFields.every(field => grant.fields.includes(field));
+  const { fields } = await sharedFields(tx, toUserId, row.toAddress, row.fromAddress, row.tool);
+  return fields.length > 0 && row.allowedFields.every(field => fields.includes(field));
 }
 
 function notFound(): BrokerError {
@@ -77,10 +99,9 @@ function rejectionCode(error: BrokerError) {
 }
 
 export function createBroker(deps: BrokerDeps): BrokerCore {
-  const { clock, config, nonceKey, signingKey, waker } = deps;
+  const { clock, config, nonceKey, signingKey, waker, telemetry } = deps;
   const events = createLifecycleEvents(deps.store, deps.telemetry);
   const { store, record } = events;
-  const observedDeps: BrokerDeps = { ...deps, store };
   const systemAddress = Address.parse(`system@${config.addressDomain}`);
 
   function requireScope(principal: Principal, scope: Scope, operation: string): void {
@@ -155,7 +176,26 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return true;
   }
 
-  async function activeAgent(tx: StoreTx, principal: Principal) {
+  async function prepareAgentReply(row: RequestRow, reply: ReplyInput, agentId: string, now: Date) {
+    const { outcome, internalReason } = reply;
+    const filtered = outcome === "answered" ? filterResult(row.tool, reply.result, row.allowedFields) : null;
+    const changed = outcome === "needs_owner"
+      ? await seal(escalate(row, deadline(now)))
+      : await finalize(transition(row, outcome), outcome, now, filtered?.result);
+    const droppedFields = filtered?.dropped ?? [];
+    const declaredFields = fieldsOf(row.tool);
+    return {
+      changed: {
+        ...changed, internalReason, answeredByAgentId: agentId,
+        droppedFields: droppedFields.filter((field) => declaredFields.includes(field)),
+      },
+      receipt: {
+        requestId: row.id, status: changed.status, deliveredFields: filtered?.delivered ?? [], droppedFields,
+      },
+    };
+  }
+
+  async function ensureActiveAgentConnection(tx: StoreTx, principal: Principal) {
     const { userId, agentId } = principal;
     const connection = await tx.ensureAgentConnection({
       userId, agentId, label: agentId, wakeTarget: { kind: "none" }, createdAt: clock.now(),
@@ -198,7 +238,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     // Opposite-direction acceptances acquire the same membership rows in the same order.
     participants.sort((a, b) => a.userId.localeCompare(b.userId));
     for (const { userId, address, share } of participants) {
-      await tx.addFriend(userId, address);
+      if (!await tx.addFriend(userId, address)) continue;
       await applySharing(tx, userId, address, share);
     }
     record(tx, "broker.contact.connected", { requestId: row.id, userId: row.toUserId });
@@ -250,12 +290,15 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
     }, now);
     const invitation = recipient && tool === "connect";
-    const grant = recipient && !invitation && await tx.getGrant(recipient.userId, from, tool);
-    // Stable rule code for telemetry. The request keeps separate display text.
-    const ruleCode = invitation ? "connection_request" : grant ? "grant" : recipient ? "no_grant" : "no_recipient";
+    const shared = recipient && !invitation
+      ? await sharedFields(tx, recipient.userId, to, from, tool)
+      : { fields: [], rule: "no_recipient" };
+    const allowed = shared.fields.length > 0;
+    // The request keeps separate display text.
+    const ruleCode = invitation ? "connection_request" : shared.rule;
     record(tx, "broker.policy.evaluated", {
       requestId: row.id, userId, ...(agentId ? { agentId } : {}),
-      attrs: { tool, decision: invitation || grant ? "allow" : "deny", rule: ruleCode },
+      attrs: { tool, decision: invitation || allowed ? "allow" : "deny", rule: ruleCode },
     });
     if (existing === "accepted") {
       row = await finalize({
@@ -266,10 +309,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         ...row, status: "awaiting_agent", allowedFields: connectionFields,
         rule: "Solicitud de conexión", guidance: connectionGuidance,
       };
-    } else if (grant) {
+    } else if (allowed) {
       row = {
-        ...row, status: "awaiting_agent", allowedFields: grant.fields,
-        rule: `Permiso para ${tool}: ${grant.fields.join(", ")}`,
+        ...row, status: "awaiting_agent", allowedFields: shared.fields,
+        rule: `Permiso para ${tool}: ${shared.fields.join(", ")}`,
       };
     } else {
       const decisionReason = recipient ? "Sin permiso para esta herramienta." : "Dirección sin destinatario.";
@@ -332,17 +375,73 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     }
   }
 
+  async function ask(userId: string, input: unknown, principal?: Principal) {
+    const parsed = AskInput.safeParse(input);
+    if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
+    const view = await store.tx(async (tx) => {
+      if (principal) await ensureActiveAgentConnection(tx, principal);
+      return submit(tx, userId, parsed.data, principal?.agentId);
+    });
+    if (view instanceof BrokerError) throw view;
+    return view;
+  }
+
+  async function status(userId: string, id: string, principal?: Principal) {
+    const view = await store.tx(async (tx) => {
+      if (principal) await ensureActiveAgentConnection(tx, principal);
+      const row = await tx.getRequest(id, { fromUserId: userId });
+      if (!row) return notFound();
+      if (row.status === "answered" && row.answeredByAgentId && row.toUserId &&
+          !await stillAuthorized(tx, row, row.toUserId)) {
+        return toRequesterView(await finalize(row, "denied", clock.now()));
+      }
+      return toRequesterView(row);
+    });
+    if (view instanceof BrokerError) throw view;
+    return view;
+  }
+
+  // Close the pending requests that a membership change left without permission.
+  async function cancelForMembers(tx: StoreTx, addresses: Address[]): Promise<void> {
+    for (const address of addresses) {
+      const user = await tx.getUserByAddress(address);
+      if (user) await cancelUnauthorized(tx, user.userId);
+    }
+  }
+
+  async function ownedCircle(tx: StoreTx, userId: string, circleId: string): Promise<CircleRow> {
+    const circle = await tx.getCircle(circleId);
+    if (circle?.ownerUserId !== userId) throw notFound();
+    return circle;
+  }
+
+  async function toCircle(tx: StoreTx, row: CircleRow): Promise<Circle> {
+    const owner = (await tx.getUser(row.ownerUserId))?.address;
+    if (!owner) throw new BrokerError("internal", "El círculo no tiene creador con dirección.");
+    const members = await tx.listCircleMembers(row.id);
+    return {
+      id: row.id, name: row.name, owner,
+      members: members.map(({ address, joinedAt }) => ({ address, joined: joinedAt !== undefined })),
+    };
+  }
+
+  // Addresses stay out of telemetry: only the circle and what happened to it.
+  function recordCircle(tx: StoreTx, userId: string, circleId: string, action: "created" | "deleted" | "invited" | "joined" | "removed") {
+    record(tx, "broker.circle.changed", { userId, attrs: { circleId, action } });
+  }
+
   return {
     agent: {
       async capabilities(p, to) {
         requireScope(p, "nexo:ask", "agent.capabilities");
         return store.tx(async tx => {
-          await activeAgent(tx, p);
+          await ensureActiveAgentConnection(tx, p);
           const from = (await tx.getUser(p.userId))?.address;
           const owner = await tx.getUserByAddress(to);
           if (!from || !owner || from === to) return { tools: [] };
-          const grants = await Promise.all(GrantTool.options.map(tool => tx.getGrant(owner.userId, from, tool)));
-          const tools = grants.flatMap(grant => grant ? [describeTool(grant.tool, grant.fields)] : []);
+          const shared = await Promise.all(GrantTool.options.map(async tool =>
+            ({ tool, fields: (await sharedFields(tx, owner.userId, to, from, tool)).fields })));
+          const tools = shared.flatMap(({ tool, fields }) => fields.length > 0 ? [describeTool(tool, fields)] : []);
           tools.push(describeTool("connect", connectionFields));
           return { tools };
         });
@@ -350,20 +449,13 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       async ask(p, input) {
         requireScope(p, "nexo:ask", "agent.ask");
-        const parsed = AskInput.safeParse(input);
-        if (!parsed.success) throw new BrokerError("invalid_input", "La pregunta no cumple el formato de la herramienta.");
-        const view = await store.tx(async (tx) => {
-          await activeAgent(tx, p);
-          return submit(tx, p.userId, parsed.data, p.agentId);
-        });
-        if (view instanceof BrokerError) throw view;
-        return view;
+        return ask(p.userId, input, p);
       },
 
       async inbox(p) {
         requireScope(p, "nexo:inbox", "agent.inbox");
         return store.tx(async (tx) => {
-          await activeAgent(tx, p);
+          await ensureActiveAgentConnection(tx, p);
           const address = (await tx.getUser(p.userId))?.address;
           if (!address) return [];
           const now = clock.now();
@@ -375,18 +467,26 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       async reply(p, input) {
         requireScope(p, "nexo:reply", "agent.reply");
+        const parsed = ReplyInput.safeParse(input);
+        if (!parsed.success) {
+          telemetry?.emit("broker.reply.rejected", {
+            userId: p.userId, agentId: p.agentId, attrs: { code: "schema" },
+          });
+          throw new BrokerError("invalid_input", "La respuesta no cumple el formato requerido.");
+        }
+        const { requestId, nonce } = parsed.data;
         const result = await store.tx<ReplyReceipt | BrokerError>(async (tx) => {
-          const connection = await activeAgent(tx, p);
-          const row = await tx.getRequest(input.requestId, { toUserId: p.userId });
+          const connection = await ensureActiveAgentConnection(tx, p);
+          const row = await tx.getRequest(requestId, { toUserId: p.userId });
           if (!row || (row.targetAgentId !== undefined && row.targetAgentId !== p.agentId)) {
-            record(tx, "broker.reply.rejected", { requestId: input.requestId, attrs: { code: "not_recipient" } });
+            record(tx, "broker.reply.rejected", { requestId, attrs: { code: "not_recipient" } });
             return notFound();
           }
 
           const now = clock.now();
           async function reject(error: BrokerError): Promise<BrokerError> {
-            await tx.appendEvent({ requestId: input.requestId, at: now, kind: "response", code: error.code });
-            record(tx, "broker.reply.rejected", { requestId: input.requestId, attrs: { code: rejectionCode(error) } });
+            await tx.appendEvent({ requestId, at: now, kind: "response", code: error.code });
+            record(tx, "broker.reply.rejected", { requestId, attrs: { code: rejectionCode(error) } });
             return error;
           }
           if (row.status !== "awaiting_agent") return reject(closed());
@@ -394,48 +494,26 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             const changed = await closePending(tx, row, "expired", now);
             return reject(changed ? expired() : closed());
           }
-          if (!hasNonce(nonceKey, row.id, input.nonce)) {
+          if (!hasNonce(nonceKey, row.id, nonce)) {
             return reject(new BrokerError("forbidden", "El nonce no coincide."));
           }
-          const parsed = ReplyInput.safeParse(input);
-          if (!parsed.success) return reject(new BrokerError("invalid_input", "La respuesta no cumple el formato requerido."));
-
-          const { outcome, internalReason } = parsed.data;
-          if (row.tool === "connect" && outcome === "answered") {
+          if (row.tool === "connect" && parsed.data.outcome === "answered") {
             return reject(new BrokerError("invalid_input", "Solo el titular acepta una invitación desde la App Nexo. Responde needs_owner."));
           }
-          let changed: RequestRow;
-          let deliveredFields: string[] = [];
-          let droppedFields: string[] = [];
+          let response: Awaited<ReturnType<typeof prepareAgentReply>>;
           try {
-            if (outcome === "needs_owner") {
-              changed = await seal(escalate(row, deadline(now)));
-            } else {
-              let filtered: ToolResult | undefined;
-              if (outcome === "answered") {
-                const { result, delivered, dropped } = filterResult(row.tool, parsed.data.result, row.allowedFields);
-                filtered = result;
-                deliveredFields = delivered;
-                droppedFields = dropped;
-              }
-              changed = await finalize(transition(row, outcome), outcome, now, filtered);
-            }
+            response = await prepareAgentReply(row, parsed.data, p.agentId, now);
           } catch (error) {
             if (error instanceof BrokerError) return reject(error);
             throw error;
           }
-          const declaredFields = fieldsOf(row.tool);
-          changed = {
-            ...changed, internalReason, answeredByAgentId: p.agentId,
-            droppedFields: droppedFields.filter((field) => declaredFields.includes(field)),
-          };
+          const { changed, receipt } = response;
           if (!await saveTransition(tx, row, changed)) return reject(closed());
-          await applyConnection(tx, changed);
           recordTransition(tx, row, changed, "agent");
           await tx.appendEvent({ requestId: row.id, at: now, kind: "response", status: changed.status });
           if (changed.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
           if (row.targetAgentId !== undefined) await tx.upsertAgentConnection({ ...connection, verifiedAt: now });
-          return { requestId: row.id, status: changed.status, deliveredFields, droppedFields };
+          return receipt;
         });
         // Returning the error inside tx commits the expiry and any authorized audit event.
         if (result instanceof BrokerError) throw result;
@@ -444,18 +522,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       async status(p, id) {
         requireScope(p, "nexo:status", "agent.status");
-        const view = await store.tx(async (tx) => {
-          await activeAgent(tx, p);
-          const row = await tx.getRequest(id, { fromUserId: p.userId });
-          if (!row) return notFound();
-          if (row.status === "answered" && row.answeredByAgentId && row.toUserId &&
-              !await stillAuthorized(tx, row, row.toUserId)) {
-            return toRequesterView(await finalize(row, "denied", clock.now()));
-          }
-          return toRequesterView(row);
-        });
-        if (view instanceof BrokerError) throw view;
-        return view;
+        return status(p.userId, id, p);
       },
 
       async connectWake(p, target) {
@@ -464,12 +531,19 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (!parsed.success) throw new BrokerError("invalid_input", "La configuración del aviso no es válida.");
         const wakeTarget = parsed.data;
         if (wakeTarget.kind === "mcp_events") {
-          await store.tx((tx) => activeAgent(tx, p));
-          const verification = await waker.verifyCallback(wakeTarget).catch(() => ({ ok: false as const, reason: "challenge_failed" as const }));
-          if (!verification.ok) throw new BrokerError("invalid_input", verification.reason);
+          await store.tx((tx) => ensureActiveAgentConnection(tx, p));
+          const fields = { userId: p.userId, agentId: p.agentId };
+          let errorId: string | undefined;
+          const verification = await waker.verifyCallback(wakeTarget).catch((error: unknown) => {
+            errorId = telemetry?.error?.("wake.verify_callback", error, fields);
+            return { ok: false, reason: "challenge_failed" } as const;
+          });
+          const reason = verification.ok ? undefined : verification.reason;
+          telemetry?.emit("wake.callback_verification", { ...fields, attrs: { ok: verification.ok, reason } });
+          if (reason) throw new BrokerError("invalid_input", reason, { errorId, reason });
         }
         return store.tx(async (tx) => {
-          const connection = await activeAgent(tx, p);
+          const connection = await ensureActiveAgentConnection(tx, p);
           const updated = { ...connection, wakeTarget };
           await tx.upsertAgentConnection(updated);
           return toAgentConnection(updated);
@@ -479,7 +553,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async disconnectWake(p, subscriptionId) {
         requireScope(p, WAKE_SUBSCRIPTION_SCOPE, "agent.disconnectWake");
         await store.tx(async (tx) => {
-          const connection = await activeAgent(tx, p);
+          const connection = await ensureActiveAgentConnection(tx, p);
           if (connection.wakeTarget.kind !== "mcp_events" || connection.wakeTarget.subscriptionId !== subscriptionId) {
             throw notFound();
           }
@@ -489,6 +563,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     },
 
     owner: {
+      ask: (o, input) => ask(o.userId, input),
+      status: (o, id) => status(o.userId, id),
+
       async me(o) {
         return store.tx(async (tx) => {
           const user = await tx.getUser(o.userId);
@@ -694,6 +771,82 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (error) throw error;
       },
 
+      async circles(o) {
+        return store.tx(async (tx) => {
+          const address = (await tx.getUser(o.userId))?.address;
+          if (!address) return [];
+          return Promise.all((await tx.listCircles(address)).map((row) => toCircle(tx, row)));
+        });
+      },
+
+      async createCircle(o, name) {
+        const parsed = CircleName.safeParse(name);
+        if (!parsed.success) throw new BrokerError("invalid_input", "El nombre del círculo debe tener entre 1 y 60 caracteres.");
+        return store.tx(async (tx) => {
+          const address = (await tx.getUser(o.userId))?.address;
+          if (!address) throw new BrokerError("invalid_input", "Primero elige tu dirección en la App Nexo.");
+          const row = { id: randomUUID(), ownerUserId: o.userId, name: parsed.data, createdAt: clock.now() };
+          await tx.insertCircle(row);
+          await tx.inviteCircleMember(row.id, address);
+          await tx.joinCircle(row.id, address, row.createdAt);
+          recordCircle(tx, o.userId, row.id, "created");
+          return toCircle(tx, row);
+        });
+      },
+
+      async deleteCircle(o, circleId) {
+        await store.tx(async (tx) => {
+          const circle = await ownedCircle(tx, o.userId, circleId);
+          const members = await tx.listCircleMembers(circle.id);
+          await tx.deleteCircle(circle.id);
+          recordCircle(tx, o.userId, circle.id, "deleted");
+          await cancelForMembers(tx, members.map(({ address }) => address));
+        });
+      },
+
+      async inviteToCircle(o, circleId, address) {
+        if (!Address.safeParse(address).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
+        await store.tx(async (tx) => {
+          const circle = await ownedCircle(tx, o.userId, circleId);
+          await tx.inviteCircleMember(circle.id, address);
+          recordCircle(tx, o.userId, circle.id, "invited");
+        });
+      },
+
+      async joinCircle(o, circleId) {
+        await store.tx(async (tx) => {
+          const address = (await tx.getUser(o.userId))?.address;
+          if (!address) throw notFound();
+          if (await tx.joinCircle(circleId, address, clock.now())) {
+            recordCircle(tx, o.userId, circleId, "joined");
+            return;
+          }
+          // A repeated join succeeds. Without an invitation the circle stays hidden.
+          const members = await tx.listCircleMembers(circleId);
+          if (!members.some((member) => member.address === address)) throw notFound();
+        });
+      },
+
+      async removeFromCircle(o, circleId, address) {
+        await store.tx(async (tx) => {
+          const circle = await tx.getCircle(circleId);
+          const own = (await tx.getUser(o.userId))?.address;
+          const isOwner = circle?.ownerUserId === o.userId;
+          if (!circle || (!isOwner && own !== address)) throw notFound();
+          if (isOwner && own === address) {
+            throw new BrokerError("conflict", "Quien creó el círculo no puede salir. Elimínalo.");
+          }
+          const members = await tx.listCircleMembers(circle.id);
+          if (!await tx.removeCircleMember(circle.id, address)) {
+            // Removing someone twice succeeds. A stranger gets no hint that the circle exists.
+            if (isOwner) return;
+            throw notFound();
+          }
+          recordCircle(tx, o.userId, circle.id, "removed");
+          await cancelForMembers(tx, members.map((member) => member.address));
+        });
+      },
+
       async removeFriend(o, friend) {
         if (!Address.safeParse(friend).success) throw new BrokerError("invalid_input", "La dirección no es válida.");
         await store.tx(async (tx) => {
@@ -717,8 +870,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
     },
 
-    admin: createAdminPort(observedDeps, { closePending, enqueue, record }),
+    admin: createAdminPort({ store, clock, telemetry }, { closePending, enqueue, record }),
 
-    tick: createWorker(observedDeps, closePending),
+    tick: createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs: config.wakeRetryDelaysMs }, closePending),
   };
 }

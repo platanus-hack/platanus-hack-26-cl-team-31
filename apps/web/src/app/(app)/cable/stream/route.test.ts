@@ -2,14 +2,14 @@ import { createTelemetry, memorySink } from "@team-31/telemetry";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getSession } from "../../../../lib/auth";
-import { getServiceToken } from "../../../../lib/broker";
+import { signServiceToken } from "../../../../lib/broker";
 import { GET } from "./route";
 
 vi.mock("../../../../lib/auth", () => ({ getSession: vi.fn() }));
 vi.mock("../../../../lib/broker", () => ({
   brokerUrl: () => "https://broker.example.test",
   brokerFetch: () => (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),
-  getServiceToken: vi.fn(),
+  signServiceToken: vi.fn(),
 }));
 
 // The web singleton (lib/telemetry) reads this holder: tests write to memory, never to a database.
@@ -36,7 +36,7 @@ const streamUrl = "https://web.example.test/cable/stream";
 
 function session(userId: string) {
   vi.mocked(getSession).mockResolvedValue({ user: { id: userId } } as NonNullable<Awaited<ReturnType<typeof getSession>>>);
-  vi.mocked(getServiceToken).mockResolvedValue("server-jwt");
+  vi.mocked(signServiceToken).mockResolvedValue("server-jwt");
 }
 
 function frames(...chunks: string[]) {
@@ -67,7 +67,7 @@ describe("GET /cable/stream", () => {
     vi.stubGlobal("fetch", fetch);
 
     expect((await GET(new Request(streamUrl))).status).toBe(401);
-    expect(getServiceToken).not.toHaveBeenCalled();
+    expect(signServiceToken).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -85,7 +85,7 @@ describe("GET /cable/stream", () => {
 
     const request = new Request(`${streamUrl}?userId=bob`, { headers: { Authorization: "Bearer browser-token" } });
     const response = await GET(request);
-    expect(getServiceToken).toHaveBeenCalledWith({ userId: "ana" });
+    expect(signServiceToken).toHaveBeenCalledWith({ userId: "ana" });
     expect(fetch).toHaveBeenCalledWith(new URL("https://broker.example.test/v1/owner/stream"), {
       headers: { Accept: "text/event-stream", Authorization: "Bearer server-jwt" },
       cache: "no-store",

@@ -11,6 +11,10 @@
     "./hono": {
       "types": "./src/hono.ts",
       "default": "./dist/hono.js"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./dist/types.js"
     }
   },
   "scripts": {

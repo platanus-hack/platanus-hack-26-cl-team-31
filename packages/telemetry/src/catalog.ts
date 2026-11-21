@@ -91,6 +91,18 @@ export const catalog = [
   }),
 
   defineEvent({
+    name: "whatsapp.link", kind: "auth", description: "Estado del vínculo de WhatsApp, sin números ni códigos.",
+    attrs: { action: z.enum(["started", "detected", "invalid_code", "confirmed", "unlinked"]) },
+  }),
+  defineEvent({
+    name: "whatsapp.request", kind: "tool", description: "Solicitud de Nexo creada o consultada por WhatsApp.",
+    attrs: { action: z.enum(["ask", "status"]), decision: code(), tool: code() },
+  }),
+  defineEvent({
+    name: "whatsapp.send", kind: "http", description: "Envío de una respuesta por Kapso, sin el contenido ni el destinatario.",
+    attrs: {},
+  }),
+  defineEvent({
     name: "web.invite.progress",
     kind: "lifecycle",
     description: "Paso observado en el alta por invitación de Nexo.",
@@ -150,6 +162,12 @@ export const catalog = [
   defineEvent({ name: "broker.grant.revoked", kind: "policy", description: "El dueño revocó un permiso.", attrs: { grantId: id() } }),
   defineEvent({ name: "broker.contact.connected", kind: "policy", description: "Dos titulares quedaron conectados al aceptar una invitación.", attrs: {} }),
   defineEvent({ name: "broker.contact.removed", kind: "policy", description: "Un titular terminó una conexión en ambos sentidos.", attrs: {} }),
+  defineEvent({
+    name: "broker.circle.changed",
+    kind: "policy",
+    description: "Cambió un círculo o su membresía. Sin direcciones: solo el id del círculo y la acción.",
+    attrs: { circleId: id(), action: z.enum(["created", "deleted", "invited", "joined", "removed"]) },
+  }),
 
   defineEvent({
     name: "wake.attempt",
@@ -158,6 +176,8 @@ export const catalog = [
     attrs: { kind: code(), attempt: int(), ok: bool(), httpStatus: int(), code: code() },
   }),
   defineEvent({ name: "wake.exhausted", kind: "wake", level: "warn", description: "Se agotaron los intentos de aviso.", attrs: { kind: code(), attempts: int() } }),
+  defineEvent({ name: "wake.lease_recovered", kind: "wake", level: "warn", description: "El worker retomó un aviso cuya concesión venció.", attrs: { attempt: int() } }),
+  defineEvent({ name: "wake.callback_verification", kind: "wake", description: "Resultado de la verificación de un callback MCP.", attrs: { ok: bool(), reason: code() } }),
 
   defineEvent({
     name: "demo.contact.seeded",

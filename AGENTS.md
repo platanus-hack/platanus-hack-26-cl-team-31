@@ -21,16 +21,19 @@ Las guías viven en `docs/`. [docs/poc](docs/poc/README.md) conserva el prototip
 
 ## Modelo de producto
 
-Un titular pregunta al agente de otro titular. El broker deja pasar la pregunta solo si existe un grant y devuelve los campos que ese grant permite.
+Un titular pregunta al agente de otro titular. El broker autoriza la pregunta y filtra los campos de la respuesta con los permisos del destinatario.
 
 ### Permisos
 
-El grant es el único modelo de permisos. Un grant dice que un titular deja a una dirección Nexo usar una tool y recibir ciertos campos de su respuesta. Sin un grant vivo, el broker deniega. Todo lo demás se construye creando y revocando grants.
+Un grant permite a una dirección Nexo usar una tool y recibir ciertos campos de su respuesta. Los permisos de un círculo compartido se suman a los grants directos.
 
 - El tipo es `Grant` (`packages/protocol/src/grants.ts`) y se guarda en `nexo.grants`. Un titular tiene un solo grant vivo por dirección y tool.
 - El titular los administra con `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`). Web los muestra por contacto en `/contacts`.
 - Un permiso nuevo es una tool o un campo en `packages/protocol/src/tools.ts`. El grant ya lo cubre.
 - Los grants no se componen. Que Bob le dé un grant a Ana y Ana a Carla no le da a Carla nada de Bob.
+- La política base es lo que comparten los miembros de un círculo: `availability` con `available` y `freeSlots`, e `interest_check` con `matches`. Vive en `basePolicy` (`packages/broker/src/core/broker.ts`).
+- Un círculo es un conjunto con nombre (`Circle`, `/v1/owner/circles`). Solo quien lo creó invita, saca a otros y lo elimina, y cada invitado acepta antes de entrar. Mientras dos titulares estén en el mismo círculo se dan la política base. Web los administra en `/circles`.
+- Los permisos de círculo se calculan al preguntar, en `sharedFields`, y no se guardan como grants. Salir borra la membresía y cierra las solicitudes pendientes que quedan sin permiso. Si ambos siguen en otro círculo, o existe un grant, el acceso se mantiene.
 
 Pendiente, cada uno en su PR:
 
@@ -39,16 +42,16 @@ Pendiente, cada uno en su PR:
 - Pasar `memberships.can_ask` y `can_share` de `apps/server` a grants y retirar el directorio con `interests.audience`.
 - `demo_profiles.interest_readers` solo alimenta el seed de `apps/demo`, que la convierte en grants.
 
+### Contactos
+
+- **Categoría.** El titular da permisos por categoría de información. Cada categoría fija en el código su tool y sus campos: Disponibilidad (`availability`: `available`), Horarios libres (`availability`: `available`, `freeSlots`), Intereses (`interest_check`: `matches`) y Preguntas abiertas (`question`: `answer`).
+- **Preguntas abiertas.** El broker no lee el texto y el agente del titular decide qué contesta. Quedan fuera de los permisos predeterminados.
+- **Básico.** Al conectar vienen marcadas Disponibilidad e Intereses.
+- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro (el que invita al enviar, el invitado al aceptar; lo básico viene marcado) y puede cambiarlo después sin avisar. Solo el titular acepta, desde la App Nexo; su agente responde `needs_owner`. Dejar de ser contactos borra la conexión y sus grants en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeFriend` del `OwnerPort`) y las categorías en `packages/protocol/src/sharing.ts`.
+
 ### Modelo decidido, por construir
 
-Decidido el 2026-11-21. Lo que sigue todavía no existe en el código; quien lo construya usa estos términos y estas reglas.
-
-- **Categoría.** El titular da permisos por categoría de información y nunca ve tools ni campos. Cada categoría fija en el código su tool y sus campos: Disponibilidad (`availability`: `available`), Horarios libres (`availability`: `available`, `freeSlots`), Intereses (`interest_check`: `matches`) y Preguntas abiertas (`question`: `answer`).
-- **Preguntas abiertas no tiene límite de tema.** El broker no lee el texto y el agente del titular decide qué contesta. Por eso queda fuera de lo básico.
-- **Básico.** Las categorías que se dan por defecto: Disponibilidad e Intereses.
-- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro (el que invita al enviar, el invitado al aceptar; lo básico viene marcado) y puede cambiarlo después sin avisar. Solo el titular acepta, desde la App Nexo; su agente responde `needs_owner`. Dejar de ser contactos borra la conexión y los permisos en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeFriend` del `OwnerPort`) y las categorías en `packages/protocol/src/sharing.ts`.
-- **Grupo.** Un conjunto con nombre que crea un titular. Solo su creador invita y saca miembros, y cada invitado acepta antes de entrar. Cada miembro le da lo básico a los demás.
-- **Los permisos de grupo se calculan, no se guardan.** Bob puede preguntarle algo a Ana si ella le dio ese permiso, o si comparten un grupo y la categoría es básica. Salir de un grupo borra la membresía; si siguen juntos en otro, lo básico se mantiene.
+- **Política por círculo.** Hoy todos los círculos usan la política base. Cuando haga falta otra, se guarda en el círculo.
 - **Perfil.** Nombre y dirección Nexo de cada titular, visibles para todo usuario con sesión.
 
 ### Vocabulario
@@ -63,10 +66,10 @@ Usa un término por concepto, en el código y en los textos.
 | Solicitud | `AskInput`, `requestId` | Pregunta de un titular a otro con una tool. Termina en un `FinalOutcome`. |
 | Tool | `ToolName` | Operación que se puede pedir: `availability`, `question`, `interest_check`. `profile` está en retiro. |
 | Grant | `Grant`, `GrantInput` | Permiso de un titular a una dirección: una tool y los campos de respuesta que entrega. En la interfaz se llama «permiso». |
-| Categoría | por construir | Tipo de información sobre el que responde un agente. Fija una tool y sus campos. |
-| Básico | por construir | Categorías que reciben por defecto un contacto y los miembros de un grupo. |
-| Contacto | por construir | Persona a la que un titular le dio lo básico. |
-| Grupo | por construir | Conjunto de titulares, con un creador, que se dan lo básico entre sí. |
+| Categoría | `Sharing` | Tipo de información sobre el que responde un agente. Fija una tool y sus campos. |
+| Política base | `basePolicy` | Tools y campos que se dan los miembros de un círculo. |
+| Contacto | `contacts`, tool `connect` | Titular con el que otro aceptó conectarse. Ambos eligen qué categorías se dan como grants. |
+| Círculo | `Circle` | Conjunto de titulares con un creador. Sus miembros se dan la política base mientras estén dentro. «Grupo» en textos anteriores. |
 | Perfil | por construir | Nombre y dirección Nexo de un titular, visibles para los demás usuarios. |
 | Aviso | `WakeTarget`, `WakeNotice` | Notificación al agente del destinatario de que tiene una solicitud. |
 | Bandeja | `InboxItem` | Solicitudes pendientes que lee el agente del destinatario. |
@@ -76,9 +79,9 @@ Usa un término por concepto, en el código y en los textos.
 Todo cambio en `packages/broker`, `packages/protocol` o `apps/mcp` conserva estas seis. Sus pruebas viven en `packages/broker/src/core/broker.test.ts`; si cambias una, cambia su prueba en el mismo PR.
 
 1. La identidad del remitente sale del token. `AskInput` carece de campo de remitente.
-2. Sin grant, la denegación llega firmada y sin motivo, y la solicitud nunca despierta al destinatario.
+2. Cuando la política deniega una pregunta, la denegación llega firmada y sin motivo, y la solicitud nunca despierta al destinatario.
 3. La respuesta pasa por `filterResult` y sale solo con los campos permitidos.
-4. Antes de entregar, `stillAuthorized` comprueba que el grant siga vivo y cubra los campos. Revocar a mitad de camino impide la entrega.
+4. Antes de entregar, `stillAuthorized` comprueba que el permiso vigente cubra los campos. Si esos campos dejan de estar autorizados, la entrega se bloquea.
 5. Cada solicitud termina en un solo estado final. Una segunda respuesta recibe `conflict`.
 6. El aviso lleva solo `requestId` y `event`. El contenido se lee de la bandeja con la identidad del destinatario.
 
@@ -158,6 +161,11 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 - `pnpm env:init` genera `MCP_RESOURCE_URL` con el puerto del worktree, y `AUTH_ISSUER` y `AUTH_JWKS_URL` con el puerto web. Ajusta los valores en `.env.local` si cambias el origen público.
 - Usa `pnpm dev --filter @team-31/mcp` para iniciar solo MCP. Escucha en loopback por defecto y expone `GET /healthz`.
 - La [guía del MCP](apps/mcp/README.md) cubre stdio de desarrollo y el perfil Compose `nexo`.
+
+## WhatsApp Nexo
+
+- Web recibe los avisos firmados de Kapso en `/api/kapso/webhook`, en el puerto web existente. Configura `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WHATSAPP_NUMBER` y `KAPSO_WEBHOOK_SECRET` solo en web; aplica `pnpm nexo:auth:migrate` en un worktree existente.
+- Vincula el teléfono desde `/agents/connect/whatsapp`. La identidad sigue siendo el titular de Better Auth y el broker comparte las solicitudes con MCP. Setup y prueba: [docs/whatsapp.md](docs/whatsapp.md).
 
 ## Broker Nexo
 

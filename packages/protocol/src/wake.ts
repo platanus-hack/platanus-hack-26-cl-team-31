@@ -58,10 +58,13 @@ export type WakeAttempt = {
   agentId?: string;
 };
 
+export const WakeVerificationReason = z.enum(["challenge_failed", "timeout", "https_required", "blocked_address"]);
+export type WakeVerificationReason = z.infer<typeof WakeVerificationReason>;
+
 export interface Waker {
   wake(target: WakeTarget, notice: WakeNotice, attempt?: WakeAttempt): Promise<WakeResult>;
   verifyCallback(target: Extract<WakeTarget, { kind: "mcp_events" }>): Promise<
     | { ok: true }
-    | { ok: false; reason: "challenge_failed" | "timeout" | "https_required" | "blocked_address" }
+    | { ok: false; reason: WakeVerificationReason }
   >;
 }

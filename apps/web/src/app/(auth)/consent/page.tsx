@@ -21,8 +21,8 @@ export default async function ConsentPage({ searchParams }: PageProps<"/consent"
   if (!request) {
     return (
       <>
-        <h1 className="text-2xl font-semibold">El enlace de autorización venció o no es válido</h1>
-        <p className="mt-3 text-[#525a4c]">Vuelve a iniciar la conexión desde tu agente.</p>
+        <h1 className="text-[22px] leading-tight font-medium tracking-[-0.02em]">El enlace de autorización venció o no es válido</h1>
+        <p className="mt-3 text-muted">Vuelve a iniciar la conexión desde tu agente.</p>
       </>
     );
   }
@@ -41,19 +41,19 @@ export default async function ConsentPage({ searchParams }: PageProps<"/consent"
 
   return (
     <>
-      <h1 className="text-3xl font-semibold tracking-tight [overflow-wrap:anywhere]">
+      <h1 className="text-[28px] leading-[1.15] font-medium tracking-[-0.025em] [overflow-wrap:anywhere]">
         Autorizar a {client.client_name?.trim() || "Agente sin nombre"}
       </h1>
-      <p className="mt-3 text-[#525a4c] [overflow-wrap:anywhere]">
+      <p className="mt-3 text-muted [overflow-wrap:anywhere]">
         {address ?? "Tu cuenta aún no tiene una dirección Nexo."}
       </p>
-      <h2 className="mt-7 text-sm font-semibold">Permisos solicitados</h2>
-      <ul className="mt-2 list-disc space-y-2 rounded-xl bg-[#eef1e8] py-4 pl-9 pr-4 text-sm text-[#323e2c]">
+      <h2 className="mt-7 text-sm font-medium">Permisos solicitados</h2>
+      <ul className="mt-2 list-disc space-y-2 rounded-xl stage py-4 pl-9 pr-4 text-sm text-ink">
         {request.scopes.map((scope) => (
           <li key={scope}>{Object.hasOwn(scopeDescriptions, scope) ? scopeDescriptions[scope] : scope}</li>
         ))}
       </ul>
-      <p className="mt-5 text-sm leading-relaxed text-[#525a4c]">
+      <p className="mt-5 text-sm leading-relaxed text-muted">
         Este agente va a poder responder solicitudes según las reglas que tú configuras en la App Nexo. Lo puedes desconectar cuando quieras.
       </p>
       <ConsentButtons />

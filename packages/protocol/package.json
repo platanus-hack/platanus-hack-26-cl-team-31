@@ -11,6 +11,10 @@
     "./http": {
       "types": "./src/http.ts",
       "default": "./dist/http.js"
+    },
+    "./fixtures": {
+      "types": "./src/fixtures.ts",
+      "default": "./dist/fixtures.js"
     }
   },
   "scripts": {

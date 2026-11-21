@@ -40,6 +40,7 @@ export function createBrokerTelemetry({ sink = sinkFromEnv(), version = process.
     http,
     worker,
     shared: {
+      error: (operation, error, fields) => current().error(operation, error, fields),
       emit: (name, fields) => current().emit(name, fields),
       span: (name, fields, fn) => current().span(name, fields, fn),
     },

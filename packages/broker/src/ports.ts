@@ -3,6 +3,7 @@ import type {
   ActivityItem,
   AdminActor,
   Capability,
+  Circle,
   Grant,
   GrantInput,
   Address,
@@ -44,6 +45,8 @@ export interface OwnerPort {
   revokeGrant(o: Owner, grantId: string): Promise<void>;
   pending(o: Owner): Promise<OwnerPendingItem[]>;
   activity(o: Owner, limit?: number): Promise<ActivityItem[]>;
+  ask(o: Owner, input: AskInput): Promise<RequesterView>;
+  status(o: Owner, requestId: string): Promise<RequesterView>;
   decide(o: Owner, requestId: string, decision: OwnerDecision): Promise<void>;
   agents(o: Owner): Promise<AgentConnection[]>;
   setWake(o: Owner, agentId: string, target: WakeTarget): Promise<void>;
@@ -53,6 +56,16 @@ export interface OwnerPort {
   contacts(o: Owner): Promise<ContactsView>;
   setSharing(o: Owner, contact: Address, sharing: Sharing): Promise<void>;
   answerInvitation(o: Owner, requestId: string, answer: InvitationAnswer): Promise<void>;
+  // Circles the owner joined or is invited to.
+  circles(o: Owner): Promise<Circle[]>;
+  // The creator joins at once. Only the creator invites, removes others and deletes.
+  createCircle(o: Owner, name: string): Promise<Circle>;
+  deleteCircle(o: Owner, circleId: string): Promise<void>;
+  inviteToCircle(o: Owner, circleId: string, address: Address): Promise<void>;
+  // Accepts the owner's pending invitation.
+  joinCircle(o: Owner, circleId: string): Promise<void>;
+  // A member leaves with their own address. The creator removes any other address.
+  removeFromCircle(o: Owner, circleId: string, address: Address): Promise<void>;
   removeFriend(o: Owner, friend: Address): Promise<void>;
 }
 

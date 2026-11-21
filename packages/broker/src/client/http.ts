@@ -29,12 +29,7 @@ export type ClientOptions<Identity> = {
 
 const timeoutMs = 10_000;
 const retryStatuses = new Set([502, 503, 504]);
-const wakeVerificationReasons = new Set([
-  "challenge_failed",
-  "timeout",
-  "https_required",
-  "blocked_address",
-]);
+const errorIdFormat = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
 
 const errorMessages = {
   unauthorized: "No se pudo autenticar la llamada al broker.",
@@ -91,19 +86,16 @@ function encodeBody(schema: Schema<unknown>, input: unknown): string {
   }
 }
 
-function responseError(route: HttpRoute, input: unknown): BrokerError {
+function responseError(route: HttpRoute, input: unknown, errorId?: string): BrokerError {
   const parsed = ErrorBody.safeParse(input);
-  if (!parsed.success) return new BrokerError("internal", errorMessages.internal);
+  const details = { errorId, stage: "response" } as const;
+  if (!parsed.success) return new BrokerError("internal", errorMessages.internal, details);
 
-  const { code, message } = parsed.data.error;
-  if (
-    route === routes.agentConnectWake &&
-    code === "invalid_input" &&
-    wakeVerificationReasons.has(message)
-  ) {
-    return new BrokerError(code, message);
+  const { code, reason } = parsed.data.error;
+  if (route === routes.agentConnectWake && code === "invalid_input" && reason) {
+    return new BrokerError(code, reason, { ...details, reason });
   }
-  return new BrokerError(code, errorMessages[code]);
+  return new BrokerError(code, errorMessages[code], details);
 }
 
 export function createHttpClient<Identity>(
@@ -126,12 +118,12 @@ export function createHttpClient<Identity>(
       url = buildUrl(baseUrl, route, input);
     } catch (error) {
       if (error instanceof BrokerError) throw error;
-      throw new BrokerError("internal", errorMessages.internal);
+      throw new BrokerError("internal", errorMessages.internal, { stage: "url" });
     }
 
     const body = route.body ? encodeBody(route.body, input.body) : undefined;
     let response: Response;
-    let payload: unknown;
+    let stage: "signing" | "transport" = "transport";
     try {
       const signal = AbortSignal.timeout(timeoutMs);
       const deadline = new Promise<never>((_, reject) => {
@@ -139,9 +131,11 @@ export function createHttpClient<Identity>(
       });
 
       const send = async () => {
+        stage = "signing";
         signal.throwIfAborted();
         const serviceToken = Promise.resolve().then(() => getServiceToken(caller));
         const token = await Promise.race([serviceToken, deadline]);
+        stage = "transport";
         return sendHttp(url, {
           method: route.method,
           headers: {
@@ -160,18 +154,26 @@ export function createHttpClient<Identity>(
         await response.body?.cancel();
         response = await send();
       }
-      payload = response.status === 204 ? undefined : await response.json();
     } catch {
-      throw new BrokerError("internal", errorMessages.internal);
+      throw new BrokerError("internal", errorMessages.internal, { stage });
     }
 
-    if (!response.ok) throw responseError(route, payload);
+    const header = response.headers.get("X-Error-Id");
+    const errorId = header && errorIdFormat.test(header) ? header : undefined;
+    let payload: unknown;
+    try {
+      payload = response.status === 204 ? undefined : await response.json();
+    } catch {
+      throw new BrokerError("internal", errorMessages.internal, { errorId, stage: "decoding" });
+    }
+
+    if (!response.ok) throw responseError(route, payload, errorId);
     if (route.status !== undefined && response.status !== route.status) {
-      throw new BrokerError("internal", errorMessages.internal);
+      throw new BrokerError("internal", errorMessages.internal, { errorId, stage: "response" });
     }
 
     const parsed = route.response.safeParse(payload);
-    if (!parsed.success) throw new BrokerError("internal", errorMessages.internal);
+    if (!parsed.success) throw new BrokerError("internal", errorMessages.internal, { errorId, stage: "response" });
     return parsed.data;
   }
 

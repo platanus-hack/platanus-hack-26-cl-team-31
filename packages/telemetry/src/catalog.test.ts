@@ -27,9 +27,11 @@ describe("catálogo", () => {
       "mcp.tool.call", "broker.policy.evaluated", "broker.request.created", "broker.request.status_changed",
       "broker.request.closed", "broker.reply.rejected", "broker.owner.decided", "broker.grant.set", "broker.grant.revoked",
       "broker.contact.connected", "broker.contact.removed",
-      "wake.attempt", "wake.exhausted", "coordination.tool.call", "demo.contact.seeded", "error",
+      "broker.circle.changed",
+      "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
       "admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created",
       "admin.token.revoked", "admin.mcp.call", "telemetry.invalid_event",
+      "whatsapp.link", "whatsapp.request", "whatsapp.send",
     ];
     expect(catalog.map((event) => event.name).sort()).toEqual(expected.sort());
     expect(new Set(catalog.map((event) => event.name)).size).toBe(catalog.length);
