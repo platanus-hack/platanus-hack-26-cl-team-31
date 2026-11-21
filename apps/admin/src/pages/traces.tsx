@@ -1,9 +1,6 @@
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
 import { ArrowRightIcon, BugIcon, InboxIcon, SearchIcon } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router"
-import type { Trace } from "@shared/contract"
-import { cn } from "cn"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,11 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { CopyButton, CopyId } from "@/components/copy-id"
 import {
   QueryError,
@@ -46,179 +38,11 @@ import {
 import { RelativeTime } from "@/components/relative-time"
 import { StatusDot } from "@/components/status"
 import { AttrChips } from "@/components/timeline"
-import { api } from "@/lib/api"
+import type { Span } from "@/features/traces/model"
+import { useRecentTraces, useTraceLayout } from "@/features/traces/queries"
+import { Waterfall } from "@/features/traces/waterfall"
 import { formatAbsolute, formatDuration } from "@/lib/format"
-import { traceQuery } from "@/lib/queries"
 import { serviceColor, serviceLabel } from "@/lib/status"
-
-type Span = Trace["spans"][number]
-type Row = Span & { depth: number; start: number; end: number }
-
-function layout(spans: Span[]): { rows: Row[]; t0: number; total: number } {
-  const byParent = new Map<string | null, Span[]>()
-  const ids = new Set(spans.map((s) => s.spanId))
-  for (const span of spans) {
-    // Un padre que no está en la traza (otro servicio sin instrumentar) se trata como raíz.
-    const parent =
-      span.parentSpanId && ids.has(span.parentSpanId) ? span.parentSpanId : null
-    const siblings = byParent.get(parent)
-    if (siblings) siblings.push(span)
-    else byParent.set(parent, [span])
-  }
-  const rows: Row[] = []
-  const visit = (parent: string | null, depth: number) => {
-    const children = (byParent.get(parent) ?? []).sort((a, b) =>
-      a.startAt.localeCompare(b.startAt)
-    )
-    for (const child of children) {
-      const start = Date.parse(child.startAt)
-      rows.push({
-        ...child,
-        depth,
-        start,
-        end: start + (child.durationMs ?? 0),
-      })
-      visit(child.spanId, depth + 1)
-    }
-  }
-  visit(null, 0)
-  const t0 = Math.min(...rows.map((r) => r.start))
-  const total = Math.max(1, Math.max(...rows.map((r) => r.end)) - t0)
-  return { rows, t0, total }
-}
-
-const isError = (span: Span) =>
-  span.level === "error" || span.status === "error" || span.errorId !== null
-
-function Waterfall({
-  trace,
-  selected,
-  onSelect,
-}: {
-  trace: Trace
-  selected: string | null
-  onSelect: (id: string) => void
-}) {
-  const { rows, t0, total } = React.useMemo(() => layout(trace.spans), [trace])
-  const ticks = [0, 0.25, 0.5, 0.75, 1]
-  return (
-    <div className="min-w-0 overflow-x-auto">
-      <div className="sm:min-w-[640px]">
-        <div className="grid grid-cols-[9rem_1fr] border-b text-[11px] text-muted-foreground sm:grid-cols-[minmax(12rem,34%)_1fr]">
-          <div className="px-3 py-1.5">Span</div>
-          <div className="relative h-7">
-            {ticks.map((t) => (
-              <span
-                key={t}
-                className={cn(
-                  "absolute top-1.5 font-mono whitespace-nowrap tabular-nums",
-                  t === 1
-                    ? "-translate-x-full pr-2"
-                    : t > 0 && "-translate-x-1/2",
-                  (t === 0.25 || t === 0.75) && "hidden sm:inline"
-                )}
-                style={{ left: `${t * 100}%` }}
-              >
-                {t === 0 ? "0" : formatDuration(total * t)}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="relative">
-          <div className="pointer-events-none absolute inset-y-0 right-0 left-[9rem] grid grid-cols-4 sm:left-[34%]">
-            {ticks.slice(1).map((t) => (
-              <span
-                key={t}
-                className="border-r border-dashed border-border/60 last:border-r-0"
-              />
-            ))}
-          </div>
-          {rows.map((row) => {
-            const left = ((row.start - t0) / total) * 100
-            const width = Math.max(0.4, ((row.end - row.start) / total) * 100)
-            const error = isError(row)
-            return (
-              <button
-                key={row.spanId}
-                type="button"
-                onClick={() => onSelect(row.spanId)}
-                className={cn(
-                  "grid w-full grid-cols-[9rem_1fr] items-center text-left text-xs outline-none hover:bg-muted/50 focus-visible:bg-muted/60 sm:grid-cols-[minmax(12rem,34%)_1fr]",
-                  selected === row.spanId && "bg-muted"
-                )}
-              >
-                <span
-                  className="flex min-w-0 items-center gap-1.5 py-1.5 pr-2"
-                  style={{ paddingLeft: `${0.75 + row.depth * 0.7}rem` }}
-                >
-                  <span
-                    className="size-2 shrink-0 rounded-[2px]"
-                    style={{ background: serviceColor[row.service] }}
-                  />
-                  <span className="hidden shrink-0 font-mono text-[11px] text-muted-foreground sm:inline">
-                    {serviceLabel[row.service]}
-                  </span>
-                  <span
-                    className={cn(
-                      "truncate font-mono",
-                      error && "text-status-error"
-                    )}
-                  >
-                    {row.name}
-                  </span>
-                </span>
-                <span className="relative h-7">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        className={cn(
-                          "absolute top-1/2 h-3.5 -translate-y-1/2 rounded-[3px]",
-                          error && "ring-2 ring-status-error"
-                        )}
-                        style={{
-                          left: `${left}%`,
-                          width: `${width}%`,
-                          background: serviceColor[row.service],
-                        }}
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent className="flex flex-col gap-0.5 font-mono">
-                      <span>{row.name}</span>
-                      <span>
-                        {serviceLabel[row.service]} ·{" "}
-                        {formatDuration(row.durationMs)} · +
-                        {formatDuration(row.start - t0)}
-                      </span>
-                      {row.status ? <span>status {row.status}</span> : null}
-                    </TooltipContent>
-                  </Tooltip>
-                  <span
-                    className={cn(
-                      "pointer-events-none absolute top-1/2 -translate-y-1/2 px-1.5 font-mono text-[11px] whitespace-nowrap",
-                      // Barras largas: la duración va dentro, al final de la barra.
-                      width > 25
-                        ? "font-medium text-background"
-                        : "text-muted-foreground"
-                    )}
-                    style={
-                      width > 25
-                        ? { right: `${100 - left - width}%` }
-                        : left + width > 85
-                          ? { right: `${100 - left}%` }
-                          : { left: `${left + width}%` }
-                    }
-                  >
-                    {formatDuration(row.durationMs)}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function SpanDetail({ span }: { span: Span }) {
   return (
@@ -297,21 +121,11 @@ function SpanDetail({ span }: { span: Span }) {
 
 export function TraceDetailPage() {
   const { id = "" } = useParams()
-  const query = useQuery(traceQuery(id))
+  const query = useTraceLayout(id)
   const [selected, setSelected] = React.useState<string | null>(null)
   const trace = query.data
-  const summary = React.useMemo(() => {
-    if (!trace || trace.spans.length === 0) return null
-    const { rows, total } = layout(trace.spans)
-    return {
-      total,
-      services: [...new Set(rows.map((r) => r.service))],
-      errors: rows.filter(isError).length,
-      requestId: rows.find((r) => r.requestId)?.requestId ?? null,
-      startAt: rows[0]!.startAt,
-    }
-  }, [trace])
-  const selectedSpan = trace?.spans.find((s) => s.spanId === selected) ?? null
+  const summary = trace?.summary
+  const selectedSpan = trace?.rows.find((span) => span.spanId === selected)
 
   return (
     <Page>
@@ -331,7 +145,7 @@ export function TraceDetailPage() {
               <span className="font-mono text-foreground">
                 {formatDuration(summary.total)}
               </span>
-              ·<span>{trace?.spans.length} spans</span>·
+              ·<span>{summary.spanCount} spans</span>·
               <span className="flex items-center gap-1.5">
                 {summary.services.map((s) => (
                   <Badge
@@ -376,7 +190,7 @@ export function TraceDetailPage() {
             description="Spans de todos los servicios, alineados en el tiempo. Haz clic en uno para ver sus atributos."
           >
             <Waterfall
-              trace={trace}
+              layout={trace}
               selected={selected}
               onSelect={setSelected}
             />
@@ -391,49 +205,7 @@ export function TraceDetailPage() {
 export function TracesPage() {
   const navigate = useNavigate()
   const [value, setValue] = React.useState("")
-  const recent = useQuery({
-    queryKey: ["events", { recentTraces: true }],
-    queryFn: ({ signal }) =>
-      api("events", { query: { limit: 300 } }, { signal }),
-    staleTime: 15_000,
-  })
-  const traces = React.useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        traceId: string
-        at: string
-        services: Set<string>
-        events: number
-        errors: number
-        requestId: string | null
-        name: string
-      }
-    >()
-    for (const e of recent.data?.items ?? []) {
-      if (!e.traceId) continue
-      const entry = map.get(e.traceId) ?? {
-        traceId: e.traceId,
-        at: e.at,
-        services: new Set(),
-        events: 0,
-        errors: 0,
-        requestId: e.requestId,
-        name: e.name,
-      }
-      entry.services.add(e.service)
-      entry.events += 1
-      if (e.level === "error" || e.errorId) entry.errors += 1
-      if (e.at < entry.at) {
-        entry.at = e.at
-        entry.name = e.name
-      }
-      map.set(e.traceId, entry)
-    }
-    return [...map.values()]
-      .sort((a, b) => b.at.localeCompare(a.at))
-      .slice(0, 25)
-  }, [recent.data])
+  const recent = useRecentTraces()
 
   return (
     <Page>
@@ -506,7 +278,7 @@ export function TracesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {traces.map((t) => (
+              {recent.data.map((t) => (
                 <TableRow
                   key={t.traceId}
                   className="cursor-pointer"
@@ -540,11 +312,10 @@ export function TracesPage() {
                           <span
                             className="size-1.5 rounded-[1px]"
                             style={{
-                              background:
-                                serviceColor[s as keyof typeof serviceColor],
+                              background: serviceColor[s],
                             }}
                           />
-                          {serviceLabel[s as keyof typeof serviceLabel]}
+                          {serviceLabel[s]}
                         </Badge>
                       ))}
                     </span>
