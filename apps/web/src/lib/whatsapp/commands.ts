@@ -25,12 +25,13 @@ async function resolveRecipient(broker: WhatsAppBroker, owner: Owner, text: stri
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-function summarize(view: RequesterView): string {
+export function summarize(view: RequesterView): string {
   const reference = `\n\nSolicitud: ${view.requestId}`;
   if (view.decision === "deny") return "No se pudo compartir una respuesta a esta solicitud." + reference;
   if (view.decision === "pending") {
-    const waiting = view.waitingFor === "owner" ? "de aprobación" : "de respuesta";
-    return `Solicitud a ${view.to} pendiente ${waiting}. Para consultar la respuesta, envía:\n\nestado ${view.requestId}`;
+    return view.waitingFor === "owner"
+      ? `Le pregunté a ${view.to}. Espera su aprobación; te aviso apenas responda.`
+      : `Le pregunté a ${view.to}. Te aviso apenas responda.`;
   }
   if (view.decision === "unanswered") {
     return { no_data: "No hay datos para responder.", expired: "La solicitud venció.",
@@ -75,7 +76,7 @@ export async function runCommand(
   async function ask(to: string, question: string, category: Category) {
     const input = AskInput.safeParse({ to, tool: "question", args: { text: question, category } });
     if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
-    const view = await broker.ask(owner, input.data);
+    const view = await broker.ask(owner, input.data, "whatsapp");
     onResult("ask", view);
     return summarize(view);
   }

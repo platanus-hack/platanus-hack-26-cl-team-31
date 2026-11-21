@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { POST } from "./route";
 
 const { store, broker } = vi.hoisted(() => ({
-  store: { claim: vi.fn(), detect: vi.fn(), whileLinked: vi.fn() },
+  store: { claim: vi.fn(), detect: vi.fn(), whileLinked: vi.fn(), pending: vi.fn(), clearPending: vi.fn() },
   broker: { ask: vi.fn(), status: vi.fn(), activity: vi.fn(), contacts: vi.fn() },
 }));
 vi.mock("next/server", () => ({ after: vi.fn() }));
@@ -39,9 +39,12 @@ beforeEach(() => {
   vi.stubEnv("KAPSO_WHATSAPP_NUMBER", "+15555550123");
   vi.stubEnv("BETTER_AUTH_URL", "https://sideband.test");
   vi.stubEnv("ANTHROPIC_API_KEY", undefined);
+  // A local .env.local may point the SDK at a proxy; these tests intercept the public API.
+  vi.stubEnv("ANTHROPIC_BASE_URL", undefined);
   vi.stubGlobal("fetch", send.mockImplementation(() => Promise.resolve(new Response(null, { status: 200 }))));
   linkedUser = undefined;
   store.claim.mockResolvedValue(true);
+  store.pending.mockResolvedValue([]);
   store.whileLinked.mockImplementation((_phone, _timestamp, callback) => callback(linkedUser));
 });
 
@@ -84,10 +87,11 @@ it("crea y consulta como el titular vinculado; desvinculado no puede consultar",
     await (vi.mocked(after).mock.calls.at(-1)?.[0] as () => Promise<void>)();
     return JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body;
   }
-  expect(await message("Pregunta a carla@sideband.app si puede jugar")).toContain(requestId);
+  expect(await message("Pregunta a carla@sideband.app si puede jugar"))
+    .toBe("Le pregunté a carla@sideband.app. Espera su aprobación; te aviso apenas responda.");
   expect(broker.ask).toHaveBeenCalledWith({ userId: "user-a" }, {
     to: "carla@sideband.app", tool: "question", args: { text: "si puede jugar", category: "general" },
-  });
+  }, "whatsapp");
   expect(await message("¿ya respondió?")).toContain("Sí, puedo.");
   expect(broker.status).toHaveBeenCalledWith({ userId: "user-a" }, requestId);
   broker.status.mockResolvedValue({ requestId, to: "carla@sideband.app", tool: "connect", decision: "allow", result: { accepted: true } });
@@ -95,6 +99,18 @@ it("crea y consulta como el titular vinculado; desvinculado no puede consultar",
   linkedUser = undefined;
   expect(await message("estado")).toContain("Vincula tu WhatsApp");
   expect(broker.status).toHaveBeenCalledTimes(2);
+});
+
+it("envía primero las respuestas que quedaron fuera de la ventana de 24 horas", async () => {
+  linkedUser = "user-a";
+  store.pending.mockResolvedValue([requestId]);
+  broker.status.mockResolvedValue({ requestId, to: "carla@sideband.app", tool: "question", final: true, decision: "allow", result: { answer: "Sí, puedo." } });
+  expect((await POST(inbound("contactos"))).status).toBe(200);
+  broker.contacts.mockResolvedValue({ contacts: [] });
+  await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
+  const texts = send.mock.calls.map(([, init]) => JSON.parse(init.body).text.body);
+  expect(texts).toEqual([expect.stringContaining("Sí, puedo."), expect.stringContaining("Aún no tienes contactos")]);
+  expect(store.clearPending).toHaveBeenCalledWith("user-a", requestId);
 });
 
 it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pregunta inventada", async () => {
@@ -120,8 +136,8 @@ it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pre
   expect((await POST(inbound(question))).status).toBe(200);
   await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
   expect(broker.contacts).toHaveBeenCalledWith({ userId: "user-a" });
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question, category: "availability" } });
-  expect(JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body).toContain("pendiente de respuesta");
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question, category: "availability" } }, "whatsapp");
+  expect(JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body).toBe(`Le pregunté a ${to}. Te aviso apenas responda.`);
 });
 
 it("no comparte con Claude los mensajes de números sin vínculo", async () => {

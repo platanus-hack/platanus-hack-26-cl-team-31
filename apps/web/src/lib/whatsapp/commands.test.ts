@@ -20,7 +20,7 @@ it("envía la pregunta original con una dirección explícita, aunque no use un 
   const { broker, report } = fixture();
   const text = "simon@sideband.app puede ir a tomar café en una hora?";
   await runCommand(broker, owner, text, report, async () => ({ action: "ask", recipient: to, category: "availability" }));
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } });
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } }, "whatsapp");
   expect(broker.contacts).not.toHaveBeenCalled();
 });
 
@@ -54,7 +54,7 @@ it("mantiene las preguntas explícitas sin Claude y los comandos de estado no us
   expect(interpret).not.toHaveBeenCalled();
   expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, {
     to, tool: "question", args: { text: "si puede ir a tomar café", category: "general" },
-  });
+  }, "whatsapp");
   expect(broker.status).toHaveBeenCalledOnce();
 });
 
@@ -64,7 +64,7 @@ it("clasifica preguntas explícitas sin dejar que el modelo cambie la dirección
   broker.ask.mockResolvedValue({ ...pending, decision: "deny", final: true });
   const result = await runCommand(broker, owner, `Pregunta a ${to} ${text}`, report,
     async () => ({ action: "ask", recipient: "otro@sideband.app", category: "availability" }));
-  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } });
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith(owner, { to, tool: "question", args: { text, category: "availability" } }, "whatsapp");
   expect(result).toContain("No se pudo compartir");
 });
 

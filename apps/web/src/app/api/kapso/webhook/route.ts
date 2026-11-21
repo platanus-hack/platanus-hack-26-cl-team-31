@@ -4,6 +4,7 @@ import { ownerClient } from "../../../../lib/broker";
 import { getTelemetry, observeRoute } from "../../../../lib/telemetry";
 import { claudeInterpreter } from "../../../../lib/whatsapp/claude";
 import { runCommand } from "../../../../lib/whatsapp/commands";
+import { noticeText } from "../../../../lib/whatsapp/delivery";
 import { config, inboundEvent, parseMessage, sendText, validSignature } from "../../../../lib/whatsapp/kapso";
 import { whatsappStore } from "../../../../lib/whatsapp/runtime";
 
@@ -62,6 +63,14 @@ export async function POST(request: Request) {
           await store.whileLinked(message.phone, message.timestamp, async (userId) => {
             if (!userId) return send(`Vincula tu WhatsApp desde Sideband: ${kapso.connectUrl}`);
             await telemetry.context({ userId }, async () => {
+              // Replies that missed the 24-hour window go out first, now that the owner wrote again.
+              for (const pendingId of await store.pending(userId)) {
+                const view = await ownerClient().status({ userId }, pendingId);
+                const text = noticeText(view);
+                if (text) await send(text, userId);
+                await store.clearPending(userId, pendingId);
+                telemetry.emit("whatsapp.delivery", { requestId: pendingId, attrs: { state: "flushed", decision: view.decision } });
+              }
               let requestId: string | undefined;
               let answer: string;
               try {

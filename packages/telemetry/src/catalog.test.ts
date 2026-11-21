@@ -31,7 +31,7 @@ describe("catálogo", () => {
       "wake.attempt", "wake.exhausted", "wake.lease_recovered", "wake.callback_verification", "coordination.tool.call", "demo.contact.seeded", "error",
       "admin.login", "admin.logout", "admin.reveal", "admin.action", "admin.token.created",
       "admin.token.revoked", "admin.mcp.call", "telemetry.invalid_event",
-      "whatsapp.link", "whatsapp.request", "whatsapp.send", "whatsapp.interpret",
+      "whatsapp.link", "whatsapp.request", "whatsapp.send", "whatsapp.delivery", "whatsapp.interpret",
     ];
     expect(catalog.map((event) => event.name).sort()).toEqual(expected.sort());
     expect(new Set(catalog.map((event) => event.name)).size).toBe(catalog.length);
