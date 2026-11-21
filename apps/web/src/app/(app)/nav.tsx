@@ -13,6 +13,7 @@ const groups = [
     label: "General",
     links: [
       { href: "/", label: "Inicio", icon: icon(<path d="M2.5 7 8 2.5 13.5 7v6.5h-11Z" />) },
+      { href: "/vault", label: "Mi bóveda", icon: icon(<><rect x="2" y="6" width="12" height="8" rx="2" /><path d="M5 6V4a3 3 0 0 1 6 0v2" /></>) },
       { href: "/activity", label: "Actividad", icon: icon(<path d="M1.5 8h3l2-5 3 10 2-5h3" />) },
       { href: "/cable", label: "El cable", icon: icon(<><circle cx="8" cy="8" r="2" /><path d="M3.5 3.5a6.4 6.4 0 0 0 0 9M12.5 3.5a6.4 6.4 0 0 1 0 9" /></>) },
     ],

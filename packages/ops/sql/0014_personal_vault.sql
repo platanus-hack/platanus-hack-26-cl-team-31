@@ -1,0 +1,12 @@
+CREATE FUNCTION ops.refresh_vault_view() RETURNS void LANGUAGE plpgsql
+SET search_path = pg_catalog, ops AS $$
+BEGIN
+  IF to_regclass('sideband.vault_permissions') IS NULL THEN RETURN; END IF;
+  CREATE OR REPLACE VIEW ops.v_vault_summary AS
+    SELECT c.owner_id AS user_id, count(*) AS categories,
+      (SELECT count(*) FROM sideband.vault_entries e WHERE e.owner_id = c.owner_id) AS entries,
+      (SELECT count(*) FROM sideband.vault_permissions p WHERE p.owner_id = c.owner_id) AS permissions
+    FROM sideband.vault_categories c GROUP BY c.owner_id;
+  PERFORM ops.apply_view_grants();
+END $$;
+REVOKE ALL ON FUNCTION ops.refresh_vault_view() FROM PUBLIC;

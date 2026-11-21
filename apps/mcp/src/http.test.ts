@@ -26,6 +26,7 @@ async function listen(server: Server) {
 function testPort(): AgentPort {
   return {
     capabilities: vi.fn(),
+    vaultCatalog: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
     ask: vi.fn(),
     inbox: vi.fn(),
     reply: vi.fn(),
@@ -149,6 +150,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
+    ["sideband_vault_catalog", true], ["sideband_vault_change", undefined], ["sideband_vault_query", true],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);

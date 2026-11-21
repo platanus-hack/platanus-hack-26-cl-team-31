@@ -16,6 +16,7 @@ import {
   contactTags,
   type TagPresets,
   ToolArgs,
+  VaultChange, VaultQuery,
   ToolResultSchemas,
   ToolName,
   LocalPart,
@@ -492,8 +493,47 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     record(tx, "broker.circle.changed", { userId, attrs: { circleId, action } });
   }
 
+  async function changeVault(tx: StoreTx, userId: string, input: VaultChange, agentId?: string) {
+    const parsed = VaultChange.safeParse(input);
+    if (!parsed.success) throw new BrokerError("invalid_input", "Revisa los datos de la categoría.");
+    if (!(await tx.getUser(userId))?.address) throw new BrokerError("invalid_input", "Primero elige tu dirección Sideband.");
+    const change = parsed.data;
+    const categoryId = change.action === "create" ? randomUUID() : change.categoryId;
+    if (!await tx.changeVault(userId, categoryId, change)) throw notFound();
+    record(tx, "broker.vault.changed", { userId, agentId, attrs: { action: change.action,
+      ...(change.action === "set_group" ? { group: change.group, allowed: change.allowed } : {}) } });
+    return { categoryId };
+  }
+
   return {
     agent: {
+      async vaultCatalog(p) {
+        requireScope(p, "sideband:vault", "agent.vaultCatalog");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          return { categories: (await tx.ownerVault(p.userId)).categories.map(({ id, name }) => ({ id, name })) };
+        });
+      },
+      async changeVault(p, change) {
+        requireScope(p, "sideband:vault", "agent.changeVault");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          return changeVault(tx, p.userId, change, p.agentId);
+        });
+      },
+      async queryVault(p, input) {
+        requireScope(p, "sideband:ask", "agent.queryVault");
+        const query = VaultQuery.safeParse(input);
+        if (!query.success) throw new BrokerError("invalid_input", "Revisa la dirección y la categoría.");
+        return store.tx(async tx => {
+          await ensureActiveAgentConnection(tx, p);
+          const reader = (await tx.getUser(p.userId))?.address;
+          const result = reader ? await tx.sharedVault(reader, query.data.to, query.data.categoryId) : { categories: [] };
+          record(tx, "broker.vault.queried", { userId: p.userId, agentId: p.agentId,
+            attrs: { lookup: query.data.categoryId ? "entries" : "categories", visible: result.categories.length > 0 } });
+          return result;
+        });
+      },
       async capabilities(p, to) {
         requireScope(p, "sideband:ask", "agent.capabilities");
         return store.tx(async tx => {
@@ -669,6 +709,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     },
 
     owner: {
+      vault: o => store.tx(tx => tx.ownerVault(o.userId)),
+      changeVault: (o, change) => store.tx(tx => changeVault(tx, o.userId, change)),
       ask: (o, input, channel) => ask(o.userId, input, { channel }),
       status: (o, id) => status(o.userId, id),
 

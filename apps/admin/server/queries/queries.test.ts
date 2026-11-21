@@ -317,6 +317,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       "v_requests",
       "v_service_health",
       "v_users",
+      "v_vault_summary",
       "v_wake_jobs",
     ])
     const grants = await db.query<{ role: string; view: string }>(
@@ -332,7 +333,7 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     expect(reveal).toEqual(["v_request_payloads"])
     expect(readOnly).not.toContain("v_request_payloads")
     expect(readOnly).not.toContain("events")
-    expect(readOnly).toHaveLength(15)
+    expect(readOnly).toHaveLength(16)
     const audit = await db.query<{ table: string }>(
       `SELECT table_name AS table FROM information_schema.role_table_grants
        WHERE table_schema = 'admin' AND grantee = 'sideband_admin_ro' AND privilege_type = 'SELECT'`

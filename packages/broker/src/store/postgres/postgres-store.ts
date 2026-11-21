@@ -11,6 +11,7 @@ import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
 import { createWakeCodec } from "./crypto.js";
+import { vaultStore } from "./vault-store.js";
 import {
   agentConnections, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tagPresets, users, wakeJobs,
 } from "./schema.js";
@@ -143,6 +144,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
   }
 
   return {
+    ...vaultStore(db),
     async getUser(userId) {
       const [row] = await db.select().from(users).where(eq(users.userId, userId));
       return row ? readUser(row) : null;

@@ -1,6 +1,7 @@
 import { Scope } from "@team-31/protocol";
 
 export const SCOPES = {
+  "sideband:vault": "Administrar tus datos personales y elegir con qué grupos compartirlos",
   "sideband:ask": "Hacer preguntas a otras personas en tu nombre",
   "sideband:inbox": "Leer las solicitudes que te envían y administrar sus avisos",
   "sideband:reply": "Responder solicitudes según tus reglas",

@@ -1,5 +1,6 @@
 import type {
   ActivityEvent,
+  OwnerVault, VaultChange, VaultResult,
   Address,
   Category,
   ChannelName,
@@ -115,6 +116,9 @@ export interface Store {
 }
 
 export interface StoreTx {
+  ownerVault(owner: string): Promise<OwnerVault>;
+  changeVault(owner: string, id: string, change: VaultChange): Promise<boolean>;
+  sharedVault(reader: Address, to: Address, categoryId?: string): Promise<VaultResult>;
   getUser(userId: string): Promise<UserRow | null>;
   getUserByAddress(address: Address): Promise<UserRow | null>;
   // Creates a user if needed and fails with conflict if either address is occupied.

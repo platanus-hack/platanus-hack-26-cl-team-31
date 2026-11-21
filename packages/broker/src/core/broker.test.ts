@@ -66,6 +66,28 @@ function advance(ms: number): void {
   now = new Date(now.getTime() + ms);
 }
 
+it("guarda desde el agente y revoca desde el dashboard sin alterar el permiso de otro grupo", async () => {
+  const p: Principal = { ...bruno, scopes: ["sideband:vault"] };
+  await expect(broker.agent.changeVault(bruno, { action: "create", name: "Deseos" })).rejects.toMatchObject({ code: "forbidden" });
+  const { categoryId } = await broker.agent.changeVault(p, { action: "create", name: "Deseos" });
+  const put = { action: "put_entry", categoryId, label: "Regalo", value: "Cafetera" } as const;
+  await broker.agent.changeVault(p, put);
+  expect((await broker.owner.vault(bruno)).categories[0]).toMatchObject({ groups: [], entries: [{ label: "Regalo", value: "Cafetera" }] });
+  for (const [recipient, tag] of [[alice, "friend"], [carla, "family"]] as const) {
+    const invite = await broker.owner.connect(bruno, `${recipient.userId}@sideband.app`, [], tag);
+    await broker.owner.answerInvitation(recipient, invite.requestId, { accept: true, share: [] });
+    await broker.owner.changeVault(bruno, { action: "set_group", categoryId, group: tag, allowed: true });
+  }
+  const query = { categoryId, to: "bruno@sideband.app" };
+  expect((await broker.agent.queryVault(alice, query)).categories[0]?.entries).toHaveLength(1);
+  await broker.agent.changeVault(p, { ...put, value: "Molino" });
+  await broker.owner.changeVault(bruno, { action: "set_group", categoryId, group: "friend", allowed: false });
+  expect(await broker.agent.queryVault(alice, query)).toEqual({ categories: [] });
+  expect((await broker.agent.queryVault(carla, query)).categories[0]?.entries).toEqual([{ label: "Regalo", value: "Molino" }]);
+  await broker.agent.changeVault(p, { action: "delete_entry", categoryId, label: put.label });
+  expect((await broker.agent.queryVault(carla, query)).categories[0]?.entries).toEqual([]);
+});
+
 async function askAvailability() {
   return broker.agent.ask(alice, availability);
 }

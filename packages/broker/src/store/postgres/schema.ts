@@ -2,7 +2,7 @@ import { ChannelName, RequestStatus } from "@team-31/protocol";
 import { sql } from "drizzle-orm";
 import {
   bigserial, boolean, check, customType, index, integer, jsonb, pgSchema,
-  primaryKey, text, timestamp, uniqueIndex,
+  primaryKey, text, timestamp, uniqueIndex, foreignKey,
 } from "drizzle-orm/pg-core";
 
 export const sideband = pgSchema("sideband");
@@ -22,6 +22,24 @@ export const users = sideband.table("users", {
   displayName: text("display_name"),
   createdAt: time("created_at").notNull().defaultNow(),
 });
+
+export const vaultCategories = sideband.table("vault_categories", {
+  owner: text("owner_id").notNull().references(() => users.userId),
+  id: text("category_id").notNull(),
+  name: text("name").notNull(),
+}, (t) => [primaryKey({ columns: [t.owner, t.id] })]);
+
+export const vaultEntries = sideband.table("vault_entries", {
+  owner: text("owner_id").notNull(), id: text("category_id").notNull(),
+  label: text("label").notNull(), value: jsonb("value").$type<string | number | boolean>().notNull(),
+}, (t) => [primaryKey({ columns: [t.owner, t.id, t.label] }),
+  foreignKey({ columns: [t.owner, t.id], foreignColumns: [vaultCategories.owner, vaultCategories.id] }).onDelete("cascade")]);
+
+export const vaultPermissions = sideband.table("vault_permissions", {
+  owner: text("owner_id").notNull(), id: text("category_id").notNull(), group: text("contact_group").notNull(),
+}, (t) => [primaryKey({ columns: [t.owner, t.id, t.group] }),
+  check("vault_group_valid", sql`${t.group} in ('friend','family','work')`),
+  foreignKey({ columns: [t.owner, t.id], foreignColumns: [vaultCategories.owner, vaultCategories.id] }).onDelete("cascade")]);
 
 // The broker stopped reading and writing this table when grants replaced sharing rules.
 // It stays in the schema because ops.v_users still joins it.

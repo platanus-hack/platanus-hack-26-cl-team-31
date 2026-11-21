@@ -7,6 +7,8 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
   const request = createHttpClient(options, Owner);
 
   return {
+    vault: (o) => request(routes.ownerVault, o),
+    changeVault: (o, body) => request(routes.ownerChangeVault, o, { body }),
     me: (owner) => request(routes.ownerMe, owner),
     claimAddress: async (owner, localPart) =>
       (await request(routes.ownerClaimAddress, owner, { body: { localPart } })).address,
