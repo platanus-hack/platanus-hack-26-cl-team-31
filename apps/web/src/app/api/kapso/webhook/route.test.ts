@@ -5,7 +5,7 @@ import { POST } from "./route";
 
 const { store, broker } = vi.hoisted(() => ({
   store: { claim: vi.fn(), detect: vi.fn(), whileLinked: vi.fn() },
-  broker: { ask: vi.fn(), status: vi.fn(), activity: vi.fn() },
+  broker: { ask: vi.fn(), status: vi.fn(), activity: vi.fn(), contacts: vi.fn() },
 }));
 vi.mock("next/server", () => ({ after: vi.fn() }));
 vi.hoisted(() => vi.stubEnv("TELEMETRY_SINK", "off"));
@@ -38,6 +38,7 @@ beforeEach(() => {
   vi.stubEnv("KAPSO_PHONE_NUMBER_ID", "12345");
   vi.stubEnv("KAPSO_WHATSAPP_NUMBER", "+15555550123");
   vi.stubEnv("BETTER_AUTH_URL", "https://sideband.test");
+  vi.stubEnv("ANTHROPIC_API_KEY", undefined);
   vi.stubGlobal("fetch", send.mockImplementation(() => Promise.resolve(new Response(null, { status: 200 }))));
   linkedUser = undefined;
   store.claim.mockResolvedValue(true);
@@ -94,4 +95,41 @@ it("crea y consulta como el titular vinculado; desvinculado no puede consultar",
   linkedUser = undefined;
   expect(await message("estado")).toContain("Vincula tu WhatsApp");
   expect(broker.status).toHaveBeenCalledTimes(2);
+});
+
+it("interpreta texto libre con Claude sin enviarle contactos ni entregar una pregunta inventada", async () => {
+  linkedUser = "user-a";
+  vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
+  const question = "¿Simón apaña a un café en una hora?";
+  const to = "simon.oyaneder@sideband.app";
+  broker.contacts.mockResolvedValue({ contacts: [{ address: to }] });
+  broker.ask.mockResolvedValue({ requestId, to, tool: "question", decision: "pending", waitingFor: "agent" });
+  send.mockImplementation((url, init) => {
+    if (String(url).startsWith("https://api.anthropic.com/")) {
+      const payload = JSON.parse(init.body);
+      expect(payload.messages).toEqual([{ role: "user", content: question }]);
+      expect(init.body).not.toContain(to);
+      return Promise.resolve(Response.json({
+        type: "message", role: "assistant", stop_reason: "end_turn",
+        content: [{ type: "text", text: JSON.stringify({ action: "ask", recipient: "Simón" }) }],
+      }));
+    }
+    return Promise.resolve(new Response(null, { status: 200 }));
+  });
+
+  expect((await POST(inbound(question))).status).toBe(200);
+  await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
+  expect(broker.contacts).toHaveBeenCalledWith({ userId: "user-a" });
+  expect(broker.ask).toHaveBeenCalledExactlyOnceWith({ userId: "user-a" }, { to, tool: "question", args: { text: question } });
+  expect(JSON.parse(send.mock.calls.at(-1)?.[1].body).text.body).toContain("pendiente de respuesta");
+});
+
+it("no comparte con Claude los mensajes de números sin vínculo", async () => {
+  vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic-key");
+  expect((await POST(inbound("¿Simón puede juntarse ahora?"))).status).toBe(200);
+  await (vi.mocked(after).mock.calls[0]?.[0] as () => Promise<void>)();
+  expect(send).toHaveBeenCalledOnce();
+  expect(String(send.mock.calls[0]?.[0])).toContain("api.kapso.ai");
+  expect(broker.contacts).not.toHaveBeenCalled();
+  expect(broker.ask).not.toHaveBeenCalled();
 });

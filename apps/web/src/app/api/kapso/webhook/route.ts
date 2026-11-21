@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { BrokerError } from "@team-31/broker/client";
 import { ownerClient } from "../../../../lib/broker";
 import { getTelemetry, observeRoute } from "../../../../lib/telemetry";
+import { claudeInterpreter } from "../../../../lib/whatsapp/claude";
 import { runCommand } from "../../../../lib/whatsapp/commands";
 import { config, inboundEvent, parseMessage, sendText, validSignature } from "../../../../lib/whatsapp/kapso";
 import { whatsappStore } from "../../../../lib/whatsapp/runtime";
@@ -64,10 +65,15 @@ export async function POST(request: Request) {
               let requestId: string | undefined;
               let answer: string;
               try {
+                const interpret = claudeInterpreter();
                 answer = await runCommand(ownerClient(), { userId }, message.text, (action, view) => {
                   requestId = view.requestId;
                   telemetry.emit("whatsapp.request", { requestId, attrs: { action, decision: view.decision, tool: view.tool } });
-                });
+                }, interpret && ((text) => telemetry.span("whatsapp.interpret", {}, async (span) => {
+                  const intent = await interpret(text);
+                  span.set({ action: intent.action });
+                  return intent;
+                })));
               } catch (error) {
                 const errorId = telemetry.error("whatsapp.command", error);
                 answer = error instanceof BrokerError && error.code === "rate_limited"

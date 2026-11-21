@@ -26,9 +26,13 @@ La prueba crea dos cuentas locales, concede el permiso de pregunta y ejecuta el 
 
 ## Probar con dos cuentas
 
+Para habilitar texto libre, configura `ANTHROPIC_API_KEY` en el **proceso web**. Si el servicio de Render arranca Next con un launcher que filtra las variables, agrega `ANTHROPIC_API_KEY` a la lista que pasa al proceso web. No hace falta volver a vincular los números. Sin la clave funcionan los comandos `Pregunta a …` y `estado`. Las consultas por texto libre envían el mensaje original a Claude; el número vinculado, la agenda de contactos y las respuestas del broker no se envían como contexto al modelo.
+
 1. Con sesión iniciada, abre **Agentes → Conectar con Sideband → WhatsApp**. Genera y envía el código de **Sideband**. Vuelve a la web y confirma que el número detectado sea el tuyo.
 2. Escribe `Pregunta a carla@sideband.app si puede jugar el sábado` (usa la dirección real del destinatario). Verifica el ID en **Actividad** y en `sideband_check` desde el MCP autorizado por la misma cuenta.
 3. Para el caso permitido, agrega primero en la cuenta de destino un permiso de **Pregunta** para la dirección que pregunta. Responde desde el MCP de destino y escribe `estado`, `¿ya respondió?` o `estado <ID>` en el teléfono para ver la respuesta. Sin permiso, comprueba que no se muestren datos ni el motivo de la denegación.
 4. Desvincula desde web y repite `estado`. El teléfono ya no debe poder consultar esa cuenta; el MCP previamente autorizado sigue funcionando.
 
-El MVP admite mensajes de texto para enviar preguntas y consultar solicitudes, no un chat con memoria, adjuntos o notificaciones proactivas. Los duplicados de Kapso no vuelven a ejecutar la consulta. El envío de la respuesta es de mejor esfuerzo en segundo plano: si falla o el proceso se reinicia, pide `estado` antes de reenviar una pregunta.
+Con Claude habilitado, prueba también «¿Carla puede jugar el sábado?», usando un nombre que coincida con una sola dirección en tus contactos, y luego «¿Y qué dijo Carla?». Si hay varias coincidencias, indica la dirección completa. «¿Ya me respondió?» sin destinatario busca la última solicitud enviada desde tu cuenta.
+
+El MVP admite mensajes de texto para enviar preguntas abiertas y consultar solicitudes, no un chat con memoria, adjuntos o notificaciones proactivas. Los duplicados de Kapso no vuelven a ejecutar la consulta. El envío de la respuesta es de mejor esfuerzo en segundo plano: si falla o el proceso se reinicia, pide `estado` antes de reenviar una pregunta.

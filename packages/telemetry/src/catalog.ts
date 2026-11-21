@@ -103,6 +103,10 @@ export const catalog = [
     attrs: {},
   }),
   defineEvent({
+    name: "whatsapp.interpret", kind: "http", description: "Interpretación en Claude, sin guardar texto ni destinatario.",
+    attrs: { action: z.enum(["ask", "status", "help"]) },
+  }),
+  defineEvent({
     name: "web.invite.progress",
     kind: "lifecycle",
     description: "Paso observado en el alta por invitación de Sideband.",

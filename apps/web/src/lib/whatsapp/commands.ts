@@ -1,8 +1,28 @@
 import { BrokerError, type OwnerPort } from "@team-31/broker/client";
-import { AskInput, type Owner, type RequesterView } from "@team-31/protocol";
+import { Address, AskInput, type Owner, type RequesterView } from "@team-31/protocol";
+import type { InterpretMessage } from "./claude";
 
 export const askExample = "Pregunta a carla@sideband.app si puede jugar el sábado";
 const askHelp = `Prueba: «${askExample}» o escribe «estado» para revisar tu última solicitud enviada.`;
+type WhatsAppBroker = Pick<OwnerPort, "ask" | "status" | "activity" | "contacts">;
+
+const words = (text: string) =>
+  text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").match(/[\p{L}\p{N}]+/gu)?.join(" ") ?? "";
+
+async function resolveRecipient(broker: WhatsAppBroker, owner: Owner, text: string, reference: string) {
+  const addresses = [...new Set((text.toLowerCase().match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}(?![\w-]|\.[\w.-])/g) ?? [])
+    .filter((candidate) => Address.safeParse(candidate).success))];
+  const explicit = Address.safeParse(reference.trim().toLowerCase());
+  if (addresses.length || explicit.success) {
+    return explicit.success && addresses.length === 1 && addresses[0] === explicit.data ? explicit.data : undefined;
+  }
+  const name = words(reference);
+  if (!name || !` ${words(text)} `.includes(` ${name} `)) return;
+  const { contacts } = await broker.contacts(owner);
+  const matches = contacts.map(({ address }) => address)
+    .filter((address) => ` ${words(address.split("@")[0] ?? "")} `.includes(` ${name} `));
+  return matches.length === 1 ? matches[0] : undefined;
+}
 
 function summarize(view: RequesterView): string {
   const reference = `\n\nSolicitud: ${view.requestId}`;
@@ -25,13 +45,15 @@ function summarize(view: RequesterView): string {
 }
 
 export async function runCommand(
-  broker: Pick<OwnerPort, "ask" | "status" | "activity">, owner: Owner, text: string,
+  broker: WhatsAppBroker, owner: Owner, text: string,
   onResult: (action: "ask" | "status", view: RequesterView) => void,
+  interpret?: InterpretMessage,
 ): Promise<string> {
   const status = /^\/?estado(?:\s+([a-f0-9-]{36}))?$/i.exec(text);
-  if (status || /^¿?\s*ya respondi[oó]\s*\??$/i.test(text)) {
-    const id = status?.[1] ?? (await broker.activity(owner, 100)).find((item) => item.direction === "sent")?.requestId;
-    if (!id) return "No encontré solicitudes recientes enviadas desde tu cuenta.";
+  async function readStatus(id?: string, to?: string) {
+    id ??= (await broker.activity(owner, 100))
+      .find((item) => item.direction === "sent" && (!to || item.to === to))?.requestId;
+    if (!id) return to ? `No encontré solicitudes recientes a ${to}.` : "No encontré solicitudes recientes enviadas desde tu cuenta.";
     try {
       const view = await broker.status(owner, id);
       onResult("status", view);
@@ -41,11 +63,29 @@ export async function runCommand(
       throw error;
     }
   }
+
+  async function ask(to: string, question: string) {
+    const input = AskInput.safeParse({ to, tool: "question", args: { text: question } });
+    if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
+    const view = await broker.ask(owner, input.data);
+    onResult("ask", view);
+    return summarize(view);
+  }
+
+  if (status || /^¿?\s*ya respondi[oó]\s*\??$/i.test(text)) return readStatus(status?.[1]);
   const match = /^(?:\/pregunta\s+|preg[uú]nta(?:le)?\s+a\s+)(\S+?)(?::\s*|\s+)(\S[\s\S]*)$/i.exec(text);
-  if (!match?.[1] || !match[2]) return askHelp;
-  const input = AskInput.safeParse({ to: match[1].toLowerCase(), tool: "question", args: { text: match[2] } });
-  if (!input.success) return `Incluye una dirección Sideband y una pregunta de hasta 1000 caracteres. ${askHelp}`;
-  const view = await broker.ask(owner, input.data);
-  onResult("ask", view);
-  return summarize(view);
+  if (match?.[1] && match[2] && Address.safeParse(match[1].toLowerCase()).success) {
+    return ask(match[1].toLowerCase(), match[2]);
+  }
+  if (!interpret) return askHelp;
+  if (text.length > 1000) return "Escribe una pregunta de hasta 1000 caracteres.";
+  if (!text) return askHelp;
+
+  const intent = await interpret(text);
+  if (intent.action === "help") return "Puedo preguntarle algo a un contacto o revisar si ya te respondió.";
+  if (intent.action === "status" && !intent.recipient) return readStatus();
+  const to = intent.recipient ? await resolveRecipient(broker, owner, text, intent.recipient) : undefined;
+  if (!to) return "No pude identificar a una sola persona. Repite tu mensaje con su dirección Sideband completa.";
+  // Do not let the model invent or rewrite what will be delivered to the other agent.
+  return intent.action === "status" ? readStatus(undefined, to) : ask(to, text);
 }
