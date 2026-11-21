@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { authClient } from "@/lib/auth-client";
+import { useEffect, useState } from "react";
+import { loadAuthClient } from "@/lib/load-auth-client";
 
 export function ConsentButtons() {
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
+  useEffect(() => { loadAuthClient().catch(() => undefined); }, []);
 
   async function submit(accept: boolean) {
     setPending(true);
     setFailed(false);
     try {
+      const authClient = await loadAuthClient();
       const { data } = await authClient.oauth2.consent({ accept });
       if (data?.redirect && data.url) {
         window.location.assign(data.url);

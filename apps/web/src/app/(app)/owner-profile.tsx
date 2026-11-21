@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { getOwnerAccount } from "@/lib/auth-owner";
+import { getOwnerAccount, getOwnerUser } from "@/lib/auth-owner";
 import { getTelemetry } from "@/lib/telemetry";
 import { whatsappStore } from "@/lib/whatsapp/runtime";
 
@@ -26,8 +26,11 @@ function ProfileRow({ label, children }: { label: string; children: ReactNode })
 }
 
 export async function OwnerProfile() {
-  const { user, address, displayName } = await getOwnerAccount();
-  const phone = await linkedPhone(user.id);
+  // The phone only needs the session's user: read it alongside the broker's account lookup.
+  const [{ user, address, displayName }, phone] = await Promise.all([
+    getOwnerAccount(),
+    getOwnerUser().then((user) => linkedPhone(user.id)),
+  ]);
   const photo = user.image && /^https:\/\//i.test(user.image)
     ? <a className={textLink} href={user.image} referrerPolicy="no-referrer">Ver foto de perfil</a>
     : "Sin foto";

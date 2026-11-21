@@ -1,7 +1,7 @@
 "use client";
 
 import { useId } from "react";
-import { ContactTag, contactTags } from "@team-31/protocol";
+import { contactTagNames, contactTags, type ContactTag } from "@team-31/protocol/constants";
 
 export function TagPicker({ value, onChange, name }: { value?: ContactTag; onChange: (tag: ContactTag) => void; name?: string }) {
   const label = useId();
@@ -9,7 +9,7 @@ export function TagPicker({ value, onChange, name }: { value?: ContactTag; onCha
     <div>
       <p id={label} className="sr-only">Etiqueta</p>
       <div role="radiogroup" aria-labelledby={label} className="grid grid-cols-3 gap-1 rounded-lg bg-stage p-1">
-        {ContactTag.options.map((tag) => {
+        {contactTagNames.map((tag) => {
           const active = value === tag;
           return (
             <button key={tag} type="button" role="radio" aria-checked={active} onClick={() => onChange(tag)}

@@ -4,12 +4,13 @@ import { expect, it, vi } from "vitest";
 import { OwnerProfile } from "./owner-profile";
 
 const { state, recordError } = vi.hoisted(() => ({ state: vi.fn(), recordError: vi.fn(() => "err-test") }));
-vi.mock("@/lib/auth-owner", () => ({
-  getOwnerAccount: async () => ({
-    user: { id: "owner-1", name: "Ana", email: "ana@example.org", emailVerified: true, createdAt: new Date("2026-11-21") },
-    address: "ana@sideband.app", displayName: "Ana M.",
-  }),
-}));
+vi.mock("@/lib/auth-owner", () => {
+  const user = { id: "owner-1", name: "Ana", email: "ana@example.org", emailVerified: true, createdAt: new Date("2026-11-21") };
+  return {
+    getOwnerUser: async () => user,
+    getOwnerAccount: async () => ({ user, address: "ana@sideband.app", displayName: "Ana M." }),
+  };
+});
 vi.mock("@/lib/whatsapp/runtime", () => ({ whatsappStore: () => ({ state }) }));
 vi.mock("@/lib/telemetry", () => ({ getTelemetry: () => ({ error: recordError }) }));
 

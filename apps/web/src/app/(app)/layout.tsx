@@ -11,25 +11,37 @@ export const metadata: Metadata = {
   description: "Gestiona tus solicitudes, reglas y agentes en Sideband.",
 };
 
-async function Workspace({ children }: { children: ReactNode }) {
-  const address = await getAddress();
+async function AddressBadge({ address }: { address: Promise<string | undefined> }) {
+  const value = await address;
+  return value && (
+    <span className="ml-auto inline-flex h-9 min-w-0 items-center truncate rounded-full bg-white/7 px-3.5 text-[13px] font-medium text-white/60">{value}</span>
+  );
+}
+
+async function Sidebar({ address }: { address: Promise<string | undefined> }) {
+  return (await address) && (
+    <aside className="lg:sticky lg:top-[68px] lg:h-[calc(100dvh-68px)] lg:w-[200px] lg:shrink-0 lg:pt-6">
+      <Navigation />
+    </aside>
+  );
+}
+
+// Not async on purpose: awaiting the address here would hold back the page, so its data would only
+// start loading after the address arrived. Both now load in parallel and still appear together,
+// because the only Suspense boundary is the one around Workspace.
+function Workspace({ children }: { children: ReactNode }) {
+  const address = getAddress();
 
   return (
     <>
       <header className="sticky top-0 z-20 bg-canvas/90 backdrop-blur-md">
         <div className="mx-auto flex h-[68px] max-w-[1220px] items-center gap-4 px-4 sm:px-6">
           <Link href="/" aria-label="Sideband, inicio" className="rounded-full"><Brand /></Link>
-          {address && (
-            <span className="ml-auto inline-flex h-9 min-w-0 items-center truncate rounded-full bg-white/7 px-3.5 text-[13px] font-medium text-white/60">{address}</span>
-          )}
+          <AddressBadge address={address} />
         </div>
       </header>
       <div className="mx-auto flex max-w-[1220px] flex-col gap-6 px-4 pb-20 sm:px-6 lg:flex-row lg:gap-14">
-        {address && (
-          <aside className="lg:sticky lg:top-[68px] lg:h-[calc(100dvh-68px)] lg:w-[200px] lg:shrink-0 lg:pt-6">
-            <Navigation />
-          </aside>
-        )}
+        <Sidebar address={address} />
         <main id="contenido" className="min-w-0 flex-1 pt-4 lg:pt-8">{children}</main>
       </div>
     </>

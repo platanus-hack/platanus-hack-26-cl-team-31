@@ -10,7 +10,7 @@ import { ownerClient } from "@/lib/broker";
 import { onboardingFlow, type OnboardingSource } from "@/lib/onboarding-flow";
 import { getTelemetry, observeWebRequest } from "@/lib/telemetry";
 
-import { getOwner, requireAddress } from "./owner";
+import { getOwner, readAsOwner, requireAddress } from "./owner";
 import { activityPageSize, parseActivityPage } from "./labels";
 
 type Feedback = { error?: string; message?: string; errorId?: string };
@@ -62,19 +62,16 @@ export async function claimAddress(source: OnboardingSource, _: Feedback, form: 
 }
 
 export async function readHome() {
-  await requireAddress();
-  const owner = await getOwner();
   const broker = ownerClient();
-  const [pending, activity, { incoming }] = await Promise.all([broker.pending(owner), broker.activity(owner, 4), broker.contacts(owner)]);
+  const { data: [pending, activity, { incoming }] } = await readAsOwner((owner) =>
+    Promise.all([broker.pending(owner), broker.activity(owner, 4), broker.contacts(owner)]));
   return [pending.filter((item) => item.tool !== "connect"), activity, incoming] as const;
 }
 
 export async function readActivity(input: unknown) {
-  await requireAddress();
-  const owner = await getOwner();
   const page = parseActivityPage(input);
   const last = page * activityPageSize;
-  const items = await ownerClient().activity(owner, last + 1);
+  const { data: items } = await readAsOwner((owner) => ownerClient().activity(owner, last + 1));
   return { items: items.slice(last - activityPageSize, last), hasNext: items.length > last };
 }
 
@@ -126,9 +123,7 @@ export async function decide(requestId: string, _: Feedback, form: FormData): Pr
 }
 
 export async function readAgents() {
-  await requireAddress();
-  const owner = await getOwner();
-  return ownerClient().agents(owner);
+  return (await readAsOwner((owner) => ownerClient().agents(owner))).data;
 }
 
 export async function pingOrRevokeAgent(agentId: string, _: Feedback, form: FormData): Promise<Feedback> {
@@ -152,9 +147,8 @@ export async function pingOrRevokeAgent(agentId: string, _: Feedback, form: Form
 }
 
 export async function readCircles() {
-  const address = await requireAddress();
-  const owner = await getOwner();
-  return { address, circles: await ownerClient().circles(owner) };
+  const { address, data: circles } = await readAsOwner((owner) => ownerClient().circles(owner));
+  return { address, circles };
 }
 
 async function changeCircle(operation: string, fallback: string, change: (owner: Owner) => Promise<unknown>): Promise<Feedback> {
@@ -201,9 +195,7 @@ export async function deleteCircle(circleId: string): Promise<Feedback> {
 }
 
 export async function readContacts() {
-  await requireAddress();
-  const owner = await getOwner();
-  return ownerClient().contacts(owner);
+  return (await readAsOwner((owner) => ownerClient().contacts(owner))).data;
 }
 
 function sharingFrom(form: FormData) {
