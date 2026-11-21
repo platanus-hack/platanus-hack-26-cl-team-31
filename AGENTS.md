@@ -73,7 +73,7 @@ El dashboard de desarrollo en `/demo` usa Ollama por loopback (`DEMO_MODEL_URL`)
 
 ## Consultas resueltas por el runtime del titular
 
-Con Claude Code autenticado y un arreglo JSON de intereses de Bob en `.agents-local/bob-interests.json`, ejecuta `corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica?"`. Dos sesiones de Claude usan identidades distintas de Nexo. El broker autoriza la operación y envía un webhook firmado a Bob. Su herramienta consulta su archivo privado y el broker valida la respuesta para Ana. La cola de esta demo es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md) para usar otro archivo o abrir a Ana en modo interactivo.
+Con Claude Code autenticado y las listas privadas en `.agents-local/bob-interests.json` y `.agents-local/jane-interests.json`, ejecuta `corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A Bob le interesa la cerámica? ¿Qué tal Jane?"`. Ana descubre las direcciones con `list_contacts` y usa `ask_contact` para cada destinatario. El broker verifica los permisos y entrega cada resultado con su ID de solicitud. La cola de esta demo es efímera. Consulta [las instrucciones de MCP](apps/mcp/README.md) para preparar las listas o conversar con Ana.
 
 ## Pruebas de punta a punta de Nexo
 
