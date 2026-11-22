@@ -148,103 +148,66 @@
     @apply font-sans;
     }
 }
-/* La proyección usa una superficie oscura en ambos temas del panel. */
-.signal-page {
-    --signal-space: #0c1020;
-    --signal-panel: #141a2e;
-    --signal-line: #303952;
-    --signal-ink: #f5f5ff;
-    --signal-muted: #acb5cd;
-    --signal-question: #aa9aff;
-    --signal-answer: #70e7cf;
-    --signal-decision: #ffbd88;
-    --signal-wire: #616884;
-    --signal-paper: #edf0ff;
-    --signal-light: #ffffff;
-    color: var(--signal-ink);
-    background: var(--signal-space);
-    color-scheme: dark;
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-sans);
-    container-type: inline-size;
-}
+/* Flujo usa las mismas superficies, bordes y tipografía que el resto del admin. */
+.signal-page { flex: 1; min-width: 0; container-type: inline-size; color: var(--foreground); background: var(--background) }
 .signal-page:fullscreen, .signal-expanded { width: 100%; height: 100dvh; overflow: auto }
 .signal-expanded { position: fixed; inset: 0; z-index: 60 }
-.signal-frame { max-width: 1840px; margin: auto; display: flex; flex-direction: column; gap: 18px; padding: clamp(16px, 3cqw, 42px) }
-.signal-heading, .signal-top, .signal-footer, .signal-controls, .signal-legend, .signal-legend span, .signal-filter summary, .signal-kicker, .signal-source { display: flex; align-items: center }
-.signal-heading, .signal-top { justify-content: space-between; gap: 12px }
-.signal-heading { flex-wrap: wrap; margin-bottom: 3px }
-.signal-controls { gap: 8px }
-.signal-kicker, .signal-caption small, .signal-source { font: 550 10px/1.4 var(--font-mono); letter-spacing: .13em; text-transform: uppercase }
-.signal-kicker { gap: 8px; color: var(--signal-question) }
-.signal-heading h1 { margin: 6px 0 0; font-size: clamp(30px, 4.3cqw, 60px); font-weight: 520; line-height: 1.06; letter-spacing: -.065em }
-.signal-heading h1 span { color: var(--signal-question) }
-.signal-console { position: relative; isolation: isolate; border: 1px solid var(--signal-line); border-radius: 20px; background: var(--signal-space); overflow: clip }
-.signal-console::before { content: ""; position: absolute; inset: 0; z-index: -1; background:
-    radial-gradient(ellipse at 50% 48%, color-mix(in srgb,var(--signal-question) 14%,transparent), transparent 64%),
-    radial-gradient(ellipse at 98% 8%, color-mix(in srgb,var(--signal-answer) 5%,transparent), transparent 50%),
-    radial-gradient(circle, color-mix(in srgb,var(--signal-muted) 19%,transparent) .8px, transparent 1px) 0 0 / 19px 19px }
-.signal-top { padding: 18px 22px 0; position: relative; z-index: 3 }
-.signal-source { gap: 8px; border: 1px solid var(--signal-line); border-radius: 100px; padding: 6px 10px; background: var(--signal-space); color: var(--signal-muted) }
-.signal-source i { width: 6px; height: 6px; background: var(--signal-decision); border-radius: 50% }
-.signal-source[data-connected="true"] i { background: var(--signal-answer); box-shadow: 0 0 10px var(--signal-answer) }
-.signal-filter { position: relative; color: var(--signal-muted); font-size: 12px }
-.signal-filter summary { list-style: none; cursor: pointer; gap: 7px; padding: 6px 2px }
+.signal-frame { max-width: 1840px; margin: auto; display: flex; flex-direction: column; gap: 20px; padding: 24px }
+.signal-top, .signal-footer, .signal-legend, .signal-legend span, .signal-filter summary { display: flex; align-items: center }
+.signal-console { position: relative; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--card); color: var(--card-foreground); overflow: clip }
+.signal-top { justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); position: relative; z-index: 1 }
+.signal-filter { position: relative; color: var(--muted-foreground); font-size: 12px }
+.signal-filter summary { list-style: none; cursor: pointer; gap: 7px; padding: 3px 2px }
 .signal-filter summary::-webkit-details-marker { display: none }
-.signal-menu { position: absolute; right: 0; top: 100%; width: min(240px,80vw); max-height: 260px; overflow-y: auto; background: var(--signal-panel); color: var(--signal-ink); padding: 8px; border: 1px solid var(--signal-line); border-radius: 12px; box-shadow: 0 12px 30px var(--signal-space) }
+.signal-menu { position: absolute; right: 0; top: 100%; width: min(240px,80vw); max-height: 260px; overflow-y: auto; background: var(--popover); color: var(--popover-foreground); padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md) }
 .signal-menu label, .signal-menu button { display: flex; align-items: center; gap: 8px; padding: 7px; cursor: pointer; overflow-wrap: anywhere }
-.signal-menu button { color: var(--signal-question) }
-.signal-menu input { accent-color: var(--signal-question) }
-.signal-space { position: relative; height: clamp(345px, calc(100svh - 360px), 660px) }
-:fullscreen .signal-space, .signal-expanded .signal-space { height: clamp(330px, calc(100dvh - 280px), 930px) }
+.signal-menu input { accent-color: var(--primary) }
+.signal-space { position: relative; height: clamp(345px, calc(100svh - 305px), 720px) }
+:fullscreen .signal-space, .signal-expanded .signal-space { height: clamp(330px, calc(100dvh - 245px), 1000px) }
 .signal-map, .signal-routes { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden }
-.signal-orbits { fill: none; stroke: var(--signal-question); stroke-opacity: .09; stroke-width: 1 }
-.signal-orbits .signal-ticks { stroke-width: 4; stroke-opacity: .38 }
-[data-tone="question"] { --signal-current: var(--signal-question) }
-[data-tone="answer"] { --signal-current: var(--signal-answer) }
-[data-tone="decision"] { --signal-current: var(--signal-decision) }
-.signal-wire { fill: none; stroke: var(--signal-current,var(--signal-wire)); stroke-width: 1.5 }
-g[data-tone] > .signal-wire { stroke-width: 2; filter: drop-shadow(0 0 4px var(--signal-current)) }
-.signal-port { fill: var(--signal-current,var(--signal-wire)); stroke: var(--signal-space); stroke-width: 1 }
-.signal-packet { fill: var(--signal-current); filter: drop-shadow(0 0 6px var(--signal-current)) }
-.signal-packet path { fill: none; stroke: var(--signal-space); stroke-width: 1.4 }
+.signal-map { background: radial-gradient(circle, var(--border) .7px, transparent .9px) center / 20px 20px }
+.signal-orbits { fill: none; stroke: var(--border); stroke-width: 1 }
+.signal-wire { fill: none; stroke: color-mix(in srgb,var(--muted-foreground) 55%,var(--card)); stroke-width: 1.5 }
+.signal-routes g[data-tone] > .signal-wire { stroke: var(--foreground); stroke-width: 2.25 }
+.signal-routes [data-tone="answer"] > .signal-wire { stroke-dasharray: 7 4 }
+.signal-routes [data-tone="decision"] > .signal-wire { stroke-dasharray: 1 5; stroke-linecap: round }
+.signal-port { fill: var(--muted-foreground); stroke: var(--card); stroke-width: 1 }
+.signal-packet { fill: var(--foreground) }
+.signal-packet path { fill: none; stroke: var(--background); stroke-width: 1.4 }
 .signal-hub { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center }
-.signal-core { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 86px; height: 86px; border-radius: 50%; border: 1px solid var(--signal-question); color: var(--signal-light);
-    background: radial-gradient(ellipse at 37% 22%,color-mix(in srgb,var(--signal-question) 75%,var(--signal-panel)),var(--signal-panel) 85%);
-    box-shadow: inset 0 0 20px color-mix(in srgb,var(--signal-question) 45%,transparent), 0 0 0 7px color-mix(in srgb,var(--signal-question) 9%,transparent), 0 0 54px color-mix(in srgb,var(--signal-question) 28%,transparent) }
-.signal-core svg { filter: drop-shadow(0 0 6px var(--signal-question)) }
-.signal-core[data-tone] { border-color: var(--signal-current); box-shadow: 0 0 0 8px color-mix(in srgb,var(--signal-current) 16%,transparent), 0 0 45px color-mix(in srgb,var(--signal-current) 46%,transparent) }
-.signal-hub b { font-size: 12px; letter-spacing: -.035em; font-weight: 570 }
-.signal-station { display: flex; align-items: center; position: absolute; transform: translate(-50%,-50%); padding: 12px; gap: 12px; border: 1px solid var(--signal-line); border-radius: 15px; background: linear-gradient(120deg,color-mix(in srgb,var(--signal-question) 6%,var(--signal-panel)),var(--signal-panel)); box-shadow: 0 6px 18px color-mix(in srgb,var(--signal-space) 45%,transparent) }
-.signal-station[data-tone] { border-color: var(--signal-current); box-shadow: inset 3px 0 var(--signal-current), 0 0 32px color-mix(in srgb,var(--signal-current) 15%,transparent) }
-.signal-avatar { display: grid; place-items: center; flex-shrink: 0; height: 42px; width: 42px; background: var(--signal-paper); color: var(--signal-panel); border-radius: 13px }
+.signal-core { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 86px; height: 86px; border-radius: 50%; background: var(--primary); color: var(--primary-foreground) }
+.signal-core[data-tone] { outline: 1px solid var(--muted-foreground); outline-offset: 4px }
+.signal-hub b { font-size: 12px; font-weight: 550; letter-spacing: -.025em }
+.signal-station { display: flex; align-items: center; position: absolute; transform: translate(-50%,-50%); padding: 12px; gap: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow-xs) }
+.signal-station[data-tone] { border-color: var(--foreground); box-shadow: inset 2px 0 var(--foreground) }
+.signal-avatar { display: grid; place-items: center; flex-shrink: 0; height: 42px; width: 42px; background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius) }
+.signal-avatar[data-logo] { background: light-dark(var(--muted),var(--primary)) }
 .signal-avatar img, .signal-avatar svg { width: 65%; height: 65%; object-fit: contain }
-.signal-avatar[data-logo="claude"], .signal-avatar[data-logo="openclaw"] { background: #fff1e8 }
-.signal-identity { display: grid; min-width: 0; gap: 3px }
+.signal-avatar img { filter: grayscale(1) }
+.signal-identity { display: grid; min-width: 0; gap: 2px }
 .signal-identity strong, .signal-identity small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.signal-identity strong { font-size: clamp(16px,1.7cqw,23px); line-height: 1.15; font-weight: 570; letter-spacing: -.04em }
-.signal-identity small { color: var(--signal-muted); font-size: 12px }
-.signal-footer { gap: 14px; padding: 17px 22px; border-top: 1px solid var(--signal-line); background: var(--signal-panel) }
-.signal-audio { display: grid; place-items: center; color: var(--signal-current,var(--signal-question)); border: 1px solid color-mix(in srgb,currentColor 30%,transparent); width: 42px; height: 42px; flex-shrink: 0; border-radius: 12px }
-.signal-caption { flex: 1; min-width: 0; display: grid; gap: 3px }
-.signal-caption small { color: var(--signal-muted); font-size: 9px }
-.signal-caption strong { font-weight: 500; font-size: clamp(15px,1.7cqw,23px); line-height: 1.3; letter-spacing: -.035em }
-.signal-pair { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--signal-muted) }
-.signal-legend { gap: 18px; flex-wrap: wrap; color: var(--signal-muted); font-size: 12px }
+.signal-identity strong { font-size: clamp(16px,1.6cqw,21px); line-height: 1.2; font-weight: 550; letter-spacing: -.035em }
+.signal-identity small, .signal-caption small, .signal-pair, .signal-legend { color: var(--muted-foreground); font-size: 12px }
+.signal-footer { gap: 12px; padding: 14px 18px; border-top: 1px solid var(--border); background: var(--card) }
+.signal-audio { display: grid; place-items: center; color: var(--muted-foreground); border: 1px solid var(--border); width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius) }
+.signal-audio svg { width: 18px; height: 18px }
+.signal-caption { flex: 1; min-width: 0; display: grid; gap: 2px }
+.signal-caption strong { font-weight: 500; font-size: clamp(14px,1.45cqw,19px); line-height: 1.35; letter-spacing: -.025em }
+.signal-pair { display: flex; align-items: center; gap: 8px }
+.signal-legend { gap: 18px; flex-wrap: wrap }
 .signal-legend span { gap: 6px }
-.signal-legend svg { width: 14px; height: 14px; color: var(--signal-current) }
+.signal-legend i { width: 20px; border-top: 2px solid currentColor }
+.signal-legend [data-tone="answer"] i { border-top-style: dashed }
+.signal-legend [data-tone="decision"] i { border-top-style: dotted }
 .signal-legend small { margin-left: auto }
 @container (max-width: 590px) {
     .signal-pair { display: none }
-    .signal-frame { gap: 13px }
-    .signal-heading { gap: 14px }
-    .signal-space { height: clamp(330px,calc(100svh - 352px),560px) }
-    .signal-station { gap: 7px; padding: 8px; border-radius: 12px }
-    .signal-avatar { height: 31px; width: 31px; border-radius: 9px }
+    .signal-frame { gap: 14px; padding: 16px }
+    .signal-space { height: clamp(330px,calc(100svh - 292px),600px) }
+    .signal-station { gap: 7px; padding: 8px }
+    .signal-avatar { height: 31px; width: 31px }
     .signal-core { width: 72px; height: 72px }
-    .signal-top { padding: 12px 12px 8px }
-    .signal-footer { padding: 12px; gap: 9px }
+    .signal-top, .signal-footer { padding: 12px }
     .signal-legend { gap: 12px; font-size: 11px }
 }
 @media (prefers-reduced-motion: reduce) { .signal-packet { display: none } }

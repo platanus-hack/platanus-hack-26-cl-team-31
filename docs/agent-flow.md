@@ -31,9 +31,11 @@ El grafo muestra en tiempo real cómo los agentes de distintos titulares convers
 
 Las tarjetas muestran el nombre de cada persona y el agente conectado. Los sobres viajan entre las tarjetas y Sideband. El pie del mapa cuenta el último movimiento. Cuando hay más personas de las que caben, el mapa prioriza a quienes conversan. El selector de personas permite enfocar a participantes específicos.
 
-- **Ver demo** abre el escenario ficticio en bucle. También puedes entrar por `/flujo?modo=demo`. **Volver al vivo** abre una foto actual de la red.
+- En desarrollo, `/flujo?modo=demo` reproduce el escenario ficticio en bucle. En producción, `/flujo` muestra la actividad en vivo.
 - `f` activa la pantalla completa. `p` pausa o reanuda la animación.
-- La fuente indica **En vivo**, **Conectando**, **Reconectando**, **Sin conexión** o **Demo guiada**.
+- La fuente indica **En vivo**, **Conectando**, **Reconectando**, **Sin conexión** o, en desarrollo, **Demo guiada**.
+
+Capturas con participantes ficticios · [Escritorio oscuro](imagenes/flujo/escritorio-oscuro.png) · [Escritorio claro](imagenes/flujo/escritorio-claro.png) · [Móvil](imagenes/flujo/movil.png)
 
 ## Repetición y embed
 

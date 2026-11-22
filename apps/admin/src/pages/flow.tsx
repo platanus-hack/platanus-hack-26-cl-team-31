@@ -13,23 +13,20 @@ import {
 } from "@team-31/agent-flow"
 import { scenarioEvents } from "@team-31/agent-flow/scenario"
 import {
-  Activity,
   AudioLines,
   Bot,
   ChevronDown,
-  CircleDot,
   Maximize2,
   Minimize2,
   Pause,
   Play,
-  Radio,
-  ShieldCheck,
   UserRound,
   UsersRound,
   Waypoints,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ErrorState } from "@/components/page"
+import { ToneBadge } from "@/components/status"
+import { ErrorState, PageHeader } from "@/components/page"
 import { useFlowLive } from "@/lib/flow-live"
 import {
   agentBrand,
@@ -39,7 +36,7 @@ import {
   signalTone,
 } from "@/features/flow/presentation"
 
-const replay = scenarioEvents()
+const replay = import.meta.env.DEV ? scenarioEvents() : []
 const noop = () => {}
 const list = (value: string | null) =>
   value
@@ -76,7 +73,7 @@ function Identity({ actor }: { actor: FlowActor }) {
 
 export function FlowPage() {
   const [params, setParams] = useSearchParams()
-  const demo = params.get("modo") === "demo"
+  const demo = import.meta.env.DEV && params.get("modo") === "demo"
   const { events, status, error, truncated, reconnect } = useFlowLive(!demo)
   const viewport = useFlowViewport(false)
   const {
@@ -91,7 +88,7 @@ export function FlowPage() {
     cssFull,
     toggleFullscreen,
   } = viewport
-  const { flow, clock, paused, setPaused, reset } = useFlowPlayback({
+  const { flow, clock, paused, setPaused } = useFlowPlayback({
     flowEvents: demo ? replay : events,
     mode: demo ? "replay" : "live",
     loop: demo,
@@ -102,19 +99,6 @@ export function FlowPage() {
     visibleRef,
     selectEvent: noop,
   })
-  const switchMode = () => {
-    reset()
-    setPaused(false)
-    if (demo) reconnect()
-    setParams(
-      (p) => {
-        if (demo) p.delete("modo")
-        else p.set("modo", "demo")
-        return p
-      },
-      { replace: true }
-    )
-  }
   const togglePause = useCallback(() => setPaused((p) => !p), [setPaused])
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
@@ -241,27 +225,12 @@ export function FlowPage() {
   return (
     <div
       ref={rootRef}
-      className={`signal-page dark${cssFull ? "signal-expanded" : ""}`}
+      className={`signal-page${cssFull ? "signal-expanded" : ""}`}
     >
       <div className="signal-frame" ref={frameRef}>
-        <header className="signal-heading">
-          <div>
-            <span className="signal-kicker">
-              <Waypoints size={15} /> Protocolo Sideband
-            </span>
-            <h1>
-              Flujo de mensajes<span>.</span>
-            </h1>
-          </div>
-          <div className="signal-controls">
-            <Button variant="outline" onClick={switchMode}>
-              {demo ? (
-                <Radio data-icon="inline-start" />
-              ) : (
-                <Play data-icon="inline-start" />
-              )}
-              {demo ? "Volver al vivo" : "Ver demo"}
-            </Button>
+        <PageHeader
+          title="Flujo de mensajes"
+          actions={
             <Button
               variant="outline"
               size="icon"
@@ -273,20 +242,26 @@ export function FlowPage() {
             >
               {full ? <Minimize2 /> : <Maximize2 />}
             </Button>
-          </div>
-        </header>
+          }
+        />
         {!demo && error && status !== "live" ? (
           <ErrorState error={error} onRetry={reconnect} />
         ) : null}
         <section className="signal-console" aria-label="Mapa de conversaciones">
           <div className="signal-top">
-            <div
-              className="signal-source"
-              data-connected={demo || status === "live"}
+            <ToneBadge
+              tone={
+                demo
+                  ? "neutral"
+                  : status === "live"
+                    ? "ok"
+                    : status === "offline"
+                      ? "error"
+                      : "warn"
+              }
             >
-              <i />
               {source}
-            </div>
+            </ToneBadge>
             <details
               className="signal-filter"
               onToggle={(e) => setFilterOpen(e.currentTarget.open)}
@@ -340,14 +315,9 @@ export function FlowPage() {
                   className="signal-orbits"
                   transform={`translate(${size.width / 2} ${height / 2})`}
                 >
-                  {[65, 96, 135, 186, 250].map((r) => (
+                  {[64, 96].map((r) => (
                     <circle key={r} r={r} />
                   ))}
-                  <circle
-                    className="signal-ticks"
-                    r="78"
-                    strokeDasharray="1 7"
-                  />
                 </g>
                 {stations.map(({ actor, curve, d }) => {
                   const traffic = pulses.filter(
@@ -464,15 +434,15 @@ export function FlowPage() {
         </section>
         <div className="signal-legend" aria-label="Leyenda">
           <span data-tone="question">
-            <CircleDot />
+            <i aria-hidden="true" />
             Pregunta
           </span>
           <span data-tone="answer">
-            <Activity />
+            <i aria-hidden="true" />
             Respuesta
           </span>
           <span data-tone="decision">
-            <ShieldCheck />
+            <i aria-hidden="true" />
             Decisión de acceso
           </span>
           {network.total > capacity || (!demo && truncated) ? (
