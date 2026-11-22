@@ -78,8 +78,9 @@ export function formatDuration(ms: number | null | undefined): string {
   if (ms < 1_000) return `${Math.round(ms)} ms`
   if (ms < 60_000)
     return `${(ms < 10_000 ? seconds2 : seconds1).format(ms / 1_000)} s`
-  const minutes = Math.floor(ms / 60_000)
-  const seconds = Math.round((ms % 60_000) / 1_000)
+  const totalSeconds = Math.round(ms / 1_000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
   return seconds ? `${minutes} min ${seconds} s` : `${minutes} min`
 }
 
