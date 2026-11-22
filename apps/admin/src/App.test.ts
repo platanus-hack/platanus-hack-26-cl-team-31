@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest"
 import App from "./App"
 import { errorQuery } from "@/lib/queries"
 import { queryClient } from "@/lib/query"
-import { audit, errorEvents } from "@/mocks/fixtures"
+import { audit, errorEvents, errors, NOW } from "@/mocks/fixtures"
 import { writeMockState } from "@/mocks/handlers"
 import * as live from "@/mocks/live"
 
@@ -132,6 +132,108 @@ it("abre desde un error la solicitud con su identificador completo", async () =>
         ?.textContent
     ).toBe(event.requestId)
   )
+})
+
+it("combina ventana, servicio y operación y recalcula las ocurrencias de los grupos visibles", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(NOW)
+  await openApp("/errores")
+  const withinHours = (hours: number) =>
+    errors.filter(
+      (group) => Date.parse(group.lastAt) >= NOW - hours * 3_600_000
+    )
+  const daily = withinHours(24)
+  const broker = daily.filter((group) => group.service === "broker")
+  const replies = broker.filter((group) => group.operation.includes("POST"))
+
+  async function expectGroups(groups: typeof errors) {
+    const ordered = groups.toSorted((a, b) => b.count - a.count)
+    const total = groups.reduce((sum, group) => sum + group.count, 0)
+    await waitForView(() => {
+      const rows = Array.from(
+        host.querySelectorAll<HTMLTableRowElement>("tbody tr")
+      )
+      expect(rows.map((row) => row.cells[1]?.textContent)).toEqual(
+        ordered.map((group) => group.operation)
+      )
+      expect(host.textContent).toContain(` · ${total} ocurrencias`)
+    })
+  }
+
+  async function selectOption(label: string, optionText: string) {
+    const trigger = host.querySelector<HTMLElement>(`[aria-label="${label}"]`)!
+    await act(() =>
+      trigger.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })
+      )
+    )
+    const option = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="option"]')
+    ).find((item) => item.textContent.includes(optionText))
+    expect(option).toBeDefined()
+    await act(() => option!.click())
+  }
+
+  await expectGroups(withinHours(1))
+  await selectOption("Ventana de tiempo", "24 horas")
+  await expectGroups(daily)
+  await selectOption("Servicio", "broker")
+  await expectGroups(broker)
+
+  const input = host.querySelector<HTMLInputElement>(
+    'input[aria-label="Operación"]'
+  )!
+  await act(() => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value"
+    )!.set!
+    setter.call(input, "POST")
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+  })
+  await expectGroups(replies)
+  const clear = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "Limpiar"
+  )!
+  await act(() => clear.click())
+  await expectGroups(daily)
+  expect(input.value).toBe("")
+})
+
+it("abre la muestra del grupo seleccionado, permite copiar sus frames y vuelve a la lista", async () => {
+  const sample = errorEvents.find(
+    (event) => event.service === "mcp" && event.attrs.issues
+  )!
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
+  await openApp("/errores")
+
+  const row = () =>
+    Array.from(host.querySelectorAll<HTMLTableRowElement>("tbody tr")).find(
+      (item) => item.textContent.includes(String(sample.attrs.operation))
+    )
+  await waitForView(() => expect(row()).toBeDefined())
+  await act(() => row()!.click())
+
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')
+  await waitForView(() => {
+    expect(dialog()?.textContent).toContain(sample.attrs.issues)
+    expect(dialog()?.textContent).toContain(sample.attrs.frames)
+  })
+  expect(window.location.pathname).toBe(`/errores/${sample.errorId}`)
+  const copy = dialog()!.querySelector<HTMLButtonElement>(
+    '[aria-label="Copiar frames"]'
+  )!
+  await act(() => copy.click())
+  expect(write).toHaveBeenCalledExactlyOnceWith(sample.attrs.frames)
+
+  const close = Array.from(dialog()!.querySelectorAll("button")).find(
+    (button) => button.textContent === "Close"
+  )!
+  await act(() => close.click())
+  await waitForView(() => {
+    expect(window.location.pathname).toBe("/errores")
+    expect(dialog()).toBeNull()
+    expect(row()).toBeDefined()
+  })
 })
 
 it("copia los atributos del evento seleccionado en En vivo y abre su solicitud", async () => {
