@@ -2,7 +2,7 @@ import type { OwnerPort } from "@team-31/broker-client";
 import type { ActivityEvent, ActivityItem, RequestStatus } from "@team-31/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { readPingStatus, saveWake } from "./actions";
+import { readPingStatus, saveWake, startPing } from "./actions";
 
 const { activity, setWake, agents, sendPing, emit } = vi.hoisted(() => ({
   activity: vi.fn<OwnerPort["activity"]>(), setWake: vi.fn<OwnerPort["setWake"]>(),
@@ -74,6 +74,17 @@ describe("readPingStatus", () => {
 
     expect(await readPingStatus("ping-1")).toBeUndefined();
   });
+});
+
+it("sends the OpenClaw probe only while the selected agent uses OpenClaw hooks", async () => {
+  const agentId = "openclaw-test";
+  agents.mockResolvedValueOnce([{ agentId, wakeKind: "openclaw_hooks" }])
+    .mockResolvedValueOnce([{ agentId, wakeKind: "grokbot_routine" }]);
+  sendPing.mockClear().mockResolvedValue({ requestId: "ping-1" });
+
+  expect(await startPing("openclaw", agentId)).toEqual({ requestId: "ping-1" });
+  expect(await startPing("openclaw", agentId)).toHaveProperty("error");
+  expect(sendPing).toHaveBeenCalledExactlyOnceWith({ userId: "ana" }, agentId);
 });
 
 describe("Grok Bot wake setup", () => {
