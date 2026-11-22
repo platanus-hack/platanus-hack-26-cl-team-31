@@ -1,3 +1,4 @@
+import { RESULT_EVENT, RESULT_ROUTING_INSTRUCTION, SAVE_RESULT_ORIGIN } from "@team-31/protocol";
 import { secondaryText } from "../../../ui";
 import { CopyBox } from "./CopyBox";
 
@@ -7,7 +8,7 @@ export function TrustSnippet({ location }: { location: string }) {
   return (
     <div className="space-y-2">
       <p className={secondaryText}>Pega el bloque de confianza en {location}.</p>
-      <CopyBox label="Bloque de confianza" value={trustSnippet} />
+      <CopyBox label="Bloque de confianza" value={`${trustSnippet}\n\n${SAVE_RESULT_ORIGIN} Ante ${RESULT_EVENT}: ${RESULT_ROUTING_INSTRUCTION}`} />
     </div>
   );
 }

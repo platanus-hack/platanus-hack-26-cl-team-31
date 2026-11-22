@@ -126,6 +126,17 @@ describe("wake", () => {
     expect(request.body).not.toContain(key);
   });
 
+  it("el webhook de cierre de Grok indica salir sin consultar si falta el chat y no publicar un informe", async () => {
+    const { url, captured } = await startReceiver();
+    const closed = { ...notice, event: RESULT_EVENT, result: { text: "Respuesta privada" } } as const;
+    await waker.wake({ kind: "grokbot_routine", url, key: "credencial-de-prueba" }, closed);
+    const request = expectRequest(captured, "/", {
+      event: RESULT_EVENT, requestId: notice.requestId,
+      instruction: expect.stringMatching(/chat privado.*no consultes.*NO_REPLY.*sideband_check.*salida de la rutina.*NO_REPLY/s),
+    });
+    expect(request.body).not.toContain(closed.result.text);
+  });
+
   it("envía únicamente el aviso firmado a un Standard Webhook", async () => {
     const { url, captured } = await startReceiver((_request, response) => {
       response.writeHead(202).end();
