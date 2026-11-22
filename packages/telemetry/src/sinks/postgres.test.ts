@@ -4,6 +4,7 @@ import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTelemetry } from "../telemetry.js";
 import { EventKind, Level, Service, type TelemetryRecord } from "../types.js";
+import { sinkFromEnv } from "./env.js";
 import { postgresSink, type Queryable } from "./postgres.js";
 
 function record(name: string): TelemetryRecord {
@@ -133,6 +134,23 @@ describe.skipIf(!testDatabaseUrl)("postgresSink contra TEST_DATABASE_URL", () =>
     expect(byName["broker.request.status_changed"]).toMatchObject({ trace_id: traceId, parent_span_id: byName["wake.attempt"].span_id });
     expect(byName.error).toMatchObject({ kind: "error", level: "error", error_id: errorId, request_id: "req_pg", attrs: { operation: "wake.deliver", type: "Error", code: "EWAKE" } });
     expect(JSON.stringify(rows)).not.toContain("hook.example");
+  });
+
+  it("envía los eventos solo a la base dedicada cuando también hay una base de aplicación", async () => {
+    const dedicated = await createTestDatabase("telemetry_dedicated");
+    try {
+      await applyOpsMigrations({ databaseUrl: dedicated.url });
+      const sink = sinkFromEnv({ DATABASE_URL: databaseUrl, TELEMETRY_DATABASE_URL: dedicated.url });
+      const heartbeat = { ...record("service.heartbeat"), instance: "dedicated-destination" };
+      sink.write(heartbeat);
+      await sink.close();
+
+      const events = "SELECT name FROM ops.events WHERE instance = $1";
+      expect((await dedicated.pool().query(events, [heartbeat.instance])).rows).toEqual([{ name: heartbeat.name }]);
+      expect((await db.query(events, [heartbeat.instance])).rows).toEqual([]);
+    } finally {
+      await dedicated.drop();
+    }
   });
 
   it("si la base rechaza el lote cuenta failed y no lanza", async () => {
