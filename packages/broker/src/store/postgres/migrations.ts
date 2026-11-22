@@ -51,6 +51,9 @@ async function grantRuntimePrivileges(client: pg.PoolClient, runtimeRole: string
   await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.quota_windows TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.vault_categories, sideband.vault_entries, sideband.vault_permissions, sideband.vault_documents TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE ON sideband.vault_member_rules TO ${role}`);
+  // El historial de visitas es solo de agregado: sin UPDATE ni DELETE, la trazabilidad no se reescribe.
+  await client.query(`GRANT SELECT, INSERT ON sideband.vault_visits TO ${role}`);
+  await client.query(`GRANT USAGE ON SEQUENCE sideband.vault_visits_seq_seq TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.tags, sideband.contact_tags TO ${role}`);
   await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON sideband.circles, sideband.circle_members TO ${role}`);
   await client.query(`REVOKE UPDATE, DELETE, TRUNCATE ON sideband.request_events FROM ${role}`);

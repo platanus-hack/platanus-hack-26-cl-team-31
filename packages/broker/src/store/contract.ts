@@ -297,6 +297,18 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("no deja visita cuando quien lista el catálogo no puede leer ninguna categoría", async () => {
+      const stranger = "eva@sideband.app";
+      await store.tx(async tx => {
+        await tx.changeVault("bruno", randomUUID(), { action: "create", name: "Salud" });
+        // El catálogo es abierto y devuelve los nombres con canRead en false.
+        const listed = await tx.sharedVault(stranger, toAddress, undefined, now);
+        expect(listed.categories.length).toBeGreaterThan(0);
+        expect(listed.categories.every(category => !category.canRead)).toBe(true);
+        expect((await tx.vaultVisits("bruno", { limit: 10 })).visits).toEqual([]);
+      });
+    });
+
     it("registra la lectura de una categoría pública por alguien que no es contacto", async () => {
       const id = randomUUID();
       const stranger = "eva@sideband.app";
@@ -325,6 +337,10 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
 
         // Sin permiso no hay visita.
         expect(await tx.sharedVaultDocument("eva@sideband.app", toAddress, query, now)).toBeNull();
+        expect((await tx.vaultVisits("bruno", { limit: 10 })).visits).toEqual([]);
+
+        // El titular bajando su propio archivo no es una visita, aunque la lectura sí esté permitida.
+        expect(await tx.sharedVaultDocument(toAddress, toAddress, query, now)).not.toBeNull();
         expect((await tx.vaultVisits("bruno", { limit: 10 })).visits).toEqual([]);
 
         expect(await tx.sharedVaultDocument(fromAddress, toAddress, query, now)).not.toBeNull();

@@ -477,9 +477,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const lookup = query.data.categoryId ? "entries" as const : "categories" as const;
     const visible = result.categories.length > 0;
     record(tx, "broker.vault.queried", { userId, agentId, attrs: { lookup, visible } });
-    // The store records a visit for every authorized read of somebody else's vault.
-    if (visible && reader !== query.data.to) {
-      record(tx, "broker.vault.visited", { userId, agentId, attrs: { lookup, ...(query.data.categoryId ? { categoryId: query.data.categoryId } : {}) } });
+    // Listar el catálogo devuelve todos los nombres con su flag, así que la condición de la visita
+    // es la misma que usa el store: haber alcanzado algo. El id de una categoría por defecto es su
+    // nombre («health»), así que la visita no lo publica.
+    const reached = query.data.categoryId ? visible : result.categories.some(category => category.canRead);
+    if (reached && reader !== query.data.to) {
+      record(tx, "broker.vault.visited", { userId, agentId, attrs: { kind: query.data.categoryId ? "entries" : "catalog" } });
     }
     return result;
   }
@@ -551,7 +554,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       userId, agentId, attrs: { sizeBytes: row.sizeBytes },
     });
     if (reader !== parsed.data.to) {
-      record(tx, "broker.vault.visited", { userId, agentId, attrs: { lookup: "document", categoryId: parsed.data.categoryId } });
+      record(tx, "broker.vault.visited", { userId, agentId, attrs: { kind: "document" } });
     }
     return { ...metadata, contentBase64: Buffer.from(row.content).toString("base64") };
   }

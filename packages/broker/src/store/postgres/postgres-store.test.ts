@@ -573,12 +573,15 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
           expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: true });
-          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories.filter(c => c.canRead))
+          // Con `at` la lectura registra la visita: el rol de ejecución necesita escribir vault_visits.
+          expect((await tx.sharedVault(friend, "bruno@sideband.app", undefined, now)).categories.filter(c => c.canRead))
             .toEqual([{ id: categoryId, name: "Prueba", visibility: "private", canRead: true }]);
+          expect((await tx.sharedVault(friend, "bruno@sideband.app", categoryId, now)).categories).toHaveLength(1);
+          expect((await tx.vaultVisits("bruno", { limit: 5 })).readers).toBe(1);
           expect(await tx.deleteTag("bruno", tagId)).toBe(true);
           expect(await tx.vaultMembers("bruno", categoryId)).toEqual([friend]);
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
-          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories.filter(c => c.canRead)).toEqual([]);
+          expect((await tx.sharedVault(friend, "bruno@sideband.app", undefined, now)).categories.filter(c => c.canRead)).toEqual([]);
           expect(await tx.deleteTag("bruno", "friend")).toBe(true);
           expect(await tx.setContactTags("bruno", friend, [])).toBe(true);
           expect(await tx.removeContact("bruno", friend)).toBe(true);

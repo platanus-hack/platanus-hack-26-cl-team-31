@@ -170,6 +170,26 @@ describe("telemetría del core del broker", () => {
     expect(sink.find("broker.agent.connected").filter((record) => record.userId === "carla")).toHaveLength(1);
   });
 
+  it("la visita a la bóveda no publica la categoría ni el contenido", async () => {
+    const invitation = await broker.owner.connect({ userId: "bruno" }, { to: "alice@sideband.app", share: [] });
+    await broker.owner.answerInvitation({ userId: "alice" }, invitation.requestId, { accept: true, share: [] });
+    // La categoría por defecto «health» lleva un id semántico: publicarlo nombra el tema.
+    await broker.owner.changeVault({ userId: "bruno" }, { action: "set_member", categoryId: "health", address: "alice@sideband.app", allowed: true });
+    await broker.agent.queryVault(alice, { to: "bruno@sideband.app", categoryId: "health" });
+
+    const visited = sink.find("broker.vault.visited");
+    expect(visited).toHaveLength(1);
+    expect(visited[0]?.attrs).toEqual({ kind: "entries" });
+    expect(JSON.stringify(visited)).not.toContain("health");
+
+    // Listar el catálogo sin poder leer nada no deja visita ni evento: el store y la telemetría
+    // cuentan lo mismo, si no el admin ve un contador que no puede rastrear.
+    const carla: Principal = { userId: "carla", agentId: "carla-bot", scopes };
+    await broker.owner.claimAddress({ userId: "carla" }, "carla");
+    await broker.agent.queryVault(carla, { to: "bruno@sideband.app" });
+    expect(sink.find("broker.vault.visited")).toHaveLength(1);
+  });
+
   it("una solicitud sin permiso queda denegada con su código", async () => {
     await broker.owner.claimAddress({ userId: "carla" }, "carla");
     await broker.agent.ask(alice, { to: "carla@sideband.app", tool: "question", args: { text: secretText, category: "general" } });

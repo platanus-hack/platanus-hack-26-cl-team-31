@@ -199,8 +199,9 @@ function transaction(state: State): StoreTx {
             ...(documents.length ? { documents } : {}),
           };
         }) };
-      // The catalog is open, so listing it is itself the visit: the reader learned the names.
-      if (!id) recordVisit(owner, reader, to, null, "catalog", at);
+      // Only a listing that actually reaches something is a visit: otherwise a stranger could fill
+      // the holder's history by listing in a loop, without sharing anything with them.
+      if (!id) { if (result.categories.some(category => category.canRead)) recordVisit(owner, reader, to, null, "catalog", at); }
       else if (result.categories.length) recordVisit(owner, reader, to, id, "entries", at);
       return result;
     },
@@ -233,7 +234,7 @@ function transaction(state: State): StoreTx {
     },
     async vaultVisits(owner, query): Promise<VaultVisits> {
       const mine = state.visits.filter(visit => visit.owner === owner);
-      const named = new Map(vaultOf(owner).categories.map(category => [category.id, category.name]));
+      const named = new Map((state.vaults.get(owner)?.categories ?? []).map(category => [category.id, category.name]));
       const page = mine.filter(visit => !query.categoryId || visit.categoryId === query.categoryId)
         .slice(-query.limit).reverse();
       return {

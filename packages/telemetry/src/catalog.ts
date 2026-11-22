@@ -240,8 +240,8 @@ export const catalog = [
   defineEvent({ name: "broker.vault.changed", kind: "policy", description: "Cambio de la bóveda personal, sin nombres ni valores.",
     attrs: { action: code(), allowed: z.boolean().optional(), visibility: z.enum(["public", "private"]).optional() } }),
   defineEvent({ name: "broker.vault.visited", kind: "policy",
-    description: "Una lectura autorizada de la bóveda quedó registrada como visita. Sin la dirección del lector.",
-    attrs: { lookup: z.enum(["entries", "categories", "document"]), categoryId: id().optional() } }),
+    description: "Una lectura autorizada de la bóveda quedó registrada como visita. Sin la dirección del lector ni la categoría.",
+    attrs: { kind: z.enum(["catalog", "entries", "document"]) } }),
   defineEvent({ name: "broker.vault.queried", kind: "policy", description: "Consulta a categorías compartidas, sin contenido.",
     attrs: { lookup: z.enum(["entries", "categories"]), visible: z.boolean() } }),
   defineEvent({

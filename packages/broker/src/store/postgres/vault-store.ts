@@ -145,12 +145,14 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
         // The catalog is open to any Sideband user, so a holder who never opened the vault still shows the defaults.
         const [holder] = await db.select({ userId: users.userId }).from(users).where(eq(users.address, to));
         if (holder) await seedDefaults(holder.userId);
-        // The catalog is open, so listing it is itself the visit: the reader learned the names.
-        if (holder) await recordVisit(holder.userId, reader, to, null, "catalog", at);
         // Drizzle drops the table name from columns written directly in a single-table selection.
         // Nesting the predicate keeps them qualified, which the correlated subqueries need.
         const rows = await db.select({ ...info, canRead: sql<boolean>`${readable}` }).from(c)
           .where(inArray(c.owner, owner)).orderBy(c.name, c.id);
+        // The catalog is open to any Sideband user and returns every name with its flag. Only a
+        // listing that actually reaches something is a visit: otherwise a stranger could fill the
+        // holder's history by listing in a loop, without sharing anything with them.
+        if (holder && rows.some(row => row.canRead)) await recordVisit(holder.userId, reader, to, null, "catalog", at);
         return { categories: rows.map(categoryInfo) };
       }
       const rows = await db.select({ ...info, owner: c.owner, entry: { label: e.label, value: e.value } }).from(c)
