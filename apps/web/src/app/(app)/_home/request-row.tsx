@@ -70,12 +70,14 @@ function useDecision(item: OwnerPendingItem) {
   const negative = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!declining) return;
-    const timer = setTimeout(() => form.current?.requestSubmit(negative.current), 5000);
+    const timer = setTimeout(() => {
+      form.current?.requestSubmit(negative.current);
+      setDeclining(false);
+    }, 5000);
     return () => clearTimeout(timer);
   }, [declining]);
   const quick = choices(item);
-  const gone = (pending || state.message) && !state.error && !declining;
-  const undoing = declining && !state.error;
+  const gone = (pending || state.message) && !state.error;
   const hiddenForm = quick && (
     <form ref={form} action={submit} hidden>
       <button ref={negative} name="decision" value={quick[2]} />
@@ -88,7 +90,7 @@ function useDecision(item: OwnerPendingItem) {
       {hiddenForm}
     </>
   );
-  return { state, submit, pending, quick, gone, undoing, undo, decline: () => setDeclining(true) };
+  return { state, submit, pending, quick, gone, undoing: declining, undo, decline: () => setDeclining(true) };
 }
 
 export function RequestRow({ item, expires }: { item: OwnerPendingItem; expires: string }) {
