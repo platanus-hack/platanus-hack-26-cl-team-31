@@ -33,7 +33,7 @@ export function contactPrincipal(id) {
   return { userId, agentId: userId + "-bot", scopes: ["sideband:inbox", "sideband:reply"] };
 }
 
-// `route` names the web receiver: `contact-wake` for Ana's contacts, `cast-wake` for the WhatsApp cast.
+// `route` names the web receiver: `contact-wake` for Ana's contacts, `cast-wake` for the demo cast.
 export function demoWakeUrl(route, id) {
   const port = Number(process.env.WEB_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("WEB_PORT inválido.");

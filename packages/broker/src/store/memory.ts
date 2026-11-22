@@ -3,7 +3,7 @@ import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit
 import { activeAgentConflict, BrokerError, notFound } from "../errors.js";
 import { wakeClaim } from "./store.js";
 import type {
-  AgentConnectionRow, AskReceipt, ChannelRow, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, VaultDocumentRow, WakeJob,
+  AgentConnectionRow, AskReceipt, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, VaultDocumentRow, WakeJob,
 } from "./store.js";
 
 type State = {
@@ -21,7 +21,6 @@ type State = {
   events: RequestEvent[];
   wakes: Map<string, WakeJob>;
   agents: Map<string, AgentConnectionRow>;
-  channels: Map<string, ChannelRow>;
   documents: Map<string, VaultDocumentRow>;
   documentKeys: Map<string, string>;
 };
@@ -516,20 +515,13 @@ function transaction(state: State): StoreTx {
     async getAgentConnection(userId, agentId) {
       return structuredClone(state.agents.get(pairKey(userId, agentId)) ?? null);
     },
-    async putChannel(row) {
-      ensureUser(row.userId, row.createdAt);
-      state.channels.set(pairKey(row.userId, row.name), structuredClone(row));
-    },
-    async getChannel(userId, name) {
-      return structuredClone(state.channels.get(pairKey(userId, name)) ?? null);
-    },
   };
 }
 
 export function createMemoryStore(): Store {
   let state: State = {
     vaults: new Map(), memberRules: new Map(), users: new Map(), grants: [], contacts: new Map(), contactTags: new Map(), tags: new Map(), circles: new Map(), circleMembers: [], requests: new Map(),
-    askReceipts: new Map(), events: [], wakes: new Map(), agents: new Map(), channels: new Map(), documents: new Map(), documentKeys: new Map(),
+    askReceipts: new Map(), events: [], wakes: new Map(), agents: new Map(), documents: new Map(), documentKeys: new Map(),
   };
   let previous = Promise.resolve();
 

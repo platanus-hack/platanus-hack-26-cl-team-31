@@ -53,7 +53,7 @@ export function registerVault(server: McpServer, p: Principal, agent: AgentPort,
     inputSchema: VaultQuery, outputSchema: VaultResult, annotations: { readOnlyHint: true },
   }, query => runTool(telemetry, p, { tool: "sideband_vault_query", scope: agentScopes.queryVault }, () => agent.queryVault(p, query)));
   server.registerTool("sideband_vault_request_access", {
-    description: "Pide a un contacto permiso de lectura de una categoría de su bóveda por nombre. El titular decide desde Inicio. Consulta el estado con sideband_check.",
+    description: "Pide a un contacto permiso de lectura de una categoría de su bóveda por nombre. El titular recibe la solicitud en su agente y puede decidir allí o en Inicio. Consulta el estado con sideband_check.",
     inputSchema: ToolArgs.vault_access.extend({ to: Address }),
   }, ({ to, categoryName }) => runTool(telemetry, p, { tool: "sideband_vault_request_access", scope: agentScopes.ask },
     () => agent.ask(p, { to, tool: "vault_access", args: { categoryName } })));

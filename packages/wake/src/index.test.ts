@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { WAKE_EVENT, type WakeTarget } from "@team-31/protocol";
+import { LIFECYCLE_EVENT, RESULT_EVENT, WAKE_EVENT, type WakeTarget } from "@team-31/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createWaker } from "./index.js";
 import { createSafeFetch } from "./safe-fetch.js";
@@ -88,6 +88,20 @@ afterEach(async () => {
 });
 
 describe("wake", () => {
+  it("un cierre despierta al solicitante para consultar el resultado sin incluirlo en el hook", async () => {
+    const { url, captured } = await startReceiver();
+    const closed = { ...notice, event: RESULT_EVENT } as const;
+    await waker.wake({ kind: "openclaw_hooks", baseUrl: url, token: "credencial-de-prueba", agentId: "main" }, closed);
+    expectRequest(captured, "/hooks/agent", {
+      message: expect.stringContaining("sideband_check"), name: "Sideband", agentId: "main", deliver: false, timeoutSeconds: 180,
+    }, { "idempotency-key": "closed_req_123" });
+    captured.length = 0;
+    await waker.wake({ ...mcpTarget(url), lifecycle: true }, closed);
+    expectRequest(captured, "/", {
+      eventId: "evt_closed_req_123", name: LIFECYCLE_EVENT, timestamp: expect.any(String),
+      data: { requestId: notice.requestId, event: RESULT_EVENT }, cursor: null,
+    }, { "webhook-id": "evt_closed_req_123" });
+  });
   it("avisa a OpenClaw en /hooks/agent con Bearer e idempotencia", async () => {
     const { port, captured } = await startReceiver();
     const token = "credencial-de-prueba";

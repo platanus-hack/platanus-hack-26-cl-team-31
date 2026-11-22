@@ -1,5 +1,5 @@
 import {
-  ActivityEvent, Address, Category, ChannelName, FinalOutcome, RequestStatus, ToolArgs, ToolName, ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
+  ActivityEvent, Address, Category, FinalOutcome, RequestStatus, ToolArgs, ToolName, ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
   TagColor,
 } from "@team-31/protocol";
 import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
@@ -9,13 +9,13 @@ import pg from "pg";
 import { activeAgentConflict, BrokerError, notFound } from "../../errors.js";
 import { wakeClaim } from "../store.js";
 import type {
-  AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
+  AgentConnectionRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
 import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit, sortTags } from "../directory.js";
 import { createWakeCodec } from "./crypto.js";
 import { contactAccess, insertWithParents, openToTag, seedHolder, vaultStore } from "./vault-store.js";
 import {
-  agentConnections, askReceipts, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tags, users, vaultDocuments, vaultPermissions, wakeJobs,
+  agentConnections, askReceipts, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tags, users, vaultDocuments, vaultPermissions, wakeJobs,
 } from "./schema.js";
 
 export type PostgresStoreOptions = {
@@ -52,7 +52,7 @@ function readGrant({ revokedAt: _revokedAt, ...row }: typeof grants.$inferSelect
   return { ...row, granteeAddress: parseStored(Address, row.granteeAddress), category: parseStored(Category, row.category) };
 }
 
-function readRequest(row: typeof requests.$inferSelect): RequestRow {
+function readRequest({ originChannel: _retiredChannel, ...row }: typeof requests.$inferSelect): RequestRow {
   const tool = parseStored(ToolName, row.tool);
   return {
     ...row,
@@ -60,7 +60,7 @@ function readRequest(row: typeof requests.$inferSelect): RequestRow {
     fromAddress: parseStored(Address, row.fromAddress),
     toAddress: parseStored(Address, row.toAddress),
     targetAgentId: row.targetAgentId ?? undefined,
-    originChannel: row.originChannel === null ? undefined : parseStored(ChannelName, row.originChannel),
+    originAgentId: row.originAgentId ?? undefined,
     args: parseStored<unknown>(ToolArgs[tool], row.args),
     purpose: row.purpose ?? undefined,
     status: parseStored(RequestStatus, row.status),
@@ -123,21 +123,6 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       lastWakeAt: row.lastWakeAt ?? undefined,
       revokedAt: row.revokedAt ?? undefined,
       revokedBy: row.revokedBy ?? undefined,
-    };
-  }
-
-  // The codec binds each secret to its owner and name. A channel cannot reuse an agent's secret.
-  function channelIdentity({ userId, name }: Pick<ChannelRow, "userId" | "name">) {
-    return { userId, agentId: `channel:${name}` };
-  }
-
-  function readChannel({ wakeKind, wakePublic, wakeSecret, ...row }: typeof channels.$inferSelect): ChannelRow {
-    const name = parseStored(ChannelName, row.name);
-    return {
-      userId: row.userId, name, createdAt: row.createdAt,
-      wakeTarget: codec.decode({
-        ...channelIdentity({ userId: row.userId, name }), wakeKind: parseStored(WakeKind, wakeKind), wakePublic, wakeSecret,
-      }),
     };
   }
 
@@ -589,18 +574,6 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
     getAgentConnection,
 
-    async putChannel({ wakeTarget, ...row }) {
-      await ensureUser(row.userId, row.createdAt);
-      const configuration = codec.encode(wakeTarget, channelIdentity(row));
-      await db.insert(channels).values({ ...row, ...configuration }).onConflictDoUpdate({
-        target: [channels.userId, channels.name], set: configuration,
-      });
-    },
-
-    async getChannel(userId, name) {
-      const [row] = await db.select().from(channels).where(and(eq(channels.userId, userId), eq(channels.name, name)));
-      return row ? readChannel(row) : null;
-    },
   };
 }
 

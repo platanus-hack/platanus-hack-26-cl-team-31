@@ -12,7 +12,7 @@ const directory = () =>
     ],
     agents: [
       { agentId: "a1", userId: "u1", label: "Claude Code", kind: "mcp_events" },
-      { agentId: "b1", userId: "u2", label: "WhatsApp", kind: "whatsapp" },
+      { agentId: "b1", userId: "u2", label: "Grok Bot", kind: "grokbot_routine" },
     ],
     requests: [{ id: "r1", fromAddress: "ana@sideband.app", toAddress: "bob@sideband.app" }],
   });
@@ -182,7 +182,7 @@ describe("presence mapping", () => {
     ]);
   });
 
-  it("builds the initial network and maps WhatsApp links and first MCP calls", () => {
+  it("builds the initial network and maps MCP calls", () => {
     const dir = createFlowDirectory({
       users: [
         { userId: "u1", address: "ana@sideband.app", displayName: "Ana" },
@@ -201,10 +201,6 @@ describe("presence mapping", () => {
     expect(snapshot.every((e) => e.meta.snapshot)).toBe(true);
     // a1 ya estaba en la foto: su llamada no repite la entrada.
     expect(mapper.map(row("mcp.tool.call", { requestId: null, userId: "u1", agentId: "a1", attrs: { tool: "sideband_inbox", outcome: "ok" } })).map((e) => e.step)).toEqual(["inbox"]);
-    dir.add({ users: [{ userId: "u4", address: "max@sideband.app", displayName: "Max" }] });
-    expect(mapper.map(row("whatsapp.link", { requestId: null, userId: "u4", attrs: { action: "confirmed" } }))).toMatchObject([{ step: "joined", from: { id: "whatsapp@max@sideband.app", channel: "WhatsApp" } }]);
-    expect(mapper.map(row("whatsapp.link", { requestId: null, userId: "u4", attrs: { action: "unlinked" } }))).toMatchObject([{ step: "left" }]);
-    expect(mapper.map(row("whatsapp.link", { requestId: null, userId: "u4", attrs: { action: "started" } }))).toEqual([]);
   });
 });
 

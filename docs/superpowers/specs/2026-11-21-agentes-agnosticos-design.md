@@ -26,7 +26,7 @@ herramienta del titular es intercambiable sin tocar el servidor.
   real, no solo la originan.
 - Cambiar de herramienta no exige ningún cambio en broker, MCP ni web.
 - El canal de sondeo es un canal de primera clase en el admin: una solicitud
-  hacia un titular con CLI deja rastro, igual que una hacia Dot o WhatsApp.
+  hacia un titular con CLI deja rastro, igual que una hacia Dot.
 - El setup de un titular nuevo cabe en un comando y un consentimiento de navegador.
 
 ## No objetivos
@@ -45,8 +45,8 @@ herramienta del titular es intercambiable sin tocar el servidor.
   interés es la **comunicación general** entre agentes, no el acceso a datos.
 - Despliegue de verdad. El túnel sustituye al dominio; no hay servidor remoto,
   ni TLS propio, ni CI de despliegue.
-- Sustituir los avisos por webhook para los agentes alojados. Dot, Grok Bot,
-  OpenClaw y WhatsApp siguen con su `WakeTarget`; no se tocan.
+- Sustituir los avisos por webhook para los agentes alojados. Dot, Grok Bot y
+  OpenClaw siguen con su `WakeTarget`; no se tocan.
 
 ## Anti-objetivos
 
@@ -215,7 +215,7 @@ no lo reemplaza, lo acompaña.
 **Antes de rotar se revoca la conexión anterior** (decisión mía): la bandeja
 entrega las solicitudes sin destinatario a todas las conexiones vivas del
 titular, y dos agentes contestando producen un `conflict`. Lo mismo aplica si
-ese titular tiene además WhatsApp o un receptor del demo conectado.
+ese titular tiene además un receptor del demo conectado.
 
 ### Tiempo real
 

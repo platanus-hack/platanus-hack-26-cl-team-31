@@ -103,7 +103,6 @@ export const frozenOwnerClient: OwnerPort = {
   ]),
   agents: () => later(agents),
   setWake: done,
-  setChannel: done,
   ping: () => later({ requestId: "frozen" }),
   revokeAgent: done,
   connect: view,

@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { verifyServiceToken } from "@team-31/auth/service";
 import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-client";
-import { Scope, WAKE_EVENT } from "@team-31/protocol";
+import { LIFECYCLE_EVENT, Scope, WAKE_EVENT } from "@team-31/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { HandleMessage } from "./tools/message.js";
@@ -35,6 +35,7 @@ function testPort(): AgentPort {
     inbox: vi.fn(),
     reply: vi.fn(),
     status: vi.fn(),
+    pending: vi.fn(),
     activity: vi.fn(),
     contacts: vi.fn(),
     connectWake: vi.fn(),
@@ -156,9 +157,14 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     requestId: pending.requestId, from: "ana@sideband.app", to: pending.to, tool: pending.tool, status: "answered", outcome: "answered",
     createdAt: "2026-11-21T00:00:00Z", expiresAt: pending.expiresAt, events: [{ kind: "received", at: "2026-11-21T00:00:00Z" }], direction: "sent",
   }] };
+  const decisions = { items: [{
+    requestId: pending.requestId, from: "carla@sideband.app", tool: "vault_access", args: { categoryName: "Salud" },
+    senderMessage: { text: "", trusted: false }, expiresAt: pending.expiresAt,
+  }] };
   const requests: unknown[] = [];
   const replies: Record<string, unknown> = {
     "GET /v1/agent/activity?limit=5": activity,
+    "GET /v1/agent/pending": decisions,
     "POST /v1/agent/ask": pending,
     "GET /v1/agent/inbox": { items: [inbox] },
     "POST /v1/agent/reply": receipt,
@@ -201,7 +207,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
 
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
-    ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_activity", true], ["sideband_contacts", true],
+    ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_pending", true], ["sideband_activity", true], ["sideband_contacts", true],
     ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_circle_invite", undefined], ["sideband_tags", true], ["sideband_tag_change", undefined],
     ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_access", true], ["sideband_vault_change", undefined],
     ["sideband_vault_upload", undefined], ["sideband_vault_download", true], ["sideband_vault_query", true],
@@ -215,6 +221,10 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   });
   // El agente que responde sólo sabe qué mandar en result si la forma viaja en el esquema.
   const reply = tools.find((tool) => tool.name === "sideband_reply");
+  expect(reply?.inputSchema).toMatchObject({
+    if: { properties: { outcome: { const: "answered" } } },
+    then: { required: ["result"], properties: { result: { type: "object", minProperties: 1 } } },
+  });
   expect(reply?.inputSchema.properties).toMatchObject({
     result: {
       description: expect.stringContaining("allowedFields"),
@@ -226,6 +236,11 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const asString = await bob.callTool({ name: "sideband_reply", arguments: { ...answer, result: JSON.stringify(answer.result) } });
   expect(asString.isError).toBe(true);
   expect(JSON.stringify(asString.content)).toContain("objeto JSON");
+  for (const result of [null, {}, { note: "sin campos de respuesta" }]) {
+    const invalid = await bob.callTool({ name: "sideband_reply", arguments: { ...answer, result } });
+    expect(invalid.isError).toBe(true);
+    expect(JSON.stringify(invalid.content)).toContain("result");
+  }
 
   expect((await ana.callTool({ name: "sideband_ask", arguments: { to: pending.to, tool: "connect", args: {} } })).isError).toBe(true);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
@@ -244,6 +259,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   expect((await ana.callTool({ name: "sideband_circle_invite", arguments: { circleId: "circle-1", address: pending.to } })).structuredContent)
     .toEqual({ invited: pending.to });
   expect((await ana.callTool({ name: "sideband_activity", arguments: { limit: 5 } })).structuredContent).toEqual(activity);
+  expect((await ana.callTool({ name: "sideband_pending", arguments: {} })).structuredContent).toEqual(decisions);
 
   expect(requests).toEqual([
     { path: "POST /v1/agent/ask", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: question },
@@ -258,6 +274,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     { path: "GET /v1/agent/vault?categoryId=health", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: `PUT /v1/agent/circles/circle-1/members/${encodeURIComponent(pending.to)}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "GET /v1/agent/activity?limit=5", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "GET /v1/agent/pending", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
   ]);
 });
 
@@ -335,7 +352,7 @@ it("anuncia eventos, valida suscripciones, devuelve los errores de callback y ca
         type: "object", properties: { requestId: { type: "string" } },
         required: ["requestId"], additionalProperties: false,
       },
-    }],
+    }, expect.objectContaining({ name: LIFECYCLE_EVENT })],
   });
 
   const url = "https://callback.example.test/sideband";
@@ -377,4 +394,6 @@ it("anuncia eventos, valida suscripciones, devuelve los errores de callback y ca
   expect(await unsubscribe({ id: expectedId })).toEqual({});
   expect(agent.disconnectWake).toHaveBeenCalledTimes(2);
   expect(agent.disconnectWake).toHaveBeenLastCalledWith(principal, expectedId);
+  expect((await subscribe({ ...subscription, name: LIFECYCLE_EVENT })).id).not.toBe(expectedId);
+  expect(agent.connectWake).toHaveBeenLastCalledWith(principal, expect.objectContaining({ lifecycle: true }));
 });

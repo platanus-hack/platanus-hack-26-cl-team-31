@@ -1,4 +1,4 @@
-// The WhatsApp cast: five fictional owners with a public profile, private data and what each one
+// The demo cast: five fictional owners with a public profile, private data and what each one
 // shares with the owner who seeds them. The data is made up and lives in cast.json.
 import { ADDRESS_DOMAIN, Category, LocalPart } from "@team-31/protocol";
 import { z } from "zod";

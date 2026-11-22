@@ -53,6 +53,7 @@ export function createOwnerRuntime(
   async function processNotice(requestId: string) {
     const item = (await agent.inbox(principal)).find(entry => entry.requestId === requestId);
     if (!item || Date.parse(item.expiresAt) <= Date.now()) return;
+    if (toolExecution[item.tool] === "owner_decision") return;
     const binding = approved.find(tool => tool.name === item.tool &&
       (tool.name !== "question" || tool.category === item.ownerAuthorization.category));
     const reply = { requestId, nonce: item.nonce };

@@ -3,7 +3,6 @@ import type {
   OwnerVault, VaultCatalog, VaultChange, VaultResult, VaultDocumentQuery,
   Address,
   Category,
-  ChannelName,
   Tag,
   FinalOutcome,
   RequiredRelation,
@@ -29,8 +28,7 @@ export type RequestRow = {
   fromUserId: string | null;
   toUserId: string | null;
   targetAgentId?: string;
-  // Channel where the owner wrote the request. It receives a notice on each later change.
-  originChannel?: ChannelName;
+  originAgentId?: string;
   tool: ToolName;
   args: unknown;
   purpose?: string;
@@ -109,13 +107,6 @@ export type AgentConnectionRow = {
   // la del admin es terminal. Vacío en las filas anteriores a esta columna: valen como del titular,
   // que era lo único que existía.
   revokedBy?: Revoker;
-  createdAt: Date;
-};
-
-export type ChannelRow = {
-  userId: string;
-  name: ChannelName;
-  wakeTarget: WakeTarget;
   createdAt: Date;
 };
 
@@ -254,7 +245,4 @@ export interface StoreTx {
   listAgentConnections(userId: string): Promise<AgentConnectionRow[]>;
   getAgentConnection(userId: string, agentId: string, forUpdate?: boolean): Promise<AgentConnectionRow | null>;
 
-  // Creates the user if needed and replaces the channel's wake configuration.
-  putChannel(row: ChannelRow): Promise<void>;
-  getChannel(userId: string, name: ChannelName): Promise<ChannelRow | null>;
 }

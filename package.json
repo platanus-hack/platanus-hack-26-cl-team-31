@@ -33,8 +33,7 @@
     "agents:runtime-demo": "node \"$npm_execpath\" --filter-prod @team-31/demo... build && node apps/demo/src/runtime-demo.mjs",
     "docker:demo": "bash scripts/docker.sh demo",
     "docker:test": "bash scripts/docker.sh test",
-    "scale:run": "bash scripts/docker.sh scale",
-    "test:whatsapp": "./scripts/with-env.sh sh -c 'E2E_MCP_URL=\"${MCP_RESOURCE_URL:?}\" E2E_AUTH_MODE=dev pnpm --filter @team-31/e2e test src/contract.test.ts -t WhatsApp'"
+    "scale:run": "bash scripts/docker.sh scale"
   },
   "devDependencies": {
     "turbo": "^2.11.13",

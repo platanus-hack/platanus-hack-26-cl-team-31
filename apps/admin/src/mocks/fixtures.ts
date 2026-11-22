@@ -236,6 +236,7 @@ const fieldsByTool: Record<ToolName, string[]> = {
   interest_check: ["matches"],
   connect: ["accepted"],
   vault_access: ["accepted"],
+  category_access: ["accepted"],
 }
 const argsKeysByTool: Record<ToolName, string[]> = {
   profile: [],
@@ -244,6 +245,7 @@ const argsKeysByTool: Record<ToolName, string[]> = {
   interest_check: ["interest"],
   connect: [],
   vault_access: ["categoryName"],
+  category_access: ["category"],
 }
 
 type StatusPlan = { status: RequestStatus; count: number }
@@ -304,6 +306,8 @@ function samplePayload(tool: ToolName, status: RequestStatus) {
       }
     case "vault_access":
       return { args: { categoryName: "Agenda" }, purpose: null, result: answered ? { accepted: true } : null }
+    case "category_access":
+      return { args: { category: "general" }, purpose: null, result: answered ? { accepted: true } : null }
     case "connect":
       return {
         args: {},

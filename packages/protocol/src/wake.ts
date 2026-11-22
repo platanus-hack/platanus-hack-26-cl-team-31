@@ -31,22 +31,19 @@ export const WakeTarget = z.discriminatedUnion("kind", [
     callbackUrl: z.url(),
     secret: webhookSecret,
     subscriptionId: z.string(),
+    lifecycle: z.literal(true).optional(),
     refreshBefore: z.string().nullable(),
   }),
 ]);
 export type WakeTarget = z.infer<typeof WakeTarget>;
 
-// A medium where the owner writes requests and receives their deliveries, without an agent.
-export const ChannelName = z.enum(["whatsapp"]);
-export type ChannelName = z.infer<typeof ChannelName>;
-
 export const WAKE_EVENT = "sideband.request.created";
-// Sent to the channel a request came from when it waits for the recipient's owner or closes.
-export const WAKE_UPDATE_EVENT = "sideband.request.updated";
+export const RESULT_EVENT = "sideband.request.closed";
+export const LIFECYCLE_EVENT = "sideband.request.lifecycle";
 
 export const WakeNotice = z.strictObject({
   requestId: z.string(),
-  event: z.enum([WAKE_EVENT, WAKE_UPDATE_EVENT]),
+  event: z.enum([WAKE_EVENT, RESULT_EVENT]),
 });
 export type WakeNotice = z.infer<typeof WakeNotice>;
 

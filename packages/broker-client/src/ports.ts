@@ -13,7 +13,6 @@ import type {
   PublicAgent, PublicProfile,
   AgentContacts,
   AskArguments,
-  ChannelName,
   ContactsView,
   ConnectInput,
   InboxItem,
@@ -49,6 +48,8 @@ export interface AgentPort {
   inbox(p: Principal, includeInvitations?: boolean): Promise<InboxItem[]>;
   reply(p: Principal, input: ReplyInput): Promise<ReplyReceipt>;
   status(p: Principal, requestId: string): Promise<RequesterView>;
+  // Requests waiting for the holder's own decision. The agent reads them; only the holder decides.
+  pending(p: Principal): Promise<OwnerPendingItem[]>;
   activity(p: Principal, query?: ActivityQuery): Promise<ActivityItem[]>;
   // The caller's contacts and joined circles, so its agent knows whom it can ask.
   contacts(p: Principal): Promise<AgentContacts>;
@@ -76,13 +77,12 @@ export interface OwnerPort {
   activity(o: Owner, query?: number | ActivityQuery): Promise<ActivityItem[]>;
   // A channel marks where the owner wrote the request: the broker notifies it when the request
   // waits for the recipient's owner or closes.
-  ask(o: Owner, input: AskArguments, channel?: ChannelName): Promise<RequesterView>;
+  ask(o: Owner, input: AskArguments): Promise<RequesterView>;
   status(o: Owner, requestId: string): Promise<RequesterView>;
   decide(o: Owner, requestId: string, decision: OwnerDecision): Promise<void>;
   agentDirectory(o: Owner): Promise<PublicAgent[]>;
   agents(o: Owner): Promise<AgentConnection[]>;
   setWake(o: Owner, agentId: string, target: WakeTarget): Promise<void>;
-  setChannel(o: Owner, name: ChannelName, target: WakeTarget): Promise<void>;
   ping(o: Owner, agentId: string): Promise<{ requestId: string }>;
   revokeAgent(o: Owner, agentId: string): Promise<void>;
   connect(o: Owner, input: ConnectInput): Promise<RequesterView>;

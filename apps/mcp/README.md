@@ -17,6 +17,7 @@ Con `ANTHROPIC_API_KEY` y la base de turnos configuradas, el servidor publica `s
 - `sideband_vault_members` lista los contactos con acceso efectivo a una categoría propia. Busca primero su ID con `sideband_vault_catalog`.
 - Con `sideband_vault_change`, `set_tag` cambia el acceso de una etiqueta. `set_member` con `categoryId`, `address` y `allowed` agrega o quita un contacto aceptado de esa categoría. La decisión individual prevalece sobre las etiquetas hasta que se cambie o se elimine el contacto.
 - `sideband_vault_request_access` recibe `to` y `categoryName`. El contacto ve la solicitud en Inicio: al conceder lectura se reutiliza la categoría o se crea vacía y se agrega un permiso individual. Rechazar o dejarla vencer no cambia la bóveda. El solicitante consulta el resultado con `sideband_check`.
+- `sideband_pending` (`sideband:status`) lista las solicitudes que esperan la decisión del titular, como un pedido de acceso a su bóveda. Es de solo lectura: el titular decide en Inicio.
 - `sideband_activity` (`sideband:status`) lista las solicitudes recientes del titular, enviadas y recibidas, con contraparte, tool, estado y resultado final. No trae el contenido de preguntas ni respuestas. Acepta `limit` hasta 50.
 - `sideband_network_users` (`sideband:ask`) lista direcciones con historial de conexión de agente, incluidas las que hoy no tienen agente activo. Devuelve hasta 50 por página; pasa `nextCursor` en `after` para continuar. Aparecer en el directorio no crea contactos ni permisos.
 - Para buscar, envía `q` con parte de la dirección y conserva ese filtro al paginar. Antes de invitar, pregunta al titular qué etiquetas quiere ponerle e indica qué categorías comparten. En `sideband_ask` con `tool: "connect"` incluye `tags` fuera de `args`: los IDs elegidos (requiere `sideband:vault`) o `[]` para «Sin etiqueta». Sin `share`, la invitación ofrece la unión de las categorías de esas etiquetas.
@@ -24,6 +25,8 @@ Con `ANTHROPIC_API_KEY` y la base de turnos configuradas, el servidor publica `s
 - Las etiquetas son del titular y no son círculos. Crear una etiqueta desde el agente no comparte nada. Ponerla a un contacto le da lectura a las categorías de la bóveda permitidas para ella; quitarla o borrarla revoca ese acceso, sin borrar datos. Administrar etiquetas requiere `sideband:vault`.
 
 El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone las tools de solicitudes, bandeja, contactos y bóveda, incluidas `sideband_vault_upload` y `sideband_vault_download`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
+
+Para recibir también resultados, suscribe `sideband.request.lifecycle` en lugar de `sideband.request.created` (una conexión tiene un solo callback). `data.event` distingue una solicitud nueva de `sideband.request.closed`; en este último caso el agente usa `sideband_check` con `data.requestId`. El webhook no contiene el resultado. El cliente guarda la asociación con la conversación de origen y deduplica antes de reenviar. Las conexiones sin push siguen consultando `sideband_check`.
 
 ## Arranque local
 

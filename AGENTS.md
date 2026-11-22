@@ -34,8 +34,8 @@ Una sola regla decide qué ve otro titular: si puede leer una categoría de la b
 - `availability` e `interest_check` pertenecen a una sola categoría. `question` sirve a todas y lleva la suya en `args.category`. Sin categoría es una pregunta abierta (`general`).
 - El broker no lee el texto de una `question`. El agente del destinatario recibe la categoría y responde solo sobre ella.
 - Lo que un titular comparte con un contacto se guarda en la bóveda: etiquetas permitidas (`set_tag`), decisión individual (`set_member`, `clear_member`) y visibilidad. Web lo muestra por contacto en `/contacts` y por categoría en `/vault`.
-- `sideband.grants` quedó congelada. `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`) siguen para los guiones de la demo y las pruebas: un grant vivo todavía abre la categoría por defecto de su ID. Web, MCP y WhatsApp ya no escriben grants.
-- Para agregar una categoría, declara su nombre en `categoryNames` y su etiqueta y tools en `categories` de `packages/protocol/src/constants.ts`. Contactos recorre el catálogo y necesita el texto de ayuda en `contacts/sharing.tsx`. En WhatsApp actualiza el texto de denegación y el vocabulario de invitaciones en `whatsapp/commands.ts`, y la guía del clasificador en `whatsapp/claude.ts`. Una tool nueva solo hace falta para una respuesta con otra forma, y se agrega a su categoría.
+- `sideband.grants` quedó congelada. `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`) siguen para los guiones de la demo y las pruebas: un grant vivo todavía abre la categoría por defecto de su ID. Web y MCP ya no escriben grants.
+- Para agregar una categoría, declara su nombre en `categoryNames` y su etiqueta y tools en `categories` de `packages/protocol/src/constants.ts`. Contactos recorre el catálogo y necesita el texto de ayuda en `contacts/sharing.tsx`. Una tool nueva solo hace falta para una respuesta con otra forma, y se agrega a su categoría.
 - Los permisos no se componen. Que Bob le comparta algo a Ana y Ana a Carla no le da a Carla nada de Bob.
 - La política base son las categorías que comparten los miembros de un círculo y las que vienen marcadas al conectar: `availability` e `interests`. Vive en `basicSharing` (`packages/protocol/src/sharing.ts`).
 - Un círculo es un conjunto con nombre (`Circle`, `/v1/owner/circles`). Solo quien lo creó invita, saca a otros y lo elimina, y cada invitado acepta antes de entrar. Mientras dos titulares estén en el mismo círculo se dan la política base. Web los administra en `/circles`.
@@ -53,7 +53,7 @@ Pendiente, cada uno en su PR:
 - **Categoría.** El titular elige qué categorías comparte con cada contacto. Nunca ve tools ni campos.
 - **Preguntas abiertas.** La categoría `general` cubre lo que no entra en otra. El agente del titular decide qué contesta. Queda fuera de lo básico.
 - **Básico.** Al conectar vienen marcadas Disponibilidad horaria e Intereses.
-- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro y puede cambiarlas después. El titular acepta desde Contactos, WhatsApp vinculado o su agente. El agente necesita `sideband:reply` y `sideband:accept` y envía las categorías elegidas en `share`; mientras espera al titular responde `needs_owner`. Dejar de ser contactos borra la conexión y lo que se compartían en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeContact` del `OwnerPort`). `Sharing` es la lista de categorías que un titular le da a un contacto.
+- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro y puede cambiarlas después. El titular acepta desde Contactos o su agente. El agente necesita `sideband:reply` y `sideband:accept` y envía las categorías elegidas en `share`; mientras espera al titular responde `needs_owner`. Dejar de ser contactos borra la conexión y lo que se compartían en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeContact` del `OwnerPort`). `Sharing` es la lista de categorías que un titular le da a un contacto.
 - **Etiqueta.** Cada titular tiene sus etiquetas (`Tag` en `packages/protocol/src/sharing.ts`): nombre único sin distinguir mayúsculas, color de una paleta fija y las categorías que comparte, que son las categorías por defecto de la bóveda que la etiqueta abre (las mismas filas que escribe `set_tag`). Parte con Amigo, Familia y Trabajo (IDs `friend`, `family`, `work`, en `defaultTags`) y puede crear, renombrar, recolorear, cambiar categorías y borrar cualquiera (`tags`, `createTag`, `updateTag`, `deleteTag` del `OwnerPort`).
 - **Etiquetas de un contacto.** Un contacto lleva cero o más etiquetas (`setContactTags`) y lee al momento la unión de lo que abren: ponerlas, quitarlas o cambiar sus categorías no escribe nada por contacto. `setSharing` deja una decisión individual solo en las categorías donde lo elegido difiere de lo que dicen la visibilidad y las etiquetas; esa decisión prevalece hasta que el titular elige de nuevo lo que dicen las etiquetas. Al invitar y al aceptar se eligen etiquetas (`tags`); sin `share`, se ofrece su unión.
 - **Categorías de la bóveda.** Cada titular parte con una categoría por cada una del catálogo, con el mismo ID (`defaultVaultCategories` en `packages/protocol/src/constants.ts`), y puede crear las suyas. Cada categoría lleva una descripción que cuenta de qué trata (`describe` de `VaultChange`). El agente del titular lista las categorías con `sideband_vault_catalog` y con `categoryId` lee los datos de una.
@@ -172,7 +172,7 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 
 ## MCP Sideband
 
-- Cada titular puede tener un solo agente activo (el `agentId` del cliente OAuth). Para conectar otro, desconecta primero el actual en **Agentes**. Las sesiones del mismo cliente comparten identidad. Los canales como WhatsApp son independientes.
+- Cada titular puede tener un solo agente activo (el `agentId` del cliente OAuth). Para conectar otro, desconecta primero el actual en **Agentes**. Las sesiones del mismo cliente comparten identidad.
 
 - `pnpm env:init` genera `MCP_RESOURCE_URL` con el puerto del worktree, y `AUTH_ISSUER` y `AUTH_JWKS_URL` con el puerto web. Ajusta los valores en `.env.local` si cambias el origen público.
 - Usa `pnpm dev --filter @team-31/mcp` para iniciar solo MCP. Escucha en loopback por defecto y expone `GET /healthz`.
@@ -180,14 +180,10 @@ Postgres 17 (`docker-compose.yml`). User/pass `postgres`/`postgres`.
 
 ## Mensajes en lenguaje natural
 
-MCP y WhatsApp comparten `@team-31/message-flow`. LangGraph ejecuta las transiciones, LangChain usa la API de Claude para interpretar texto y el broker valida cada operación. Con `ANTHROPIC_API_KEY` en cada proceso se habilita la entrada conversacional del canal. `MESSAGE_FLOW_MODEL` elige el modelo y `MESSAGE_FLOW_DATABASE_URL` permite usar credenciales dedicadas para la base de turnos (por defecto `DATABASE_URL`). Migrar broker y ops antes de activar los canales. Ver [flujos, pruebas y despliegue](docs/message-routing.md).
+El MCP usa `@team-31/message-flow`. LangGraph ejecuta las transiciones, LangChain usa la API de Claude para interpretar texto y el broker valida cada operación. Con `ANTHROPIC_API_KEY` en el proceso MCP se habilita su entrada conversacional. `MESSAGE_FLOW_MODEL` elige el modelo y `MESSAGE_FLOW_DATABASE_URL` permite usar credenciales dedicadas para la base de turnos (por defecto `DATABASE_URL`). Migrar broker y ops antes de activar el flujo. Ver [flujos, pruebas y despliegue](docs/message-routing.md).
 
-## WhatsApp Sideband
+## Contactos de demostración
 
-- Web recibe los avisos firmados de Kapso en `/api/kapso/webhook`, en el puerto web existente. Configura `KAPSO_API_KEY`, `KAPSO_PHONE_NUMBER_ID`, `KAPSO_WHATSAPP_NUMBER` y `KAPSO_WEBHOOK_SECRET` solo en web; aplica `pnpm sideband:auth:migrate` en un worktree existente.
-- `WHATSAPP_NOTICE_SECRET` (`whsec_…`, lo genera `pnpm bootstrap`) firma los avisos del broker a `/api/whatsapp/notice/<vínculo>`. Al confirmar el vínculo, web registra el canal `whatsapp` en el broker y la respuesta llega al teléfono sin `estado`. Fuera de la ventana de 24 horas de WhatsApp queda como entrega pendiente y sale con el siguiente mensaje del titular.
-- Vincula el teléfono desde `/agents/connect/whatsapp`. La identidad sigue siendo el titular de Better Auth y el broker comparte las solicitudes con MCP. Setup y prueba: [docs/whatsapp.md](docs/whatsapp.md).
-- Con `ANTHROPIC_API_KEY` en el proceso web, Claude interpreta texto libre después de verificar el vínculo. Sin esa variable siguen funcionando los comandos de texto.
 - `pnpm agents:cast:seed <tu dirección>` agrega a tu cuenta cinco contactos ficticios de `apps/demo/src/cast.json`, con lo que te comparte cada uno, su bóveda «Salud» y un agente con aviso en `/api/demo/cast-wake/<id>` que responde `interest_check` y `availability`. `/demo/elenco` muestra sus perfiles públicos, sus datos privados y quién puede pedir cada uno.
 
 ## Broker Sideband

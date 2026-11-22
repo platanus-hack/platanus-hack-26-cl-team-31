@@ -87,14 +87,12 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       return { items: await owner.pending(c.get("web")) };
     case "owner.activity":
       return { items: await owner.activity(c.get("web"), parseInput(route.query, c.req.query())) };
+    case "agent.pending":
+      return { items: await agent.pending(c.get("mcp")) };
     case "agent.activity":
       return { items: await agent.activity(c.get("mcp"), parseInput(route.query, c.req.query())) };
     case "owner.ask":
       return owner.ask(c.get("web"), decodeAsk(await parseBody(c, route.body)));
-    case "owner.channelAsk":
-      return owner.ask(c.get("web"), decodeAsk(await parseBody(c, route.body)), parseInput(route.params, c.req.param()).name);
-    case "owner.setChannel":
-      return owner.setChannel(c.get("web"), parseInput(route.params, c.req.param()).name, await parseBody(c, route.body));
     case "owner.status":
       return owner.status(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "owner.decide":
@@ -154,7 +152,7 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
 }
 
 // Ports that create a request share the ask rate-limit bucket.
-const askPorts: readonly (string | null)[] = ["agent.ask", "owner.ask", "owner.channelAsk"];
+const askPorts: readonly (string | null)[] = ["agent.ask", "owner.ask"];
 const vaultPorts: readonly (string | null)[] = ["agent.uploadVaultDocument", "agent.downloadVaultDocument"];
 
 // Correlates the http.request span with the request it touched (ids only, never the payload).

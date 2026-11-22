@@ -8,7 +8,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("turnos durables", () => {
   let db: TestDatabase;
   let store: ReturnType<typeof createPostgresTurnStore>;
   let replica: typeof store;
-  const owner = { userId: "ana", binding: "whatsapp:link" };
+  const owner = { userId: "ana", binding: "test:link" };
   const draft: TurnState = { phase: "clarify", intent: { action: "clarify" }, field: "intent", at: "2026-11-21T14:00:00Z" };
   async function clarify(s: TurnSession) {
     await s.save(draft);

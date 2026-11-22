@@ -49,7 +49,6 @@ export const flowAttrKeys: Readonly<Record<string, readonly string[]>> = {
   "wake.exhausted": ["attempts"],
   "mcp.tool.call": ["tool", "outcome"],
   "coordination.tool.call": ["tool", "outcome"],
-  "whatsapp.link": ["action"],
   "broker.agent.connected": ["kind"],
   "broker.agent.revoked": ["by"],
 };
@@ -141,7 +140,7 @@ export interface TelemetryMapper {
 const SEEN_ROWS = 10_000;
 
 export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper {
-  const { ownerOfAddress, ownerOfUser, agentActor, whatsappActor, snapshotActors, takeUnknown } = createActorResolver(directory);
+  const { ownerOfAddress, ownerOfUser, agentActor, snapshotActors, takeUnknown } = createActorResolver(directory);
   const contexts = new Map<string, RequestContext>();
   // Ids de fila ya mapeados (orden de alta, acotado): una fila repetida no produce pasos.
   const mappedRows = new Set<string>();
@@ -276,13 +275,6 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
           const joined = row.name === "broker.agent.connected";
           if (!joined) present.delete(actor.id);
           push({ step: joined ? "joined" : "left", status: joined ? "ok" : "expired", from: actor, to: actor, meta: joined ? {} : { by: str(attrs.by) } });
-          break;
-        }
-        case "whatsapp.link": {
-          const action = str(attrs.action);
-          if (!row.userId || (action !== "confirmed" && action !== "unlinked")) break;
-          const actor = whatsappActor(row.userId);
-          push({ step: action === "confirmed" ? "joined" : "left", status: action === "confirmed" ? "ok" : "expired", from: actor, to: actor, meta: {} });
           break;
         }
         case "wake.attempt": {

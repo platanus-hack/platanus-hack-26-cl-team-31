@@ -15,7 +15,7 @@ export function SidebandMark({ size = 24 }: { size?: number }) {
   );
 }
 
-type IconName = "terminal" | "chat" | "claw" | "hook" | "bot" | "person";
+type IconName = "terminal" | "claw" | "hook" | "bot" | "person";
 
 const paths: Record<IconName, ReactNode> = {
   terminal: (
@@ -24,7 +24,6 @@ const paths: Record<IconName, ReactNode> = {
       <path d="m5 6.5 2 1.5-2 1.5M8.5 10H11" {...stroke} />
     </>
   ),
-  chat: <path d="M3 12.5 3.8 10A5 5 0 1 1 6 12.2Z" {...stroke} />,
   claw: <path d="M4 13c0-4 1.5-7 4-9M8 13c0-4 .8-6.5 2.5-8.5M12 13c0-3 .4-5 1.5-6.5M3 13h10" {...stroke} />,
   hook: <path d="M6 2.5v5a2.5 2.5 0 0 0 5 0M6 7.5a2.5 2.5 0 1 0 0 5h5M11 2.5h-1" {...stroke} />,
   bot: (
@@ -44,7 +43,6 @@ const paths: Record<IconName, ReactNode> = {
 export function iconFor(actor: FlowActor): IconName {
   if (actor.role === "owner") return "person";
   const text = `${actor.channel ?? ""} ${actor.label}`.toLowerCase();
-  if (text.includes("whatsapp")) return "chat";
   if (text.includes("openclaw")) return "claw";
   if (text.includes("webhook")) return "hook";
   if (text.includes("mcp") || text.includes("claude") || text.includes("codex")) return "terminal";

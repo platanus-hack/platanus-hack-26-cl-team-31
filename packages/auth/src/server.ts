@@ -52,13 +52,6 @@ function authConfig({ databaseUrl, baseUrl, secret, google, mcpResource, devAuth
     basePath: "/api/auth",
     secret,
     socialProviders: google ? { google } : {},
-    user: {
-      additionalFields: {
-        // Misma columna que el plugin phoneNumber de Better Auth, sin sus rutas de login por SMS.
-        // input: false impide que un cliente se asigne el teléfono de otra persona.
-        phoneNumber: { type: "string", required: false, unique: true, input: false, returned: false },
-      },
-    },
     disabledPaths: ["/token"],
     telemetry: { enabled: false },
     hooks: {

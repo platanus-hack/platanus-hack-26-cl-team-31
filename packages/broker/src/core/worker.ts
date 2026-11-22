@@ -1,6 +1,7 @@
-import { WAKE_EVENT, WAKE_UPDATE_EVENT, type WakeNotice, type WakeResult, type WakeTarget } from "@team-31/protocol";
+import { RESULT_EVENT, WAKE_EVENT, type WakeResult, type WakeTarget } from "@team-31/protocol";
 import type { BrokerDeps, TickReport } from "../ports.js";
-import type { AgentConnectionRow, ChannelRow, RequestRow, StoreTx, WakeClaim } from "../store/store.js";
+import type { AgentConnectionRow, RequestRow, StoreTx, WakeClaim } from "../store/store.js";
+import { notifiesRecipient } from "./lifecycle.js";
 
 const batchSize = 100;
 // Claim only work that can start immediately, independently of the expiry scan size.
@@ -10,7 +11,7 @@ const wakeLeaseMs = 60_000;
 const resultDetail = /^[a-z_]{1,40}$/;
 
 function actionable(row: RequestRow | null, job: WakeClaim, now: Date): row is RequestRow {
-  return row?.status === "awaiting_agent" && row.version === job.requestVersion && row.expiresAt > now;
+  return row !== null && notifiesRecipient(row) && row.version === job.requestVersion && row.expiresAt > now;
 }
 
 async function recipient(tx: StoreTx, row: RequestRow): Promise<AgentConnectionRow | undefined> {
@@ -31,23 +32,27 @@ async function recipient(tx: StoreTx, row: RequestRow): Promise<AgentConnectionR
       || a.agentId.localeCompare(b.agentId))[0];
 }
 
-async function origin(tx: StoreTx, row: RequestRow | null, job: WakeClaim): Promise<ChannelRow | undefined> {
-  if (row?.version !== job.requestVersion || !row.fromUserId || !row.originChannel) return undefined;
-  return await tx.getChannel(row.fromUserId, row.originChannel) ?? undefined;
-}
-
 type ClosePending = (tx: StoreTx, row: RequestRow, status: "expired" | "delivery_failed", at: Date) => Promise<boolean>;
 type WorkerDeps = Pick<BrokerDeps, "store" | "waker" | "clock" | "telemetry"> & { wakeRetryDelaysMs: readonly number[] };
+
+export async function resultRecipient(tx: StoreTx, row: RequestRow) {
+  if (!row.fromUserId || !row.originAgentId) return;
+  const agent = await tx.getAgentConnection(row.fromUserId, row.originAgentId);
+  if (!agent || agent.revokedAt) return;
+  const target = agent.wakeTarget;
+  if (target.kind !== "none" && target.kind !== "polling" && (target.kind !== "mcp_events" || target.lifecycle)) return agent;
+}
 
 export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs }: WorkerDeps, closePending: ClosePending) {
   function exhaustedAttempts(job: WakeClaim): number | undefined {
     return job.recovered && job.attempt > Math.max(1, wakeRetryDelaysMs.length) ? job.attempt - 1 : undefined;
   }
 
-  async function deliver(job: WakeClaim, target: WakeTarget, event: WakeNotice["event"],
+  async function deliver(job: WakeClaim, target: WakeTarget,
     owner: { userId: string; agentId?: string }): Promise<WakeResult> {
     const final = wakeRetryDelaysMs[job.attempt] === undefined;
     try {
+      const event = job.audience === "origin" ? RESULT_EVENT : WAKE_EVENT;
       const { ok, retryable, ms, status, detail } = await waker.wake(target, { requestId: job.requestId, event }, {
         queueWaitMs: Math.max(0, clock.now().getTime() - job.dueAt.getTime()),
         attempt: job.attempt, final, ...owner,
@@ -63,28 +68,29 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     }
   }
 
-  // Tells the channel a request came from that it changed. A failed notice never changes the request.
-  async function runOriginNotice(job: WakeClaim) {
-    const channel = await store.tx(async (tx) => origin(tx, await tx.getRequest(job.requestId), job));
-    if (job.leaseUntil <= clock.now()) return;
-    const fields = { requestId: job.requestId, userId: channel?.userId };
-    if (job.recovered) telemetry?.emit("wake.lease_recovered", { ...fields, attrs: { attempt: job.attempt } });
-    const exhausted = exhaustedAttempts(job);
-    const result: WakeResult = exhausted ? { ok: false, retryable: false, ms: 0, detail: "lease_exhausted" }
-      // Nadie le escribe a un canal de sondeo: se omite el aviso igual que con "none".
-      : !channel || channel.wakeTarget.kind === "none" || channel.wakeTarget.kind === "polling"
-        ? { ok: false, retryable: false, ms: 0, detail: "skipped" }
-      : await deliver(job, channel.wakeTarget, WAKE_UPDATE_EVENT, { userId: channel.userId });
-    const completedAt = clock.now();
-    const delay = result.retryable ? wakeRetryDelaysMs[job.attempt] : undefined;
-    const retryAt = delay === undefined ? null : new Date(completedAt.getTime() + delay);
-    const recorded = await store.tx((tx) => tx.recordWakeAttempt(job, completedAt, result, retryAt));
-    if (recorded && channel && exhausted !== undefined) {
-      telemetry?.emit("wake.exhausted", { ...fields, attrs: { kind: channel.wakeTarget.kind, attempts: exhausted } });
-    }
-  }
-
   async function runWake(job: WakeClaim) {
+    if (job.audience === "origin") {
+      const { target, detail } = await store.tx(async (tx) => {
+        const row = await tx.getRequest(job.requestId);
+        if (!row?.originAgentId || !row.fromUserId) return { detail: "channel_retired" };
+        if (!row.closedAt || row.version !== job.requestVersion) return { detail: "stale" };
+        const target = await resultRecipient(tx, row);
+        return target ? { target } : { detail: "no_result_push" };
+      });
+      if (job.leaseUntil <= clock.now()) return;
+      const fields = { requestId: job.requestId, userId: target?.userId, agentId: target?.agentId };
+      if (job.recovered) telemetry?.emit("wake.lease_recovered", { ...fields, attrs: { attempt: job.attempt } });
+      const exhausted = exhaustedAttempts(job);
+      const result = target && !exhausted
+        ? await deliver(job, target.wakeTarget, { userId: target.userId, agentId: target.agentId })
+        : { ok: false, retryable: false, ms: 0, detail: detail ?? "lease_exhausted" };
+      const at = clock.now();
+      const delay = result.retryable ? wakeRetryDelaysMs[job.attempt] : undefined;
+      const retry = delay === undefined ? null : new Date(at.getTime() + delay);
+      if (!await store.tx((tx) => tx.recordWakeAttempt(job, at, result, retry)) || !target) return;
+      if (exhausted) telemetry?.emit("wake.exhausted", { ...fields, attrs: { kind: target.wakeTarget.kind, attempts: exhausted } });
+      return result.ok ? "wakesOk" : retry ? "wakesRetried" : "wakesFailed";
+    }
     const candidate = await store.tx(async (tx) => {
       const row = await tx.getRequest(job.requestId);
       if (!actionable(row, job, clock.now())) return null;
@@ -99,7 +105,7 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     const deliverTo = target?.wakeTarget.kind !== "none" ? target : undefined;
     const attempted = exhausted ? undefined : deliverTo;
     const result: WakeResult = attempted
-      ? await deliver(job, attempted.wakeTarget, WAKE_EVENT, { userId: attempted.userId, agentId: attempted.agentId })
+      ? await deliver(job, attempted.wakeTarget, { userId: attempted.userId, agentId: attempted.agentId })
       : { ok: !deliverTo, retryable: false, ms: 0 };
 
     const outcome = await store.tx(async (tx): Promise<"wakesOk" | "wakesRetried" | "wakesFailed" | undefined> => {
@@ -122,6 +128,8 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
       await tx.appendEvent({ requestId: row.id, at: completedAt, kind: "wake", code });
       if (result.ok) return "wakesOk";
       if (retryAt) return "wakesRetried";
+      // A failed agent notification cannot close a decision still available to the holder.
+      if (row.status === "awaiting_owner") return "wakesFailed";
       return await closePending(tx, row, "delivery_failed", completedAt) ? "wakesFailed" : undefined;
     });
     if (outcome === "wakesFailed" && exhausted) {
@@ -144,7 +152,7 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     const claimAt = clock.now();
     const leaseUntil = new Date(claimAt.getTime() + wakeLeaseMs);
     const jobs = await store.tx((tx) => tx.claimDueWakes(claimAt, leaseUntil, wakeConcurrency));
-    const results = await Promise.allSettled(jobs.map((job) => job.audience === "origin" ? runOriginNotice(job) : runWake(job)));
+    const results = await Promise.allSettled(jobs.map(runWake));
     for (const result of results) {
       // Wait for every lease before allowing the scheduler to start its next tick.
       if (result.status === "rejected") throw result.reason;

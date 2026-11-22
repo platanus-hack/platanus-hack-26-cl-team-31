@@ -14,6 +14,7 @@ export const toolExecution = {
   interest_check: "owner_runtime",
   connect: "owner_runtime",
   vault_access: "owner_decision",
+  category_access: "owner_decision",
 } as const satisfies Record<ToolName, "stored" | "owner_runtime" | "owner_decision">;
 
 export type RuntimeTool = {
@@ -52,6 +53,7 @@ export const ToolArgs = {
   question: z.strictObject({ text: z.string().min(1).max(1000), category: Category.default("general") }),
   connect: z.strictObject({ share: Sharing.optional() }),
   vault_access: z.strictObject({ categoryName: z.string().trim().min(1).max(80) }),
+  category_access: z.strictObject({ category: Category }),
 } as const;
 
 export const ToolResultSchemas = {
@@ -67,6 +69,7 @@ export const ToolResultSchemas = {
   question: z.object({ answer: z.string().min(1).max(1000) }),
   connect: z.object({ accepted: z.boolean() }),
   vault_access: z.object({ accepted: z.boolean() }),
+  category_access: z.object({ accepted: z.boolean() }),
 } as const;
 
 export const ToolResult = z.union([

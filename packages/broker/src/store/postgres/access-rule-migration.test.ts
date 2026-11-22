@@ -30,7 +30,7 @@ describe.skipIf(!testDatabaseUrl)("migración a una sola regla de acceso", () =>
     await cp(drizzleFolder, previous, { recursive: true });
     const journalPath = join(previous, "meta", "_journal.json");
     const journal = JSON.parse(await readFile(journalPath, "utf8")) as { entries: { tag: string }[] };
-    journal.entries = journal.entries.filter((entry) => entry.tag !== "0302_single_access_rule");
+    journal.entries = journal.entries.filter((entry) => entry.tag !== "0303_single_access_rule");
     await writeFile(journalPath, JSON.stringify(journal));
   });
 

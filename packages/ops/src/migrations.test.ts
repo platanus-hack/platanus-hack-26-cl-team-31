@@ -71,6 +71,8 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0201_message_turns.sql",
       // Rango alto reservado para esta rama: main sigue creciendo en 00xx y ya chocamos dos veces.
       "0300_agent_revoked_by.sql",
+      "0301_retire_whatsapp.sql",
+      "0302_request_origin_agent.sql",
     ]);
     expect(await applyOpsMigrations({ databaseUrl })).toEqual([]);
     expect(await views()).toEqual(["v_errors", "v_events", "v_service_health"]);
@@ -134,31 +136,29 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
     await expect(asRole("sideband_admin_ro", "SELECT * FROM admin.tokens")).rejects.toMatchObject({ code: "42501" });
   });
 
-  it("expone solo recuentos de WhatsApp cuando el esquema web aparece después", async () => {
+  it("retira las vistas del canal y conserva el historial al actualizar una instalación existente", async () => {
     await db.query(`
-      CREATE TABLE public."user" (id text PRIMARY KEY, "phoneNumber" text, whatsapp_linked_at timestamptz);
+      CREATE TABLE public."user" (id text PRIMARY KEY, email text, name text, "createdAt" timestamptz, "phoneNumber" text);
+      CREATE TABLE public.session ("userId" text, "expiresAt" timestamptz);
+      INSERT INTO public."user" (id) VALUES ('ana');
       CREATE SCHEMA whatsapp;
-      CREATE TABLE whatsapp.pairing (expires_at timestamptz);
-      CREATE TABLE whatsapp.receipt (expires_at timestamptz);
-      INSERT INTO public."user" VALUES ('ana', '+56955550123', now());
-      INSERT INTO whatsapp.pairing VALUES (now() - interval '1 minute'), (now() + interval '1 minute');
+      CREATE TABLE whatsapp.receipt (id text PRIMARY KEY);
+      INSERT INTO whatsapp.receipt VALUES ('legacy');
+      CREATE VIEW ops.v_whatsapp AS SELECT count(*) AS inbound_receipts FROM whatsapp.receipt;
+      CREATE VIEW ops.v_channels AS SELECT 0 AS channels;
+      SELECT ops.refresh_views();
+      CREATE OR REPLACE VIEW ops.v_identities AS
+        SELECT id AS user_id, email, name, "createdAt" AS created_at, 0::bigint AS active_sessions,
+               "phoneNumber" IS NOT NULL AS has_phone_number FROM public."user";
+      DELETE FROM ops.migrations WHERE name = '0301_retire_whatsapp.sql';
     `);
-    await applyOpsMigrations({ databaseUrl });
-    expect(await asRole("sideband_admin_ro", "SELECT * FROM ops.v_whatsapp"))
-      .toEqual([{ linked_accounts: "1", active_pairings: "1", inbound_receipts: "0" }]);
-    await expect(asRole("sideband_admin_ro", "SELECT * FROM whatsapp.pairing")).rejects.toMatchObject({ code: "42501" });
-    await db.query(`
-      CREATE TABLE whatsapp.pending_delivery (user_id text, request_id text);
-      INSERT INTO whatsapp.pending_delivery VALUES ('ana', 'request-1');
-    `);
-    await applyOpsMigrations({ databaseUrl });
-    expect(await asRole("sideband_admin_ro", "SELECT * FROM ops.v_whatsapp"))
-      .toEqual([{ linked_accounts: "1", active_pairings: "1", inbound_receipts: "0", pending_deliveries: "1" }]);
-    await db.query(`ALTER TABLE public."user" ADD whatsapp_channel_registered boolean NOT NULL DEFAULT false`);
-    await applyOpsMigrations({ databaseUrl });
-    expect(await asRole("sideband_admin_ro", "SELECT * FROM ops.v_whatsapp"))
-      .toEqual([{ linked_accounts: "1", active_pairings: "1", inbound_receipts: "0", pending_deliveries: "1", pending_registrations: "1" }]);
-    await expect(asRole("sideband_admin_ro", "SELECT * FROM whatsapp.pending_delivery")).rejects.toMatchObject({ code: "42501" });
+    expect(await applyOpsMigrations({ databaseUrl })).toEqual(["0301_retire_whatsapp.sql"]);
+    await db.query("SELECT ops.refresh_whatsapp_view()");
+    expect(await views()).not.toContain("v_whatsapp");
+    expect(await views()).not.toContain("v_channels");
+    expect(await asRole("sideband_admin_ro", "SELECT * FROM ops.v_identities"))
+      .toEqual([{ user_id: "ana", email: null, name: null, created_at: null, active_sessions: "0" }]);
+    expect((await db.query("SELECT id FROM whatsapp.receipt")).rows).toEqual([{ id: "legacy" }]);
   });
 
   it("prune_events borra solo lo más viejo que la retención", async () => {

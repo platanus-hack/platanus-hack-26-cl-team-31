@@ -9,6 +9,6 @@ export function grokbotPost(
   return {
     url: target.url,
     headers: { authorization: `Bearer ${target.key}` },
-    body: JSON.stringify({ event, requestId, instruction: WAKE_INSTRUCTION(requestId) }),
+    body: JSON.stringify({ event, requestId, instruction: WAKE_INSTRUCTION({ event, requestId }) }),
   };
 }

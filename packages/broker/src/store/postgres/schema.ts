@@ -1,4 +1,4 @@
-import { ChannelName, RequestStatus } from "@team-31/protocol";
+import { RequestStatus } from "@team-31/protocol";
 import { revokers } from "../store.js";
 import { sql } from "drizzle-orm";
 import {
@@ -11,7 +11,8 @@ const time = (name: string) => timestamp(name, { withTimezone: true, mode: "date
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 const wakeStates = ["queued", "running", "done"] as const;
 const wakeAudiences = ["recipient", "origin"] as const;
-const channelNames = ChannelName.options as [ChannelName, ...ChannelName[]];
+// Historical schema retained for installations with archived requests.
+const channelNames = ["whatsapp"] as const;
 
 function values(options: readonly string[]) {
   return sql.join(options.map((option) => sql`${sql.raw("'" + option + "'")}`), sql`, `);
@@ -139,6 +140,7 @@ export const requests = sideband.table("requests", {
   fromUserId: text("from_user_id").references(() => users.userId),
   toUserId: text("to_user_id").references(() => users.userId),
   targetAgentId: text("target_agent_id"),
+  originAgentId: text("origin_agent_id"),
   originChannel: text("origin_channel", { enum: channelNames }),
   tool: text("tool").notNull(),
   args: jsonb("args").notNull(),

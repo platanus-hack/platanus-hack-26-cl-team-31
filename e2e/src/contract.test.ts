@@ -1,7 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { WAKE_EVENT } from "@team-31/protocol";
 import { describe, expect, onTestFinished, test } from "vitest";
-import { runCommand } from "../../apps/web/src/lib/whatsapp/commands.js";
 import { startFakeReceivers } from "./fake-receivers.js";
 import { enabled, grantTo, inboxItem, seedAgents } from "./fixtures.js";
 
@@ -44,17 +43,21 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     expect(await ownerPort.pending(recipient.owner)).toEqual([]);
 
     const granted = await ownerPort.setGrant(recipient.owner, { grantee: unknown.address, category: "availability" });
-    const empty = await unknown.agent.ask(availability);
-    const emptyItem = await inboxItem(recipient.agent, empty.requestId);
     const internalReason = "Nota interna de prueba";
-    expect(await recipient.agent.reply({
-      requestId: emptyItem.requestId, nonce: emptyItem.nonce, outcome: "no_data", internalReason,
-    })).toMatchObject({ status: "no_data" });
-    const noData = await unknown.agent.check(empty.requestId);
-    expect(noData).toMatchObject({
-      final: true, decision: "unanswered", outcome: "no_data", signature: expect.stringMatching(/^[\w-]{86}$/),
-    });
-    expect(JSON.stringify(noData)).not.toContain(internalReason);
+    for (const result of [undefined, null, {}]) {
+      const empty = await unknown.agent.ask(availability);
+      const item = await inboxItem(recipient.agent, empty.requestId);
+      expect(await recipient.agent.reply({
+        requestId: item.requestId, nonce: item.nonce, outcome: "no_data", result, internalReason,
+      })).toMatchObject({ status: "no_data", deliveredFields: [] });
+      const noData = await unknown.agent.check(item.requestId);
+      expect(noData).toMatchObject({
+        final: true, decision: "unanswered", outcome: "no_data", signature: expect.stringMatching(/^[\w-]{86}$/),
+      });
+      expect(noData).not.toHaveProperty("result");
+      expect(JSON.stringify(noData)).not.toContain(internalReason);
+      expect(await recipient.agent.inbox()).toEqual([]);
+    }
     await ownerPort.revokeGrant(recipient.owner, granted.id);
     expect(await unknown.agent.ask(availability)).toMatchObject({ final: true, decision: "deny" });
 
@@ -64,7 +67,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     const questionItem = await inboxItem(recipient.agent, escalation.requestId);
     expect(questionItem.senderMessage).toEqual({ text, trusted: false });
     expect(await recipient.agent.reply({
-      requestId: questionItem.requestId, nonce: questionItem.nonce, outcome: "needs_owner",
+      requestId: questionItem.requestId, nonce: questionItem.nonce, outcome: "needs_owner", result: null,
     })).toMatchObject({ status: "awaiting_owner" });
     expect(await sender.agent.check(escalation.requestId)).toMatchObject({
       final: false, waitingFor: "owner", expiresAt: expect.any(String),
@@ -80,41 +83,12 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     const declined = await sender.agent.ask(question);
     const declinedItem = await inboxItem(recipient.agent, declined.requestId);
     expect(await recipient.agent.reply({
-      requestId: declinedItem.requestId, nonce: declinedItem.nonce, outcome: "declined", internalReason,
+      requestId: declinedItem.requestId, nonce: declinedItem.nonce, outcome: "declined", result: {}, internalReason,
     })).toMatchObject({ status: "declined" });
     expect(await sender.agent.check(declined.requestId)).toEqual({
       requestId: declined.requestId, to: recipient.address, tool: "question", expiresAt: declined.expiresAt,
       final: true, decision: "deny", signature: expect.stringMatching(/^[\w-]{86}$/),
     });
-  }, 60_000);
-
-  test("WhatsApp recupera por estado la respuesta del segundo agente", async () => {
-    const { ownerPort, agents: [sender, recipient] } = await seedAgents("contract", 2);
-    if (!sender || !recipient) throw new Error("Faltan agentes de prueba.");
-    await grantTo(ownerPort, recipient.owner, [sender.address], "general");
-
-    // Use the same command handler as the signed webhook, with no call to Kapso.
-    let requestId: string | undefined;
-    const command = (text: string) => runCommand(ownerPort, sender.owner, text, (_action, view) => {
-      requestId = view.requestId;
-    });
-    const question = "¿Puedes jugar el sábado?";
-    const pending = `Le pregunté a ${recipient.address}. Te aviso apenas responda.`;
-    expect(await command(`Pregunta a ${recipient.address} ${question}`)).toBe(pending);
-    if (!requestId) throw new Error("WhatsApp no creó la solicitud.");
-    const check = `estado ${requestId}`;
-    const item = await inboxItem(recipient.agent, requestId);
-    expect(item.senderMessage.text).toBe(question);
-    expect(await command(check)).toBe(pending);
-
-    const answer = "Sí, puedo jugar a las diez.";
-    expect(await recipient.agent.reply({
-      requestId: item.requestId, nonce: item.nonce, outcome: "answered", result: { answer },
-    })).toMatchObject({ status: "answered", deliveredFields: ["answer"] });
-    expect(await sender.agent.check(item.requestId)).toMatchObject({ decision: "allow", result: { answer } });
-    const expected = `Respuesta de ${recipient.address}:\n${answer}`;
-    expect(await command(check)).toBe(expected);
-    expect(await command("estado")).toBe(expected);
   }, 60_000);
 
   test("OpenClaw, Grok Bot y MCP Events reciben avisos sin contenido de la pregunta", async () => {

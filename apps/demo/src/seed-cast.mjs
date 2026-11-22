@@ -1,4 +1,4 @@
-// Seeds the WhatsApp cast as contacts of one owner. Run it again to restore each member's data and sharing.
+// Seeds the demo cast as contacts of one owner. Run it again to restore each member's data and sharing.
 // Usage: pnpm agents:cast:seed <owner address>
 import { pathToFileURL } from "node:url";
 import pg from "pg";

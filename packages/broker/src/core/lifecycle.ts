@@ -13,6 +13,11 @@ const transitions: Record<RequestStatus, readonly RequestStatus[]> = {
   delivery_failed: [],
 };
 
+// Vault access always awaits the holder, who can decide via either the agent or the web.
+export function notifiesRecipient(row: Pick<RequestRow, "tool" | "status">): boolean {
+  return row.status === "awaiting_agent" || (row.status === "awaiting_owner" && (row.tool === "vault_access" || row.tool === "category_access"));
+}
+
 export function transition(row: RequestRow, status: RequestStatus): RequestRow {
   if (!transitions[row.status].includes(status) || (status === "awaiting_owner" && row.escalated)) {
     throw new BrokerError("conflict", "La solicitud no admite esta transición.");
