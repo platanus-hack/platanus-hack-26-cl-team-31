@@ -451,6 +451,7 @@ it("anuncia eventos, valida suscripciones, devuelve los errores de callback y ca
 
   const unsubscribe = (params: Record<string, unknown>) => client.request({ method: "events/unsubscribe", params }, resultSchema);
   expect(await unsubscribe({ name: WAKE_EVENT, delivery: { mode: "webhook", url } })).toEqual({});
+  expect(agent.disconnectWake).toHaveBeenCalledExactlyOnceWith(principal, result.id);
   vi.mocked(agent.disconnectWake).mockRejectedValueOnce(new BrokerError("not_found", "No se encontró la suscripción."));
   expect(await unsubscribe({ id: expectedId })).toEqual({});
   expect(agent.disconnectWake).toHaveBeenCalledTimes(2);
