@@ -19,6 +19,7 @@ let host: HTMLDivElement
 let root: Root
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true)
   host = document.createElement("div")
   document.body.append(host)
@@ -28,6 +29,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(() => root.unmount())
   queryClient.clear()
+  vi.useRealTimers()
   host.remove()
   localStorage.clear()
   vi.restoreAllMocks()
@@ -53,14 +55,18 @@ async function openApp(path: string) {
   })
 }
 
-// Deja que React aplique las actualizaciones del router y de React Query antes de leer el DOM.
+// Espera los import() del router y avanza la latencia de la API simulada dentro
+// de act. Así cada reintento lee el DOM actualizado sin esperar esos 100 ms reales.
 async function waitForView(assertView: () => void) {
   await vi.waitFor(
     async () => {
-      await act(async () => {})
+      await act(async () => {
+        await vi.dynamicImportSettled()
+        await vi.advanceTimersByTimeAsync(100)
+      })
       assertView()
     },
-    { timeout: 3000 }
+    { interval: 0, timeout: 3000 }
   )
 }
 
