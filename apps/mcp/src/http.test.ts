@@ -35,6 +35,7 @@ function testPort(): AgentPort {
     inbox: vi.fn(),
     reply: vi.fn(),
     status: vi.fn(),
+    activity: vi.fn(),
     contacts: vi.fn(),
     connectWake: vi.fn(),
     disconnectWake: vi.fn(),
@@ -151,8 +152,13 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const tags = { tags: [{ id: tagId, name: createTag.name, color: "slate", categories: [], members: [] }] };
   const ownCategory = { id: "health", name: "Salud", description: "Alergias y tratamientos.", visibility: "private", tags: [], entries: [{ label: "Alergia", value: "Maní" }], members: [] };
   const sharedCategory = { id: tagId, name: "Plan de salud", visibility: "private", canRead: true };
+  const activity = { items: [{
+    requestId: pending.requestId, from: "ana@sideband.app", to: pending.to, tool: pending.tool, status: "answered", outcome: "answered",
+    createdAt: "2026-11-21T00:00:00Z", expiresAt: pending.expiresAt, events: [{ kind: "received", at: "2026-11-21T00:00:00Z" }], direction: "sent",
+  }] };
   const requests: unknown[] = [];
   const replies: Record<string, unknown> = {
+    "GET /v1/agent/activity?limit=5": activity,
     "POST /v1/agent/ask": pending,
     "GET /v1/agent/inbox": { items: [inbox] },
     "POST /v1/agent/reply": receipt,
@@ -195,7 +201,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
 
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
-    ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
+    ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_activity", true], ["sideband_contacts", true],
     ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_circle_invite", undefined], ["sideband_tags", true], ["sideband_tag_change", undefined],
     ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_access", true], ["sideband_vault_change", undefined],
     ["sideband_vault_upload", undefined], ["sideband_vault_download", true], ["sideband_vault_query", true],
@@ -237,6 +243,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     .toEqual({ categories: [ownCategory] });
   expect((await ana.callTool({ name: "sideband_circle_invite", arguments: { circleId: "circle-1", address: pending.to } })).structuredContent)
     .toEqual({ invited: pending.to });
+  expect((await ana.callTool({ name: "sideband_activity", arguments: { limit: 5 } })).structuredContent).toEqual(activity);
 
   expect(requests).toEqual([
     { path: "POST /v1/agent/ask", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: question },
@@ -250,6 +257,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     { path: "POST /v1/agent/vault/query", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: { to: pending.to } },
     { path: "GET /v1/agent/vault?categoryId=health", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: `PUT /v1/agent/circles/circle-1/members/${encodeURIComponent(pending.to)}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "GET /v1/agent/activity?limit=5", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
   ]);
 });
 

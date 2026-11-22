@@ -390,6 +390,11 @@ describe("contrato del broker", () => {
       events: [{ kind: "received" }, { kind: "permission" }, { kind: "response" }, { kind: "delivery" }],
     });
     expect(await broker.owner.activity(carla)).toEqual([]);
+    // The holder's agent reads the same history, and only its own.
+    expect(await broker.agent.activity(bruno)).toEqual([recipient]);
+    expect(await broker.agent.activity(alice, { requestId: item.requestId })).toEqual([sender]);
+    expect(await broker.agent.activity(carla)).toEqual([]);
+    await expect(broker.agent.activity({ ...bruno, scopes: ["sideband:ask"] })).rejects.toMatchObject({ code: "forbidden" });
   });
 
   it("amplía el plazo en la primera escalación y reduce los campos al aprobar una vez", async () => {

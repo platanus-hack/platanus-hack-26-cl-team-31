@@ -32,11 +32,11 @@ const adminAgentParams = z.object({ userId: z.string(), agentId: z.string() });
 const noContent = { status: 204, response: z.undefined() } as const;
 const circleMemberParams = z.object({ id: z.string(), address: Address });
 
-const ownerActivityQuery = z.object({
+const activityQuery = z.object({
   limit: z.coerce.number<string | number>().int().positive().optional(),
   requestId: z.string().min(1).optional(),
 });
-export type OwnerActivityQuery = z.output<typeof ownerActivityQuery>;
+export type ActivityQuery = z.output<typeof activityQuery>;
 
 export const routes = {
   agentNetworkUsers: { method: "GET", path: "/v1/agent/network/users", query: z.strictObject({ after: Address.optional(), q: z.string().trim().min(1).max(128).toLowerCase().optional() }),
@@ -169,10 +169,18 @@ export const routes = {
   ownerActivity: {
     method: "GET",
     path: "/v1/owner/activity",
-    query: ownerActivityQuery,
+    query: activityQuery,
     response: z.object({ items: z.array(ActivityItem) }),
     iss: "web",
     port: "owner.activity",
+  },
+  agentActivity: {
+    method: "GET",
+    path: "/v1/agent/activity",
+    query: activityQuery,
+    response: z.object({ items: z.array(ActivityItem) }),
+    iss: "mcp",
+    port: "agent.activity",
   },
   ownerAsk: {
     method: "POST", path: "/v1/owner/requests", body: AskBody,

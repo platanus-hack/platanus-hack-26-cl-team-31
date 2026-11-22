@@ -38,6 +38,7 @@ import {
   type VaultDocumentMetadata,
 } from "@team-31/protocol";
 import { sameSharing } from "@team-31/protocol/constants";
+import type { ActivityQuery } from "@team-31/protocol/http";
 import { BrokerError, notFound } from "../errors.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import { sanitizeReply } from "../sanitize/pipeline.js";
@@ -454,6 +455,22 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return view;
   }
 
+  // Metadata of the holder's requests in both directions. It never carries args, results or third-party text.
+  async function activity(userId: string, { limit = 30, requestId }: ActivityQuery, principal?: Principal) {
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new BrokerError("invalid_input", "El límite de actividad debe ser un entero positivo.");
+    }
+    return store.tx(async (tx) => {
+      if (principal) await ensureActiveAgentConnection(tx, principal);
+      const address = (await tx.getUser(userId))?.address;
+      if (!address) return [];
+      const rows = (await tx.listActivity(address, limit, requestId))
+        .filter((row) => row.fromUserId === userId || row.toUserId === userId);
+      const events = await tx.listEvents(rows.map((row) => row.id));
+      return rows.map((row) => toActivityItem(row, events.filter((event) => event.requestId === row.id), userId));
+    });
+  }
+
   async function directory(tx: StoreTx, userId: string) {
     const contacts = (await tx.listContacts(userId))
       .map(({ gives, receives, ...identity }) => ({ ...identity, theyShare: receives, youShare: gives }));
@@ -786,6 +803,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return status(p.userId, id, p);
       },
 
+      async activity(p, query = {}) {
+        requireScope(p, "activity");
+        return activity(p.userId, query, p);
+      },
+
       async connectWake(p, target) {
         requireScope(p, "connectWake");
         const parsed = WakeTarget.safeParse(target);
@@ -883,18 +905,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async activity(o, query = {}) {
-        const { limit = 30, requestId } = typeof query === "number" ? { limit: query } : query;
-        if (!Number.isSafeInteger(limit) || limit < 1) {
-          throw new BrokerError("invalid_input", "El límite de actividad debe ser un entero positivo.");
-        }
-        return store.tx(async (tx) => {
-          const address = (await tx.getUser(o.userId))?.address;
-          if (!address) return [];
-          const rows = (await tx.listActivity(address, limit, requestId))
-            .filter((row) => row.fromUserId === o.userId || row.toUserId === o.userId);
-          const events = await tx.listEvents(rows.map((row) => row.id));
-          return rows.map((row) => toActivityItem(row, events.filter((event) => event.requestId === row.id), o.userId));
-        });
+        return activity(o.userId, typeof query === "number" ? { limit: query } : query);
       },
 
       async decide(o, requestId, input) {
