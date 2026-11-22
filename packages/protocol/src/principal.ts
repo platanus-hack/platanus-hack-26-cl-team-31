@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const Scope = z.enum(["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status", "sideband:accept", "sideband:vault"]);
+export const Scope = z.enum(["sideband:ask", "sideband:inbox", "sideband:reply", "sideband:status", "sideband:accept", "sideband:vault", "sideband:grant"]);
 export type Scope = z.infer<typeof Scope>;
 
 export const WAKE_SUBSCRIPTION_SCOPE = "sideband:inbox" satisfies Scope;
@@ -24,6 +24,7 @@ export const agentScopes = {
   reply: "sideband:reply",
   "reply.vault_access": "sideband:vault",
   "reply.connect": "sideband:accept",
+  "reply.category_access": "sideband:grant",
   status: "sideband:status",
   activity: "sideband:status",
   pending: "sideband:status",

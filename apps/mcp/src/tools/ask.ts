@@ -16,7 +16,7 @@ const inputSchema = AskInput.options[0].extend({
 
 export function registerAsk(server: McpServer, principal: Principal, agent: Pick<AgentPort, "ask">, telemetry: ToolTelemetry) {
   server.registerTool("sideband_ask", {
-    description: "Pide disponibilidad, coincidencia de interés, una respuesta o conectar. Para connect pregunta al titular qué etiquetas ponerle al contacto si no lo indicó; envía su elección en tags ([] para Sin etiqueta). Una question indica el tema en args.category. Consulta el resultado con sideband_check.",
+    description: "Pide disponibilidad, coincidencia de interés, una respuesta o conectar. Para pedir permiso a un contacto usa category_access con args.category (general para Preguntas abiertas); espera su decisión antes de preguntar. Para connect pregunta al titular qué etiquetas ponerle al contacto si no lo indicó; envía su elección en tags ([] para Sin etiqueta). Una question indica el tema en args.category. Consulta el resultado con sideband_check.",
     inputSchema,
   }, (args) => runTool(telemetry, principal, { tool: "sideband_ask", scope: agentScopes.ask }, () => {
     const input = AskInput.safeParse(args);

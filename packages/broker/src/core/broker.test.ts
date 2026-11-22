@@ -68,6 +68,30 @@ function advance(ms: number): void {
   now = new Date(now.getTime() + ms);
 }
 
+it("un contacto pide permiso antes de poder preguntar y solo el agente delegado del titular puede concederlo", async () => {
+  const to = availability.to;
+  const request = { to, tool: "category_access", args: { category: "general" } } as const;
+  const question = { to, tool: "question", args: { category: "general", text: "¿Qué opinas?" } } as const;
+  expect(await broker.agent.ask(alice, request)).toMatchObject({ decision: "deny" });
+  const invite = await broker.owner.connect(alice, { to });
+  await broker.owner.answerInvitation(bruno, invite.requestId, { accept: true, share: [] });
+  const pending = await broker.agent.ask(alice, request);
+  expect(pending).toMatchObject({ waitingFor: "owner" });
+  expect(await broker.agent.ask(alice, question)).toMatchObject({ decision: "deny" });
+  const [item] = await broker.agent.inbox(bruno);
+  expect(item).toMatchObject({ requestId: pending.requestId, tool: "category_access", args: request.args });
+  const reply = { requestId: pending.requestId, nonce: item!.nonce, outcome: "answered", result: { accepted: true } } as const;
+  await expect(broker.agent.reply(bruno, reply)).rejects.toMatchObject({ code: "forbidden" });
+  const delegated: Principal = { ...bruno, scopes: [...bruno.scopes, "sideband:grant"] };
+  await broker.agent.reply(delegated, { ...reply, outcome: "declined", result: undefined });
+  expect(await broker.agent.ask(alice, question)).toMatchObject({ decision: "deny" });
+  const next = await broker.agent.ask(alice, request);
+  const [second] = await broker.agent.inbox(bruno);
+  await broker.agent.reply(delegated, { ...reply, requestId: next.requestId, nonce: second!.nonce });
+  expect(await broker.agent.ask(alice, question)).toMatchObject({ waitingFor: "agent" });
+  expect(await broker.agent.ask(alice, { ...question, args: { ...question.args, category: "health" } })).toMatchObject({ decision: "deny" });
+});
+
 it("el titular puede conceder o rechazar lectura desde Inicio", async () => {
   const input = { to: availability.to, tool: "vault_access", args: { categoryName: "Plan de salud" } } as const;
   expect(await broker.agent.ask(alice, input)).toMatchObject({ decision: "deny" });

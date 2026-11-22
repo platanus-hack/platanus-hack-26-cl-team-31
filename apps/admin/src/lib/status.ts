@@ -37,6 +37,7 @@ export const toolLabel: Record<ToolName, string> = {
   interest_check: "Interés",
   connect: "Conexión",
   vault_access: "Acceso a la bóveda",
+  category_access: "Permiso de categoría",
 }
 
 export const wakeKindLabel: Record<WakeKind, string> = {

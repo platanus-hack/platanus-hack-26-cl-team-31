@@ -13,6 +13,7 @@ export type ConnectInput = z.infer<typeof ConnectInput>;
 export const OwnerDecision = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("approve_once") }),
   z.object({ kind: z.literal("grant_vault_read") }),
+  z.object({ kind: z.literal("grant_category") }),
   z.object({ kind: z.literal("deny") }),
   z.object({ kind: z.literal("answer"), result: ToolResult }),
 ]);

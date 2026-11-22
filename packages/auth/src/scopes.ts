@@ -7,6 +7,7 @@ export const SCOPES = {
   "sideband:reply": "Responder solicitudes según tus reglas",
   "sideband:status": "Ver las respuestas a tus preguntas",
   "sideband:accept": "Aceptar invitaciones y compartir las categorías que elijas con ese contacto",
+  "sideband:grant": "Resolver solicitudes de tus contactos para preguntar y leer la categoría predeterminada que apruebes",
 } as const satisfies Record<Scope, string>;
 
 export function parseScopes(claim: unknown): Scope[] {

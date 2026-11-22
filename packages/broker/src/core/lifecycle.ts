@@ -15,7 +15,7 @@ const transitions: Record<RequestStatus, readonly RequestStatus[]> = {
 
 // Vault access always awaits the holder, who can decide via either the agent or the web.
 export function notifiesRecipient(row: Pick<RequestRow, "tool" | "status">): boolean {
-  return row.status === "awaiting_agent" || (row.status === "awaiting_owner" && row.tool === "vault_access");
+  return row.status === "awaiting_agent" || (row.status === "awaiting_owner" && (row.tool === "vault_access" || row.tool === "category_access"));
 }
 
 export function transition(row: RequestRow, status: RequestStatus): RequestRow {
