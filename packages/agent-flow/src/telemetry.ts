@@ -216,6 +216,14 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
         });
       };
 
+      // El aviso de resultado vuelve a quien preguntó. El cierre ya dibuja ese
+      // recorrido y este aviso nunca debe despertar al destinatario en el mapa.
+      if ((row.name === "wake.attempt" || row.name === "wake.exhausted") && row.userId && requestId) {
+        const ref = directory.request(requestId);
+        const origin = ctx.requesterUser ?? (ref && directory.address(ref.fromAddress)?.userId);
+        if (origin === row.userId && ref && ref.fromAddress !== ref.toAddress) return [];
+      }
+
       switch (row.name) {
         case "broker.policy.evaluated": {
           if (row.userId) ctx.requesterUser = row.userId;
@@ -360,22 +368,20 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
       const out: FlowEvent[] = [];
       const { agents } = directory.list();
       for (const agent of agents) {
-        const id = `agent:${agent.agentId}`;
         const owner = ownerOfUser(agent.userId || undefined);
+        const actor = agentActor(agent.agentId, owner);
+        const id = actor.id;
         if (agent.revokedAt && present.has(id)) {
           present.delete(id);
-          const actor = agentActor(agent.agentId, owner);
           out.push({ id: `reconcile:left:${id}:${at}`, at, step: "left", status: "expired", from: actor, to: actor, meta: {} });
         } else if (!agent.revokedAt && !present.has(id) && !seen.has(id)) {
           seen.add(id);
           present.add(id);
-          const actor = agentActor(agent.agentId, owner);
           drawnLabels.set(id, labelKey(actor));
           out.push({ id: `reconcile:joined:${id}:${at}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: {} });
         } else if (!agent.revokedAt && drawnLabels.has(id)) {
           // Ya dibujado con un nombre provisional (p. ej. llegó antes que su titular al directorio):
           // una entrada sin animación ni línea de tiempo actualiza la tarjeta.
-          const actor = agentActor(agent.agentId, owner);
           if (drawnLabels.get(id) === labelKey(actor)) continue;
           drawnLabels.set(id, labelKey(actor));
           out.push({ id: `reconcile:label:${id}:${at}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: { snapshot: true } });

@@ -32,6 +32,20 @@ const actor = (endpoint: FlowEvent["from"]) => (endpoint === BROKER ? BROKER : (
 const steps = (events: FlowEvent[]) => events.map((e) => `${e.step}:${e.status}:${actor(e.from)}>${actor(e.to)}`);
 
 describe("createTelemetryMapper", () => {
+  it("keeps two people using the same OAuth client on separate routes", () => {
+    const dir = directory();
+    dir.add({ agents: [
+      { userId: "u1", agentId: "shared", kind: "openclaw_hooks" },
+      { userId: "u2", agentId: "shared", kind: "grokbot_routine" },
+    ] });
+    const mapper = createTelemetryMapper(dir);
+    const [ask] = mapper.map(row("broker.policy.evaluated", { userId: "u1", agentId: "shared" }));
+    const [wake] = mapper.map(row("wake.attempt", { userId: "u2", agentId: "shared" }));
+    expect(ask?.from).toMatchObject({ id: "agent:u1:shared", label: "OpenClaw", owner: { label: "Ana" } });
+    expect(wake?.to).toMatchObject({ id: "agent:u2:shared", label: "Grok Bot", owner: { label: "Bob" } });
+    expect(mapper.map(row("wake.attempt", { userId: "u1", agentId: "shared" }))).toEqual([]);
+  });
+
   it("draws an allowed request end to end with the agents of each side", () => {
     const mapper = createTelemetryMapper(directory());
     const events = [
@@ -45,12 +59,12 @@ describe("createTelemetryMapper", () => {
     ].flatMap((r) => mapper.map(r));
 
     expect(steps(events)).toEqual([
-      "ask:pending:agent:a1>broker",
+      "ask:pending:agent:u1:a1>broker",
       "policy:allowed:broker>broker",
       "request:ok:broker>broker",
-      "wake:ok:broker>agent:b1",
-      "reply:ok:agent:b1>broker",
-      "delivered:delivered:broker>agent:a1",
+      "wake:ok:broker>agent:u2:b1",
+      "reply:ok:agent:u2:b1>broker",
+      "delivered:delivered:broker>agent:u1:a1",
     ]);
     const ask = events[0]!.from as FlowActor;
     expect(ask).toMatchObject({ label: "Claude Code", channel: "MCP", owner: { key: "ana@sideband.app", label: "Ana" } });
@@ -64,7 +78,7 @@ describe("createTelemetryMapper", () => {
       row("mcp.tool.call", { userId: "u1", agentId: "a1", attrs: { tool: "sideband_ask", outcome: "ok" } }),
       row("broker.policy.evaluated", { userId: "u1", agentId: "a1", attrs: { tool: "question", category: "health", decision: "deny", rule: "no_grant" } }),
     ].flatMap((r) => mapper.map(r));
-    expect(steps(events)).toEqual(["ask:pending:agent:a1>broker", "policy:denied:broker>broker"]);
+    expect(steps(events)).toEqual(["ask:pending:agent:u1:a1>broker", "policy:denied:broker>broker"]);
   });
 
   it("closes a denied request with a signed denial and no wake", () => {
@@ -73,7 +87,7 @@ describe("createTelemetryMapper", () => {
       row("broker.policy.evaluated", { userId: "u1", agentId: "a1", attrs: { tool: "question", category: "health", decision: "deny", rule: "no_grant" } }),
       row("broker.request.closed", { attrs: { outcome: "denied", escalated: false } }),
     ].flatMap((r) => mapper.map(r));
-    expect(steps(events)).toEqual(["ask:pending:agent:a1>broker", "policy:denied:broker>broker", "delivered:denied:broker>agent:a1"]);
+    expect(steps(events)).toEqual(["ask:pending:agent:u1:a1>broker", "policy:denied:broker>broker", "delivered:denied:broker>agent:u1:a1"]);
   });
 
   it("marks a leak_blocked reply as blocked with its codes and a sanitized reply with dropped fields", () => {
@@ -82,7 +96,7 @@ describe("createTelemetryMapper", () => {
     const [blocked] = mapper.map(row("broker.reply.rejected", { attrs: { code: "leak_blocked", flags: "leak-guard:leak_email,leak-guard:leak_phone" } }));
     const [sanitized] = mapper.map(row("broker.reply.sanitized", { attrs: { flags: "redact:redacted", dropped: "freeSlots,note" } }));
     expect(blocked).toMatchObject({ step: "reply_blocked", status: "blocked", meta: { code: "leak_blocked", flags: ["leak-guard:leak_email", "leak-guard:leak_phone"] } });
-    expect(actor(blocked!.from)).toBe("agent:b1");
+    expect(actor(blocked!.from)).toBe("agent:u2:b1");
     expect(sanitized).toMatchObject({ step: "sanitized", status: "sanitized", meta: { flags: ["redact:redacted"], fieldsDropped: ["freeSlots", "note"] } });
   });
 
@@ -178,7 +192,7 @@ describe("presence mapping", () => {
 
     const snapshot = createTelemetryMapper(dir).snapshot(5);
     expect(snapshot.map((event) => actor(event.from))).toEqual([
-      "agent:a2", "agent:a1", "agent:b1", "agent@luz@sideband.app",
+      "agent:u1:a2", "agent:u1:a1", "agent:u2:b1", "agent@luz@sideband.app",
     ]);
   });
 
@@ -197,7 +211,7 @@ describe("presence mapping", () => {
     const mapper = createTelemetryMapper(dir);
     const snapshot = mapper.snapshot(5);
     // Vera solo tenía un agente revocado: ya salió, no vuelve como provisional.
-    expect(snapshot.map((e) => `${e.step}:${actor(e.from)}`)).toEqual(["joined:agent:a1", "joined:agent@luz@sideband.app"]);
+    expect(snapshot.map((e) => `${e.step}:${actor(e.from)}`)).toEqual(["joined:agent:u1:a1", "joined:agent@luz@sideband.app"]);
     expect(snapshot.every((e) => e.meta.snapshot)).toBe(true);
     // a1 ya estaba en la foto: su llamada no repite la entrada.
     expect(mapper.map(row("mcp.tool.call", { requestId: null, userId: "u1", agentId: "a1", attrs: { tool: "sideband_inbox", outcome: "ok" } })).map((e) => e.step)).toEqual(["inbox"]);
@@ -223,7 +237,7 @@ describe("live edge cases", () => {
     const mapper = createTelemetryMapper(dir);
     dir.add({ agents: [{ agentId: "c1", userId: "u2", label: "OpenClaw", kind: "openclaw_hooks" }] });
     const joined = mapper.map(row("broker.agent.connected", { requestId: null, userId: "u2", agentId: "c1", attrs: { kind: "none" } }));
-    expect(joined).toMatchObject([{ step: "joined", status: "ok", from: { id: "agent:c1", label: "OpenClaw", owner: { label: "Bob" } } }]);
+    expect(joined).toMatchObject([{ step: "joined", status: "ok", from: { id: "agent:u2:c1", label: "OpenClaw", owner: { label: "Bob" } } }]);
     const left = mapper.map(row("broker.agent.revoked", { requestId: null, userId: "u2", agentId: "c1", attrs: { by: "admin" } }));
     expect(left).toMatchObject([{ step: "left", status: "expired", meta: { by: "admin" } }]);
     // Sin ids no hay a quién mover.
@@ -238,7 +252,7 @@ describe("live edge cases", () => {
     const mapper = createTelemetryMapper(dir);
     mapper.snapshot(1);
     dir.add({ agents: [{ agentId: "a1", userId: "u1", label: "Claude Code", revokedAt: "2026-11-21T00:00:00Z" }, { agentId: "b1", userId: "u2", label: "Codex" }] });
-    expect(mapper.reconcile(2).map((e) => `${e.step}:${actor(e.from)}`)).toEqual(["left:agent:a1", "joined:agent:b1"]);
+    expect(mapper.reconcile(2).map((e) => `${e.step}:${actor(e.from)}`)).toEqual(["left:agent:u1:a1", "joined:agent:u2:b1"]);
     expect(mapper.reconcile(3)).toEqual([]);
   });
 

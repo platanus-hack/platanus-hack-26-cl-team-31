@@ -211,7 +211,7 @@ class FlowSession {
   }
 }
 
-export function useFlowLive() {
+export function useFlowLive(enabled = true) {
   const [events, setEvents] = React.useState<FlowEvent[]>([])
   const [status, setStatus] = React.useState<FlowLiveStatus>("loading")
   const [error, setError] = React.useState<unknown>(null)
@@ -220,9 +220,10 @@ export function useFlowLive() {
   const [generation, setGeneration] = React.useState(0)
 
   React.useEffect(() => {
+    if (!enabled) return
     const session = new FlowSession({ setEvents, setStatus, setError, setTruncated, setLastEventAt })
     return session.start()
-  }, [generation])
+  }, [enabled, generation])
 
   const reconnect = React.useCallback(() => {
     setEvents([])

@@ -71,7 +71,7 @@ interface FlowEvent {
 }
 
 interface FlowActor {
-  id: string                   // "agent:<agentId>", "agent@<owner>" (provisional) u "owner@<owner>" (titular humano)
+  id: string                   // "agent:<userId>:<agentId>" (componentes codificados), "agent@<owner>" (provisional) u "owner@<owner>" (titular humano)
   role: "agent" | "owner"
   label: string                // etiqueta del agente ("Claude Code") o "Titular"
   owner: { key: string; label: string }  // key: dirección Sideband (o "user:<id>"); label: nombre visible

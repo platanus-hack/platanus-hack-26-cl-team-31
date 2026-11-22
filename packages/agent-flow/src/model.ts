@@ -46,6 +46,7 @@ export interface FlowOwner {
 
 export interface FlowActor {
   id: string;
+  clientId?: string;
   /** agent: asistente conectado. owner: el titular humano (aparece al escalar). */
   role: ActorRole;
   label: string;
