@@ -117,7 +117,8 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       await store.tx(async tx => {
         await tx.createAddress("carla", carla);
         await tx.addContact("alice", toAddress);
-        await tx.listTags("alice");
+        await tx.vaultCatalog("bruno");
+        await tx.putTag("alice", { id: "family", name: "Familia", color: "amber", categories: [] });
         await tx.setContactTags("alice", toAddress, ["family"]);
         await tx.putGrant(grantTo(toAddress));
         await tx.putGrant({ ...grantTo(toAddress), category: "availability" });
@@ -183,7 +184,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       await store.tx(async tx => {
         const defaults = (await tx.vaultCatalog("bruno")).categories;
         expect(defaults.map(c => c.id).sort()).toEqual(defaultVaultCategories.map(c => c.id).sort());
-        expect(defaults.find(c => c.id === "health")).toEqual({ ...defaultVaultCategories.find(c => c.id === "health"), visibility: "private", tags: [] });
+        expect(defaults.find(c => c.id === "health")).toEqual({ ...defaultVaultCategories.find(c => c.id === "health"), visibility: "private", tags: ["family"] });
         await tx.changeVault("bruno", id, { action: "create", name: "Deseos" });
         expect(await tx.changeVault("alice", id, { action: "describe", categoryId: id, description })).toBe(false);
         await tx.changeVault("bruno", id, { action: "describe", categoryId: id, description });
@@ -269,6 +270,41 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("opens the default categories of a tag to the contacts that carry it, for reading and for the contact list", async () => {
+      await store.tx(async tx => {
+        await tx.createAddress("carla", "carla@sideband.app");
+        expect((await tx.listTags("bruno")).find(tag => tag.id === "work")?.categories).toEqual(["availability"]);
+        expect(await tx.canReadVault("bruno", fromAddress, "availability")).toBe(false);
+        await tx.addContact("bruno", fromAddress);
+        await tx.addContact("alice", toAddress);
+        await tx.setContactTags("bruno", fromAddress, ["work"]);
+        expect(await tx.canReadVault("bruno", fromAddress, "availability")).toBe(true);
+        expect(await tx.canReadVault("bruno", fromAddress, "health")).toBe(false);
+        expect(await tx.canReadVault("bruno", "carla@sideband.app", "availability")).toBe(false);
+        expect((await tx.listContacts("bruno"))[0]).toMatchObject({ gives: ["availability"], receives: [] });
+        expect((await tx.listContacts("alice"))[0]).toMatchObject({ gives: [], receives: ["availability"] });
+
+        // The tag's categories and the vault permissions of a default category are the same rows.
+        await tx.putTag("bruno", { id: "work", name: "Trabajo", color: "violet", categories: ["interests", "health"] });
+        expect((await tx.vaultCatalog("bruno")).categories.filter(c => c.tags.includes("work")).map(c => c.id).sort()).toEqual(["health", "interests"]);
+        await tx.changeVault("bruno", "health", { action: "set_tag", categoryId: "health", tagId: "work", allowed: false });
+        expect((await tx.listTags("bruno")).find(tag => tag.id === "work")?.categories).toEqual(["interests"]);
+        expect((await tx.listContacts("bruno"))[0]?.gives).toEqual(["interests"]);
+
+        // The individual decision wins, and a public category shows as shared with every contact.
+        await tx.changeVault("bruno", "interests", { action: "set_member", categoryId: "interests", address: fromAddress, allowed: false });
+        await tx.changeVault("bruno", "general", { action: "set_visibility", categoryId: "general", visibility: "public" });
+        expect((await tx.listContacts("bruno"))[0]?.gives).toEqual(["general"]);
+        expect(await tx.canReadVault("bruno", "carla@sideband.app", "general")).toBe(true);
+        expect(await tx.canReadVault("bruno", fromAddress, randomUUID())).toBe(false);
+
+        // A deleted default category leaves the tag without it.
+        await tx.changeVault("bruno", "health", { action: "delete", categoryId: "health" });
+        await tx.putTag("bruno", { id: "work", name: "Trabajo", color: "violet", categories: ["health", "availability"] });
+        expect((await tx.listTags("bruno")).find(tag => tag.id === "work")?.categories).toEqual(["availability"]);
+      });
+    });
+
     it("uses the same effective category access for roster, discovery and reading entries", async () => {
       const categoryId = randomUUID();
       const member = { action: "set_member", categoryId, address: fromAddress, allowed: true } as const;
@@ -288,8 +324,11 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.changeVault("bruno", categoryId, { ...member, allowed: false });
         expect(created((await tx.ownerVault("bruno")).categories)[0]?.members).toEqual([]);
         expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
-        expect(readable(await tx.sharedVault(fromAddress, toAddress))).toEqual([]);
+        expect(created(readable(await tx.sharedVault(fromAddress, toAddress)))).toEqual([]);
         expect(await tx.sharedVault(fromAddress, toAddress, categoryId)).toEqual({ categories: [] });
+        // Without the individual decision the tag decides again.
+        await tx.changeVault("bruno", categoryId, { action: "clear_member", categoryId, address: fromAddress });
+        expect(await tx.vaultMembers("bruno", categoryId)).toEqual([fromAddress]);
         await tx.changeVault("bruno", categoryId, member);
         await tx.removeContact("bruno", fromAddress);
         await tx.setContactTags("bruno", fromAddress, []);
@@ -308,7 +347,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.setContactTags("bruno", fromAddress, ["family"]);
         expect(await tx.sharedVault(fromAddress, toAddress, id)).toEqual({ categories: [] });
         await tx.addContact("bruno", fromAddress);
-        expect(readable(await tx.sharedVault(fromAddress, toAddress))).toEqual([{ id, name: "Necesidades" }]);
+        expect(created(readable(await tx.sharedVault(fromAddress, toAddress)))).toEqual([{ id, name: "Necesidades" }]);
         expect((await tx.sharedVault(fromAddress, toAddress, id)).categories[0]?.entries).toEqual([{ label: "Sábado", value: "Taladro" }]);
         expect(await tx.changeVault("alice", id, { action: "delete", categoryId: id })).toBe(false);
         await tx.setContactTags("bruno", fromAddress, ["work"]);
@@ -333,11 +372,11 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         await tx.addContact("bruno", fromAddress);
         expect(created((await tx.ownerVault("bruno")).categories)[0]?.members).toEqual([fromAddress]);
         expect(created((await tx.vaultCatalog("bruno")).categories)).toEqual([{ id: categoryId, name: "Privada", visibility: "private", tags: [tagId] }]);
-        expect(readable(await tx.sharedVault(fromAddress, toAddress))).toEqual([{ id: categoryId, name: "Privada" }]);
+        expect(created(readable(await tx.sharedVault(fromAddress, toAddress)))).toEqual([{ id: categoryId, name: "Privada" }]);
         expect((await tx.sharedVault(fromAddress, toAddress, categoryId)).categories[0]?.entries).toEqual([{ label: "Dato", value: "Prueba" }]);
         expect(await tx.sharedVault("eva@sideband.app", toAddress, categoryId)).toEqual({ categories: [] });
         await tx.setContactTags("bruno", fromAddress, ["work"]);
-        expect(readable(await tx.sharedVault(fromAddress, toAddress))).toEqual([]);
+        expect(created(readable(await tx.sharedVault(fromAddress, toAddress)))).toEqual([]);
         await tx.setContactTags("bruno", fromAddress, [tagId]);
         expect(await tx.deleteTag("bruno", tagId)).toBe(true);
         expect(created((await tx.vaultCatalog("bruno")).categories)[0]?.tags).toEqual([]);

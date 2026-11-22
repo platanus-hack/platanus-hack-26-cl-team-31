@@ -1,55 +1,24 @@
 import { randomUUID } from "node:crypto";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyPostgresMigrations, createPostgresStore } from "./index.js";
+import { databaseBefore } from "./test-helpers.js";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? "";
-const drizzleFolder = fileURLToPath(new URL("../../../drizzle/", import.meta.url));
 
 describe.skipIf(!testDatabaseUrl)("migración a etiquetas propias", () => {
-  const databaseName = "sideband_tags_" + randomUUID().replaceAll("-", "");
-  let admin: pg.Pool;
+  let previous: Awaited<ReturnType<typeof databaseBefore>>;
   let db: pg.Pool;
   let databaseUrl: string;
-  let previous: string;
 
   beforeAll(async () => {
-    admin = new pg.Pool({ connectionString: testDatabaseUrl });
-    await admin.query(`CREATE DATABASE ${pg.escapeIdentifier(databaseName)}`);
-    const url = new URL(testDatabaseUrl);
-    url.pathname = "/" + databaseName;
-    databaseUrl = url.toString();
-    db = new pg.Pool({ connectionString: databaseUrl });
-    previous = await mkdtemp(join(tmpdir(), "sideband-drizzle-"));
-    await cp(drizzleFolder, previous, { recursive: true });
-    const journalPath = join(previous, "meta", "_journal.json");
-    const journal = JSON.parse(await readFile(journalPath, "utf8")) as { entries: { tag: string }[] };
-    const tagsIndex = journal.entries.findIndex((entry) => entry.tag === "0014_custom_tags");
-    expect(tagsIndex).toBeGreaterThan(0);
-    journal.entries = journal.entries.slice(0, tagsIndex);
-    await writeFile(journalPath, JSON.stringify(journal));
+    previous = await databaseBefore(testDatabaseUrl, "0014_custom_tags");
+    ({ db, databaseUrl } = previous);
   });
 
-  afterAll(async () => {
-    await db?.end();
-    await admin?.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(databaseName)}`);
-    await admin?.end();
-    if (previous) await rm(previous, { recursive: true, force: true });
-  });
+  afterAll(() => previous?.drop());
 
   it("convierte presets, etiquetas, grupos privados e invitaciones con grupo", async () => {
-    const client = await db.connect();
-    try {
-      await migrate(drizzle(client), { migrationsFolder: previous, migrationsSchema: "sideband" });
-    } finally {
-      client.release();
-    }
     const group = randomUUID();
     const clash = randomUUID();
     const category = randomUUID();
@@ -96,7 +65,8 @@ describe.skipIf(!testDatabaseUrl)("migración a etiquetas propias", () => {
       { address: "bob@sideband.app", tag_id: group },
       { address: "eva@sideband.app", tag_id: group },
     ].sort((a, b) => a.address.localeCompare(b.address) || a.tag_id.localeCompare(b.tag_id)));
-    const { rows: permissions } = await db.query("SELECT tag_id FROM sideband.vault_permissions ORDER BY tag_id");
+    const { rows: permissions } = await db.query(
+      "SELECT tag_id FROM sideband.vault_permissions WHERE category_id = $1 ORDER BY tag_id", [category]);
     expect(permissions.map((row) => row.tag_id).sort()).toEqual(["friend", group].sort());
     const { rows: leftovers } = await db.query(`
       SELECT to_regclass('sideband.vault_contact_groups') AS groups, to_regclass('sideband.tag_presets') AS presets,

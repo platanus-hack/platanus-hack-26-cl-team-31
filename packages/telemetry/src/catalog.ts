@@ -225,9 +225,9 @@ export const catalog = [
     attrs: { sizeBytes: int().nonnegative() },
   }),
   defineEvent({ name: "broker.contact.tagged", kind: "policy", description: "Cambiaron las etiquetas de un contacto. Sin la dirección ni los nombres.",
-    attrs: { tags: int().nonnegative(), by: z.enum(["owner", "agent"]), sharingApplied: z.boolean() } }),
+    attrs: { tags: int().nonnegative(), by: z.enum(["owner", "agent"]) } }),
   defineEvent({ name: "broker.tag.changed", kind: "policy", description: "Un titular o su agente creó, cambió o borró una etiqueta. Sin el nombre.",
-    attrs: { action: z.enum(["created", "updated", "deleted"]), by: z.enum(["owner", "agent"]), categories: int().nonnegative().optional(), followers: int().nonnegative().optional() } }),
+    attrs: { action: z.enum(["created", "updated", "deleted"]), by: z.enum(["owner", "agent"]), categories: int().nonnegative().optional() } }),
   defineEvent({ name: "broker.contact.removed", kind: "policy", description: "Un titular terminó una conexión en ambos sentidos.", attrs: {} }),
   defineEvent({
     name: "broker.circle.changed",

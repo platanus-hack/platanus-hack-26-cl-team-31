@@ -1,11 +1,11 @@
-import { Address, defaultVaultCategories, type OwnerVault, type VaultCatalog, type VaultDocumentQuery } from "@team-31/protocol";
+import { Address, defaultTags, defaultVaultCategories, type OwnerVault, type VaultCatalog, type VaultDocumentQuery } from "@team-31/protocol";
 import { and, DrizzleQueryError, eq, inArray, sql, type SQLWrapper } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import { BrokerError } from "../../errors.js";
 import type { StoreTx } from "../store.js";
 import {
-  users, friends, grants as g, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e, vaultDocuments as d, vaultMemberRules as r,
+  users, friends, grants as g, tags, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e, vaultDocuments as d, vaultMemberRules as r,
 } from "./schema.js";
 
 type Tx = Parameters<Parameters<ReturnType<typeof drizzle>["transaction"]>[0]>[0];
@@ -27,16 +27,61 @@ function categoryInfo<T extends { description: string }>({ description, ...categ
   return { ...category, ...(description ? { description } : {}) };
 }
 
-export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "putVaultDocument" | "sharedVaultDocument"> {
+// Every holder starts with the default categories and tags, and each default tag opens its categories.
+// The flags keep a default the holder deleted from coming back.
+export async function seedHolder(db: Tx, owner: string) {
+  const seeded = (flag: "vaultSeeded" | "tagsSeeded") => db.update(users).set({ [flag]: true })
+    .where(and(eq(users.userId, owner), eq(users[flag], false))).returning({ userId: users.userId });
+  if ((await seeded("vaultSeeded")).length) {
+    await db.insert(c).values(defaultVaultCategories.map(category => ({ owner, ...category }))).onConflictDoNothing();
+  }
+  if (!(await seeded("tagsSeeded")).length) return;
+  await db.insert(tags).values(defaultTags.map(tag => ({ userId: owner, ...tag }))).onConflictDoNothing();
+  await openToTag(db, owner, defaultTags.flatMap(tag => tag.categories.map(id => ({ id, tagId: tag.id }))));
+}
+
+// Skips a category the holder deleted.
+export async function openToTag(db: Tx, owner: string, pairs: { id: string; tagId: string }[]) {
+  const kept = await db.select({ id: c.id }).from(c).where(eq(c.owner, owner));
+  const values = pairs.filter(pair => kept.some(category => category.id === pair.id)).map(pair => ({ owner, ...pair }));
+  if (values.length) await db.insert(p).values(values).onConflictDoNothing();
+}
+
+// The one access rule: the roster, the listing, the data read and the right to ask about a category
+// apply this predicate to a (category, reader) pair.
+// The holder's decision about a contact wins. Without one, a public category is read by any
+// Sideband user and a private one by an accepted contact that carries an allowed tag.
+// A grant written before the vault held the permissions still opens the default category of its id.
+// Aliased so the roster can join friends on the outside and still ask whether the reader is a contact.
+const contact = alias(friends, "reader_contact");
+const canRead = (reader: SQLWrapper) => sql<boolean>`coalesce(
+  (select ${r.allowed} from ${r} where ${r.owner} = ${c.owner} and ${r.id} = ${c.id} and ${r.address} = ${reader}),
+  ${c.visibility} = 'public'
+  or exists(select 1 from ${g} where ${g.grantorUserId} = ${c.owner} and ${g.category} = ${c.id}
+    and ${g.granteeAddress} = ${reader} and ${g.revokedAt} is null)
+  or exists(select 1 from ${p}
+    join ${t} on ${t.userId} = ${p.owner} and ${t.tagId} = ${p.tagId}
+    join ${friends} as ${sql.identifier("reader_contact")} on ${contact.userId} = ${t.userId} and ${contact.address} = ${t.address}
+    where ${p.owner} = ${c.owner} and ${p.id} = ${c.id} and ${t.address} = ${reader}))`;
+
+// What each contact reads of the holder's vault and what the holder reads of theirs, as category ids by address.
+export async function contactAccess(db: Tx, userId: string) {
+  await seedHolder(db, userId);
+  const me = db.select({ address: users.address }).from(users).where(eq(users.userId, userId));
+  const gives = await db.select({ address: friends.address, id: c.id }).from(c)
+    .innerJoin(friends, and(eq(friends.userId, c.owner), canRead(friends.address))).where(eq(c.owner, userId));
+  const receives = await db.select({ address: friends.address, id: c.id }).from(c)
+    .innerJoin(users, eq(users.userId, c.owner))
+    .innerJoin(friends, and(eq(friends.userId, userId), eq(friends.address, users.address))).where(canRead(me));
+  const ids = (rows: typeof gives, address: string) => rows.filter(row => row.address === address).map(row => row.id);
+  return (address: string) => ({ gives: ids(gives, address), receives: ids(receives, address) });
+}
+
+export function vaultStore(db: Tx): Pick<StoreTx, "canReadVault" | "vaultCatalog" | "vaultMembers" | "ownerVault" | "changeVault" | "sharedVault" | "putVaultDocument" | "sharedVaultDocument"> {
   const info = { id: c.id, name: c.name, description: c.description, visibility: c.visibility };
   // Serialize name resolution (including an absent name) with category creation, rename and deletion.
   const lockNames = (owner: string) => db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}, 417))`);
-  // The flag keeps a default category the holder deleted from coming back.
-  async function seedDefaults(owner: string) {
-    const [first] = await db.update(users).set({ vaultSeeded: true })
-      .where(and(eq(users.userId, owner), eq(users.vaultSeeded, false))).returning({ userId: users.userId });
-    if (first) await db.insert(c).values(defaultVaultCategories.map(category => ({ owner, ...category }))).onConflictDoNothing();
-  }
+  const seedDefaults = (owner: string) => seedHolder(db, owner);
   async function vaultCatalog(owner: string, forNameResolution = false): Promise<VaultCatalog> {
     if (forNameResolution) await lockNames(owner);
     await seedDefaults(owner);
@@ -49,22 +94,6 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
     return { categories };
   }
 
-  // The roster, the listing and the data read apply this one predicate to a (category, reader) pair.
-  // The holder's decision about a contact wins. Without one, a public category is read by any
-  // Sideband user and a private one by an accepted contact that carries an allowed tag.
-  // A default category shares its id with a grant category, so whoever may ask about it may read it.
-  // Aliased so the roster can join friends on the outside and still ask whether the reader is a contact.
-  const contact = alias(friends, "reader_contact");
-  const canRead = (reader: SQLWrapper) => sql<boolean>`coalesce(
-    (select ${r.allowed} from ${r} where ${r.owner} = ${c.owner} and ${r.id} = ${c.id} and ${r.address} = ${reader}),
-    ${c.visibility} = 'public'
-    or exists(select 1 from ${g} where ${g.grantorUserId} = ${c.owner} and ${g.category} = ${c.id}
-      and ${g.granteeAddress} = ${reader} and ${g.revokedAt} is null)
-    or exists(select 1 from ${p}
-      join ${t} on ${t.userId} = ${p.owner} and ${t.tagId} = ${p.tagId}
-      join ${friends} as ${sql.identifier("reader_contact")} on ${contact.userId} = ${t.userId} and ${contact.address} = ${t.address}
-      where ${p.owner} = ${c.owner} and ${p.id} = ${c.id} and ${t.address} = ${reader}))`;
-
   function memberRows(owner: string, categoryId?: string) {
     return db.select({ id: c.id, address: friends.address }).from(c)
       .leftJoin(friends, and(eq(friends.userId, c.owner), canRead(friends.address)))
@@ -72,6 +101,13 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
   }
 
   return {
+    async canReadVault(owner, reader, categoryId) {
+      await seedDefaults(owner);
+      // Nested so Drizzle keeps the columns qualified for the correlated subqueries.
+      const [row] = await db.select({ canRead: sql<boolean>`${canRead(sql`${reader}`)}` }).from(c)
+        .where(and(eq(c.owner, owner), eq(c.id, categoryId)));
+      return row?.canRead ?? false;
+    },
     async vaultMembers(owner, categoryId) {
       await seedDefaults(owner);
       const rows = await memberRows(owner, categoryId);
@@ -108,6 +144,9 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
         case "set_member":
           return insertWithParents(db, async tx => tx.insert(r).values({ owner, id, address: change.address, allowed: change.allowed })
             .onConflictDoUpdate({ target: [r.owner, r.id, r.address], set: { allowed: change.allowed } }));
+        case "clear_member":
+          await db.delete(r).where(and(eq(r.owner, owner), eq(r.id, id), eq(r.address, change.address)));
+          break;
         case "set_tag":
           if (change.allowed) {
             return insertWithParents(db, async tx => tx.insert(p).values({ owner, id, tagId: change.tagId }).onConflictDoNothing());

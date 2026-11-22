@@ -162,6 +162,13 @@
       "when": 1795315067590,
       "tag": "0302_request_origin_agent",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1795316000000,
+      "tag": "0303_single_access_rule",
+      "breakpoints": true
     }
   ]
 }

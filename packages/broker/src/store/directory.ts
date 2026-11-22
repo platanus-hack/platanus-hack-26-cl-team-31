@@ -48,7 +48,3 @@ export function sortTags<T extends Pick<Tag, "id" | "name">>(tags: T[]): T[] {
   };
   return tags.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
-
-export function seededTags(): Tag[] {
-  return defaultTags.map((tag) => ({ ...tag, categories: [...tag.categories] }));
-}
