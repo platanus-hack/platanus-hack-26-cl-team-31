@@ -86,11 +86,17 @@ export const requestColumns: ColumnDef<RequestSummary, unknown>[] = [
     cell: ({ row }) => {
       const { wakeAttempts, lastWakeOk } = row.original
       if (wakeAttempts === 0)
-        return <span className="text-muted-foreground">—</span>
+        return <span className="text-muted-foreground">Sin intentos</span>
+      if (lastWakeOk === null)
+        return (
+          <span className="text-muted-foreground">
+            {wakeAttempts} · Sin resultado
+          </span>
+        )
       return (
         <span className="flex items-center gap-1.5 font-mono text-xs tabular-nums">
           <StatusDot tone={lastWakeOk ? "ok" : "error"} small />
-          {wakeAttempts}
+          {wakeAttempts} · {lastWakeOk ? "Último entregado" : "Último fallido"}
         </span>
       )
     },
