@@ -1,7 +1,10 @@
 import "server-only";
 
 import type { OwnerPort } from "@team-31/broker-client";
-import type { ActivityItem, AgentConnection, Circle, ContactsView, OwnerPendingItem, OwnerVault } from "@team-31/protocol";
+import {
+  Address, BrokerError, ToolName, type ActivityItem, type AgentConnection, type Circle,
+  type ContactsView, type OwnerPendingItem, type OwnerVault, type RequesterView,
+} from "@team-31/protocol";
 
 export const frozen = process.env.UI_FROZEN === "1" && process.env.NODE_ENV !== "production";
 
@@ -75,27 +78,43 @@ const vault: OwnerVault = {
 
 const later = <T>(value: T) => new Promise<T>((resolve) => setTimeout(() => resolve(value), 400));
 const done = () => later(undefined);
-const view = () => later({ requestId: "frozen", final: false, decision: "pending", waitingFor: "owner" }) as never;
+const expiresAt = hours(24);
+// The preview keeps no writes. The ID carries the fields that status needs to rebuild the view.
+function pendingView(to: Address, tool: ToolName, requestId = `${tool}:${to}`): Promise<RequesterView> {
+  return later({ requestId, to, tool, expiresAt, final: false, decision: "pending", waitingFor: "owner" });
+}
 
 export const frozenOwnerClient: OwnerPort = {
   searchPublicProfiles: () => later([]),
-  directory: () => later({ contacts: [], circles: [] }) as never,
+  directory: () => later({ contacts: [], circles: [] }),
   queryVault: () => later({ categories: [] }),
   tags: () => later({ tags: contacts.tags.map((tag) => ({ ...tag, members: contacts.contacts.filter((c) => c.tags.includes(tag.id)).map((c) => c.address) })) }),
-  createTag: (_, input) => later({ id: "new", categories: [], color: "slate", ...input }) as never,
-  updateTag: (_, id, input) => later({ ...contacts.tags.find((tag) => tag.id === id), ...input }) as never,
+  createTag: (_, { name, color = "slate", categories = [] }) => later({ id: "new", name, color, categories }),
+  async updateTag(_, id, input) {
+    const tag = contacts.tags.find((tag) => tag.id === id);
+    if (!tag) throw new BrokerError("not_found", "No se encontró la etiqueta.");
+    return later({
+      id, name: input.name ?? tag.name, color: input.color ?? tag.color, categories: input.categories ?? tag.categories,
+    });
+  },
   deleteTag: done,
   vault: () => later(vault),
-  changeVault: () => later({}) as never,
+  changeVault: (_, change) => later({ categoryId: change.action === "create" ? crypto.randomUUID() : change.categoryId }),
   me: () => later({ userId: "frozen-user", address: me, displayName: "Ana Rojas" }),
   claimAddress: () => later(me),
   grants: () => later([]),
-  setGrant: () => later({}) as never,
+  setGrant: (_, input) => later({ ...input, id: "frozen", createdAt: hours(0) }),
   revokeGrant: done,
   pending: () => later(pending),
   activity: () => later(frozenActivity),
-  ask: view,
-  status: view,
+  ask: (_, { to, tool }) => pendingView(to, tool),
+  status: (_, requestId) => {
+    const [rawTool, rawTo] = requestId.split(":");
+    const tool = ToolName.safeParse(rawTool);
+    const to = Address.safeParse(rawTo);
+    if (tool.success && to.success) return pendingView(to.data, tool.data, requestId);
+    return pendingView("carla@sideband.app", "availability", requestId);
+  },
   decide: done,
   agentDirectory: () => later([
     { agentId: "claude-code", label: "Claude Code", address: "bruno@sideband.app" },
@@ -105,7 +124,7 @@ export const frozenOwnerClient: OwnerPort = {
   setWake: done,
   ping: () => later({ requestId: "frozen" }),
   revokeAgent: done,
-  connect: view,
+  connect: (_, { to }) => pendingView(to, "connect"),
   contacts: () => later(contacts),
   setSharing: done,
   setContactTags: done,
