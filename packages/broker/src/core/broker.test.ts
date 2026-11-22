@@ -1211,6 +1211,16 @@ describe("solicitudes de conexión", () => {
     expect(await broker.agent.ask(carla, { ...availability, purpose: "Sin decisión" })).toMatchObject({ final: false });
   });
 
+  it("borrar la única etiqueta que autorizaba una solicitud pendiente la cierra de inmediato", async () => {
+    const { request } = await invite();
+    await broker.owner.answerInvitation(bruno, request.requestId, { accept: true, tags: ["work"] });
+    const pending = await broker.agent.ask(carla, availability);
+    expect(pending).toMatchObject({ final: false });
+
+    await broker.owner.deleteTag(bruno, "work");
+    expect(await broker.agent.status(carla, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
+  });
+
   it("el agente abre las categorías de una etiqueta al ponérsela a un contacto", async () => {
     const { request } = await invite();
     await broker.owner.answerInvitation(bruno, request.requestId, { accept: true, share: [] });
