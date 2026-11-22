@@ -5,6 +5,10 @@ import { EMPTY, recordFetch, visibleArcs } from "./common.js";
 import { dijkstra, targetedNearest, type NodeMatcher, type SearchResult } from "./dijkstra.js";
 import type { LandmarkTable } from "./landmarks.js";
 
+function traversalOptions({ viewer, filter, batchSize, maxCost, maxExpanded }: SearchOptions): SearchOptions {
+  return { viewer, filter, batchSize, maxCost, maxExpanded };
+}
+
 export type PathAlgorithm = "dijkstra" | "bidirectional" | "alt";
 
 export interface PathOptions extends SearchOptions {
@@ -18,21 +22,22 @@ export interface PathOptions extends SearchOptions {
 export function pathSearch(view: AdjacencyView, source: NodeId, target: NodeId, opts: PathOptions = {}): SearchGenerator<SearchResult> {
   switch (opts.algorithm ?? "bidirectional") {
     case "dijkstra":
-      return dijkstra(view, source, { ...opts, target });
+      return dijkstra(view, source, { ...traversalOptions(opts), target });
     case "bidirectional":
-      return bidirectional(view, source, target, opts);
+      return bidirectional(view, source, target, traversalOptions(opts));
     case "alt":
       return altSearch(view, source, target, opts);
   }
 }
 
 function* altSearch(view: AdjacencyView, source: NodeId, target: NodeId, opts: PathOptions): SearchGenerator<SearchResult> {
+  const traversal = traversalOptions(opts);
   if (!opts.landmarks || opts.landmarksStale) {
-    const res = yield* bidirectional(view, source, target, opts);
+    const res = yield* bidirectional(view, source, target, traversal);
     res.stats.fallback = opts.landmarks ? "landmarks desactualizados → bidireccional" : "sin landmarks → bidireccional";
     return res;
   }
-  return yield* dijkstra(view, source, { ...opts, target, potential: opts.landmarks.potentialTo(target) });
+  return yield* dijkstra(view, source, { ...traversal, target, potential: opts.landmarks.potentialTo(target) });
 }
 
 export interface NearestOptions extends SearchOptions {
@@ -43,7 +48,7 @@ export interface NearestOptions extends SearchOptions {
 
 /** Consulta principal del producto: los k nodos más cercanos que cumplen `match`. */
 export function nearestSearch(view: AdjacencyView, source: NodeId, opts: NearestOptions): SearchGenerator<SearchResult> {
-  return dijkstra(view, source, opts);
+  return dijkstra(view, source, { ...traversalOptions(opts), match: opts.match, k: opts.k, includeSource: opts.includeSource });
 }
 
 export interface InterestedOptions extends SearchOptions {
@@ -70,9 +75,9 @@ export function* interestedInSearch(
   topic: NodeId,
   opts: InterestedOptions = {},
 ): SearchGenerator<SearchResult> {
-  const match = matchers.interestedIn(topic);
+  const search = { ...traversalOptions(opts), match: matchers.interestedIn(topic), k: opts.k };
   const strategy = opts.strategy ?? "auto";
-  if (strategy === "forward") return yield* dijkstra(view, source, { ...opts, match });
+  if (strategy === "forward") return yield* dijkstra(view, source, search);
   let fetched: { ids: readonly NodeId[] } | undefined;
   let arcs = view.arcs(topic);
   if (arcs === undefined) {
@@ -83,14 +88,14 @@ export function* interestedInSearch(
   const max = opts.targetedMax ?? 256;
   let res: SearchResult;
   if (strategy === "auto" && arcs.length > max) {
-    res = yield* dijkstra(view, source, { ...opts, match });
+    res = yield* dijkstra(view, source, search);
   } else {
     const ctx = { viewer: opts.viewer ?? source };
     // Las aristas del tema van tema→persona; el filtro las ve como persona→tema.
     const targets = visibleArcs(arcs, opts.filter ?? allowAll, ctx, true)
       .filter((a) => a.kind === "interested_in" && kindOf(a.to) === "person" && a.to !== source)
       .map((a) => a.to);
-    res = yield* targetedNearest(view, source, { ...opts, match, targets });
+    res = yield* targetedNearest(view, source, { ...search, targets, backwardBudget: opts.backwardBudget });
   }
   if (fetched) recordFetch(res.stats, fetched);
   const filter = opts.filter ?? allowAll;

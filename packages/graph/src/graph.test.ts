@@ -42,6 +42,15 @@ describe("MinHeap", () => {
 });
 
 describe("caminos mínimos vs fuerza bruta", () => {
+  it.each(["dijkstra", "alt"] as const)("%s llega al destino aunque las opciones incluyan un predicado", (algorithm) => {
+    const index = new MemoryGraphIndex([
+      interestMutation({ person_id: "ana", interest: "Ajedrez", audience: "" }),
+      interestMutation({ person_id: "bob", interest: "Ajedrez", audience: "" }),
+    ]);
+    const options = { algorithm, landmarks: index.buildLandmarks(1), match: matchers.ofKind("topic"), k: 1 };
+    expect(index.path("person:ana", "person:bob", options).paths.map((p) => p.target)).toEqual(["person:bob"]);
+  });
+
   const algorithms: PathAlgorithm[] = ["dijkstra", "bidirectional", "alt"];
   for (const filter of [undefined, blockSome]) {
     it(`dijkstra / bidireccional / ALT coinciden con Floyd–Warshall (${filter ? "con" : "sin"} filtro)`, () => {
@@ -82,6 +91,21 @@ describe("caminos mínimos vs fuerza bruta", () => {
 });
 
 describe("nearest (multi-objetivo)", () => {
+  it("respeta el predicado aunque las opciones incluyan un destino", () => {
+    const index = new MemoryGraphIndex([{ op: "upsertNode", id: "person:ana" }]);
+    const options = { match: () => false, target: "person:ana" };
+    expect(index.nearest("person:ana", options).paths).toEqual([]);
+  });
+
+  it.each(["forward", "auto"] as const)("interestedIn con %s ignora el destino incidental al buscar hacia adelante", (strategy) => {
+    const index = new MemoryGraphIndex([
+      interestMutation({ person_id: "ana", interest: "Ajedrez", audience: "" }),
+      interestMutation({ person_id: "bob", interest: "Ajedrez", audience: "" }),
+    ]);
+    const options = { strategy, targetedMax: 0, target: "person:ana", includeSource: true };
+    expect(index.interestedIn("person:ana", topicId("ajedrez"), options).paths.map((p) => p.target)).toEqual(["person:bob"]);
+  });
+
   it("devuelve los k más cercanos que cumplen el predicado", () => {
     for (const seed of SEEDS) {
       const { ids, mutations } = randomMutations(seed);
