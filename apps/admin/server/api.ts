@@ -268,21 +268,23 @@ function createJsonHandlers(deps: AdminApiDeps): JsonHandlers {
     tokens: async () => ({ items: await tokens.list() }),
     createToken: async (c, principal) => {
       const input = await parseBody(c, adminRoutes.createToken.body)
-      const created = await tokens.create(input, principal.email)
-      await audit.record({
-        actor: actorOf(principal),
-        action: "token.create",
-        target: created.meta.id,
-        ip: clientIp(c, deps.trustProxy),
-        meta: { scopes: created.meta.scopes.join(" "), ttlDays: input.ttlDays },
+      return audit.transaction(async (client, record) => {
+        const created = await tokens.create(input, principal.email, client)
+        await record({
+          actor: actorOf(principal), action: "token.create", target: created.meta.id,
+          ip: clientIp(c, deps.trustProxy),
+          meta: { scopes: created.meta.scopes.join(" "), ttlDays: input.ttlDays },
+        })
+        return created
       })
-      return created
     },
     revokeToken: async (c, principal) => {
       const { id } = parseInput(adminRoutes.revokeToken.params, c.req.param())
-      if (!(await tokens.revoke(id))) throw new AdminHttpError("not_found", "No existe el token o ya estaba revocado.")
-      await audit.record({ actor: actorOf(principal), action: "token.revoke", target: id, ip: clientIp(c, deps.trustProxy) })
-      return { ok: true }
+      return audit.transaction(async (client, record) => {
+        if (!(await tokens.revoke(id, client))) throw new AdminHttpError("not_found", "No existe el token o ya estaba revocado.")
+        await record({ actor: actorOf(principal), action: "token.revoke", target: id, ip: clientIp(c, deps.trustProxy) })
+        return { ok: true }
+      })
     },
   }
 }

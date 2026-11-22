@@ -20,6 +20,7 @@ export type AuditInput = {
 export interface AuditLog {
   // Devuelve el id de la fila de auditoría.
   record(entry: AuditInput): Promise<string>
+  transaction<T>(operation: (client: pg.PoolClient, record: (entry: AuditInput) => Promise<string>) => Promise<T>): Promise<T>
   complete(id: string, meta: Record<string, string | number | boolean | null>): Promise<void>
 }
 
@@ -35,27 +36,51 @@ function eventOf(action: string) {
 }
 
 export function createPgAuditLog(pool: pg.Pool, telemetry: Pick<Telemetry, "emit">): AuditLog {
+  async function insert(db: pg.Pool | pg.PoolClient, entry: AuditInput) {
+    const { actor, action, target, reason = null, ip = null, meta = {} } = entry
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO admin.audit (actor_type, actor_id, actor_label, action, target, reason, ip, meta)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [actor.type, actor.id, actor.label, action, target, reason, ip, JSON.stringify(meta)],
+    )
+    return rows[0]!.id
+  }
+  function emit({ action, target }: AuditInput) {
+    const event = eventOf(action)
+    telemetry.emit(event, {
+      requestId: action === "reveal" || action === "rewake" || action === "expire" ? target : null,
+      attrs: { action, ...(target ? { target } : {}), ...(event === "admin.mcp.call" ? { tool: action.slice("mcp:".length) } : {}) },
+    })
+  }
   return {
     async complete(id, meta) {
       await pool.query("UPDATE admin.audit SET meta = $2 WHERE id = $1", [id, JSON.stringify(meta)])
     },
-    async record({ actor, action, target, reason = null, ip = null, meta = {} }) {
-      const { rows } = await pool.query<{ id: string }>(
-        `INSERT INTO admin.audit (actor_type, actor_id, actor_label, action, target, reason, ip, meta)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-        [actor.type, actor.id, actor.label, action, target, reason, ip, JSON.stringify(meta)],
-      )
-      // Sin motivo, ip ni correo: solo la acción y su objetivo.
-      const event = eventOf(action)
-      telemetry.emit(event, {
-        requestId: action === "reveal" || action === "rewake" || action === "expire" ? target : null,
-        attrs: {
-          action,
-          ...(target ? { target } : {}),
-          ...(event === "admin.mcp.call" ? { tool: action.slice("mcp:".length) } : {}),
-        },
-      })
-      return rows[0]!.id
+    async record(entry) {
+      const id = await insert(pool, entry)
+      emit(entry)
+      return id
+    },
+    async transaction<T>(operation: (client: pg.PoolClient, record: (entry: AuditInput) => Promise<string>) => Promise<T>) {
+      const client = await pool.connect()
+      const entries: AuditInput[] = []
+      let result: T
+      try {
+        await client.query("BEGIN")
+        result = await operation(client, async (entry) => {
+          const id = await insert(client, entry)
+          entries.push(entry)
+          return id
+        })
+        await client.query("COMMIT")
+      } catch (error) {
+        await client.query("ROLLBACK")
+        throw error
+      } finally {
+        client.release()
+      }
+      for (const entry of entries) emit(entry)
+      return result
     },
   }
 }
