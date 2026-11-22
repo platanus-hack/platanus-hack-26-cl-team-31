@@ -10,7 +10,7 @@ import { connectAgent } from "./agents.js";
 import { checkDenialAccounts } from "./fixtures.js";
 import { createAgentClient } from "@team-31/broker-client";
 import { createMessageRuntime } from "@team-31/message-flow/runtime";
-import { RequesterView } from "@team-31/protocol";
+import { RequesterView, VaultResult } from "@team-31/protocol";
 import { z } from "zod";
 import { applyOpsMigrations } from "@team-31/ops";
 import {
@@ -161,6 +161,18 @@ describe("traza de punta a punta MCP → broker", () => {
       requestId, userId: "bob", agentId: "bob-bot", name: "broker.vault.changed",
       attrs: expect.objectContaining({ action: "set_member", allowed: true }),
     }));
+  });
+
+  it("devuelve por MCP las entradas de la categoría consultada de otro titular", async () => {
+    const stack = await startStack(memorySink());
+    const bob = { userId: "bob" };
+    const { categoryId } = await stack.owner.changeVault(bob, { action: "create", name: "Taller", visibility: "public" });
+    const entry = { label: "Material", value: "Arcilla" };
+    await stack.owner.changeVault(bob, { action: "put_entry", categoryId, ...entry });
+
+    const ana = await stack.connect("ana");
+    const result = await ana.call("sideband_vault_query", { to: "bob@sideband.app", categoryId }, VaultResult);
+    expect(result.categories).toMatchObject([{ id: categoryId, entries: [entry] }]);
   });
 
   const testDatabaseUrl = process.env.TEST_DATABASE_URL;
