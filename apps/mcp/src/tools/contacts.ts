@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AgentPort } from "@team-31/broker-client";
-import { agentScopes, type Principal } from "@team-31/protocol";
+import { Address, agentScopes, type Principal } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { z } from "zod";
 import { runTool, type ToolTelemetry } from "./result.js";
@@ -30,4 +30,15 @@ export function registerContacts(server: McpServer, principal: Principal, agent:
     inputSchema: routes.agentNetworkUsers.query, outputSchema: routes.agentNetworkUsers.response,
   }, ({ after, q }) => runTool(telemetry, principal, { tool: "sideband_network_users", scope: agentScopes.networkUsers },
     () => agent.networkUsers(principal, after, q)));
+
+  server.registerTool("sideband_circle_invite", {
+    description: "Invita una dirección a un círculo que creó tu titular. Toma el circleId de sideband_contacts. " +
+      "La persona entra solo cuando acepta. Úsalo solo ante una orden directa del titular.",
+    inputSchema: z.object({ circleId: z.string(), address: Address }),
+    outputSchema: z.object({ invited: Address }),
+  }, ({ circleId, address }) => runTool(telemetry, principal, { tool: "sideband_circle_invite", scope: agentScopes.inviteToCircle },
+    async () => {
+      await agent.inviteToCircle(principal, circleId, address);
+      return { invited: address };
+    }));
 }

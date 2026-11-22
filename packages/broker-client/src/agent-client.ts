@@ -14,6 +14,7 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
     vaultMembers: (p, categoryId) => request(routes.agentVaultMembers, p, { query: { categoryId } }),
     tags: (p) => request(routes.agentTags, p),
     changeTag: (p, body) => request(routes.agentChangeTag, p, { body }),
+    inviteToCircle: (p, id, address) => request(routes.agentInviteToCircle, p, { params: { id, address } }),
     changeVault: (p, body) => request(routes.agentChangeVault, p, { body }),
     queryVault: (p, body) => request(routes.agentQueryVault, p, { body }),
     uploadVaultDocument: (p, body) => request(routes.agentVaultUpload, p, { body }),

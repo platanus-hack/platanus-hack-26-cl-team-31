@@ -30,7 +30,7 @@ function testPort(): AgentPort {
     searchPublicProfiles: vi.fn(), capabilities: vi.fn(),
     vaultCatalog: vi.fn(), vaultMembers: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
     uploadVaultDocument: vi.fn(), downloadVaultDocument: vi.fn(),
-    networkUsers: vi.fn(), tags: vi.fn(), changeTag: vi.fn(),
+    networkUsers: vi.fn(), tags: vi.fn(), changeTag: vi.fn(), inviteToCircle: vi.fn(),
     ask: vi.fn(),
     inbox: vi.fn(),
     reply: vi.fn(),
@@ -183,6 +183,10 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     let body = "";
     for await (const chunk of req) body += chunk;
     requests.push({ path, ...identity, body: body ? JSON.parse(body) : undefined });
+    if (!(path in replies)) {
+      res.writeHead(204).end();
+      return;
+    }
     res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(replies[path]));
   }));
   const origin = await listen(createHttpServer(options, createAgentClient({ baseUrl: broker, getServiceToken })));
@@ -192,7 +196,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const { tools } = await ana.listTools();
   expect(tools.map((tool) => [tool.name, tool.annotations?.readOnlyHint])).toEqual([
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
-    ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_tags", true], ["sideband_tag_change", undefined],
+    ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_circle_invite", undefined], ["sideband_tags", true], ["sideband_tag_change", undefined],
     ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_access", true], ["sideband_vault_change", undefined],
     ["sideband_vault_upload", undefined], ["sideband_vault_download", true], ["sideband_vault_query", true],
     ["sideband_vault_request_access", undefined],
@@ -217,6 +221,8 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     .toEqual({ categories: [sharedCategory] });
   expect((await ana.callTool({ name: "sideband_vault_catalog", arguments: { categoryId: "health" } })).structuredContent)
     .toEqual({ categories: [ownCategory] });
+  expect((await ana.callTool({ name: "sideband_circle_invite", arguments: { circleId: "circle-1", address: pending.to } })).structuredContent)
+    .toEqual({ invited: pending.to });
 
   expect(requests).toEqual([
     { path: "POST /v1/agent/ask", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: question },
@@ -229,6 +235,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     { path: `GET /v1/agent/vault/members?categoryId=${tagId}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "POST /v1/agent/vault/query", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: { to: pending.to } },
     { path: "GET /v1/agent/vault?categoryId=health", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: `PUT /v1/agent/circles/circle-1/members/${encodeURIComponent(pending.to)}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
   ]);
 });
 

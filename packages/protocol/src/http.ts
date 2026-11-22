@@ -321,6 +321,14 @@ export const routes = {
     iss: "web",
     port: "owner.inviteToCircle",
   },
+  agentInviteToCircle: {
+    method: "PUT",
+    path: "/v1/agent/circles/:id/members/:address",
+    params: circleMemberParams,
+    ...noContent,
+    iss: "mcp",
+    port: "agent.inviteToCircle",
+  },
   ownerJoinCircle: {
     method: "POST",
     path: "/v1/owner/circles/:id/join",

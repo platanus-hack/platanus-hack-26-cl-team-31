@@ -37,6 +37,7 @@ export interface AgentPort {
   connect(p: Principal): Promise<void>;
   tags(p: Principal): Promise<TagsView>;
   changeTag(p: Principal, input: TagChange): Promise<{ tagId: string }>;
+  inviteToCircle(p: Principal, circleId: string, address: Address): Promise<void>;
   vaultCatalog(p: Principal, categoryId?: string): Promise<VaultCatalog>;
   vaultMembers(p: Principal, categoryId: string): Promise<{ members: Address[] }>;
   changeVault(p: Principal, change: VaultChange): Promise<VaultReceipt>;

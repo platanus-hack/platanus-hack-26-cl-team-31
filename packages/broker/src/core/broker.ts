@@ -533,6 +533,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     });
   }
 
+  const circlePort = createCirclePort({ store, clock }, record, denyUnauthorizedInboxRequests);
+
   return {
     agent: {
       async connect(p) {
@@ -551,6 +553,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           await ensureActiveAgentConnection(tx, p);
           return tags.changeByAgent(tx, p, input);
         });
+      },
+      async inviteToCircle(p, circleId, address) {
+        requireScope(p, "inviteToCircle");
+        await store.tx(tx => ensureActiveAgentConnection(tx, p));
+        await circlePort.inviteToCircle({ userId: p.userId }, circleId, address);
       },
       async vaultCatalog(p, categoryId) {
         requireScope(p, "vaultCatalog");
@@ -1011,7 +1018,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (error) throw error;
       },
 
-      ...createCirclePort({ store, clock }, record, denyUnauthorizedInboxRequests),
+      ...circlePort,
 
       removeContact,
       removeFriend: removeContact,
