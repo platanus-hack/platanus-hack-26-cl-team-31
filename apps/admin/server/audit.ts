@@ -20,6 +20,7 @@ export type AuditInput = {
 export interface AuditLog {
   // Devuelve el id de la fila de auditoría.
   record(entry: AuditInput): Promise<string>
+  complete(id: string, meta: Record<string, string | number | boolean | null>): Promise<void>
 }
 
 // Evento admin.* del catálogo de @team-31/telemetry que acompaña a cada fila.
@@ -35,6 +36,9 @@ function eventOf(action: string) {
 
 export function createPgAuditLog(pool: pg.Pool, telemetry: Pick<Telemetry, "emit">): AuditLog {
   return {
+    async complete(id, meta) {
+      await pool.query("UPDATE admin.audit SET meta = $2 WHERE id = $1", [id, JSON.stringify(meta)])
+    },
     async record({ actor, action, target, reason = null, ip = null, meta = {} }) {
       const { rows } = await pool.query<{ id: string }>(
         `INSERT INTO admin.audit (actor_type, actor_id, actor_label, action, target, reason, ip, meta)
