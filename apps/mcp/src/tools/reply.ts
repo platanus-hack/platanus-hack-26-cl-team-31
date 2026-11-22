@@ -12,10 +12,13 @@ import { runTool, type ToolTelemetry } from "./result.js";
 // publica como «<mensaje> at result». Un codex real leyó tres veces «Invalid input at result» y
 // siguió mandando el objeto serializado como string: el mensaje tiene que nombrar la forma.
 // Conserva las claves adicionales para que el broker las filtre y las enumere en droppedFields.
-const result = z.union(Object.values(ToolResultSchemas).map((schema) => schema.loose()), {
+// Algunos clientes serializan un resultado ausente como null o {}. ReplyInput exige uno para answered.
+const emptyResult = z.strictObject({}).nullable().transform(() => undefined);
+const result = z.union([...Object.values(ToolResultSchemas).map((schema) => schema.loose()), emptyResult], {
   error: 'result debe ser un objeto JSON con los campos de allowedFields —{"answer": "..."}—, no texto ni ese objeto serializado como string',
 }).describe(
-  "Objeto JSON cuyas claves son exactamente las de allowedFields de la solicitud en tu bandeja. "
+  "Para no_data, declined o needs_owner puedes omitir result, enviar null o enviar {}. "
+  + "Para answered, envía un objeto JSON con los campos de allowedFields de la solicitud en tu bandeja. "
   + "Nunca texto suelto ni el objeto serializado como string. "
   + 'Ejemplos: allowedFields ["answer"] → {"answer": "..."}; ["matches"] → {"matches": true}; '
   + '["available","freeSlots"] → {"available": true, "freeSlots": ["09:00-10:00"]}; ["accepted"] → {"accepted": true}.',
@@ -31,7 +34,10 @@ const share = ReplyArguments.shape.share.describe(
   + "Al aceptar un connect sin compartir nada, envíalo vacío: ahí [] sí significa aceptar con cero categorías.",
 );
 
-const inputSchema = ReplyArguments.extend({ share, result: result.optional() });
+const inputSchema = ReplyArguments.extend({ share, result: result.optional() }).meta({
+  if: { properties: { outcome: { const: "answered" } } },
+  then: { required: ["result"], properties: { result: { type: "object", minProperties: 1 } } },
+});
 
 export function registerReply(server: McpServer, principal: Principal, agent: AgentPort, telemetry: ToolTelemetry) {
   server.registerTool("sideband_reply", {

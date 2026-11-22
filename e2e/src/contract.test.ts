@@ -43,17 +43,21 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     expect(await ownerPort.pending(recipient.owner)).toEqual([]);
 
     const granted = await ownerPort.setGrant(recipient.owner, { grantee: unknown.address, category: "availability" });
-    const empty = await unknown.agent.ask(availability);
-    const emptyItem = await inboxItem(recipient.agent, empty.requestId);
     const internalReason = "Nota interna de prueba";
-    expect(await recipient.agent.reply({
-      requestId: emptyItem.requestId, nonce: emptyItem.nonce, outcome: "no_data", internalReason,
-    })).toMatchObject({ status: "no_data" });
-    const noData = await unknown.agent.check(empty.requestId);
-    expect(noData).toMatchObject({
-      final: true, decision: "unanswered", outcome: "no_data", signature: expect.stringMatching(/^[\w-]{86}$/),
-    });
-    expect(JSON.stringify(noData)).not.toContain(internalReason);
+    for (const result of [undefined, null, {}]) {
+      const empty = await unknown.agent.ask(availability);
+      const item = await inboxItem(recipient.agent, empty.requestId);
+      expect(await recipient.agent.reply({
+        requestId: item.requestId, nonce: item.nonce, outcome: "no_data", result, internalReason,
+      })).toMatchObject({ status: "no_data", deliveredFields: [] });
+      const noData = await unknown.agent.check(item.requestId);
+      expect(noData).toMatchObject({
+        final: true, decision: "unanswered", outcome: "no_data", signature: expect.stringMatching(/^[\w-]{86}$/),
+      });
+      expect(noData).not.toHaveProperty("result");
+      expect(JSON.stringify(noData)).not.toContain(internalReason);
+      expect(await recipient.agent.inbox()).toEqual([]);
+    }
     await ownerPort.revokeGrant(recipient.owner, granted.id);
     expect(await unknown.agent.ask(availability)).toMatchObject({ final: true, decision: "deny" });
 
@@ -63,7 +67,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     const questionItem = await inboxItem(recipient.agent, escalation.requestId);
     expect(questionItem.senderMessage).toEqual({ text, trusted: false });
     expect(await recipient.agent.reply({
-      requestId: questionItem.requestId, nonce: questionItem.nonce, outcome: "needs_owner",
+      requestId: questionItem.requestId, nonce: questionItem.nonce, outcome: "needs_owner", result: null,
     })).toMatchObject({ status: "awaiting_owner" });
     expect(await sender.agent.check(escalation.requestId)).toMatchObject({
       final: false, waitingFor: "owner", expiresAt: expect.any(String),
@@ -79,7 +83,7 @@ describe.skipIf(!enabled)("Contrato MCP", () => {
     const declined = await sender.agent.ask(question);
     const declinedItem = await inboxItem(recipient.agent, declined.requestId);
     expect(await recipient.agent.reply({
-      requestId: declinedItem.requestId, nonce: declinedItem.nonce, outcome: "declined", internalReason,
+      requestId: declinedItem.requestId, nonce: declinedItem.nonce, outcome: "declined", result: {}, internalReason,
     })).toMatchObject({ status: "declined" });
     expect(await sender.agent.check(declined.requestId)).toEqual({
       requestId: declined.requestId, to: recipient.address, tool: "question", expiresAt: declined.expiresAt,
