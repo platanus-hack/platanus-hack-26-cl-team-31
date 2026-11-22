@@ -495,15 +495,9 @@ importers:
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
-      '@types/pg':
-        specifier: 8.23.1
-        version: 8.23.1
       jose:
         specifier: 6.2.15
         version: 6.2.15
-      pg:
-        specifier: 8.23.1
-        version: 8.23.1
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -611,9 +605,6 @@ importers:
       '@team-31/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
-      '@team-31/wake':
-        specifier: workspace:*
-        version: link:../wake
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
