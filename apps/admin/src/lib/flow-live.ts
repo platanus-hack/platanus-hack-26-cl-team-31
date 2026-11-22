@@ -175,10 +175,11 @@ class FlowSession {
     this.refreshedAt = Date.now()
     this.applySnapshot(snapshot)
     const shortGap = this.droppedAt !== null && this.refreshedAt - this.droppedAt < RESUME_GAP_MS
-    const after = shortGap ? this.lastId ?? snapshot.cursor : snapshot.cursor
+    // Incluso antes de recibir la primera fila, la foto inicial ya fijó un cursor.
+    if (!shortGap || this.lastId === null) this.lastId = snapshot.cursor ?? "0"
     this.first = false
     this.droppedAt = null
-    this.connection.stopStream = subscribeFlow(after, this.handlers)
+    this.connection.stopStream = subscribeFlow(this.lastId, this.handlers)
   }
 
   private markDisconnected() {

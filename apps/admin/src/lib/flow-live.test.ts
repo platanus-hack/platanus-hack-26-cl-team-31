@@ -58,6 +58,14 @@ it("refreshes an unknown identity after the throttle expires without a second ev
   expect(api).toHaveBeenCalledTimes(2)
 })
 
+it("resumes from the initial snapshot if disconnected before the first row", async () => {
+  const stream = vi.mocked(subscribeFlow).mock.calls[0][1]
+  vi.mocked(api).mockResolvedValue({ ...snapshot, cursor: "9" })
+  act(() => stream.onClosed())
+  await advance(1_000)
+  expect(subscribeFlow).toHaveBeenLastCalledWith("1", expect.any(Object))
+})
+
 it("resumes a short outage from the last event after an earlier native reconnect", async () => {
   const stream = observeConnection()
   act(() => stream.onRetrying())

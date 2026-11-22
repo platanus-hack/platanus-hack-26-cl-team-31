@@ -4,6 +4,8 @@ export interface DirectoryUser {
   userId: string;
   address?: string | null;
   displayName?: string | null;
+  /** Incluye conexiones que quedaron fuera de la ventana o el límite de la foto. */
+  hasAgentHistory?: boolean;
 }
 
 export interface DirectoryAgent {
@@ -142,7 +144,7 @@ export function createActorResolver(directory: FlowDirectory) {
         for (const agent of own) {
           if (!agent.revokedAt) yield agentActor(agent.agentId, owner);
         }
-      } else if (user.address) {
+      } else if (user.address && !user.hasAgentHistory) {
         yield placeholder(owner);
       }
     }
