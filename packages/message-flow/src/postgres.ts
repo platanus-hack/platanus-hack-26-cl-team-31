@@ -84,7 +84,7 @@ export function createPostgresTurnStore(connectionString: string, telemetry?: Op
 
   // The latest turn supersedes older prompts, including when the latest one is a completed read.
   async function latestContinuation(userId: string, binding: string, phase: "clarify" | "dispatch" = "clarify") {
-    const { rows } = await pool.query<{ id: string; phase: string; outcome: string | null }>(
+    const { rows } = await pool.query<{ id: string; phase: string | null; outcome: string | null }>(
       `SELECT id, state->>'phase' AS phase, outcome FROM sideband.message_turns
        WHERE ${ownerFilter} AND ${live} ORDER BY created_at DESC, id DESC LIMIT 1`, [userId, binding, ""]);
     const latest = rows[0];
