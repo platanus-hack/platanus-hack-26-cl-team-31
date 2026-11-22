@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { StatusDot } from "@/components/status"
+import { buildPath } from "@/lib/api"
 import { formatAbsolute, formatClock, formatDuration } from "@/lib/format"
 import { levelTone, serviceLabel } from "@/lib/status"
 
@@ -129,7 +130,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
                 <span className="ml-auto flex items-center gap-1">
                   {item.errorId ? (
                     <Link
-                      to={`/errores/${item.errorId}`}
+                      to={buildPath("/errores/:id", { id: item.errorId })}
                       className="inline-flex items-center gap-1 text-[11px] text-status-error hover:underline"
                     >
                       <BugIcon className="size-3" />
@@ -138,7 +139,7 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
                   ) : null}
                   {item.traceId ? (
                     <Link
-                      to={`/trazas/${item.traceId}`}
+                      to={buildPath("/trazas/:id", { id: item.traceId })}
                       className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground hover:underline"
                     >
                       <WaypointsIcon className="size-3" />
