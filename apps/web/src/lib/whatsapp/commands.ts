@@ -39,7 +39,18 @@ async function acceptInvitation(broker: WhatsAppBroker, owner: Owner, text: stri
   return `Aceptaste a ${invitation.address}. Le compartes: ${describeSharing(share)}.`;
 }
 
+// A vault access request is decided by the contact in person, so its texts talk about access, not answers.
+function summarizeAccess(view: RequesterView): string {
+  if (view.decision === "pending") return `Le pedí acceso a ${view.to}. Espera su aprobación; te aviso apenas decida.`;
+  if (view.decision === "allow" && "accepted" in view.result && view.result.accepted) {
+    return `${view.to} te dio acceso. Vuelve a preguntar para ver lo que guarda.`;
+  }
+  if (view.decision === "unanswered" && view.outcome === "expired") return `Tu pedido de acceso a ${view.to} venció sin respuesta.`;
+  return `${view.to} no te dio acceso.`;
+}
+
 export function summarize(view: RequesterView): string {
+  if (view.tool === "vault_access") return summarizeAccess(view);
   if (view.decision === "deny") return `No se pudo obtener una respuesta de ${view.to}.`;
   if (view.decision === "pending") {
     return view.waitingFor === "owner"
@@ -160,8 +171,9 @@ function openedVaultText(categories: OwnCategory[]): string {
 function vaultsText({ categoryName, items, missing }: Extract<MessageReply, { kind: "vaults" }>): string {
   const lines = items.flatMap(({ to, data }) => data.categories.map(c =>
     `${to} · ${c.name}: ${c.entries?.map(e => `${e.label}: ${e.value}`).join("; ") || "aún no guarda datos"}`));
-  if (!lines.length) return `Ninguno de tus contactos te comparte «${categoryName}».`;
-  if (missing.length) lines.push(`No te comparten «${categoryName}»: ${missing.join(", ")}`);
+  const ask = missing.length ? `Para pedir acceso escribe «pídele a ${missing[0]} acceso a ${categoryName}».` : "";
+  if (!lines.length) return [`Ninguno de tus contactos te comparte «${categoryName}».`, ask].filter(Boolean).join("\n");
+  if (missing.length) lines.push(`No te comparten «${categoryName}»: ${missing.join(", ")}`, ask);
   return lines.join("\n");
 }
 
