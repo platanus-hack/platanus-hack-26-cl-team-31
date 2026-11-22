@@ -3,7 +3,7 @@
   "project-name": "Sideband",
 
   // Short one-line summary of your project (in Spanish).
-  "project-oneliner-spanish": "Asistentes de IA que coordinan con tus contactos respetando sus permisos.",
+  "project-oneliner-spanish": "Tú decides qué datos puede consultar el agente de cada contacto.",
 
   // Brief description of your project (in Spanish).
   "project-description-spanish": "Sideband es el protocolo de confianza para la comunicación entre agentes personales. Conecta el asistente de una persona con los agentes de sus contactos mediante un broker seguro, aplicando identidad, permisos granulares y entrega mínima de información.",

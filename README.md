@@ -2,15 +2,11 @@
 
 <img src="./project-logo.png" alt="Sideband" width="200" />
 
-> **El protocolo de confianza para la comunicación entre agentes personales.**
+> **Tú decides qué datos puede consultar el agente de cada contacto.**
 
 Track: 🔗 Multiplayer
 
-La forma en que nos comunicamos está cambiando. Cada vez más personas delegan tareas en asistentes de IA: organizar su agenda, responder mensajes, buscar información y coordinarse con otras personas. El siguiente paso es que esos asistentes puedan comunicarse entre sí.
-
-Para que eso funcione a escala no basta con conectar agentes. Necesitamos saber quién está preguntando, en nombre de quién actúa, qué información puede consultar y qué puede compartir el otro agente.
-
-**Sideband es esa capa de confianza.** Conecta el asistente de una persona con los agentes de sus contactos a través de un broker seguro. Cada titular mantiene el control sobre su identidad, sus permisos y sus datos. El agente puede coordinarse con otros agentes, pero nunca recibe más información de la autorizada.
+Sideband conecta a tu asistente con los agentes de tus contactos. Ver que existe una categoría no da acceso a su contenido: un compañero de trabajo puede ver «Salud» en tu catálogo, pero solo podrá leer sus datos si tiene permiso. Puedes compartir esa categoría con tu familia y compartir solo tu disponibilidad con el equipo de trabajo.
 
 Hoy Sideband funciona con usuarios reales y sus agentes conectados. También incluye un stack local con datos de prueba para reproducir el flujo sin depender de cuentas reales.
 
@@ -40,30 +36,13 @@ Estos escenarios requieren consentimiento explícito y reglas claras. Sideband n
 
 Los agentes pueden equivocarse, ser manipulados o recibir instrucciones maliciosas. Por eso la seguridad no depende solamente de que el agente se comporte bien: **los permisos se aplican en el broker**.
 
+**¿Qué pasa si retiras el acceso mientras tu agente prepara la respuesta?** El broker bloquea la entrega, incluso si ya guardó la respuesta y el solicitante todavía no la ha leído. La [prueba de revocación de punta a punta](e2e/src/trace.test.ts#L150) comprueba ambos casos.
+
 ## Pruébalo
 
-El producto soporta usuarios y agentes reales. Para probarlo de forma reproducible y aislada, este repositorio incluye:
-
-**Stack Sideband.** Web y el MCP remoto usan el broker de Sideband para gestionar permisos, solicitudes y avisos. [Arranque y verificación local](docs/local-stack.md).
-
-**Demo local de coordinación.** La API de `apps/server` guarda grupos, disponibilidad y encuentros para una demo reproducible. Corre `pnpm agents:up 3` en una terminal y `pnpm agents:demo 3` en otra. [Instrucciones para dos o más asistentes](apps/mcp/README.md).
-
-### Dashboard con chat
-
-En `/demo`, **Contactos de Ana** usa Claude Code y el mismo broker persistente que `agents:runtime-demo`. En una instancia real, este flujo puede operar con usuarios y agentes conectados; para reproducirlo localmente, ejecuta `pnpm agents:contacts:seed` y pregunta «¿A alguien le interesa la cerámica?». **Ver datos** muestra el ID y la decisión del broker para cada contacto. [Comandos para levantar el flujo de contactos](apps/mcp/README.md#buscar-entre-los-agentes-de-la-agenda)
-
-Selecciona **Fútbol del sábado** para usar el chat de coordinación con Ollama.
-
-Con Node 24, pnpm 10 y Docker, ejecuta `pnpm agents:up 3` y deja la API abierta. Luego levanta Ollama con **una** de estas opciones:
-
-- **Docker:** `docker compose --profile demo-model up -d ollama` y luego `docker compose --profile demo-model exec ollama ollama pull qwen3:4b-instruct`.
-- **Ollama nativo** (recomendado en Mac para usar la GPU): `pnpm with-env bash -c 'OLLAMA_HOST=127.0.0.1:$DEMO_MODEL_PORT ollama serve'`. En otra terminal, `pnpm with-env bash -c 'OLLAMA_HOST=127.0.0.1:$DEMO_MODEL_PORT ollama pull "${DEMO_MODEL:-qwen3:4b-instruct}"'`.
-
-Si tu worktree ya tenía `.env`, ejecuta `pnpm env:init` para agregar el puerto del modelo. Inicia `pnpm dev --filter @team-31/web` y abre `/demo` en la URL que imprima Next.js. La primera descarga del modelo pesa alrededor de 2.5 GB. El chat no envía mensajes hasta que Ollama tenga instalado el modelo.
-
-Como Ana, escribe **«¿A Bob le da para jugar tipo seis el sábado?»** y luego **«¿Y a las cuatro?»**. Cambia a Eva y repite la consulta para comparar cómo cambian las respuestas según los permisos. En cada respuesta puedes abrir **Ver datos** y copiar el JSON que devolvió la API. También puedes invitar a Bob y Carla, cambiar de identidad para responder con sus agendas y aceptar el horario con cada persona.
-
-El modelo corre localmente y no requiere API key. Usa herramientas reales de la API, que sigue decidiendo qué puede ver cada identidad. En esta reproducción local los calendarios son de prueba, el historial está separado por identidad y las credenciales de `.agents-local/` no salen del servidor web.
+- [Permitir y revocar una consulta paso a paso](docs/demo.md): haz la misma pregunta con dos identidades, cambia un permiso y observa la decisión del broker.
+- [Arranque y verificación local](docs/local-stack.md): conecta la web y el MCP remoto al broker.
+- <a id="dashboard-con-chat"></a>[Demo local con contactos ficticios](docs/demo-contactos.md): prueba el chat de contactos o la coordinación de agendas.
 
 team-31
 
