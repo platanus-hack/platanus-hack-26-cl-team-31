@@ -1,53 +1,24 @@
 import { randomUUID } from "node:crypto";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyPostgresMigrations, createPostgresStore } from "./index.js";
+import { databaseBefore } from "./test-helpers.js";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? "";
-const drizzleFolder = fileURLToPath(new URL("../../../drizzle/", import.meta.url));
 
 describe.skipIf(!testDatabaseUrl)("migración a una sola regla de acceso", () => {
-  const databaseName = "sideband_access_" + randomUUID().replaceAll("-", "");
-  let admin: pg.Pool;
+  let previous: Awaited<ReturnType<typeof databaseBefore>>;
   let db: pg.Pool;
   let databaseUrl: string;
-  let previous: string;
 
   beforeAll(async () => {
-    admin = new pg.Pool({ connectionString: testDatabaseUrl });
-    await admin.query(`CREATE DATABASE ${pg.escapeIdentifier(databaseName)}`);
-    const url = new URL(testDatabaseUrl);
-    url.pathname = "/" + databaseName;
-    databaseUrl = url.toString();
-    db = new pg.Pool({ connectionString: databaseUrl });
-    previous = await mkdtemp(join(tmpdir(), "sideband-drizzle-"));
-    await cp(drizzleFolder, previous, { recursive: true });
-    const journalPath = join(previous, "meta", "_journal.json");
-    const journal = JSON.parse(await readFile(journalPath, "utf8")) as { entries: { tag: string }[] };
-    journal.entries = journal.entries.filter((entry) => entry.tag !== "0303_single_access_rule");
-    await writeFile(journalPath, JSON.stringify(journal));
+    previous = await databaseBefore(testDatabaseUrl, "0303_single_access_rule");
+    ({ db, databaseUrl } = previous);
   });
 
-  afterAll(async () => {
-    await db?.end();
-    await admin?.query(`DROP DATABASE IF EXISTS ${pg.escapeIdentifier(databaseName)}`);
-    await admin?.end();
-    if (previous) await rm(previous, { recursive: true, force: true });
-  });
+  afterAll(() => previous?.drop());
 
   it("conserva lo que cada contacto lee y deja preguntar por lo mismo", async () => {
-    const client = await db.connect();
-    try {
-      await migrate(drizzle(client), { migrationsFolder: previous, migrationsSchema: "sideband" });
-    } finally {
-      client.release();
-    }
     const address = (name: string) => `${name}@sideband.app`;
     const grant = (grantee: string, category: string) =>
       `('${randomUUID()}', 'ana', '${address(grantee)}', '${category}', now())`;

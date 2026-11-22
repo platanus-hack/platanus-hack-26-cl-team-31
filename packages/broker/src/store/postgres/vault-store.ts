@@ -65,17 +65,14 @@ const canRead = (reader: SQLWrapper) => sql<boolean>`coalesce(
     where ${p.owner} = ${c.owner} and ${p.id} = ${c.id} and ${t.address} = ${reader}))`;
 
 // What each contact reads of the holder's vault and what the holder reads of theirs, as category ids by address.
-export async function contactAccess(db: Tx, userId: string, me: string) {
+export async function contactAccess(db: Tx, userId: string) {
   await seedHolder(db, userId);
-  // A contact that never opened the vault still has its default categories.
-  const unseeded = await db.select({ userId: users.userId }).from(users)
-    .innerJoin(friends, and(eq(friends.userId, userId), eq(friends.address, users.address))).where(eq(users.vaultSeeded, false));
-  for (const contact of unseeded) await seedHolder(db, contact.userId);
+  const me = db.select({ address: users.address }).from(users).where(eq(users.userId, userId));
   const gives = await db.select({ address: friends.address, id: c.id }).from(c)
     .innerJoin(friends, and(eq(friends.userId, c.owner), canRead(friends.address))).where(eq(c.owner, userId));
   const receives = await db.select({ address: friends.address, id: c.id }).from(c)
     .innerJoin(users, eq(users.userId, c.owner))
-    .innerJoin(friends, and(eq(friends.userId, userId), eq(friends.address, users.address))).where(canRead(sql`${me}`));
+    .innerJoin(friends, and(eq(friends.userId, userId), eq(friends.address, users.address))).where(canRead(me));
   const ids = (rows: typeof gives, address: string) => rows.filter(row => row.address === address).map(row => row.id);
   return (address: string) => ({ gives: ids(gives, address), receives: ids(receives, address) });
 }

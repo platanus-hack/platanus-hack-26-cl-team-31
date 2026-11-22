@@ -314,8 +314,8 @@ function transaction(state: State): StoreTx {
       return state.contacts.get(userId)?.delete(address) ?? false;
     },
     async listTags(userId) {
-      const open = (id: string) => vaultOf(userId).categories.filter(c => c.tags.includes(id)).map(c => c.id);
-      return sortTags(tagsOf(userId).map(tag => ({ ...tag, categories: Category.options.filter(id => open(tag.id).includes(id)) })));
+      const opens = (tagId: string, id: string) => vaultOf(userId).categories.some(c => c.id === id && c.tags.includes(tagId));
+      return sortTags(tagsOf(userId).map(tag => ({ ...tag, categories: Category.options.filter(id => opens(tag.id, id)) })));
     },
     async putTag(userId, { categories, ...tag }) {
       const tags = tagsOf(userId);

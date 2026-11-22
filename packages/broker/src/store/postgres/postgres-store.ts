@@ -222,17 +222,17 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
     async listContacts(userId) {
       const { rows } = await db.execute<{
-        address: string; name: string | null; tags: string[]; me: string;
+        address: string; name: string | null; tags: string[];
       }>(sql`
-        SELECT f.address, other.display_name AS name, me.address AS me,
+        SELECT f.address, other.display_name AS name,
           ARRAY(SELECT t.tag_id FROM sideband.contact_tags t WHERE (t.user_id, t.address) = (f.user_id, f.address)) AS tags
         FROM sideband.friends f
         JOIN sideband.users me ON me.user_id = f.user_id AND me.address IS NOT NULL
         LEFT JOIN sideband.users other ON other.address = f.address
         WHERE f.user_id = ${userId}
         ORDER BY f.address COLLATE "C"`);
-      if (!rows[0]) return [];
-      const access = await contactAccess(db, userId, rows[0].me);
+      if (!rows.length) return [];
+      const access = await contactAccess(db, userId);
       return rows.map(row => directoryContact({ ...row, ...access(row.address) }));
     },
 

@@ -117,7 +117,7 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       await store.tx(async tx => {
         await tx.createAddress("carla", carla);
         await tx.addContact("alice", toAddress);
-        await tx.listTags("alice");
+        await tx.vaultCatalog("bruno");
         await tx.putTag("alice", { id: "family", name: "Familia", color: "amber", categories: [] });
         await tx.setContactTags("alice", toAddress, ["family"]);
         await tx.putGrant(grantTo(toAddress));
