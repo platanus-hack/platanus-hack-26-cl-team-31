@@ -302,6 +302,8 @@ class Turn {
     const items: RequesterView[] = previous?.phase === "dispatch" ? [...previous.receipts ?? []] : [];
     const refs = new Map(this.refs.map(r => [r.to, r]));
     const pending = new Map(this.jobs.filter(j => !refs.has(j.to)).map(j => [j.to, j]));
+    // Only opaque refs survive for answers carrying private data; other initial receipts are safe to replay.
+    const checkpoint = () => ({ refs: [...refs.values()], receipts: replayableReceipts(items) });
     const jobs = [...pending.values()];
     let errorId: string | undefined;
     let terminalError: unknown;
@@ -331,15 +333,13 @@ class Turn {
           errorId = this.telemetry.error("message.dispatch", error, this.identity);
         }
       }
-      // Confirmed writes never consume ask quota again. Only opaque refs survive
-      // for answers carrying private data; other initial receipts are safe to replay.
-      await this.session.save({ phase: "dispatch", jobs: [...pending.values()], refs: [...refs.values()], receipts: replayableReceipts(items) });
+      // Confirmed writes never consume ask quota again.
+      await this.session.save({ phase: "dispatch", jobs: [...pending.values()], ...checkpoint() });
       if (stop) break;
     }
     if (terminalError && !pending.size && !refs.size) throw terminalError;
     if (!pending.size && !refs.size) return this.unavailable("empty_selection");
-    if (!pending.size) await this.session.save({ phase: "requests", refs: [...refs.values()],
-      receipts: replayableReceipts(items) });
+    if (!pending.size) await this.session.save({ phase: "requests", ...checkpoint() });
     const included = new Set(items.map(v => v.requestId));
     const confirmed = [...refs.values()].filter(ref => !included.has(ref.requestId));
     return this.finish({ kind: "requests", items, ...(confirmed.length && { confirmed }),
