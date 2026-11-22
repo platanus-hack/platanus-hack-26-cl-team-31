@@ -13,6 +13,7 @@ import type {
   WakeResult,
   WakeTarget,
 } from "@team-31/protocol";
+import type { NetworkUsersQuery } from "@team-31/protocol/http";
 
 export type UserRow = {
   userId: string;
@@ -154,7 +155,7 @@ export interface Store {
 }
 
 export interface StoreTx {
-  networkAddresses(after: Address | undefined, limit: number, q?: string): Promise<Address[]>;
+  networkAddresses(query: NetworkUsersQuery, limit: number): Promise<Address[]>;
   vaultCatalog(owner: string, lockNames?: boolean): Promise<VaultCatalog>;
   vaultMembers(owner: string, categoryId: string): Promise<Address[] | null>;
   ownerVault(owner: string): Promise<OwnerVault>;

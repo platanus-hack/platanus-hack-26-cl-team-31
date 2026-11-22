@@ -31,6 +31,12 @@ const adminAgentParams = z.object({ userId: z.string(), agentId: z.string() });
 const noContent = { status: 204, response: z.undefined() } as const;
 const circleMemberParams = z.object({ id: z.string(), address: Address });
 
+const networkUsersQuery = z.strictObject({
+  after: Address.optional(),
+  q: z.string().trim().min(1).max(128).toLowerCase().optional(),
+});
+export type NetworkUsersQuery = z.output<typeof networkUsersQuery>;
+
 const activityQuery = z.object({
   limit: z.coerce.number<string | number>().int().positive().optional(),
   requestId: z.string().min(1).optional(),
@@ -38,7 +44,7 @@ const activityQuery = z.object({
 export type ActivityQuery = z.output<typeof activityQuery>;
 
 export const routes = {
-  agentNetworkUsers: { method: "GET", path: "/v1/agent/network/users", query: z.strictObject({ after: Address.optional(), q: z.string().trim().min(1).max(128).toLowerCase().optional() }),
+  agentNetworkUsers: { method: "GET", path: "/v1/agent/network/users", query: networkUsersQuery,
     response: z.object({ addresses: z.array(Address), nextCursor: Address.optional() }), iss: "mcp", port: "agent.networkUsers" },
   agentConnect: { method: "POST", path: "/v1/agent/connection", ...noContent, iss: "mcp", port: "agent.connect" },
   agentTags: { method: "GET", path: "/v1/agent/tags", response: TagsView, iss: "mcp", port: "agent.tags" },

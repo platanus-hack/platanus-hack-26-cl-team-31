@@ -104,7 +104,7 @@ function transaction(state: State): StoreTx {
   }
 
   return {
-    async networkAddresses(after, limit, q) {
+    async networkAddresses({ after, q }, limit) {
       const connected = new Set([...state.agents.values()].map(agent => agent.userId));
       return [...state.users.values()].flatMap(({ userId, address }) =>
         address && connected.has(userId) && (!after || address > after) && (!q || address.includes(q)) ? [address] : []).sort().slice(0, limit);

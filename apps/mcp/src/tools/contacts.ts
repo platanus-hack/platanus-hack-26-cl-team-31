@@ -28,8 +28,8 @@ export function registerContacts(server: McpServer, principal: Principal, agent:
     description: "Lista las direcciones de quienes conectaron un agente a Sideband alguna vez, incluidos quienes no son contactos. Con q busca parte de la dirección. Para la página siguiente conserva q y pasa nextCursor como after.",
     annotations: { readOnlyHint: true },
     inputSchema: routes.agentNetworkUsers.query, outputSchema: routes.agentNetworkUsers.response,
-  }, ({ after, q }) => runTool(telemetry, principal, { tool: "sideband_network_users", scope: agentScopes.networkUsers },
-    () => agent.networkUsers(principal, after, q)));
+  }, (query) => runTool(telemetry, principal, { tool: "sideband_network_users", scope: agentScopes.networkUsers },
+    () => agent.networkUsers(principal, query)));
 
   server.registerTool("sideband_circle_invite", {
     description: "Invita una dirección a un círculo que creó tu titular. Toma el circleId de sideband_contacts. " +

@@ -741,12 +741,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
 
-      async networkUsers(p, after, q) {
+      async networkUsers(p, query = {}) {
         requireScope(p, "networkUsers");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
           const pageSize = 50;
-          const rows = await tx.networkAddresses(after, pageSize + 1, q);
+          const rows = await tx.networkAddresses(query, pageSize + 1);
           const addresses = rows.slice(0, pageSize);
           return { addresses, ...(rows.length > pageSize ? { nextCursor: addresses.at(-1) } : {}) };
         });

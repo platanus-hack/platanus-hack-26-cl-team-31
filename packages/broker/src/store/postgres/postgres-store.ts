@@ -154,7 +154,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         return { address, displayName: row.displayName || address.split("@")[0]! };
       });
     },
-    async networkAddresses(after, limit, q) {
+    async networkAddresses({ after, q }, limit) {
       const connected = db.select({ id: agentConnections.userId }).from(agentConnections);
       const rows = await db.select({ address: users.address }).from(users)
         .where(and(isNotNull(users.address), inArray(users.userId, connected), after ? gt(users.address, after) : undefined,
