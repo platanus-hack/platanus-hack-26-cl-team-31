@@ -3,6 +3,7 @@ import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { applyPostgresMigrations } from "@team-31/broker/postgres";
 import { createTestDatabase } from "@team-31/test-db";
@@ -27,12 +28,9 @@ export async function isolatedDatabase(cleanup) {
   return testDb.pool();
 }
 
-export async function configureBroker() {
-  const probe = createServer();
-  const port = await listen(probe);
-  await closeServer(probe);
-  vi.stubEnv("BROKER_PORT", String(port));
-  vi.stubEnv("BROKER_URL", `http://127.0.0.1:${port}`);
+export function configureBroker() {
+  vi.stubEnv("BROKER_HOST", "127.0.0.1");
+  vi.stubEnv("BROKER_PORT", "0");
   const publicKeys = {};
   for (const issuer of ["web", "mcp"]) {
     const pair = generateKeyPairSync("ed25519");
@@ -54,18 +52,33 @@ export async function startBroker(cleanup) {
   const root = import.meta.resolve("@team-31/broker-service/package.json");
   const tsx = createRequire(root).resolve("tsx");
   const entry = fileURLToPath(new URL("./src/index.ts", root));
-  const child = spawn(process.execPath, ["--import", tsx, "--conditions=@team-31/source", entry], { stdio: "ignore" });
+  const child = spawn(process.execPath, ["--import", tsx, "--conditions=@team-31/source", entry], {
+    stdio: ["ignore", "pipe", "ignore"],
+    env: { ...process.env, TELEMETRY_SINK: "console" },
+  });
   const done = once(child, "exit");
   async function stop() {
     if (child.exitCode === null && child.signalCode === null) child.kill();
     await done;
   }
   cleanup.defer(stop);
-  // Solo espera el arranque (sale apenas responde /healthz): margen amplio para máquinas cargadas.
-  await expect.poll(async () => {
-    if (child.exitCode !== null) throw new Error("El proceso del broker terminó durante el arranque.");
-    return fetch(process.env.BROKER_URL + "/healthz").then(res => res.ok, () => false);
-  }, { timeout: 20_000, interval: 50 }).toBe(true);
+  // El puerto viene del listener del hijo. Al reiniciar se conserva la URL de las sesiones.
+  const lines = createInterface({ input: child.stdout, signal: AbortSignal.timeout(20_000) });
+  let port;
+  for await (const line of lines) {
+    const record = JSON.parse(line);
+    if (record.name === "service.listening" && record.service === "broker") {
+      port = record.attrs.port;
+      break;
+    }
+  }
+  child.stdout.resume();
+  if (!port) throw new Error("El broker no anunció su puerto durante el arranque.");
+  vi.stubEnv("BROKER_PORT", String(port));
+  vi.stubEnv("BROKER_URL", `http://127.0.0.1:${port}`);
+  const health = await fetch(process.env.BROKER_URL + "/healthz");
+  expect(health.ok).toBe(true);
+  expect(await health.json()).toEqual({ ok: true });
   return stop;
 }
 

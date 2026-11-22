@@ -58,7 +58,7 @@ it.skipIf(!process.env.TEST_DATABASE_URL)("aísla las solicitudes por sesión y 
   }
   await writeFile(join(overrides, "bob.json"), "[]");
 
-  await configureBroker();
+  configureBroker();
   const { contactAddress, createContactQueries } = await import("../src/contact-broker.mjs");
   const { seedContactBroker } = await import("../src/seed-contact-broker.mjs");
   const { handleContactWake } = await import("../src/contact-wake.mjs");

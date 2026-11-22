@@ -30,7 +30,7 @@ function optional<T>(value: T) {
 const settings = z.object({
   NODE_ENV: z.string().optional(),
   BROKER_HOST: z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1"),
-  BROKER_PORT: z.coerce.number().int().min(1).max(65_535),
+  BROKER_PORT: z.string().trim().min(1).pipe(z.coerce.number<string>().int().min(0).max(65_535)),
   DATABASE_URL: z.preprocess(optional, z.url({ protocol: /^postgres(ql)?$/ }).optional()),
   BROKER_SIGNING_KEY: json(ed25519PrivateKey),
   NONCE_KEY: base64Key.transform((key) => Buffer.from(key, "base64")),
