@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { enabled, grantTo, seedAgents } from "./fixtures.js";
 
+const isolationTimeoutMs = 90_000;
+
 describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
   test("cada bandeja, nonce y respuesta pertenece a su solicitud", async () => {
+    const deadline = Date.now() + isolationTimeoutMs;
     const count = Number(process.env.E2E_ISOLATION_COUNT ?? 80);
     if (!Number.isSafeInteger(count) || count < 2) {
       throw new Error("E2E_ISOLATION_COUNT debe ser un entero mayor o igual a 2.");
@@ -21,6 +24,7 @@ describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
       const text = `Pregunta de aislamiento ${index} de ${from.address} a ${to.address}`;
       const pending = await from.agent.ask({ to: to.address, tool: "question", args: { text, category: "general" } });
       expect(pending).toMatchObject({ final: false, waitingFor: "agent" });
+      expect(Date.parse(pending.expiresAt), "La solicitud debe seguir vigente hasta el fin de la prueba.").toBeGreaterThan(deadline);
       return { from, to, text, requestId: pending.requestId, answer: `Respuesta de prueba número ${index}.` };
     }));
     expect(new Set(messages.map(({ requestId }) => requestId)).size).toBe(count);
@@ -64,5 +68,5 @@ describe.skipIf(!enabled)("Aislamiento entre usuarios", () => {
       await expect(to.agent.check(requestId)).rejects.toMatchObject({ code: "not_found" });
     }));
     expect(await Promise.all(agents.map(({ agent }) => agent.inbox()))).toEqual(agents.map(() => []));
-  }, 90_000);
+  }, isolationTimeoutMs);
 });
