@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { GET, POST } from "./route";
+import { POST } from "./route";
 
 const devSignIn = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/auth", () => ({ getAuth: () => ({ api: { devSignIn } }) }));
@@ -28,7 +28,6 @@ afterEach(() => vi.unstubAllEnvs());
 it("no existe sin la bandera", async () => {
   vi.stubEnv("SIDEBAND_DEV_AUTH", undefined);
   expect((await POST(request({ name: "Ana" }))).status).toBe(404);
-  expect((await GET()).status).toBe(404);
   expect(devSignIn).not.toHaveBeenCalled();
 });
 

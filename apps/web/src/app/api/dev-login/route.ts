@@ -17,15 +17,17 @@ function notFound() {
 }
 
 /** Le dice a /sign-in si debe ofrecer «Entrar como titular de prueba». */
-export async function GET(): Promise<Response> {
-  if (!getDevAuth()) return notFound();
-  return Response.json({ enabled: true }, { headers: noStore });
+export async function GET(request: Request): Promise<Response> {
+  return observeRoute(request, ROUTE, async () => {
+    if (!getDevAuth()) return notFound();
+    return Response.json({ enabled: true }, { headers: noStore });
+  });
 }
 
 export async function POST(request: Request): Promise<Response> {
-  if (!getDevAuth()) return notFound();
-
   return observeRoute(request, ROUTE, async () => {
+    if (!getDevAuth()) return notFound();
+
     const origin = request.headers.get("Origin");
     if (origin && origin !== new URL(getAuthBaseUrl()).origin) {
       return Response.json({ error: { code: "forbidden" } }, { status: 403, headers: noStore });
