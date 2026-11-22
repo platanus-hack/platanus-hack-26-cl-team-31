@@ -22,6 +22,7 @@ export const agentScopes = {
   contacts: "sideband:ask",
   inbox: "sideband:inbox",
   reply: "sideband:reply",
+  "reply.vault_access": "sideband:vault",
   "reply.connect": "sideband:accept",
   status: "sideband:status",
   activity: "sideband:status",
