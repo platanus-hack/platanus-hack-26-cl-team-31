@@ -32,11 +32,11 @@ export function registerMessage(
       searchProfiles: query => permitted(agentScopes.searchPublicProfiles, () => agent.searchPublicProfiles(principal, query)),
     },
   };
+  const entryScope = [agentScopes.ask, agentScopes.vaultCatalog].find(scope => principal.scopes.includes(scope)) ?? agentScopes.status;
   server.registerTool(tool, {
     description: "Coordina una petición del titular a partir de su mensaje original. Devuelve datos, recibos o una aclaración. " +
       "Para responder o consultar ese turno, envía el continuationId recibido y las palabras del titular.",
     inputSchema: MessageInput.extend({ messageId: z.uuid().optional().describe("UUID único de este mensaje. Reutilízalo al reintentar la misma entrega.") }),
-  }, ({ messageId, ...input }) => runTool(telemetry, principal, {
-    tool, scope: principal.scopes.includes(agentScopes.ask) ? agentScopes.ask : agentScopes.status,
-  }, () => handleMessage({ ...context, deliveryId: messageId }, input)));
+  }, ({ messageId, ...input }) => runTool(telemetry, principal, { tool, scope: entryScope },
+    () => handleMessage({ ...context, deliveryId: messageId }, input)));
 }
