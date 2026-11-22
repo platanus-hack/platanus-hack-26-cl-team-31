@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { honoTelemetry } from "@team-31/telemetry/hono"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { secureHeaders } from "hono/secure-headers"
 import { ErrorBody } from "../shared/contract.js"
 import { createAdminApi, loginRateLimit, type AdminApiDeps } from "./api.js"
@@ -18,7 +18,33 @@ export type AdminAppDeps = AdminApiDeps & {
   spaRoot?: string
 }
 
-const defaultSpaRoot = () => fileURLToPath(new URL("../../client/", import.meta.url))
+function notFound(c: Context) {
+  return c.json(ErrorBody.parse({ error: { code: "not_found", message: "No se encontró la ruta." } }), 404)
+}
+
+function setSpaCacheControl(path: string, c: Context) {
+  // Assets con hash: caché larga. index.html: siempre revalidar.
+  c.header("Cache-Control", path.includes("/assets/") ? "public, max-age=31536000, immutable" : "no-cache")
+}
+
+function createAdminMcpDeps(deps: AdminAppDeps): AdminMcpDeps {
+  return {
+    queries: deps.queries,
+    async authenticate(bearer) {
+      const principal = await deps.authenticateToken(bearer)
+      if (!principal) return null
+      const role = deps.roleOf(principal.createdBy)
+      if (!role) return null
+      if (role === "viewer" && principal.scopes.includes("admin:sql")) {
+        return { ...principal, scopes: ["admin:read"] }
+      }
+      return principal
+    },
+    async audit({ actor, action, target }) {
+      await deps.audit.record({ actor: { type: "token", id: actor.tokenId, label: actor.label }, action, target })
+    },
+  }
+}
 
 export function createAdminApp(deps: AdminAppDeps) {
   const app = new Hono()
@@ -38,34 +64,14 @@ export function createAdminApp(deps: AdminAppDeps) {
 
   app.route("/", createAdminApi(deps))
 
-  mountAdminMcp(app, {
-    queries: deps.queries,
-    authenticate: async (bearer) => {
-      const principal = await deps.authenticateToken(bearer)
-      if (!principal) return null
-      const role = deps.roleOf(principal.createdBy)
-      if (!role) return null
-      if (role === "viewer" && principal.scopes.includes("admin:sql")) {
-        return { ...principal, scopes: ["admin:read"] }
-      }
-      return principal
-    },
-    audit: async ({ actor, action, target }) => {
-      await deps.audit.record({ actor: { type: "token", id: actor.tokenId, label: actor.label }, action, target })
-    },
-  }, deps.telemetry, deps.adminUrl)
+  mountAdminMcp(app, createAdminMcpDeps(deps), deps.telemetry, deps.adminUrl)
 
-  const notFound = () => ErrorBody.parse({ error: { code: "not_found", message: "No se encontró la ruta." } })
   if (deps.serveSpa) {
-    const root = deps.spaRoot ?? defaultSpaRoot()
-    app.all("/api/*", (c) => c.json(notFound(), 404))
-    // Assets con hash: caché larga. index.html: siempre revalidar.
-    const onFound = (path: string, c: { header: (name: string, value: string) => void }) => {
-      c.header("Cache-Control", path.includes("/assets/") ? "public, max-age=31536000, immutable" : "no-cache")
-    }
-    app.get("*", serveStatic({ root, onFound }))
-    app.get("*", serveStatic({ root, path: "index.html", onFound }))
+    const root = deps.spaRoot ?? fileURLToPath(new URL("../../client/", import.meta.url))
+    app.all("/api/*", notFound)
+    app.get("*", serveStatic({ root, onFound: setSpaCacheControl }))
+    app.get("*", serveStatic({ root, path: "index.html", onFound: setSpaCacheControl }))
   }
-  app.notFound((c) => c.json(notFound(), 404))
+  app.notFound(notFound)
   return app
 }
