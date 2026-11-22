@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense, type ReactNode } from "react";
 import { cast, castAddress, castPrincipal, healthCategory, weekdays, type CastMember, type Weekday } from "@team-31/demo/cast";
-import { categories } from "@team-31/protocol";
+import { categories, type OwnerPendingItem } from "@team-31/protocol";
 import { ownerClient } from "@/lib/broker";
 import { getTelemetry } from "@/lib/telemetry";
+import { decideForCast } from "./actions";
 import "../demo.css";
 import "./elenco.css";
 
@@ -26,13 +27,15 @@ const dayNames: Record<Weekday, string> = {
 };
 
 // Who may ask for each kind of data, read live from the broker with the member's identity.
-type Readers = { availability: string[]; interests: string[]; health: string[]; agent: boolean } | null;
+type Readers = { availability: string[]; interests: string[]; health: string[]; agent: boolean; requests: OwnerPendingItem[] } | null;
 
 async function readers(member: CastMember): Promise<Readers> {
   const owners = ownerClient();
   const principal = castPrincipal(member.id);
   try {
-    const [view, vault, agents] = await Promise.all([owners.contacts(principal), owners.vault(principal), owners.agents(principal)]);
+    const [view, vault, agents, pending] = await Promise.all([
+      owners.contacts(principal), owners.vault(principal), owners.agents(principal), owners.pending(principal),
+    ]);
     const giving = (category: "availability" | "interests") =>
       view.contacts.filter(({ gives }) => gives.includes(category)).map(({ address }) => address);
     return {
@@ -40,6 +43,7 @@ async function readers(member: CastMember): Promise<Readers> {
       interests: giving("interests"),
       health: vault.categories.find(({ name }) => name === healthCategory)?.members ?? [],
       agent: agents.some(({ agentId, wakeKind }) => agentId === principal.agentId && wakeKind !== "none"),
+      requests: pending.filter(({ tool }) => tool === "vault_access"),
     };
   } catch (error) {
     getTelemetry().error("demo.cast.page", error, { userId: principal.userId });
@@ -83,6 +87,13 @@ function Card({ member, live }: { member: CastMember; live: Readers }) {
         {member.health.map(({ label, value }) => <span key={label} className="line">{label}: {value}</span>)}
       </Section>
     </dl>
+    {live?.requests.map((request) => request.tool === "vault_access" && <form key={request.requestId} action={decideForCast} className="cast-request">
+      <p><strong>{request.from}</strong> pide leer «{request.args.categoryName}»</p>
+      <input type="hidden" name="member" value={member.id} />
+      <input type="hidden" name="requestId" value={request.requestId} />
+      <button type="submit" name="kind" value="grant_vault_read">Conceder</button>
+      <button type="submit" name="kind" value="deny">Rechazar</button>
+    </form>)}
   </article>;
 }
 
