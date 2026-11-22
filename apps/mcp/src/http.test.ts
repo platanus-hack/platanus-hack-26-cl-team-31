@@ -221,6 +221,10 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   });
   // El agente que responde sólo sabe qué mandar en result si la forma viaja en el esquema.
   const reply = tools.find((tool) => tool.name === "sideband_reply");
+  expect(reply?.inputSchema).toMatchObject({
+    if: { properties: { outcome: { const: "answered" } } },
+    then: { required: ["result"], properties: { result: { type: "object", minProperties: 1 } } },
+  });
   expect(reply?.inputSchema.properties).toMatchObject({
     result: {
       description: expect.stringContaining("allowedFields"),
@@ -232,6 +236,11 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const asString = await bob.callTool({ name: "sideband_reply", arguments: { ...answer, result: JSON.stringify(answer.result) } });
   expect(asString.isError).toBe(true);
   expect(JSON.stringify(asString.content)).toContain("objeto JSON");
+  for (const result of [null, {}, { note: "sin campos de respuesta" }]) {
+    const invalid = await bob.callTool({ name: "sideband_reply", arguments: { ...answer, result } });
+    expect(invalid.isError).toBe(true);
+    expect(JSON.stringify(invalid.content)).toContain("result");
+  }
 
   expect((await ana.callTool({ name: "sideband_ask", arguments: { to: pending.to, tool: "connect", args: {} } })).isError).toBe(true);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
