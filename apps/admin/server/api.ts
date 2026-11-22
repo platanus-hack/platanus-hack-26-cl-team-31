@@ -180,17 +180,24 @@ function createJsonHandlers(deps: AdminApiDeps): JsonHandlers {
     run: () => Promise<void>,
   ) {
     const entry = { actor: actorOf(principal), action, target, reason, ip: clientIp(c, deps.trustProxy) }
+    const auditId = await audit.record({ ...entry, meta: { status: "pending" } })
     try {
       await run()
     } catch (error) {
       try {
-        await audit.record({ ...entry, meta: { ok: false, code: error instanceof AdminHttpError ? error.code : "internal" } })
+        await audit.complete(auditId, { ok: false, code: error instanceof AdminHttpError ? error.code : "internal" })
       } catch (auditError) {
         telemetry.error("admin.action.audit", auditError, { userId: principal.id })
       }
       throw error
     }
-    return { ok: true as const, auditId: await audit.record({ ...entry, meta: { ok: true } }) }
+    try {
+      await audit.complete(auditId, { ok: true })
+    } catch (error) {
+      const errorId = telemetry.error("admin.action.audit", error, { userId: principal.id })
+      throw new AdminHttpError("internal", `La acción se aplicó, pero no se pudo actualizar la auditoría (${auditId}). No la repitas sin verificar su estado.`, { errorId })
+    }
+    return { ok: true as const, auditId }
   }
 
   return {

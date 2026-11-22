@@ -307,13 +307,33 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     const errorId = "2b6953de-f8cd-44e5-a34a-4de79dad2d96"
     brokerFetch.mockResolvedValue(Response.json({ error: { code: "not_found", message: "cerrada" } },
       { status: 404, headers: { "X-Error-Id": errorId } }))
-    const audit = { record: vi.fn().mockRejectedValue(new Error("audit unavailable")) }
+    const audit = { record: vi.fn().mockResolvedValue("audit-1"), complete: vi.fn().mockRejectedValue(new Error("audit unavailable")) }
     const cookie = await login("op@test.cl")
     const response = await buildApp({ audit }).request("/api/admin/requests/req_1/expire", post(cookie, { reason: "cerrar solicitud" }))
     expect(response.status).toBe(404)
     expect(response.headers.get("X-Error-Id")).toBe(errorId)
     expect((await response.json()).error).toMatchObject({ errorId, code: "not_found" })
     expect(sink.find("error")).toContainEqual(expect.objectContaining({ attrs: expect.objectContaining({ operation: "admin.action.audit" }) }))
+  })
+
+  it("reports an applied action when completing its audit fails", async () => {
+    brokerFetch.mockResolvedValue(new Response(null, { status: 204 }))
+    const audit = { record: vi.fn().mockResolvedValue("audit-1"), complete: vi.fn().mockRejectedValue(new Error("audit unavailable")) }
+    const cookie = await login("op@test.cl")
+    const response = await buildApp({ audit }).request("/api/admin/requests/req_1/rewake", post(cookie, { reason: "revisar el aviso" }))
+    expect(response.status).toBe(500)
+    expect((await response.json()).error.message).toContain("La acción se aplicó")
+    expect(response.headers.get("X-Error-Id")).toBeTruthy()
+    expect(audit.record).toHaveBeenCalledBefore(brokerFetch)
+    expect(audit.complete).toHaveBeenCalledWith("audit-1", { ok: true })
+  })
+
+  it("does not dispatch when the audit attempt cannot be recorded", async () => {
+    const audit = { record: vi.fn().mockRejectedValue(new Error("audit unavailable")), complete: vi.fn() }
+    const cookie = await login("op@test.cl")
+    const response = await buildApp({ audit }).request("/api/admin/requests/req_1/rewake", post(cookie, { reason: "revisar el aviso" }))
+    expect(response.status).toBe(500)
+    expect(brokerFetch).not.toHaveBeenCalled()
   })
 
   it("expire y revokeAgent: errores del broker se mapean y quedan auditados", async () => {
