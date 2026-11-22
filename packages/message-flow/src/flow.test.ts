@@ -181,6 +181,7 @@ describe("turnos del titular", () => {
     ["¿A alguien le interesa la cerámica?", { ...askAna, selector: { scope: "contacts", count: "many" } }],
     ["¿A mi colega Ana le gusta la cerámica?", { ...askAna, selector: { scope: "contacts", count: "one", person: "Ana" } }],
     ["¿A solana.soto@sideband.app le gusta la cerámica?", { ...askAna, selector: { scope: "address", count: "one", person: ana } }],
+    [`¿A ${ana} o a ${second} le gusta la cerámica?`, { ...askAna, selector: { scope: "address", count: "one" } }],
     ["Invita a " + ana, { ...askAna, tool: "connect", args: { share: ["health"] }, selector: { scope: "address", count: "one", person: ana } }],
   ] as [string, Intent][])("se detiene si la interpretación amplía la petición %s", async (text, intent) => {
     const { run, ask, context } = harness(async () => structuredClone(intent));
