@@ -11,6 +11,7 @@ import {
 import { CopyId } from "@/components/copy-id"
 import { RelativeTime } from "@/components/relative-time"
 import { RequestStatusBadge, StatusDot } from "@/components/status"
+import { buildPath } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
 import { toolLabel } from "@/lib/status"
 
@@ -23,7 +24,7 @@ export const requestColumns: ColumnDef<RequestSummary, unknown>[] = [
       <span className="flex items-center gap-1.5">
         <CopyId
           value={row.original.id}
-          to={`/solicitudes/${row.original.id}`}
+          to={buildPath("/solicitudes/:id", { id: row.original.id })}
         />
         {row.original.stuck ? (
           <Tooltip>
