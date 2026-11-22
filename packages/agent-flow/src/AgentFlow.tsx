@@ -124,6 +124,15 @@ export function AgentFlow({
     reset, inspectEvent, inspectMany, inspectRequest, exitInspect, stepInspect,
   } = useFlowPlayback({ flowEvents, mode, loop, autoPlay, initialSpeed, controls, reducedMotion, visibleRef, selectEvent });
 
+  const togglePlayback = () => {
+    if (inspect) {
+      exitInspect();
+      setPaused(false);
+    } else {
+      setPaused((value) => !value);
+    }
+  };
+
   // Atajos: f pantalla completa, p pausa, ←/→ pasos, Esc vuelve al presente o sale del modo expandido.
   // En embed y pantalla completa escuchan en todo el documento; si no, solo con el foco dentro.
   const onShortcut = (event: KeyboardEvent | ReactKeyboardEvent) => {
@@ -135,8 +144,7 @@ export function AgentFlow({
       toggleFullscreen();
     } else if (event.key === "p" && controls) {
       event.preventDefault();
-      if (inspect) exitInspect();
-      else setPaused((value) => !value);
+      togglePlayback();
     } else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && controls) {
       event.preventDefault();
       stepInspect(event.key === "ArrowLeft" ? -1 : 1);
@@ -401,7 +409,7 @@ export function AgentFlow({
       >
       {controls ? (
       <div className="af-bar" role="toolbar" aria-label="Controles de reproducción">
-        <button type="button" className="af-btn" onClick={() => setPaused((p) => !p)} aria-pressed={paused}>
+        <button type="button" className="af-btn" onClick={togglePlayback} aria-pressed={paused}>
           {paused ? <PlayIcon /> : <PauseIcon />} {paused ? "Reanudar" : "Pausar"}
         </button>
         {mode === "replay" ? (
