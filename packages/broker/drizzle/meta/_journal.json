@@ -155,6 +155,13 @@
       "when": 1795304681107,
       "tag": "0301_revocacion_del_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1795316000000,
+      "tag": "0302_single_access_rule",
+      "breakpoints": true
     }
   ]
 }

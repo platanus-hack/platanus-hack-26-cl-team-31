@@ -96,7 +96,8 @@ describe.skipIf(!testDatabaseUrl)("migración a etiquetas propias", () => {
       { address: "bob@sideband.app", tag_id: group },
       { address: "eva@sideband.app", tag_id: group },
     ].sort((a, b) => a.address.localeCompare(b.address) || a.tag_id.localeCompare(b.tag_id)));
-    const { rows: permissions } = await db.query("SELECT tag_id FROM sideband.vault_permissions ORDER BY tag_id");
+    const { rows: permissions } = await db.query(
+      "SELECT tag_id FROM sideband.vault_permissions WHERE category_id = $1 ORDER BY tag_id", [category]);
     expect(permissions.map((row) => row.tag_id).sort()).toEqual(["friend", group].sort());
     const { rows: leftovers } = await db.query(`
       SELECT to_regclass('sideband.vault_contact_groups') AS groups, to_regclass('sideband.tag_presets') AS presets,
