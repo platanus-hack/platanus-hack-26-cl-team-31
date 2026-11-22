@@ -6,6 +6,7 @@ import {
   defaultTags,
   InboxItem,
   RequesterView,
+  RESULT_EVENT,
   WAKE_EVENT,
   type AskInput,
   type Grant,
@@ -1351,7 +1352,7 @@ describe("círculos", () => {
 });
 
 it("cierra un aviso de origen heredado sin enviarlo ni cambiar la solicitud", async () => {
-  const request = await broker.agent.ask(alice, availability);
+  const request = await broker.owner.ask(alice, availability);
   await broker.tick(now);
   wake.mockClear();
   await deps.store.tx(tx => tx.enqueueWake({
@@ -1364,4 +1365,20 @@ it("cierra un aviso de origen heredado sin enviarlo ni cambiar la solicitud", as
   expect(await deps.store.tx(tx => tx.getWakeForUpdate(request.requestId, 1))).toMatchObject({
     state: "done", lastResult: { ok: false, retryable: false, detail: "channel_retired" },
   });
+});
+
+it.each(["answered", "no_data"] as const)("despierta solo al agente solicitante al cerrar con %s", async outcome => {
+  await broker.agent.connectWake(alice, webhook);
+  const { requestId } = await broker.agent.ask(alice, availability);
+  const { nonce } = await inboxItem(bruno, requestId);
+  await broker.tick(now);
+  wake.mockClear();
+  const result = outcome === "answered" ? { available: true } : undefined;
+  await broker.agent.reply(bruno, outcome === "answered"
+    ? { requestId, nonce, outcome, result: { available: true } } : { requestId, nonce, outcome });
+  await broker.tick(now);
+  await broker.tick(now);
+  expect(wake).toHaveBeenCalledExactlyOnceWith(webhook, { requestId, event: RESULT_EVENT },
+    expect.objectContaining({ agentId: alice.agentId, userId: alice.userId }));
+  await expectFinal(alice, requestId, result ? "allow" : "unanswered", outcome, result);
 });

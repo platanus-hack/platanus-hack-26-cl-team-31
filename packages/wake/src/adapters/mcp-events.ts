@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import type { WakeNotice, WakeTarget, Waker } from "@team-31/protocol";
+import { LIFECYCLE_EVENT, RESULT_EVENT, type WakeNotice, type WakeTarget, type Waker } from "@team-31/protocol";
 import type { SafeFetch, SafePost } from "../safe-fetch.js";
 import { signedHeaders } from "../standard-webhooks.js";
 
@@ -18,13 +18,13 @@ function signedPost(target: McpEventsTarget, id: string, date: Date, body: strin
 }
 
 export function mcpEventsPost(target: McpEventsTarget, { event, requestId }: WakeNotice): SafePost {
-  const eventId = `evt_${requestId}`;
+  const eventId = `evt_${event === RESULT_EVENT ? "closed_" : ""}${requestId}`;
   const date = new Date();
   return signedPost(target, eventId, date, JSON.stringify({
     eventId,
-    name: event,
+    name: target.lifecycle ? LIFECYCLE_EVENT : event,
     timestamp: date.toISOString(),
-    data: { requestId },
+    data: target.lifecycle ? { requestId, event } : { requestId },
     cursor: null,
   }));
 }

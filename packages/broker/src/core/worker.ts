@@ -1,4 +1,4 @@
-import { WAKE_EVENT, type WakeResult, type WakeTarget } from "@team-31/protocol";
+import { RESULT_EVENT, WAKE_EVENT, type WakeResult, type WakeTarget } from "@team-31/protocol";
 import type { BrokerDeps, TickReport } from "../ports.js";
 import type { AgentConnectionRow, RequestRow, StoreTx, WakeClaim } from "../store/store.js";
 import { notifiesRecipient } from "./lifecycle.js";
@@ -35,6 +35,14 @@ async function recipient(tx: StoreTx, row: RequestRow): Promise<AgentConnectionR
 type ClosePending = (tx: StoreTx, row: RequestRow, status: "expired" | "delivery_failed", at: Date) => Promise<boolean>;
 type WorkerDeps = Pick<BrokerDeps, "store" | "waker" | "clock" | "telemetry"> & { wakeRetryDelaysMs: readonly number[] };
 
+export async function resultRecipient(tx: StoreTx, row: RequestRow) {
+  if (!row.fromUserId || !row.originAgentId) return;
+  const agent = await tx.getAgentConnection(row.fromUserId, row.originAgentId);
+  if (!agent || agent.revokedAt) return;
+  const target = agent.wakeTarget;
+  if (target.kind !== "none" && target.kind !== "polling" && (target.kind !== "mcp_events" || target.lifecycle)) return agent;
+}
+
 export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs }: WorkerDeps, closePending: ClosePending) {
   function exhaustedAttempts(job: WakeClaim): number | undefined {
     return job.recovered && job.attempt > Math.max(1, wakeRetryDelaysMs.length) ? job.attempt - 1 : undefined;
@@ -44,7 +52,8 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     owner: { userId: string; agentId?: string }): Promise<WakeResult> {
     const final = wakeRetryDelaysMs[job.attempt] === undefined;
     try {
-      const { ok, retryable, ms, status, detail } = await waker.wake(target, { requestId: job.requestId, event: WAKE_EVENT }, {
+      const event = job.audience === "origin" ? RESULT_EVENT : WAKE_EVENT;
+      const { ok, retryable, ms, status, detail } = await waker.wake(target, { requestId: job.requestId, event }, {
         queueWaitMs: Math.max(0, clock.now().getTime() - job.dueAt.getTime()),
         attempt: job.attempt, final, ...owner,
       });
@@ -60,12 +69,27 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
   }
 
   async function runWake(job: WakeClaim) {
-    // Older versions queued origin notices. Finish those jobs without contacting the retired channel.
     if (job.audience === "origin") {
-      await store.tx((tx) => tx.recordWakeAttempt(job, clock.now(), {
-        ok: false, retryable: false, ms: 0, detail: "channel_retired",
-      }, null));
-      return;
+      const { target, detail } = await store.tx(async (tx) => {
+        const row = await tx.getRequest(job.requestId);
+        if (!row?.originAgentId || !row.fromUserId) return { detail: "channel_retired" };
+        if (!row.closedAt || row.version !== job.requestVersion) return { detail: "stale" };
+        const target = await resultRecipient(tx, row);
+        return target ? { target } : { detail: "no_result_push" };
+      });
+      if (job.leaseUntil <= clock.now()) return;
+      const fields = { requestId: job.requestId, userId: target?.userId, agentId: target?.agentId };
+      if (job.recovered) telemetry?.emit("wake.lease_recovered", { ...fields, attrs: { attempt: job.attempt } });
+      const exhausted = exhaustedAttempts(job);
+      const result = target && !exhausted
+        ? await deliver(job, target.wakeTarget, { userId: target.userId, agentId: target.agentId })
+        : { ok: false, retryable: false, ms: 0, detail: detail ?? "lease_exhausted" };
+      const at = clock.now();
+      const delay = result.retryable ? wakeRetryDelaysMs[job.attempt] : undefined;
+      const retry = delay === undefined ? null : new Date(at.getTime() + delay);
+      if (!await store.tx((tx) => tx.recordWakeAttempt(job, at, result, retry)) || !target) return;
+      if (exhausted) telemetry?.emit("wake.exhausted", { ...fields, attrs: { kind: target.wakeTarget.kind, attempts: exhausted } });
+      return result.ok ? "wakesOk" : retry ? "wakesRetried" : "wakesFailed";
     }
     const candidate = await store.tx(async (tx) => {
       const row = await tx.getRequest(job.requestId);

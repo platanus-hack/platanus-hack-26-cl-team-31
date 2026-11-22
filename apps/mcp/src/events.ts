@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { BrokerError, type AgentPort } from "@team-31/broker-client";
-import { WAKE_EVENT, WAKE_SUBSCRIPTION_SCOPE, type Principal } from "@team-31/protocol";
+import { LIFECYCLE_EVENT, RESULT_EVENT, WAKE_EVENT, WAKE_SUBSCRIPTION_SCOPE, type Principal } from "@team-31/protocol";
 import { z } from "zod";
 import type { ToolTelemetry } from "./tools/result.js";
 
@@ -20,7 +20,7 @@ const eventDefinition = {
 };
 
 const eventTarget = z.object({
-  name: z.literal(WAKE_EVENT),
+  name: z.enum([WAKE_EVENT, LIFECYCLE_EVENT]),
   arguments: z.strictObject({}).default({}),
   delivery: z.object({ mode: z.literal("webhook"), url: z.url({ protocol: /^https?$/ }) }),
 });
@@ -80,7 +80,12 @@ export function registerEvents(server: McpServer, principal: Principal, agent: A
   server.server.registerCapabilities(capabilities);
   server.server.setRequestHandler(
     z.object({ method: z.literal("events/list"), params: z.unknown().optional() }),
-    async () => ({ events: [eventDefinition] }),
+    async () => ({ events: [eventDefinition, {
+      ...eventDefinition, name: LIFECYCLE_EVENT,
+      description: "Solicitud recibida: usa sideband_inbox. Solicitud propia cerrada: usa sideband_check y comunica el resultado en la conversación de origen.",
+      payloadSchema: { ...eventDefinition.payloadSchema, required: ["requestId", "event"],
+        properties: { ...eventDefinition.payloadSchema.properties, event: { type: "string", enum: [WAKE_EVENT, RESULT_EVENT] } } },
+    }] }),
   );
 
   server.server.setRequestHandler(
@@ -101,6 +106,7 @@ export function registerEvents(server: McpServer, principal: Principal, agent: A
           callbackUrl: target.delivery.url,
           secret: target.delivery.secret,
           subscriptionId: id,
+          ...(target.name === LIFECYCLE_EVENT ? { lifecycle: true } : {}),
           refreshBefore,
         });
       } catch (error) {

@@ -51,7 +51,7 @@ import {
   replyFields, senderMessage, toActivityItem, toAgentConnection, toGrant, toInboxItem, toOwnerPendingItem, toRequesterView,
 } from "./views.js";
 import { createLifecycleEvents } from "./events.js";
-import { createWorker } from "./worker.js";
+import { createWorker, resultRecipient } from "./worker.js";
 import { categoriesOf, createGrantWriter, sharingRule, stillAuthorized } from "./grants.js";
 import { createCirclePort } from "./circles.js";
 import { createTags, sameTags } from "./tags.js";
@@ -156,7 +156,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
   async function saveTransition(tx: StoreTx, row: RequestRow, changed: RequestRow): Promise<boolean> {
     const { id: _id, version: _version, ...patch } = changed;
-    return tx.updateRequest(row.id, patch, row.version);
+    if (!await tx.updateRequest(row.id, patch, row.version)) return false;
+    if (changed.closedAt && await resultRecipient(tx, row)) {
+      await tx.enqueueWake({
+        id: randomUUID(), requestId: row.id, requestVersion: row.version + 1,
+        audience: "origin", attempt: 1, runAt: changed.closedAt, state: "queued",
+      });
+    }
+    return true;
   }
 
   // The only path that closes a pending request without a reply. `code` marks who closed it, e.g. the admin.
@@ -321,6 +328,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       else await tx.setContactTags(userId, to, []);
     }
     let row = await initialRequest({
+      originAgentId: agentId,
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
     }, now);
     const invitation = recipient && tool === "connect";
@@ -362,7 +370,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   }
 
   type InitialRequest = Pick<RequestRow, "fromAddress" | "toAddress" | "fromUserId" | "toUserId" | "tool" | "args"> &
-    Partial<Pick<RequestRow, "targetAgentId" | "purpose">>;
+    Partial<Pick<RequestRow, "targetAgentId" | "originAgentId" | "purpose">>;
 
   function initialRequest(input: InitialRequest, now: Date): Promise<RequestRow> {
     return seal({
