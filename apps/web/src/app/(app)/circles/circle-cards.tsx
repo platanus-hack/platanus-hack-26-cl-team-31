@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import type { Circle } from "@team-31/protocol";
 
 import { deleteCircle, joinCircle, removeFromCircle } from "./actions";
 import { InviteMember } from "./circle-forms";
 import { Modal, useCloseModal } from "../modal";
 import { button, Feedback, Initial, primaryButton } from "../ui";
+import { useUndoWindow } from "../use-undo-window";
 
 type Result = { error?: string; message?: string; errorId?: string };
 
@@ -102,19 +103,15 @@ function CircleSheet({ circle, address, onGone, onLeave }: { circle: Circle; add
 
 export function CircleTile({ circle, address }: { circle: Circle; address: string }) {
   const [gone, setGone] = useState(false);
-  const [leaving, setLeaving] = useState(false);
   const { state, pending: saving, run } = useCircleAction();
-  useEffect(() => {
-    if (!leaving || saving) return;
-    const timer = setTimeout(() => run(() => removeFromCircle(circle.id, address), () => setGone(true)), 5000);
-    return () => clearTimeout(timer);
-  }, [leaving, saving, circle.id, address, run]);
+  const { scheduled, schedule, undo } = useUndoWindow(() =>
+    run(() => removeFromCircle(circle.id, address), () => setGone(true)));
   if (gone) return null;
-  if (leaving && !state.error) {
+  if (scheduled || saving) {
     return (
       <li className="flex min-h-[140px] flex-col justify-center gap-2 rounded-2xl border border-dashed border-line p-5 text-[13px] text-muted">
         <span>Saliste de «{circle.name}».</span>
-        {!saving && <button type="button" onClick={() => setLeaving(false)} className="w-fit cursor-pointer font-medium text-accent-ink hover:underline">Deshacer</button>}
+        {scheduled && <button type="button" onClick={undo} className="w-fit cursor-pointer font-medium text-accent-ink hover:underline">Deshacer</button>}
       </li>
     );
   }
@@ -134,7 +131,7 @@ export function CircleTile({ circle, address }: { circle: Circle; address: strin
             </span>
           </span>
         </>}>
-        <CircleSheet circle={circle} address={address} onGone={() => setGone(true)} onLeave={() => setLeaving(true)} />
+        <CircleSheet circle={circle} address={address} onGone={() => setGone(true)} onLeave={schedule} />
       </Modal>
       {state.error && <div className="pt-2"><Feedback {...state} /></div>}
     </li>

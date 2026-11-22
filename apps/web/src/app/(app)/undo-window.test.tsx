@@ -3,17 +3,33 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { removeFromCircle } from "./circles/actions";
+import { CircleTile } from "./circles/circle-cards";
 import { answerInvitation, deleteTag } from "./contacts/actions";
 import { IncomingInvitation } from "./contacts/contact-forms";
 import { TagRow } from "./tags/tag-sheets";
 import { changeVault } from "./vault/actions";
 import { CategoryRow } from "./vault/vault-sheets";
 
+vi.mock("./circles/actions", () => ({ removeFromCircle: vi.fn() }));
 vi.mock("./contacts/actions", () => ({ answerInvitation: vi.fn(), deleteTag: vi.fn() }));
 vi.mock("./vault/actions", () => ({ changeVault: vi.fn() }));
 
 const categoryId = "df73729a-12ca-4486-8f36-783c6af6e466";
+const owner = "ana@sideband.app";
+const member = "bob@sideband.app";
+const circle = {
+  id: "club", name: "Club", owner,
+  members: [{ address: owner, joined: true }, { address: member, joined: true }],
+};
 const cases = [
+  {
+    name: "salir de un círculo", open: "Abrir Club", action: "Salir del círculo",
+    row: <CircleTile circle={circle} address={member} />,
+    mutation: vi.mocked(removeFromCircle),
+    requests: () => vi.mocked(removeFromCircle).mock.calls,
+    expected: [circle.id, member], success: {},
+  },
   {
     name: "eliminar una categoría", open: "Abrir Recetas", action: "Eliminar categoría",
     row: <CategoryRow category={{ id: categoryId, name: "Recetas", entries: [], tags: [], visibility: "private" }} tags={[]} />,
