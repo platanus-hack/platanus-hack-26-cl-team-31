@@ -55,7 +55,7 @@ async function openRequests(search: string) {
 }
 
 // La URL del panel permite compartir la vista. La API recibe los mismos filtros y el límite de página.
-function expectFilters(search: string) {
+function expectFilters(search: string, apiSearch = search) {
   const filters = new URLSearchParams(search)
   filters.sort()
   const location = new URLSearchParams(router.state.location.search)
@@ -65,10 +65,11 @@ function expectFilters(search: string) {
   const [path] = fetchRequests.mock.lastCall!
   const url = new URL(path, window.location.href)
   expect(url.pathname).toBe("/api/admin/requests")
-  filters.set("limit", "50")
-  filters.sort()
+  const apiFilters = new URLSearchParams(apiSearch)
+  apiFilters.set("limit", "50")
+  apiFilters.sort()
   url.searchParams.sort()
-  expect(url.searchParams.toString()).toBe(filters.toString())
+  expect(url.searchParams.toString()).toBe(apiFilters.toString())
 }
 
 function searchField() {
@@ -154,6 +155,25 @@ it("combina estados, quita uno y limpia la selección sin perder la dirección",
   expectFilters("address=ana&status=denied")
   await act(() => control('[role="menuitem"]', "Limpiar selección").click())
   expectFilters("address=ana")
+})
+
+it("abre una vista de solicitudes atascadas y permite quitar y reactivar el filtro conservando la dirección", async () => {
+  const search = "address=ana&stuck=1"
+  const apiSearch = "address=ana&stuck=true"
+  await openRequests(search)
+  const toggle = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Solo atascadas"]'
+  )!
+  expect(toggle.getAttribute("aria-pressed")).toBe("true")
+  expectFilters(search, apiSearch)
+
+  await act(() => toggle.click())
+  expect(toggle.getAttribute("aria-pressed")).toBe("false")
+  expectFilters("address=ana")
+
+  await act(() => toggle.click())
+  expect(toggle.getAttribute("aria-pressed")).toBe("true")
+  expectFilters(search, apiSearch)
 })
 
 it("vuelve a todas las herramientas y limpia los filtros restantes", async () => {
