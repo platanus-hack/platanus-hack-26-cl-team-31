@@ -61,8 +61,9 @@ async function changeContact(operation: string, fallback: string, run: () => Pro
 export async function answerInvitation(requestId: string, _: Feedback, form: FormData): Promise<Feedback> {
   await requireAddress();
   const owner = await getOwner();
-  if (!(form instanceof FormData)) return { error: "Elige aceptar o rechazar." };
-  const accept = form.get("answer") === "accept";
+  const answer = form instanceof FormData ? form.get("answer") : null;
+  if (answer !== "accept" && answer !== "decline") return { error: "Elige aceptar o rechazar." };
+  const accept = answer === "accept";
   const tags = tagsFrom(form);
   if (accept && !tags.success) return { error: "Elige etiquetas válidas." };
 
