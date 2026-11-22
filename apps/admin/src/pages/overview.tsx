@@ -7,7 +7,6 @@ import { cn } from "cn"
 import { Button } from "@/components/ui/button"
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -125,19 +124,16 @@ function Kpi({
   value,
   footer,
   tone,
-  hint,
 }: {
   label: string
   value: React.ReactNode
   footer: React.ReactNode
   tone?: Tone
-  hint?: React.ReactNode
 }) {
   return (
     <Card size="sm" className="gap-2">
       <CardHeader>
         <CardDescription className="text-xs">{label}</CardDescription>
-        {hint ? <CardAction>{hint}</CardAction> : null}
         <CardTitle
           className={cn(
             "font-mono text-2xl font-semibold tabular-nums",

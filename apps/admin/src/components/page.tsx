@@ -77,14 +77,12 @@ export function Panel({
   action,
   children,
   className,
-  flush = true,
 }: {
   title?: React.ReactNode
   description?: React.ReactNode
   action?: React.ReactNode
   children: React.ReactNode
   className?: string
-  flush?: boolean
 }) {
   return (
     <Card size="sm" className={cn("min-w-0 gap-0 py-0", className)}>
@@ -97,9 +95,7 @@ export function Panel({
           {action ? <CardAction>{action}</CardAction> : null}
         </CardHeader>
       ) : null}
-      <CardContent className={cn(flush ? "px-0" : "py-3")}>
-        {children}
-      </CardContent>
+      <CardContent className="px-0">{children}</CardContent>
     </Card>
   )
 }
