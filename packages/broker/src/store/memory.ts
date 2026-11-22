@@ -1,7 +1,7 @@
 import { Address, Category, defaultTags, defaultVaultCategories, type OwnerVault, type Tag } from "@team-31/protocol";
 import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit, sortTags } from "./directory.js";
 import { activeAgentConflict, BrokerError, notFound } from "../errors.js";
-import { wakeClaim } from "./store.js";
+import { documentMetadata, wakeClaim } from "./store.js";
 import type {
   AgentConnectionRow, AskReceipt, CircleMemberRow, CircleRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, VaultDocumentRow, WakeJob,
 } from "./store.js";
@@ -186,14 +186,7 @@ function transaction(state: State): StoreTx {
             ? [...state.documents.values()]
               .filter(document => document.owner === owner && document.categoryId === c.id)
               .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
-              .map(document => ({
-                id: document.id,
-                fileName: document.fileName,
-                ...(document.mimeType ? { mimeType: document.mimeType } : {}),
-                sizeBytes: document.sizeBytes,
-                sha256: document.sha256,
-                createdAt: document.createdAt.toISOString(),
-              }))
+              .map(documentMetadata)
             : [];
           return {
             id: c.id,

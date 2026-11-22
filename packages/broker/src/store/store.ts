@@ -1,6 +1,6 @@
 import type {
   ActivityEvent, AgentContacts, Contact,
-  OwnerVault, VaultCatalog, VaultChange, VaultResult, VaultDocumentQuery,
+  OwnerVault, VaultCatalog, VaultChange, VaultResult, VaultDocumentMetadata, VaultDocumentQuery,
   Address,
   Category,
   Tag,
@@ -136,6 +136,17 @@ export type VaultDocumentRow = {
   idempotencyKey: string;
   createdAt: Date;
 };
+
+export function documentMetadata(row: Pick<VaultDocumentRow, "id" | "fileName" | "sizeBytes" | "sha256" | "createdAt"> & { mimeType?: string | null }): VaultDocumentMetadata {
+  return {
+    id: row.id,
+    fileName: row.fileName,
+    ...(row.mimeType ? { mimeType: row.mimeType } : {}),
+    sizeBytes: row.sizeBytes,
+    sha256: row.sha256,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
 
 export interface Store {
   // A rejected callback rolls back all its writes. Keep external I/O outside it.

@@ -13,17 +13,17 @@ export function sameTags(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
 }
 
+export async function knownTags(tx: StoreTx, userId: string, ids: readonly string[]): Promise<Tag[]> {
+  const tags = await tx.listTags(userId);
+  if (ids.some((id) => !tags.some((tag) => tag.id === id))) throw notFound();
+  return tags;
+}
+
 export function createTags(
   { store }: Pick<BrokerDeps, "store">,
   record: RecordEvent,
   denyUnauthorizedInboxRequests: (tx: StoreTx, userId: string) => Promise<void>,
 ) {
-  async function knownTags(tx: StoreTx, userId: string, ids: readonly string[]): Promise<Tag[]> {
-    const tags = await tx.listTags(userId);
-    if (ids.some((id) => !tags.some((tag) => tag.id === id))) throw notFound();
-    return tags;
-  }
-
   async function view(tx: StoreTx, userId: string): Promise<TagsView> {
     const tags = await tx.listTags(userId);
     const contacts = await tx.listContactAddresses(userId);
@@ -118,5 +118,5 @@ export function createTags(
     }
   }
 
-  return { port, view, changeByAgent, knownTags, tagContact };
+  return { port, view, changeByAgent, tagContact };
 }

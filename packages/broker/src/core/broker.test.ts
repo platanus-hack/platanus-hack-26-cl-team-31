@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import {
   ActivityItem,
   basicSharing,
@@ -270,13 +270,16 @@ it("sube cualquier archivo a la bóveda y lo entrega solo mientras la categoría
   } as const;
   const first = await broker.agent.uploadVaultDocument(ownerAgent, upload);
   const replay = await broker.agent.uploadVaultDocument(ownerAgent, upload);
+  expect(first).toEqual({
+    id: expect.any(String), fileName: upload.fileName, sizeBytes: 5, mimeType: upload.mimeType,
+    sha256: createHash("sha256").update(Buffer.from(contentBase64, "base64")).digest("hex"),
+    createdAt: now.toISOString(),
+  });
   expect(replay).toEqual(first);
-  expect((await broker.agent.queryVault(readerAgent, { to: "bruno@sideband.app", categoryId })).categories[0]?.documents).toMatchObject([{
-    id: first.id, fileName: "foto.bin", sizeBytes: 5, mimeType: "application/octet-stream",
-  }]);
+  expect((await broker.agent.queryVault(readerAgent, { to: "bruno@sideband.app", categoryId })).categories[0]?.documents).toEqual([first]);
   await expect(broker.agent.downloadVaultDocument(readerAgent, {
     to: "bruno@sideband.app", categoryId, documentId: first.id,
-  })).resolves.toMatchObject({ ...first, contentBase64 });
+  })).resolves.toEqual({ ...first, contentBase64 });
   await expect(broker.agent.uploadVaultDocument(ownerAgent, { ...upload, contentBase64: "eA==", idempotencyKey: upload.idempotencyKey }))
     .rejects.toMatchObject({ code: "conflict" });
 

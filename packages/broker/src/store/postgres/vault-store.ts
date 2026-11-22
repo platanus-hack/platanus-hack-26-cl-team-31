@@ -3,7 +3,7 @@ import { and, DrizzleQueryError, eq, inArray, sql, type SQLWrapper } from "drizz
 import { alias } from "drizzle-orm/pg-core";
 import type { drizzle } from "drizzle-orm/node-postgres";
 import { BrokerError } from "../../errors.js";
-import type { StoreTx } from "../store.js";
+import { documentMetadata, type StoreTx } from "../store.js";
 import {
   users, friends, grants as g, tags, contactTags as t, vaultCategories as c, vaultPermissions as p, vaultEntries as e, vaultDocuments as d, vaultMemberRules as r,
 } from "./schema.js";
@@ -194,14 +194,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "canReadVault" | "vaultCatalog
           canRead: true,
           entries: rows.flatMap(row => row.entry ? [row.entry] : []),
           ...(documents.length ? {
-            documents: documents.map(document => ({
-              id: document.id,
-              fileName: document.fileName,
-              ...(document.mimeType ? { mimeType: document.mimeType } : {}),
-              sizeBytes: document.sizeBytes,
-              sha256: document.sha256,
-              createdAt: document.createdAt.toISOString(),
-            })),
+            documents: documents.map(documentMetadata),
           } : {}),
         }],
       };
