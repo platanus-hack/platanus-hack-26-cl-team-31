@@ -86,6 +86,7 @@ export const frozenOwnerClient: OwnerPort = {
   updateTag: (_, id, input) => later({ ...contacts.tags.find((tag) => tag.id === id), ...input }) as never,
   deleteTag: done,
   vault: () => later(vault),
+  vaultVisits: () => later({ visits: [], readers: 0 }),
   changeVault: () => later({}) as never,
   me: () => later({ userId: "frozen-user", address: me, displayName: "Ana Rojas" }),
   claimAddress: () => later(me),

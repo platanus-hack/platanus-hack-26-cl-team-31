@@ -312,7 +312,7 @@ export const UserSummary = z.object({
 export type UserSummary = z.infer<typeof UserSummary>
 
 export const UserDetail = z.object({
-  vault: z.object({ categories: z.number(), entries: z.number(), permissions: z.number(), memberRules: z.number(), documents: z.number().default(0) }).optional(),
+  vault: z.object({ categories: z.number(), entries: z.number(), permissions: z.number(), memberRules: z.number(), documents: z.number().default(0), visits: z.number().default(0), visitors: z.number().default(0), lastVisitAt: Iso.nullable().default(null) }).optional(),
   tags: z.object({ tags: z.number(), customTags: z.number(), memberships: z.number(), vaultPermissions: z.number() }).optional(),
   summary: UserSummary,
   identity: z.object({

@@ -235,6 +235,20 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
       )
     })
 
+    // Una lectura autorizada de la bóveda de Bruno por Alice deja su visita.
+    await store.tx(async (tx) => {
+      const categoryId = randomUUID()
+      await tx.changeVault("bruno", categoryId, { action: "create", name: "Salud" })
+      await tx.addContact("bruno", "alice@sideband.app")
+      await tx.changeVault("bruno", categoryId, {
+        action: "set_member",
+        categoryId,
+        address: "alice@sideband.app",
+        allowed: true,
+      })
+      await tx.sharedVault("alice@sideband.app", "bruno@sideband.app", categoryId, now)
+    })
+
     // Better Auth: identidad, sesión y un cliente OAuth con token activo.
     // The broker no longer writes sharing rules. ops.v_users still shows the stored ones.
     await db.query(`INSERT INTO sideband.sharing_rules (user_id, rules) VALUES ('bruno', $1)`, [
@@ -661,6 +675,10 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     expect(alice.recentRequests).toHaveLength(3)
 
     const bruno = UserDetail.parse(await queries.user("bruno"))
+    // Alice abrió una categoría de Bruno: el admin ve el uso agregado, nunca su dirección.
+    expect(bruno.vault).toMatchObject({ visits: 1, visitors: 1 })
+    expect(bruno.vault?.lastVisitAt).toEqual(expect.any(String))
+    expect(JSON.stringify(bruno.vault)).not.toContain("alice@sideband.app")
     expect(bruno.rules).toMatchObject({
       circles: { friends: ["alice@sideband.app"] },
     })

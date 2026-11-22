@@ -67,6 +67,7 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0021_vault_documents.sql",
       "0022_vault_descriptions.sql",
       "0023_vault_visibility.sql",
+      "0024_vault_visits.sql",
       "0200_ask_receipts.sql",
       "0201_message_turns.sql",
       // Rango alto reservado para esta rama: main sigue creciendo en 00xx y ya chocamos dos veces.
