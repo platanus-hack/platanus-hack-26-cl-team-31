@@ -269,7 +269,7 @@ function Actions({ detail }: { detail: RequestDetail }) {
 
   const open = status === "awaiting_agent" || status === "awaiting_owner"
   const now = useNow()
-  const overdue = Date.parse(expiresAt) < now
+  const overdue = Date.parse(expiresAt) <= now
   const canRewake = status === "awaiting_agent" && !overdue
   const rewakeHint =
     status !== "awaiting_agent"
