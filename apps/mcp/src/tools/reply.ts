@@ -11,7 +11,8 @@ import { runTool, type ToolTelemetry } from "./result.js";
 // El error de la unión es lo único que el agente ve cuando se equivoca de forma, y el SDK lo
 // publica como «<mensaje> at result». Un codex real leyó tres veces «Invalid input at result» y
 // siguió mandando el objeto serializado como string: el mensaje tiene que nombrar la forma.
-const result = z.union(Object.values(ToolResultSchemas), {
+// Conserva las claves adicionales para que el broker las filtre y las enumere en droppedFields.
+const result = z.union(Object.values(ToolResultSchemas).map((schema) => schema.loose()), {
   error: 'result debe ser un objeto JSON con los campos de allowedFields —{"answer": "..."}—, no texto ni ese objeto serializado como string',
 }).describe(
   "Objeto JSON cuyas claves son exactamente las de allowedFields de la solicitud en tu bandeja. "
