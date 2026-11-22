@@ -10,7 +10,7 @@ export interface DirectoryAgent {
   agentId: string;
   userId?: string | null;
   label?: string | null;
-  /** WakeKind del agente (mcp_events, openclaw_hooks…) o un canal (whatsapp). */
+  /** WakeKind del agente (mcp_events, openclaw_hooks…). */
   kind?: string | null;
   /** Conexión revocada: no entra en la foto inicial de la red. */
   revokedAt?: string | null;
@@ -64,7 +64,6 @@ const channelLabels: Record<string, string> = {
   openclaw_hooks: "OpenClaw",
   grokbot_routine: "Grok Bot",
   standard_webhook: "Webhook",
-  whatsapp: "WhatsApp",
   none: "Agente",
 };
 
@@ -115,12 +114,6 @@ export function createActorResolver(directory: FlowDirectory) {
     const channel = channelLabel(agent?.kind);
     return { id: `agent:${agentId}`, role: "agent", label: agent?.label || channel || "Agente", owner, ...(channel ? { channel } : {}) };
   };
-  const whatsappActor = (userId: string): FlowActor => {
-    const owner = ownerOfUser(userId);
-    const linked = directory.list().agents.find((a) => a.userId === userId && a.kind === "whatsapp" && !a.revokedAt);
-    return linked ? agentActor(linked.agentId, owner) : { id: `whatsapp@${owner.key}`, role: "agent", label: "WhatsApp", owner, channel: "WhatsApp" };
-  };
-
   function* snapshotActors(): IterableIterator<FlowActor> {
     const { users, agents } = directory.list();
     const agentsByUser = new Map<string, DirectoryAgent[]>();
@@ -149,7 +142,6 @@ export function createActorResolver(directory: FlowDirectory) {
     ownerOfAddress,
     ownerOfUser,
     agentActor,
-    whatsappActor,
     snapshotActors,
     takeUnknown() {
       const result = {

@@ -23,7 +23,6 @@ import {
   ReplyInput,
   WakeTarget,
   agentScopes,
-  ChannelName,
   type FinalOutcome,
   type Owner,
   type Principal,
@@ -108,9 +107,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   }
 
   // One status_changed per persisted transition, plus closed when it reaches a final state.
-  // A request written from a channel notifies it when it starts waiting for the recipient's owner
-  // and when it closes. Decisions taken while creating it already reached the caller.
-  async function recordTransitionAndScheduleOriginWake(tx: StoreTx, before: RequestRow, after: RequestRow, by: Actor): Promise<void> {
+  function recordTransition(tx: StoreTx, before: RequestRow, after: RequestRow, by: Actor): void {
     record(tx, "broker.request.status_changed", {
       requestId: before.id, attrs: { from: before.status, to: after.status, by },
     });
@@ -119,12 +116,6 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         requestId: before.id, attrs: { outcome: after.status, escalated: after.escalated },
       });
     }
-    if (!after.originChannel || (after.status !== "awaiting_owner" && !after.closedAt)) return;
-    // saveTransition stored `after` as the next version.
-    await tx.enqueueWake({
-      id: randomUUID(), requestId: before.id, requestVersion: before.version + 1, audience: "origin", attempt: 1,
-      runAt: clock.now(), state: "queued",
-    });
   }
 
   function deadline(now: Date): Date {
@@ -175,7 +166,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const final = await finalize(transition(row, outcome), outcome, at);
     if (!await saveTransition(tx, row, final)) return false;
     await tx.appendEvent({ requestId: row.id, at, kind: "delivery", status: outcome, ...(code ? { code } : {}) });
-    await recordTransitionAndScheduleOriginWake(tx, row, final, code?.startsWith("admin_") ? "admin" : "broker");
+    recordTransition(tx, row, final, code?.startsWith("admin_") ? "admin" : "broker");
     return true;
   }
 
@@ -275,15 +266,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       : await finalize(transition(row, "declined"), "declined", now);
     if (!await saveTransition(tx, row, changed)) throw closed();
     await applyConnection(tx, changed, share);
-    await recordTransitionAndScheduleOriginWake(tx, row, changed, by);
+    recordTransition(tx, row, changed, by);
     await tx.appendEvent({ requestId: row.id, at: now, kind: "permission", status: changed.status });
     await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: changed.status });
   }
 
   async function submit(
-    tx: StoreTx, userId: string, input: AskInput, origin: { agentId?: string; channel?: ChannelName },
+    tx: StoreTx, userId: string, input: AskInput, agentId?: string,
   ): Promise<RequesterView | BrokerError> {
-    const { agentId, channel } = origin;
     const { to, tool, purpose } = input;
     let args = input.args;
     const from = (await tx.getUser(userId))?.address;
@@ -332,7 +322,6 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     }
     let row = await initialRequest({
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
-      originChannel: channel,
     }, now);
     const invitation = recipient && tool === "connect";
     const accessRequest = tool === "vault_access" && recipient && (await tx.listContactAddresses(recipient.userId)).includes(from);
@@ -372,7 +361,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   }
 
   type InitialRequest = Pick<RequestRow, "fromAddress" | "toAddress" | "fromUserId" | "toUserId" | "tool" | "args"> &
-    Partial<Pick<RequestRow, "targetAgentId" | "purpose" | "originChannel">>;
+    Partial<Pick<RequestRow, "targetAgentId" | "purpose">>;
 
   function initialRequest(input: InitialRequest, now: Date): Promise<RequestRow> {
     return seal({
@@ -419,13 +408,12 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       const now = clock.now();
       const denied = await finalize(transition(row, "denied"), "denied", now);
       if (!await saveTransition(tx, row, denied)) throw closed();
-      await recordTransitionAndScheduleOriginWake(tx, row, denied, "owner");
+      recordTransition(tx, row, denied, "owner");
       await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: "denied" });
     }
   }
 
-  async function ask(userId: string, input: unknown, origin: { principal?: Principal; channel?: ChannelName }) {
-    const { principal, channel } = origin;
+  async function ask(userId: string, input: unknown, principal?: Principal) {
     const parsed = AskInput.safeParse(input);
     if (!parsed.success) {
       throw new BrokerError("invalid_input", invalidInputMessage("La pregunta no cumple el formato de la herramienta.", parsed.error));
@@ -433,8 +421,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (principal && parsed.data.tool === "connect" && parsed.data.tags?.length) requireScope(principal, "changeTag");
     const view = await store.tx(async (tx) => {
       if (principal) await ensureActiveAgentConnection(tx, principal);
-      const sender = { userId, agentId: principal?.agentId, channel };
-      return submitOnce(tx, sender, parsed.data, record, () => submit(tx, userId, parsed.data, sender));
+      const sender = { userId, agentId: principal?.agentId };
+      return submitOnce(tx, sender, parsed.data, record, () => submit(tx, userId, parsed.data, sender.agentId));
     });
     if (view instanceof BrokerError) throw view;
     return view;
@@ -683,7 +671,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
 
       async ask(p, input) {
         requireScope(p, "ask");
-        return ask(p.userId, input, { principal: p });
+        return ask(p.userId, input, p);
       },
 
       async inbox(p, includeInvitations = false) {
@@ -774,7 +762,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (!await saveTransition(tx, row, changed)) return reject(closed());
           if (vaultDecision && changed.status === "answered") await grantVaultRead(tx, p.userId, row, p.agentId);
           if (answeringInvitation) await applyConnection(tx, changed, parsed.data.share);
-          await recordTransitionAndScheduleOriginWake(tx, row, changed, "agent");
+          recordTransition(tx, row, changed, "agent");
           if (flags.length > 0 || changed.droppedFields.length > 0) {
             record(tx, "broker.reply.sanitized", {
               requestId,
@@ -873,7 +861,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       ...tags.port,
       vault: o => store.tx(tx => tx.ownerVault(o.userId)),
       changeVault: (o, change) => store.tx(tx => changeVault(tx, o.userId, change)),
-      ask: (o, input, channel) => ask(o.userId, input, { channel }),
+      ask: (o, input) => ask(o.userId, input),
       status: (o, id) => status(o.userId, id),
 
       async me(o) {
@@ -960,7 +948,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           }
           await applyConnection(tx, changed);
           record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: decision.kind } });
-          await recordTransitionAndScheduleOriginWake(tx, row, changed, "owner");
+          recordTransition(tx, row, changed, "owner");
           await tx.appendEvent({ requestId, at: now, kind: "permission", status: changed.status });
           if (decision.kind === "approve_once") {
             await enqueue(tx, row, now, row.version + 1);
@@ -993,16 +981,6 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
 
-      async setChannel(o, name, target) {
-        const channel = ChannelName.safeParse(name);
-        const parsed = WakeTarget.safeParse(target);
-        if (!channel.success || !parsed.success) throw new BrokerError("invalid_input", "La configuración del canal no es válida.");
-        await store.tx(async (tx) => {
-          await tx.putChannel({ userId: o.userId, name: channel.data, wakeTarget: parsed.data, createdAt: clock.now() });
-          record(tx, "broker.channel.set", { userId: o.userId, attrs: { channel: channel.data, kind: parsed.data.kind } });
-        });
-      },
-
       async ping(o, agentId) {
         return store.tx(async (tx) => {
           const connection = await tx.getAgentConnection(o.userId, agentId, true);
@@ -1030,7 +1008,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (!input.success) throw new BrokerError("invalid_input", "La invitación no es válida.");
         const { to, share, tags: tagIds } = input.data;
         const view = await store.tx(async (tx) => {
-          return submit(tx, o.userId, { to, tool: "connect", args: { share }, tags: tagIds }, {});
+          return submit(tx, o.userId, { to, tool: "connect", args: { share }, tags: tagIds });
         });
         if (view instanceof BrokerError) throw view;
         return view;

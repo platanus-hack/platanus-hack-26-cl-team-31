@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import type { AskInput, ChannelName, RequesterView } from "@team-31/protocol";
+import type { AskInput, RequesterView } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import type { StoreTx } from "../store/store.js";
 import { canonicalJson } from "./crypto.js";
 import type { RecordEvent } from "./events.js";
 import { toRequesterView } from "./views.js";
 
-type AskOrigin = { userId: string; agentId?: string; channel?: ChannelName };
+type AskOrigin = { userId: string; agentId?: string };
 
 function digest(value: unknown) {
   return createHash("sha256").update(canonicalJson(value)).digest("hex");

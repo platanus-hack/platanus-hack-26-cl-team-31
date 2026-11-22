@@ -6,7 +6,7 @@ import { activities, emptyFlowState, foldFlow, reduceFlow, resolveId } from "./s
 
 const owner = { key: "bob@sideband.app", label: "Bob" };
 const placeholder: FlowActor = { id: "agent@bob@sideband.app", role: "agent", label: "Agente", owner, placeholder: true };
-const whatsapp: FlowActor = { id: "agent:b1", role: "agent", label: "WhatsApp", owner, channel: "WhatsApp" };
+const grok: FlowActor = { id: "agent:b1", role: "agent", label: "Grok Bot", owner, channel: "Grok Bot" };
 const ana: FlowActor = { id: "agent:a1", role: "agent", label: "Claude Code", owner: { key: "ana@sideband.app", label: "Ana" } };
 
 const event = (id: string, fields: Partial<FlowEvent>): FlowEvent => ({
@@ -27,23 +27,23 @@ describe("reduceFlow", () => {
     state = reduceFlow(state, event("1", { step: "ask", from: ana, to: BROKER }), 0);
     state = reduceFlow(state, event("2", { step: "escalated", from: BROKER, to: placeholder }), 1);
     const order = state.actors.get(placeholder.id)!.order;
-    state = reduceFlow(state, event("6", { step: "wake", status: "ok", from: BROKER, to: whatsapp }), 2);
+    state = reduceFlow(state, event("6", { step: "wake", status: "ok", from: BROKER, to: grok }), 2);
     expect(state.actors.has(placeholder.id)).toBe(false);
-    expect(state.actors.get(whatsapp.id)!.order).toBe(order);
-    expect(resolveId(state, placeholder.id)).toBe(whatsapp.id);
+    expect(state.actors.get(grok.id)!.order).toBe(order);
+    expect(resolveId(state, placeholder.id)).toBe(grok.id);
     // Un provisional posterior del mismo titular apunta al agente conocido.
     state = reduceFlow(state, event("4", { step: "reply", from: placeholder, to: BROKER }), 3);
-    expect([...state.actors.keys()]).toEqual([ana.id, whatsapp.id]);
+    expect([...state.actors.keys()]).toEqual([ana.id, grok.id]);
   });
 
   it("derives waiting, thinking and deciding from the request phases", () => {
     let state = emptyFlowState();
     state = reduceFlow(state, event("1", { step: "ask", from: ana, to: BROKER }), 0);
-    state = reduceFlow(state, event("2", { step: "wake", status: "ok", from: BROKER, to: whatsapp }), 1);
-    expect(Object.fromEntries(activities(state))).toEqual({ [ana.id]: "waiting", [whatsapp.id]: "thinking" });
+    state = reduceFlow(state, event("2", { step: "wake", status: "ok", from: BROKER, to: grok }), 1);
+    expect(Object.fromEntries(activities(state))).toEqual({ [ana.id]: "waiting", [grok.id]: "thinking" });
 
     const human: FlowActor = { id: "owner@bob@sideband.app", role: "owner", label: "Titular", owner };
-    state = reduceFlow(state, event("3", { step: "reply", from: whatsapp, to: BROKER }), 2);
+    state = reduceFlow(state, event("3", { step: "reply", from: grok, to: BROKER }), 2);
     state = reduceFlow(state, event("4", { step: "escalated", status: "escalated", from: BROKER, to: human }), 3);
     expect(Object.fromEntries(activities(state))).toEqual({ [ana.id]: "waiting", [human.id]: "deciding" });
 
@@ -58,11 +58,11 @@ describe("reduceFlow", () => {
     expect([...a.actors]).toEqual([...b.actors]);
     expect([...a.requests]).toEqual([...b.requests]);
     expect(a.log.map((e) => e.event.id)).toEqual(b.log.map((e) => e.event.id));
-    // Escenario: 8 titulares, 9 agentes y el titular Ana que decide. Hugo salió de la red.
+    // Escenario: 8 titulares, 8 agentes y el titular Ana que decide. Hugo salió de la red.
     expect(a.owners.size).toBe(8);
-    expect([...a.actors.values()].filter((e) => e.actor.role === "agent")).toHaveLength(9);
-    expect(a.actors.get("agent:hugo-whatsapp")?.presence).toBe("left");
-    expect(a.actors.get("agent:fran-whatsapp")?.presence).toBe("present");
+    expect([...a.actors.values()].filter((e) => e.actor.role === "agent")).toHaveLength(8);
+    expect(a.actors.get("agent:hugo-grok")?.presence).toBe("left");
+    expect(a.actors.get("agent:fran-grok")?.presence).toBe("present");
     expect([...a.actors.values()].filter((e) => e.actor.role === "owner").map((e) => e.actor.owner.label)).toEqual(["Ana"]);
     expect([...a.requests.values()].every((t) => t.phase === "closed")).toBe(true);
   });
@@ -74,27 +74,27 @@ describe("presence", () => {
 
   it("is idempotent and keeps passive participants in the network", () => {
     let state = emptyFlowState();
-    state = reduceFlow(state, joined("1", 10, whatsapp), 0);
-    state = reduceFlow(state, joined("2", 20, whatsapp), 1);
-    expect(state.actors.get(whatsapp.id)).toMatchObject({ presence: "present", joinedT: 0 });
+    state = reduceFlow(state, joined("1", 10, grok), 0);
+    state = reduceFlow(state, joined("2", 20, grok), 1);
+    expect(state.actors.get(grok.id)).toMatchObject({ presence: "present", joinedT: 0 });
     expect(state.log).toHaveLength(1);
     expect(activities(state).size).toBe(0);
   });
 
   it("ignores an older event that arrives late", () => {
     let state = emptyFlowState();
-    state = reduceFlow(state, left("2", 20, whatsapp), 0);
-    state = reduceFlow(state, joined("1", 10, whatsapp), 1);
-    expect(state.actors.get(whatsapp.id)?.presence).toBe("left");
+    state = reduceFlow(state, left("2", 20, grok), 0);
+    state = reduceFlow(state, joined("1", 10, grok), 1);
+    expect(state.actors.get(grok.id)?.presence).toBe("left");
   });
 
   it("applies the snapshot silently and brings a participant back when it acts again", () => {
     let state = emptyFlowState();
-    state = reduceFlow(state, joined("s", 1, whatsapp, true), 0);
+    state = reduceFlow(state, joined("s", 1, grok, true), 0);
     expect(state.log).toHaveLength(0);
-    state = reduceFlow(state, left("2", 5, whatsapp), 1);
-    state = reduceFlow(state, event("6", { step: "wake", status: "ok", from: BROKER, to: whatsapp }), 2);
-    expect(state.actors.get(whatsapp.id)).toMatchObject({ presence: "present", joinedT: 2 });
+    state = reduceFlow(state, left("2", 5, grok), 1);
+    state = reduceFlow(state, event("6", { step: "wake", status: "ok", from: BROKER, to: grok }), 2);
+    expect(state.actors.get(grok.id)).toMatchObject({ presence: "present", joinedT: 2 });
   });
 });
 

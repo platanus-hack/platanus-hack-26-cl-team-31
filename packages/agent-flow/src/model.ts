@@ -50,7 +50,7 @@ export interface FlowActor {
   role: ActorRole;
   label: string;
   owner: FlowOwner;
-  /** Canal o tipo de conexión: MCP, WhatsApp, OpenClaw… */
+  /** Canal o tipo de conexión: MCP, OpenClaw… */
   channel?: string;
   /** El agente concreto aún no se conoce: se fusiona con el primero que aparezca del mismo titular. */
   placeholder?: boolean;

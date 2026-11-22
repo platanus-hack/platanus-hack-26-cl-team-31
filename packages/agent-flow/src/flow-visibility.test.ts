@@ -20,7 +20,7 @@ describe("flowVisibility", () => {
     expect(flowVisibility(new Set(), ["ana"], new Set()).ownerShown(owner)).toBe(false);
   });
 
-  it.each(["agent:dani-codex", "agent:ana-whatsapp", "owner@ana@sideband.app"])(
+  it.each(["agent:dani-codex", "agent:ana-claude", "owner@ana@sideband.app"])(
     "hides the entire escalated request when participant %s is hidden",
     (hidden) => {
       const events = scenarioEvents();

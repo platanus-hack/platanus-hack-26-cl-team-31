@@ -49,7 +49,7 @@ it("preserves plain asks and requires a capable server to decode a conditional s
   const ask = AskInput.parse({ tool: "interest_check", to: "ana@sideband.app", args: { interest: "cerámica" } });
   expect(encodeAsk(ask)).toEqual(ask);
   const checked = { ...ask, idempotencyKey: "stable-message-123", requireRelation: { kind: "contact" as const, tag: "friend" as const } };
-  for (const route of [routes.agentAsk, routes.ownerAsk, routes.ownerChannelAsk]) {
+  for (const route of [routes.agentAsk, routes.ownerAsk]) {
     const body = route.body.parse(encodeAsk(checked));
     expect(AskInput.safeParse(body).success).toBe(false);
     expect(decodeAsk(body)).toEqual(checked);

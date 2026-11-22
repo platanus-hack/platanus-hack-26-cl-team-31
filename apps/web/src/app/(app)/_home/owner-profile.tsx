@@ -1,22 +1,8 @@
 import type { ReactNode } from "react";
 
-import { getOwnerAccount, getOwnerUser } from "@/lib/auth-owner";
-import { getTelemetry } from "@/lib/telemetry";
-import { frozen } from "@/lib/frozen";
-import { whatsappStore } from "@/lib/whatsapp/runtime";
+import { getOwnerAccount } from "@/lib/auth-owner";
 
 import { card, Stamp, textLink } from "../ui";
-
-async function linkedPhone(userId: string) {
-  if (frozen) return "Sin vincular";
-  try {
-    const state = await whatsappStore().state(userId);
-    return state?.linked ?? "Sin vincular";
-  } catch (error) {
-    const errorId = getTelemetry().error("profile whatsapp state", error);
-    return `No disponible. Código de error ${errorId}.`;
-  }
-}
 
 function ProfileRow({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -28,11 +14,7 @@ function ProfileRow({ label, children }: { label: string; children: ReactNode })
 }
 
 export async function OwnerProfile() {
-  // The phone only needs the session's user: read it alongside the broker's account lookup.
-  const [{ user, address, displayName }, phone] = await Promise.all([
-    getOwnerAccount(),
-    getOwnerUser().then((user) => linkedPhone(user.id)),
-  ]);
+  const { user, address, displayName } = await getOwnerAccount();
   const photo = user.image && /^https:\/\//i.test(user.image)
     ? <a className={textLink} href={user.image} referrerPolicy="no-referrer">Ver foto de perfil</a>
     : "Sin foto";
@@ -49,7 +31,6 @@ export async function OwnerProfile() {
             <ProfileRow label="Correo">
               {user.email} <span className="text-muted">({user.emailVerified ? "verificado" : "sin verificar"})</span>
             </ProfileRow>
-            <ProfileRow label="WhatsApp">{phone}</ProfileRow>
             <ProfileRow label="Foto de perfil">{photo}</ProfileRow>
             <ProfileRow label="Fecha de registro"><Stamp value={new Date(user.createdAt).toISOString()} /></ProfileRow>
           </tbody>

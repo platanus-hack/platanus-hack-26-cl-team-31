@@ -1,5 +1,5 @@
 // Juez blue team: un Claude evalúa la respuesta entregada y decide si contiene algo que no
-// debería estar ahí. Reutiliza el patrón del clasificador de WhatsApp (`apps/web`) y del
+// debería estar ahí. Reutiliza el patrón del
 // redactor (`packages/broker/src/sanitize/claude-redactor.ts`): el texto del solicitante es un
 // dato, nunca instrucciones para el juez.
 import Anthropic from "@anthropic-ai/sdk";

@@ -304,7 +304,6 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     expect(rows.map((row) => row.relname)).toEqual([
       "v_agent_connections",
       "v_ask_receipts",
-      "v_channels",
       "v_circles",
       "v_contact_tags",
       "v_coordination_people",
