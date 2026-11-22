@@ -1,5 +1,6 @@
 import { getConnInfo } from "@hono/node-server/conninfo"
 import type { Telemetry } from "@team-31/telemetry"
+import { BrokerError } from "@team-31/broker-client"
 import { Hono, type Context } from "hono"
 import type { z } from "zod"
 import { adminRoutes, ErrorBody, PayloadReveal, type AdminRole, type AdminRouteName } from "../shared/contract.js"
@@ -94,13 +95,16 @@ export function clientIp(c: Context, trustProxy: boolean): string | null {
 
 function errorResponse(c: Context, error: unknown, telemetry: Pick<Telemetry, "error" | "emit">) {
   if (error instanceof AdminHttpError) {
+    const brokerError = error.code === "upstream" && error.cause instanceof BrokerError ? error.cause : undefined
+    const localId = brokerError && telemetry.error(`${c.req.method} ${c.req.routePath} broker.${brokerError.stage ?? "unknown"}`, brokerError)
+    const errorId = error.errorId ?? localId
     if (error.code === "unauthorized") c.header("WWW-Authenticate", 'Cookie realm="sideband-admin"')
-    if (error.errorId) c.header("X-Error-Id", error.errorId)
+    if (errorId) c.header("X-Error-Id", errorId)
     if (error.retryAfter) c.header("Retry-After", String(error.retryAfter))
     if (error.code === "rate_limited") {
       telemetry.emit("http.rate_limited", { attrs: { route: c.req.routePath, bucket: c.req.path.endsWith("/reveal") ? "reveal" : c.req.path.endsWith("/live") ? "live" : "login" } })
     }
-    return c.json(ErrorBody.parse({ error: { code: error.code, message: error.message, errorId: error.errorId } }), statusOf[error.code])
+    return c.json(ErrorBody.parse({ error: { code: error.code, message: error.message, errorId } }), statusOf[error.code])
   }
   if (error instanceof AdminQueryError) {
     if (error.code === "timeout") {

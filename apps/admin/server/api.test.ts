@@ -44,7 +44,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     events: async ({ afterId }) => (afterId ? [] : [telemetryEvent("2"), telemetryEvent("1")]),
   })
 
-  function buildApp(overrides: { devAuth?: boolean; queries?: AdminQueries; live?: LiveOptions; audit?: AuditLog; spaRoot?: string } = {}) {
+  function buildApp(overrides: { devAuth?: boolean; queries?: AdminQueries; live?: LiveOptions; audit?: AuditLog; spaRoot?: string; brokerKey?: JWK } = {}) {
     const telemetry = createTelemetry({ service: "admin", sink, heartbeatMs: 0, lifecycle: false })
     const tokens = createPgTokenStore(pool)
     return createAdminApp({
@@ -55,7 +55,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
       tokens,
       authenticateToken: (bearer) => tokens.authenticate(bearer),
       audit: overrides.audit ?? createPgAuditLog(pool, telemetry),
-      broker: createBrokerAdminClient({ baseUrl: BROKER_URL, privateKey: privateJwk, fetch: brokerFetch }),
+      broker: createBrokerAdminClient({ baseUrl: BROKER_URL, privateKey: overrides.brokerKey ?? privateJwk, fetch: brokerFetch }),
       revealer: { reveal },
       limiters: createAdminLimiters(),
       adminUrl: ADMIN_URL,
@@ -353,6 +353,21 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     const rows = await auditRows()
     expect(rows.find((row) => row.action === "expire")).toMatchObject({ meta: { ok: false, code: "invalid_input" } })
     expect(rows.find((row) => row.action === "revoke-agent")).toMatchObject({ target: "user/1/agent-1", meta: { ok: true } })
+  })
+
+  it("registra el fallo local de firma y devuelve su ID sin exponer la causa", async () => {
+    const cookie = await login("op@test.cl")
+    const app = buildApp({ brokerKey: { kty: "invalid" } })
+    const response = await app.request("/api/admin/requests/req_1/expire", post(cookie, { reason: "atascada hace horas" }))
+    const body = await response.json()
+    const event = sink.find("error").find((row) => String(row.attrs.operation).endsWith("broker.signing"))
+
+    expect(response.status).toBe(502)
+    expect(body.error).toEqual({ code: "upstream", message: "No se pudo completar la acción en el broker.", errorId: event?.errorId })
+    expect(event?.errorId).toBeTruthy()
+    expect(response.headers.get("X-Error-Id")).toBe(event?.errorId)
+    expect(brokerFetch).not.toHaveBeenCalled()
+    expect((await auditRows()).find((row) => row.action === "expire")).toMatchObject({ meta: { ok: false, code: "upstream" } })
   })
 
   it("mapea AdminQueryError y 404 de lecturas a ErrorBody", async () => {

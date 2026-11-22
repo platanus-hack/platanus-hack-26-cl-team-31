@@ -20,8 +20,8 @@ export class AdminHttpError extends Error {
   readonly errorId?: string
   readonly retryAfter?: number
 
-  constructor(code: ErrorCode, message: string, options?: { retryAfter?: number; errorId?: string }) {
-    super(message)
+  constructor(code: ErrorCode, message: string, options?: ErrorOptions & { retryAfter?: number; errorId?: string }) {
+    super(message, options)
     this.code = code
     this.errorId = options?.errorId
     this.retryAfter = options?.retryAfter
