@@ -75,4 +75,32 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("turnos durables", () => {
     await db.pool().query("UPDATE sideband.message_turns SET expires_at = now() WHERE id = $1", [original]);
     expect(await store.run({ ...owner, binding: binding.binding }, original, clarify)).toBeUndefined();
   });
+
+  it("deja avanzar otro vínculo mientras ocho turnos esperan el mismo bloqueo", async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const hold = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const binding = { ...owner, binding: "contended" };
+    const active = store.run(binding, undefined, async () => {
+      started();
+      await hold;
+      return { kind: "profiles", items: [] };
+    });
+    await entered;
+    const waiters = Array.from({ length: 8 }, () => store.run(binding, undefined, clarify));
+    try {
+      // Let contenders attempt admission before checking the independent binding.
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const independent = store.run({ ...owner, binding: "independent" }, undefined, clarify);
+      const result = await Promise.race([
+        independent,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Vínculo independiente bloqueado")), 2_000)),
+      ]);
+      expect(result?.kind).toBe("clarification");
+    } finally {
+      release();
+      await Promise.all([active, ...waiters]);
+    }
+  });
 });
