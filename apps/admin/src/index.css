@@ -167,15 +167,20 @@
 .signal-map, .signal-routes { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden }
 .signal-map { background: radial-gradient(circle, color-mix(in srgb,var(--muted-foreground) 16%,transparent) .7px, transparent .9px) center / 20px 20px }
 .signal-wire { fill: none; stroke: color-mix(in srgb,var(--muted-foreground) 55%,var(--card)); stroke-width: 1.5 }
-.signal-routes g[data-tone] > .signal-wire { stroke: var(--foreground); stroke-width: 2.25 }
+.signal-page [data-access="allowed"], .signal-hub[data-decision="allowed"] { --signal-verdict: var(--status-ok) }
+.signal-page [data-access="denied"], .signal-hub[data-decision="denied"] { --signal-verdict: var(--status-error) }
+.signal-page [data-access="neutral"] { --signal-verdict: var(--foreground) }
+.signal-routes g[data-tone] > .signal-wire { stroke: var(--signal-verdict,var(--foreground)); stroke-width: 2.25 }
 .signal-routes [data-tone="answer"] > .signal-wire { stroke-dasharray: 7 4 }
 .signal-routes [data-tone="decision"] > .signal-wire { stroke-dasharray: 1 5; stroke-linecap: round }
 .signal-port { fill: var(--muted-foreground); stroke: var(--card); stroke-width: 1 }
-.signal-packet { fill: var(--foreground) }
+.signal-packet { fill: var(--signal-verdict,var(--foreground)) }
 .signal-packet path { fill: none; stroke: var(--background); stroke-width: 1.4 }
 .signal-hub, .signal-station { position: absolute; transform: translate(-50%,-50%); flex-wrap: nowrap; background: var(--card) }
 .signal-hub { top: 50%; left: 50%; padding-inline: 14px; gap: 10px; background: color-mix(in srgb,var(--card) 75%,var(--muted)); border-color: color-mix(in srgb,var(--muted-foreground) 44%,var(--card)); box-shadow: 0 0 0 3px var(--card), 0 0 0 4px var(--border) }
-.signal-hub[data-tone] { border-color: var(--muted-foreground) }
+.signal-hub[data-decision] { border-color: var(--signal-verdict); background: color-mix(in srgb,var(--signal-verdict) 11%,var(--card)) }
+.signal-hub[data-decision] [data-slot="item-description"] { color: var(--foreground) }
+.signal-decision-ring { position: absolute; inset: -2px; pointer-events: none; border: 2px solid var(--signal-verdict); border-radius: inherit }
 .signal-station { box-shadow: var(--shadow-xs) }
 .signal-station[data-tone] { border-color: var(--muted-foreground); box-shadow: 0 0 0 1px var(--border) }
 .signal-avatar { display: grid; place-items: center; flex-shrink: 0; height: 42px; width: 42px; background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius) }
@@ -193,9 +198,7 @@
 .signal-pair { display: flex; align-items: center; gap: 8px }
 .signal-legend { gap: 18px; flex-wrap: wrap }
 .signal-legend span { gap: 6px }
-.signal-legend i { width: 20px; border-top: 2px solid currentColor }
-.signal-legend [data-tone="answer"] i { border-top-style: dashed }
-.signal-legend [data-tone="decision"] i { border-top-style: dotted }
+.signal-legend i { width: 7px; height: 7px; border-radius: 50%; background: var(--signal-verdict,var(--muted-foreground)) }
 .signal-legend small { margin-left: auto }
 @container (max-width: 590px) {
     .signal-pair { display: none }
@@ -206,4 +209,4 @@
     .signal-top, .signal-footer { padding: 12px }
     .signal-legend { gap: 12px; font-size: 11px }
 }
-@media (prefers-reduced-motion: reduce) { .signal-packet { display: none } }
+@media (prefers-reduced-motion: reduce) { .signal-packet, .signal-decision-ring { display: none } }

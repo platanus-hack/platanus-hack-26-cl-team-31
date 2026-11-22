@@ -36,6 +36,7 @@ import { ErrorState, PageHeader } from "@/components/page"
 import { useFlowLive } from "@/lib/flow-live"
 import {
   agentBrand,
+  brokerPulse,
   brokerSize,
   describeSignal,
   personName,
@@ -101,6 +102,7 @@ export function FlowPage() {
     loop: demo,
     autoPlay: true,
     initialSpeed: 1,
+    minGap: PULSE_MS,
     controls: false,
     reducedMotion: false,
     visibleRef,
@@ -218,7 +220,7 @@ export function FlowPage() {
   const sourceName = participant(track?.requester)
   const targetName = participant(track?.recipient)
   const fresh = latest && clock - latest.t < 1700
-  const hubTone = fresh ? signalTone(latest.event) : undefined
+  const pulse = brokerPulse(network.log, clock)
   const pulses = network.log.filter(
     (entry) => clock - entry.t < PULSE_MS && entry.t <= clock
   )
@@ -330,7 +332,11 @@ export function FlowPage() {
                     ? signalTone(traffic.at(-1)!.event)
                     : undefined
                   return (
-                    <g key={actor.id} data-tone={tone}>
+                    <g
+                      key={actor.id}
+                      data-tone={tone}
+                      data-access={traffic.at(-1)?.access}
+                    >
                       <path className="signal-wire" d={d} />
                       <circle
                         className="signal-port"
@@ -338,7 +344,7 @@ export function FlowPage() {
                         cy={curve.start.y}
                         r="3.5"
                       />
-                      {traffic.map(({ event, t }) => {
+                      {traffic.map(({ event, t, access }) => {
                         const progress = Math.min(1, (clock - t) / PULSE_MS)
                         const p = pointOnCurve(
                           curve,
@@ -347,6 +353,7 @@ export function FlowPage() {
                         return (
                           <g
                             className="signal-packet"
+                            data-access={access ?? "neutral"}
                             data-tone={signalTone(event)}
                             key={event.id}
                             transform={`translate(${p.x} ${p.y})`}
@@ -366,13 +373,27 @@ export function FlowPage() {
                 size="xs"
                 className="signal-hub"
                 style={brokerSize}
-                data-tone={hubTone}
+                data-decision={pulse?.decision}
               >
+                {pulse && (
+                  <span
+                    aria-hidden="true"
+                    className="signal-decision-ring"
+                    style={{
+                      opacity: 0.8 * (1 - pulse.progress),
+                      transform: `scale(${1 + 0.16 * pulse.progress}, ${1 + 0.42 * pulse.progress})`,
+                    }}
+                  />
+                )}
                 <BrandMark className="size-8" />
                 <ItemContent>
                   <ItemTitle>Sideband</ItemTitle>
                   <ItemDescription className="whitespace-nowrap">
-                    Permisos y entrega
+                    {pulse
+                      ? pulse.decision === "allowed"
+                        ? "Acceso permitido"
+                        : "Acceso denegado"
+                      : "Permisos y entrega"}
                   </ItemDescription>
                 </ItemContent>
               </Item>
@@ -386,7 +407,7 @@ export function FlowPage() {
                     [latest.event.from, latest.event.to].some(
                       (e) => e !== BROKER && resolveId(flow, e.id) === actor.id
                     )
-                      ? hubTone
+                      ? signalTone(latest.event)
                       : undefined
                   }
                   key={actor.id}
@@ -443,17 +464,17 @@ export function FlowPage() {
           </footer>
         </section>
         <div className="signal-legend" aria-label="Leyenda">
-          <span data-tone="question">
+          <span>
             <i aria-hidden="true" />
-            Pregunta
+            En consulta
           </span>
-          <span data-tone="answer">
+          <span data-access="allowed">
             <i aria-hidden="true" />
-            Respuesta
+            Permitido
           </span>
-          <span data-tone="decision">
+          <span data-access="denied">
             <i aria-hidden="true" />
-            Decisión de acceso
+            Denegado
           </span>
           {network.total > capacity || (!demo && truncated) ? (
             <small>En pantalla · {stations.length} participantes</small>

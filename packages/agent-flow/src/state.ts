@@ -18,7 +18,10 @@ export interface ActorEntry {
   presenceAt?: number;
 }
 
+type AccessDecision = "allowed" | "denied";
+
 export interface RequestTrack {
+  access?: AccessDecision;
   id: string;
   requester?: string;
   recipient?: string;
@@ -32,6 +35,9 @@ export interface RequestTrack {
 
 export interface AppliedEvent {
   event: FlowEvent;
+  /** Permiso conocido al salir este mensaje y decisión tomada en este paso. */
+  access?: AccessDecision;
+  decision?: AccessDecision;
   /** Tiempo del reloj de reproducción en que se aplicó (ms). */
   t: number;
 }
@@ -122,17 +128,21 @@ export function reduceFlow(previous: FlowState, event: FlowEvent, t: number): Fl
     if (entry) state.actors.set(id, { ...entry, lastStatus: event.status, ...(back ? { presence: "present", joinedT: t, leftT: undefined, presenceAt: event.at } : {}) });
   }
 
+  const entry: AppliedEvent = { event, t };
   if (event.requestId) {
     const track: RequestTrack = { ...(state.requests.get(event.requestId) ?? { id: event.requestId, phase: "asked", status: "pending", events: [] }) };
     track.events = [...track.events, event.id];
     if (event.meta.tool && !track.tool) track.tool = event.meta.tool;
     if (event.meta.category && !track.category) track.category = event.meta.category;
+    if (event.step !== "ask" && track.access) entry.access = track.access;
     switch (event.step) {
       case "ask":
         track.requester = fromId;
         track.status = event.status;
         break;
       case "policy":
+        if (event.status === "allowed" || event.status === "denied") entry.decision = event.status;
+        else delete track.access;
         track.status = event.status;
         break;
       case "wake":
@@ -151,16 +161,22 @@ export function reduceFlow(previous: FlowState, event: FlowEvent, t: number): Fl
         track.status = "sanitized";
         break;
       case "escalated":
+        delete track.access;
+        delete entry.access;
         track.human = toId;
         track.status = "escalated";
         if (track.phase !== "closed") track.phase = "escalated";
         break;
       case "owner_decided":
+        if (event.status === "allowed" || event.status === "denied") entry.decision = event.status;
         track.human = fromId;
         track.status = event.status;
         if (track.phase !== "closed") track.phase = "replied";
         break;
       case "delivered":
+        // Una denegación final puede llegar tras una revocación o al abrir el mapa a mitad del flujo.
+        if (event.status === "denied" && track.access !== "denied") entry.decision = "denied";
+        if (event.status === "denied") entry.access = "denied";
         track.requester = toId;
         track.status = event.status;
         track.phase = "closed";
@@ -168,11 +184,12 @@ export function reduceFlow(previous: FlowState, event: FlowEvent, t: number): Fl
       default:
         break;
     }
+    if (entry.decision) track.access = entry.decision;
     state.requests.set(event.requestId, track);
     if (state.requests.size > 500) state.requests.delete(state.requests.keys().next().value as string);
   }
 
-  state.log.push({ event, t });
+  state.log.push(entry);
   return state;
 }
 

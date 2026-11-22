@@ -1,9 +1,11 @@
 import {
   BROKER,
+  PULSE_MS,
   type EdgeCurve,
   type FlowActor,
   type FlowEvent,
   type FlowOwner,
+  type FlowState,
 } from "@team-31/agent-flow"
 
 export function personName(owner: FlowOwner) {
@@ -45,7 +47,7 @@ export function describeSignal(event: FlowEvent) {
   const from = who(event.from),
     to = who(event.to)
   if (event.step === "delivered") {
-    if (event.status === "denied") return `${to} recibe la decisión de acceso`
+    if (event.status === "denied") return `${to} recibe la denegación`
     if (event.status === "expired") return "Terminó el plazo para responder"
     if (event.status === "failed") return "El aviso no llegó a destino"
     if (event.meta.outcome === "no_data")
@@ -59,7 +61,7 @@ export function describeSignal(event: FlowEvent) {
         : `El agente de ${from} envía una pregunta`
     case "policy":
       return event.status === "denied"
-        ? "Sideband protege la información privada"
+        ? "Sideband deniega el acceso"
         : event.status === "allowed"
           ? "Sideband confirma el permiso"
           : "Hace falta el permiso del titular"
@@ -106,6 +108,21 @@ export function signalTone(event: FlowEvent) {
   )
     ? "answer"
     : "question"
+}
+
+// El pulso sigue el reloj del mapa para que la pausa también detenga la onda.
+export function brokerPulse(log: FlowState["log"], clock: number) {
+  const duration = 1500
+  for (let i = log.length - 1; i >= 0; i--) {
+    const { event, t, decision } = log[i]!
+    if (clock - t >= duration + PULSE_MS) break
+    if (!decision) continue
+    const arrival =
+      event.to === BROKER && event.from !== BROKER ? t + PULSE_MS : t
+    const age = clock - arrival
+    if (age >= 0 && age < duration)
+      return { decision, progress: age / duration }
+  }
 }
 
 export const brokerSize = { width: 192, height: 64 } as const

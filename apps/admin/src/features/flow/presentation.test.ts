@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest"
-import { pointOnCurve, type FlowActor } from "@team-31/agent-flow"
-import { agentBrand, brokerSize, placeStation } from "./presentation"
+import {
+  BROKER,
+  PULSE_MS,
+  pointOnCurve,
+  type FlowActor,
+  type FlowEvent,
+} from "@team-31/agent-flow"
+import {
+  agentBrand,
+  brokerPulse,
+  brokerSize,
+  placeStation,
+} from "./presentation"
 
 describe("mapa de conversaciones", () => {
   it.each([320, 390, 579, 580, 900, 1600])(
@@ -31,6 +42,30 @@ describe("mapa de conversaciones", () => {
       }
     }
   )
+
+  it("espera a que la decisión del titular llegue al broker para emitir el pulso", () => {
+    const event: FlowEvent = {
+      id: "decision",
+      at: 0,
+      step: "owner_decided",
+      status: "allowed",
+      from: {
+        id: "ana",
+        role: "owner",
+        label: "Ana",
+        owner: { key: "ana", label: "Ana" },
+      },
+      to: BROKER,
+      meta: {},
+    }
+    const log = [{ event, t: 100, decision: "allowed" as const }]
+    expect(brokerPulse(log, 100 + PULSE_MS - 1)).toBeUndefined()
+    expect(brokerPulse(log, 100 + PULSE_MS)).toEqual({
+      decision: "allowed",
+      progress: 0,
+    })
+    expect(brokerPulse(log, 100 + PULSE_MS + 1500)).toBeUndefined()
+  })
 
   it("identifica un tipo de aviso específico y mantiene los transportes genéricos sin marca", () => {
     const actor: FlowActor = {

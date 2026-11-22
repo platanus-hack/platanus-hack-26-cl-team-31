@@ -29,13 +29,13 @@ El grafo muestra en tiempo real cómo los agentes de distintos titulares convers
 
    El grafo muestra la pregunta de Ana a cada contacto, la política (las denegaciones llegan firmadas y sin aviso), los avisos a los contactos, sus respuestas y la entrega. Si el receptor de avisos de web está apagado, el pie del mapa indica que el aviso no llegó.
 
-Las tarjetas muestran el nombre de cada persona y el agente conectado. Los sobres viajan entre las tarjetas y Sideband. El pie del mapa cuenta el último movimiento. Cuando hay más personas de las que caben, el mapa prioriza a quienes conversan. El selector de personas permite enfocar a participantes específicos.
+Las tarjetas muestran el nombre de cada persona y el agente conectado. El sobre sale neutro. Al comprobar el permiso, Sideband emite un pulso verde si permite la solicitud o rojo si la deniega. Los siguientes sobres de esa solicitud conservan el color, incluida la denegación que vuelve a quien preguntó. El pie del mapa cuenta el último movimiento. Cuando hay más personas de las que caben, el mapa prioriza a quienes conversan. El selector de personas permite enfocar a participantes específicos.
 
 - En desarrollo, `/flujo?modo=demo` reproduce el escenario ficticio en bucle. En producción, `/flujo` muestra la actividad en vivo.
 - `f` activa la pantalla completa. `p` pausa o reanuda la animación.
 - La fuente indica **En vivo**, **Conectando**, **Reconectando**, **Sin conexión** o, en desarrollo, **Demo guiada**.
 
-Capturas con participantes ficticios · [Escritorio oscuro](imagenes/flujo/escritorio-oscuro.png) · [Escritorio claro](imagenes/flujo/escritorio-claro.png) · [Móvil](imagenes/flujo/movil.png)
+Con participantes ficticios · [Ver ambos recorridos en movimiento](imagenes/flujo/decisiones.gif) · [Escritorio oscuro](imagenes/flujo/escritorio-oscuro.png) · [Escritorio claro](imagenes/flujo/escritorio-claro.png) · [Móvil](imagenes/flujo/movil.png)
 
 ## Repetición y embed
 
