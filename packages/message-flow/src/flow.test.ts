@@ -163,14 +163,17 @@ describe("turnos del titular", () => {
 
   it("busca perfiles explícitos y lee categorías de bóveda por el ID devuelto", async () => {
     const interpret = vi.fn<InterpretMessage>().mockResolvedValueOnce({ action: "profiles", query: "Ana" })
-      .mockResolvedValueOnce({ action: "vault", selector: { scope: "contacts", count: "one", person: ana }, categoryName: "Talleres" });
+      .mockResolvedValueOnce({ action: "vault", selector: { scope: "contacts", count: "one", person: "Ana" }, categoryName: "Talleres" });
     const { run, context, ask } = harness(interpret);
     expect((await run("Busca el perfil público de Ana")).kind).toBe("profiles");
     const id1 = randomUUID(), id2 = randomUUID();
     const query = vi.fn(async () => ({ categories: [id1, id2, randomUUID()].map((id, index) => ({ id, name: "Talleres", visibility: "private" as const, canRead: index < 2 })) }));
     context.ops.queryVault = query;
-    const selection = await run("Lee Talleres de la bóveda de " + ana);
+    context.ops.contacts = async () => ({ ...directory, contacts: [directory.contacts[0]!] });
+    const selection = await run("Lee Talleres de la bóveda de Ana");
     if (selection.kind !== "clarification") throw new Error("expected categories");
+    // Another Ana joins before the holder chooses a category.
+    context.ops.contacts = async () => directory;
     expect((await run("2", selection.continuationId)).kind).toBe("vault");
     expect(query).toHaveBeenLastCalledWith({ to: ana, categoryId: id2 });
     expect(ask).not.toHaveBeenCalled();
@@ -211,18 +214,20 @@ describe("turnos del titular", () => {
     const store: TurnStore = { run: async (_owner, _token, turn) => turn({ id, continuationId: id, previous: state, replay,
       save: async next => { state = structuredClone(next); } }) };
     const interpret = vi.fn<InterpretMessage>().mockResolvedValue({
-      action: "vault", selector: { scope: "friend", count: "one", person: ana }, categoryName: "Recetas",
+      action: "vault", selector: { scope: "friend", count: "one", person: "Ana" }, categoryName: "Recetas",
     });
     const { context } = harness();
     const categoryId = randomUUID();
     context.ops.queryVault = vi.fn(async q => ({ categories: [{ id: categoryId, name: "Recetas", visibility: "private" as const, canRead: true,
       ...(q.categoryId ? { entries: [{ label: "sal", value: 3 }] } : {}) }] }));
     const flow = createMessageFlow({ interpret, store });
-    const input = { text: "Lee Recetas de la bóveda de mi amiga " + ana };
+    context.ops.contacts = async () => ({ ...directory, contacts: [directory.contacts[0]!] });
+    const input = { text: "Lee Recetas de la bóveda de mi amiga Ana" };
     expect(await flow.handleMessage(context, input)).toMatchObject({ kind: "vault", data: { categories: [{ entries: [{ value: 3 }] }] } });
+    expect(context.ops.queryVault).toHaveBeenLastCalledWith({ to: ana, categoryId });
     expect(JSON.stringify(state)).not.toContain("sal");
     replay = true;
-    context.ops.contacts = async () => ({ contacts: [], circles: [] });
+    context.ops.contacts = async () => ({ ...directory, contacts: [directory.contacts[1]!] });
     expect(await flow.handleMessage(context, input)).toEqual({ kind: "vault", data: { categories: [] } });
     expect(interpret).toHaveBeenCalledTimes(1);
     expect(context.ops.queryVault).toHaveBeenCalledTimes(2);
@@ -264,6 +269,23 @@ describe("turnos del titular", () => {
       .mockResolvedValueOnce({ action: "vault", selector: { scope: "contacts", count: "many" }, categoryName: "Finanzas" });
     expect(await run("¿Alguien tiene sangre O negativo?")).toMatchObject({
       kind: "clarification", question: expect.stringContaining("«sangre»"), choices: [{ value: "Salud" }],
+    });
+  });
+
+  it("agrupa las categorías en orden y conserva al contacto cuya lectura devuelve vacío", async () => {
+    const { run, context } = harness(async () => ({
+      action: "vault", selector: { scope: "contacts", count: "many" }, categoryName: "Salud",
+    }));
+    const category = () => ({ id: randomUUID(), name: "Salud", visibility: "private" as const, canRead: true });
+    const first = category(), duplicate = category(), other = category();
+    context.ops.queryVault = async ({ to, categoryId }) => {
+      const catalog = to === ana ? [first, duplicate] : [other];
+      if (!categoryId) return { categories: catalog };
+      return { categories: catalog.filter(c => c.id === categoryId && to === ana) };
+    };
+    expect(await run("Lee Salud de mis contactos")).toEqual({
+      kind: "vaults", categoryName: "Salud", missing: [],
+      items: [{ to: ana, data: { categories: [first, duplicate] } }, { to: second, data: { categories: [] } }],
     });
   });
 

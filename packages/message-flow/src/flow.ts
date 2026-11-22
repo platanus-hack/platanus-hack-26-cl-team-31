@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import { AskInput, categories, ProfileSearch, ToolArgs, type RequesterView } from "@team-31/protocol";
+import { AskInput, categories, ProfileSearch, ToolArgs, type RequesterView, type VaultResult } from "@team-31/protocol";
 import { silentTelemetry, type Telemetry } from "@team-31/telemetry";
 import { continueIntent, grounded } from "./intent.js";
 import { matchesPerson, normalized, resolveRecipients, type Prompt } from "./recipients.js";
@@ -61,7 +61,12 @@ class Turn {
   }
   private async clarify(prompt: Prompt): Promise<Step> {
     const choices = prompt.choices?.length ? prompt.choices : undefined;
-    await this.session.save({ phase: "clarify", at: this.at, relativeDays: this.relativeDays, intent: this.intent, field: prompt.field,
+    let intent = this.intent;
+    const to = this.targets[0];
+    if (to && (intent.action === "ask" || intent.action === "vault") && intent.selector.count === "one") {
+      intent = { ...intent, selector: { ...intent.selector, person: to } };
+    }
+    await this.session.save({ phase: "clarify", at: this.at, relativeDays: this.relativeDays, intent, field: prompt.field,
       choices, circleId: this.circleId, invitationTag: this.invitationTag, refs: this.refs, timezone: this.timezone });
     return this.finish({ kind: "clarification", question: prompt.question, choices, continuationId: this.session.continuationId });
   }
@@ -120,7 +125,7 @@ class Turn {
       const current = await resolveRecipients(plan.selector, () => ops.contacts(), plan.circleId, true);
       if (current.kind !== "resolved") return this.finish({ kind: "vault", data: { categories: [] } });
     }
-    return this.finish({ kind: "vault", data: await ops.queryVault!({ to: plan.selector.person!, categoryId: plan.categoryId }) });
+    return this.finish({ kind: "vault", data: await ops.queryVault!({ to: plan.selector.person, categoryId: plan.categoryId }) });
   }
 
   // A replay reads again only from contacts still in the original set.
@@ -133,9 +138,13 @@ class Turn {
       reads = reads.filter(({ to }) => members.has(to));
     }
     const results = await Promise.all(reads.map(async ({ to, categoryId }) => ({ to, data: await ops.queryVault!({ to, categoryId }) })));
-    const items = [...new Set(results.map(({ to }) => to))].map(to => ({
-      to, data: { categories: results.filter(result => result.to === to).flatMap(({ data }) => data.categories) },
-    }));
+    const byRecipient = new Map<string, VaultResult>();
+    for (const { to, data } of results) {
+      const group = byRecipient.get(to);
+      if (group) group.categories.push(...data.categories);
+      else byRecipient.set(to, { categories: [...data.categories] });
+    }
+    const items = Array.from(byRecipient, ([to, data]) => ({ to, data }));
     return this.finish({ kind: "vaults", categoryName: plan.categoryName, items, missing: plan.missing });
   }
 
@@ -160,9 +169,13 @@ class Turn {
       return this.clarify({ field: "categoryId", choices: [...names.values()].map(label => ({ label, value: label })),
         question: name ? `Nadie te comparte una categoría «${name}». ¿Cuál quieres leer?` : "¿Qué categoría compartida quieres leer?" });
     }
-    const reads = catalogs.flatMap(({ to, categories }) => categories
-      .filter(category => normalized(category.name) === normalized(name)).map(category => ({ to, categoryId: category.id })));
-    const missing = this.targets.filter(to => !reads.some(read => read.to === to));
+    const categoryName = normalized(name);
+    const missing: string[] = [];
+    const reads = catalogs.flatMap(({ to, categories }) => {
+      const matches = categories.filter(category => normalized(category.name) === categoryName);
+      if (!matches.length) missing.push(to);
+      return matches.map(category => ({ to, categoryId: category.id }));
+    });
     return this.readPlan({ action: "vaults", selector: intent.selector, circleId: this.circleId, categoryName: name, reads, missing });
   }
 
@@ -216,7 +229,6 @@ class Turn {
     this.targets = result.targets;
     this.relation = result.relation;
     if (this.relation?.kind === "circle") this.circleId = this.relation.circleId;
-    if (intent.selector.count === "one") intent.selector.person = this.targets[0];
     return "prepare";
   }
 
@@ -226,7 +238,7 @@ class Turn {
       if (intent.selector.count === "many") return this.prepareVaults(intent);
       const to = this.targets[0]!;
       const query = this.context.ops.queryVault!;
-      const plan: ReadPlan = { action: "vault", selector: intent.selector, circleId: this.circleId };
+      const plan: ReadPlan = { action: "vault", selector: { ...intent.selector, person: to }, circleId: this.circleId };
       if (!this.categoryId && !intent.categoryName) return this.readPlan(plan);
       // The catalog lists every category of the contact. Only the readable ones can be opened.
       const readable = (await query({ to })).categories.filter(c => c.canRead);
