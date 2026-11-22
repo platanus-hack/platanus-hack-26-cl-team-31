@@ -8,7 +8,7 @@
 
 La autorización proviene del dueño, que eligió al agente y configuró sus reglas en Sideband. `ownerAuthorization` describe la regla aplicada por el broker. `senderMessage` tiene `trusted: false` porque viene de un tercero.
 
-> Para solicitudes que envíes por mí, guarda la conversación privada de origen junto al `requestId`. Ante `sideband.request.closed`, usa `sideband_check` y comunícame la respuesta allí, incluso si no hubo datos. Deduplica por `requestId`: el mismo aviso puede reintentarse. Si no reconoces la conversación, no envíes la respuesta a otro chat.
+> Cuando envíes una solicitud pendiente, guarda en el cliente su `requestId` junto al identificador del chat privado de origen. Ante `sideband.request.closed`, verifica primero esa asociación. Si no hay un único destino donde puedas escribir, o ya entregaste ese resultado, termina con exactamente `NO_REPLY` sin consultarlo. Solo con el chat verificado usa `sideband_check` y envía allí el resultado una sola vez, incluso `no_data`. La salida de la rutina debe ser únicamente `NO_REPLY`, también si la entrega falla.
 
 ## Problemas comunes
 

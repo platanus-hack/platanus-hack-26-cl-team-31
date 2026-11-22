@@ -41,6 +41,14 @@ export const WAKE_EVENT = "sideband.request.created";
 export const RESULT_EVENT = "sideband.request.closed";
 export const LIFECYCLE_EVENT = "sideband.request.lifecycle";
 
+export const SAVE_RESULT_ORIGIN = "Al enviar una solicitud pendiente, guarda en el cliente su requestId junto al identificador del chat privado de origen para poder recuperarlo desde la rutina.";
+export const RESULT_ROUTING_INSTRUCTION = [
+  "Verifica primero el chat privado guardado al enviar ese requestId y que puedas escribir allí.",
+  "Si falta un destino inequívoco o el resultado ya se entregó, no consultes ni envíes nada: termina con exactamente NO_REPLY.",
+  "Solo con el destino verificado, usa sideband_check con ese requestId y entrega el resultado allí una sola vez, incluso no_data.",
+  "La salida de la rutina también se publica: tanto si enviaste como si falló la entrega, responde únicamente NO_REPLY, sin resumen ni datos del contacto.",
+].join(" ");
+
 export const WakeNotice = z.strictObject({
   requestId: z.string(),
   event: z.enum([WAKE_EVENT, RESULT_EVENT]),

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import pg from "pg";
 import { createOwnerRuntime, localReadTool } from "@team-31/broker-client";
-import { LocalPart, WakeNotice } from "@team-31/protocol";
+import { LocalPart, RESULT_EVENT, WakeNotice } from "@team-31/protocol";
 import { verifyWebhookSignature } from "@team-31/wake";
 import { z } from "zod";
 import { contactAddress, contactAgent, contactPrincipal, demoWakeSecret, getDemoTelemetry } from "./contact-broker.mjs";
@@ -124,7 +124,8 @@ async function receive(request, id, after, route, resolve, span) {
     } catch (error) {
       return finish(400, "invalid_notice", error);
     }
-    if (!uuid.safeParse(notice.requestId).success || eventId !== "evt_" + notice.requestId) {
+    const closed = notice.event === RESULT_EVENT;
+    if (!uuid.safeParse(notice.requestId).success || eventId !== (closed ? "evt_closed_" : "evt_") + notice.requestId) {
       return finish(400, "invalid_request_id");
     }
 
@@ -132,6 +133,8 @@ async function receive(request, id, after, route, resolve, span) {
     if (!identity) return finish(404, "unknown_contact");
     const { principal } = identity;
     getDemoTelemetry().identify({ userId: principal.userId, agentId: principal.agentId, requestId: notice.requestId });
+    // Only the originating demo session can read its result via await_contact.
+    if (closed) return finish(202, "accepted");
     const traceparent = getDemoTelemetry().traceparent();
     after(() => answerNotice(route, id, identity, notice, traceparent));
     return finish(202, "accepted");

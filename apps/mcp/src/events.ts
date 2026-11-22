@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { BrokerError, type AgentPort } from "@team-31/broker-client";
-import { LIFECYCLE_EVENT, RESULT_EVENT, WAKE_EVENT, WAKE_SUBSCRIPTION_SCOPE, type Principal } from "@team-31/protocol";
+import { LIFECYCLE_EVENT, RESULT_EVENT, RESULT_ROUTING_INSTRUCTION, WAKE_EVENT, WAKE_SUBSCRIPTION_SCOPE, type Principal } from "@team-31/protocol";
 import { z } from "zod";
 import type { ToolTelemetry } from "./tools/result.js";
 
@@ -82,7 +82,7 @@ export function registerEvents(server: McpServer, principal: Principal, agent: A
     z.object({ method: z.literal("events/list"), params: z.unknown().optional() }),
     async () => ({ events: [eventDefinition, {
       ...eventDefinition, name: LIFECYCLE_EVENT,
-      description: "Solicitud recibida: usa sideband_inbox. Solicitud propia cerrada: usa sideband_check y comunica el resultado en la conversación de origen.",
+      description: `Solicitud recibida: usa sideband_inbox. Solicitud propia cerrada: ${RESULT_ROUTING_INSTRUCTION}`,
       payloadSchema: { ...eventDefinition.payloadSchema, required: ["requestId", "event"],
         properties: { ...eventDefinition.payloadSchema.properties, event: { type: "string", enum: [WAKE_EVENT, RESULT_EVENT] } } },
     }] }),
