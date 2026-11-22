@@ -13,11 +13,15 @@ type ReadContext = Pick<InboxItem, "from" | "allowedFields" | "ownerAuthorizatio
   purpose?: string;
 };
 
-export function localReadTool<K extends Exclude<RuntimeTool, "question">>(
+const readTools = ["availability", "interest_check"] as const satisfies readonly RuntimeTool[];
+
+export function localReadTool<K extends (typeof readTools)[number]>(
   name: K,
   read: (args: Args<K>, context: ReadContext) => Promise<Result<K> | null>,
 ) {
-  if (String(name) === "question" || toolExecution[name] !== "owner_runtime") throw new Error("La herramienta requiere un conector autorizado.");
+  if (!readTools.some(tool => tool === name)) {
+    throw new Error("La herramienta no admite un conector de lectura local.");
+  }
   return {
     name,
     async execute(input: unknown, context: ReadContext) {
@@ -54,16 +58,20 @@ export function createOwnerRuntime(
     const item = (await agent.inbox(principal)).find(entry => entry.requestId === requestId);
     if (!item || Date.parse(item.expiresAt) <= Date.now()) return;
     if (toolExecution[item.tool] === "owner_decision") return;
-    const binding = approved.find(tool => tool.name === item.tool &&
-      (tool.name !== "question" || tool.category === item.ownerAuthorization.category));
     const reply = { requestId, nonce: item.nonce };
-    // A grant must cover the required result before the connector may read private data.
-    const hasRequiredFields = Object.entries(ToolResultSchemas[item.tool].shape)
-      .every(([field, schema]) => schema.safeParse(undefined).success || item.allowedFields.includes(field));
     if (isSystemSender(item.from)) {
       await agent.reply(principal, { ...reply, outcome: "no_data" });
       return;
     }
+    if (item.tool === "connect") {
+      await agent.reply(principal, { ...reply, outcome: "needs_owner" });
+      return;
+    }
+    const binding = approved.find(tool => tool.name === item.tool &&
+      (tool.name !== "question" || tool.category === item.ownerAuthorization.category));
+    // A grant must cover the required result before the connector may read private data.
+    const hasRequiredFields = Object.entries(ToolResultSchemas[item.tool].shape)
+      .every(([field, schema]) => schema.safeParse(undefined).success || item.allowedFields.includes(field));
     if (!binding || !hasRequiredFields) {
       await agent.reply(principal, { ...reply, outcome: "declined" });
       return;

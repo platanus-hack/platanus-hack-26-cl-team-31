@@ -954,6 +954,19 @@ describe("ejecución en el runtime del titular", () => {
       .toMatchObject({ tools: [{ tool: "connect", allowedFields: ["accepted"] }] });
   });
 
+  it("el runtime deriva las invitaciones al titular antes de compartir categorías", async () => {
+    const read = vi.fn(async () => ({ accepted: true }));
+    // @ts-expect-error A connection invitation cannot be registered as a local read.
+    expect(() => localReadTool("connect", read)).toThrow("lectura local");
+    const request = await broker.agent.ask(carla, { to: availability.to, tool: "connect", args: {} });
+    const onWake = createOwnerRuntime(broker.agent, bruno, []);
+    await onWake(notice(request.requestId));
+    expect(await broker.agent.status(carla, request.requestId)).toMatchObject({ final: false, waitingFor: "owner" });
+    expect((await broker.owner.contacts(bruno)).contacts).toEqual([]);
+    await broker.owner.answerInvitation(bruno, request.requestId, { accept: true, share: [] });
+    expect((await broker.owner.contacts(bruno)).contacts).toMatchObject([{ address: "carla@sideband.app", gives: [] }]);
+  });
+
   it("un aviso tardío tras una revocación no ejecuta el conector", async () => {
     const request = await askAvailability();
     await revoke();
