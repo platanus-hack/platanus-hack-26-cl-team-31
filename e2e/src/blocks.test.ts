@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, test } from "vitest";
-import { enabled, grantTo, seedAgents } from "./fixtures.js";
+import { checkDenialAccounts, enabled, grantTo, seedAgents } from "./fixtures.js";
 
 describe.skipIf(!enabled)("Denegaciones y solicitudes a uno mismo", () => {
   test("sin un grant para esa tool, la solicitud se deniega sin avisar al destinatario", async () => {
@@ -8,6 +8,7 @@ describe.skipIf(!enabled)("Denegaciones y solicitudes a uno mismo", () => {
     if (!sender || !recipient) throw new Error("Faltan agentes de prueba.");
 
     await grantTo(ownerPort, recipient.owner, [sender.address], "availability");
+    if (process.env.E2E_AUTH_MODE === "oauth") await checkDenialAccounts(ownerPort, sender, recipient);
     const question = { tool: "question", args: { text: "¿Puedes compartir el dato de prueba?", category: "general" } } as const;
 
     const domain = recipient.address.split("@")[1];

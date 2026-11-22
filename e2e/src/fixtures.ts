@@ -104,6 +104,23 @@ export async function seedAgents(group: Group, count: number) {
   };
 }
 
+type DenialAccount = { owner: Owner; address: Address; agent: Awaited<ReturnType<typeof connectAgent>> };
+
+export async function checkDenialAccounts(ownerPort: OwnerPort, sender: DenialAccount, recipient: DenialAccount) {
+  const { categories } = await ownerPort.queryVault(sender.owner, { to: recipient.address });
+  if (categories.some(category => category.id === "general" && category.canRead)) {
+    throw new Error(`Precondición de blocks: ${sender.address} puede leer general de ${recipient.address}. Restablece o reemplaza la cuenta destinataria.`);
+  }
+  for (const { agent, address } of [sender, recipient]) {
+    if ((await agent.inbox()).length > 0) {
+      throw new Error(`Precondición de blocks: la bandeja de ${address} tiene solicitudes previas. Restablece o reemplaza esa cuenta.`);
+    }
+  }
+  if ((await ownerPort.pending(recipient.owner)).length > 0) {
+    throw new Error(`Precondición de blocks: ${recipient.address} tiene decisiones pendientes. Restablece o reemplaza esa cuenta.`);
+  }
+}
+
 export async function grantTo(ownerPort: OwnerPort, owner: Owner, senders: Address[], category: Category) {
   for (const grantee of senders) await ownerPort.setGrant(owner, { grantee, category });
 }

@@ -7,6 +7,7 @@ import { serve, type ServerType } from "@hono/node-server";
 import { createBroker, createMemoryStore } from "@team-31/broker";
 import { applyPostgresMigrations, createPostgresStore } from "@team-31/broker/postgres";
 import { connectAgent } from "./agents.js";
+import { checkDenialAccounts } from "./fixtures.js";
 import { createAgentClient } from "@team-31/broker-client";
 import { createMessageRuntime } from "@team-31/message-flow/runtime";
 import { RequesterView } from "@team-31/protocol";
@@ -123,6 +124,22 @@ describe("traza de punta a punta MCP → broker", () => {
     const requestId = await askThroughMcp(sink);
     expectOneTrace(sink.records, requestId);
     expect(JSON.stringify(sink.records)).not.toContain(secretText);
+  });
+
+  it("detecta cuentas reutilizadas incompatibles con la prueba de denegación", async () => {
+    const stack = await startStack(memorySink());
+    const sender = { owner: { userId: "ana" }, address: "ana@sideband.app", agent: await stack.connect("ana") };
+    const recipient = { owner: { userId: "bob" }, address: question.to, agent: await stack.connect("bob") };
+    await stack.revoke();
+    await stack.owner.changeVault(recipient.owner, { action: "set_visibility", categoryId: "general", visibility: "public" });
+    const check = () => checkDenialAccounts(stack.owner, sender, recipient);
+    await expect(check()).rejects.toThrow("ana@sideband.app puede leer general de bob@sideband.app");
+
+    await stack.owner.changeVault(recipient.owner, { action: "set_visibility", categoryId: "general", visibility: "private" });
+    await check();
+    await stack.owner.setGrant(recipient.owner, { grantee: sender.address, category: "interests" });
+    await sender.agent.ask({ to: recipient.address, tool: "interest_check", args: { interest: "cerámica" } });
+    await expect(check()).rejects.toThrow("la bandeja de bob@sideband.app tiene solicitudes previas");
   });
 
   it("acepta por MCP el acceso a la bóveda y vincula el cambio de permiso a la solicitud", async () => {
