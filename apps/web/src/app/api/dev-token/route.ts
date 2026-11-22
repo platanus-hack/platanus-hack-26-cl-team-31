@@ -13,15 +13,17 @@ import { getTelemetry, observeRoute } from "../../../lib/telemetry";
 const ROUTE = "/api/dev-token";
 const noStore = { "Cache-Control": "no-store" } as const;
 
-export async function GET(): Promise<Response> {
-  if (!getDevAuth()) return Response.json({ error: { code: "not_found" } }, { status: 404, headers: noStore });
-  return Response.json({ enabled: true }, { headers: noStore });
+export async function GET(request: Request): Promise<Response> {
+  return observeRoute(request, ROUTE, async () => {
+    if (!getDevAuth()) return Response.json({ error: { code: "not_found" } }, { status: 404, headers: noStore });
+    return Response.json({ enabled: true }, { headers: noStore });
+  });
 }
 
 export async function POST(request: Request): Promise<Response> {
-  if (!getDevAuth()) return Response.json({ error: { code: "not_found" } }, { status: 404, headers: noStore });
-
   return observeRoute(request, ROUTE, async () => {
+    if (!getDevAuth()) return Response.json({ error: { code: "not_found" } }, { status: 404, headers: noStore });
+
     const origin = request.headers.get("Origin");
     if (origin && origin !== new URL(getAuthBaseUrl()).origin) {
       return Response.json({ error: { code: "forbidden" } }, { status: 403, headers: noStore });

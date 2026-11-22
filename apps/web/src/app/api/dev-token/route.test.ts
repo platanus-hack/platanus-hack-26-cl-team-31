@@ -37,10 +37,14 @@ it("no existe sin la bandera", async () => {
   expect(mintDevToken).not.toHaveBeenCalled();
 });
 
-it("se niega en producción nombrando la variable", async () => {
+it("rechaza la configuración de desarrollo en producción con un error rastreable", async () => {
   vi.stubEnv("SIDEBAND_DEV_AUTH", "1");
   vi.stubEnv("NODE_ENV", "production");
-  await expect(POST(request({ name: "Ana" }))).rejects.toThrow(/SIDEBAND_DEV_AUTH/);
+  const response = await POST(request({ name: "Ana" }));
+  expect(response.status).toBe(500);
+  const errorId = response.headers.get("X-Error-Id");
+  expect(errorId).toBeTruthy();
+  expect(await response.json()).toEqual({ error: { code: "internal", errorId } });
   expect(mintDevToken).not.toHaveBeenCalled();
 });
 
