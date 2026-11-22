@@ -2,7 +2,7 @@ import { join } from "node:path";
 import pg from "pg";
 import { createOwnerRuntime, localReadTool } from "@team-31/broker-client";
 import { LocalPart, RESULT_EVENT, WakeNotice } from "@team-31/protocol";
-import { verifyWebhookSignature } from "@team-31/wake";
+import { readWebhookBody, verifyWebhookSignature } from "@team-31/wake";
 import { z } from "zod";
 import { contactAddress, contactAgent, contactPrincipal, demoWakeSecret, getDemoTelemetry } from "./contact-broker.mjs";
 import { askContactOwner } from "./contact-runtime.mjs";
@@ -13,14 +13,8 @@ const active = new Set();
 
 async function readBody(request) {
   if (Number(request.headers.get("content-length")) > maxBytes) return null;
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of request.body ?? []) {
-    size += chunk.byteLength;
-    if (size > maxBytes) return null;
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString("utf8");
+  const bytes = await readWebhookBody(request, maxBytes);
+  return bytes === null ? null : bytes.toString("utf8");
 }
 
 async function hasContactProfile(id) {
