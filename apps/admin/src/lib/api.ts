@@ -9,6 +9,7 @@ import {
   TelemetryEvent,
   type AdminRouteName,
 } from "@shared/contract"
+import { isFlowRow } from "@team-31/agent-flow/telemetry"
 import { z } from "zod"
 
 type Routes = typeof adminRoutes
@@ -292,6 +293,18 @@ const parseStreamEvent = <T>(schema: z.ZodType<T>, message: Event): T | undefine
   }
 }
 
+function listenFor<T>(
+  source: EventSource,
+  name: string,
+  schema: z.ZodType<T>,
+  receive: (event: T) => void
+) {
+  source.addEventListener(name, (message) => {
+    const event = parseStreamEvent(schema, message)
+    if (event !== undefined) receive(event)
+  })
+}
+
 // Se suscribe a /api/admin/live. Devuelve la función para cerrar la conexión.
 export function subscribeLive(
   filters: LiveFilters,
@@ -319,10 +332,7 @@ export function subscribeLive(
     handlers.onStatus(
       source.readyState === EventSource.CLOSED ? "error" : "connecting"
     )
-  source.addEventListener("telemetry", (message) => {
-    const row = parseStreamEvent(TelemetryEvent, message)
-    if (row) handlers.onEvent(row)
-  })
+  listenFor(source, "telemetry", TelemetryEvent, (row) => handlers.onEvent(row))
   return () => source.close()
 }
 
@@ -346,25 +356,14 @@ export function subscribeFlow(
   handlers: FlowStreamHandlers
 ): () => void {
   if (isMock) {
-    let stop: (() => void) | undefined
-    let closed = false
-    void Promise.all([
-      import("@/mocks/live"),
-      import("@team-31/agent-flow"),
-    ]).then(([{ startMockLive }, { isFlowRow }]) => {
-      if (closed) return
-      stop = startMockLive(
-        {},
-        {
-          onStatus: (status) => status === "open" && handlers.onOpen(),
-          onEvent: (row) => isFlowRow(row) && handlers.onRow(row),
-        }
-      )
+    return subscribeLive({}, {
+      onStatus(status) {
+        if (status === "open") handlers.onOpen()
+      },
+      onEvent(row) {
+        if (isFlowRow(row)) handlers.onRow(row)
+      },
     })
-    return () => {
-      closed = true
-      stop?.()
-    }
   }
 
   const url =
@@ -375,17 +374,8 @@ export function subscribeFlow(
     source.readyState === EventSource.CLOSED
       ? handlers.onClosed()
       : handlers.onRetrying()
-  source.addEventListener("telemetry", (message) => {
-    const row = parseStreamEvent(TelemetryEvent, message)
-    if (row) handlers.onRow(row)
-  })
-  source.addEventListener("request", (message) => {
-    const ref = parseStreamEvent(FlowRequestRef, message)
-    if (ref) handlers.onRequest(ref)
-  })
-  source.addEventListener("reset", (message) => {
-    const reset = parseStreamEvent(FlowReset, message)
-    if (reset) handlers.onReset(reset.cursor)
-  })
+  listenFor(source, "telemetry", TelemetryEvent, (row) => handlers.onRow(row))
+  listenFor(source, "request", FlowRequestRef, (ref) => handlers.onRequest(ref))
+  listenFor(source, "reset", FlowReset, (reset) => handlers.onReset(reset.cursor))
   return () => source.close()
 }
