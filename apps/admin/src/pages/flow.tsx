@@ -6,40 +6,45 @@ import {
   pointOnCurve,
   PULSE_MS,
   resolveId,
-  SidebandMark,
   useFlowPlayback,
   useFlowViewport,
   type FlowActor,
 } from "@team-31/agent-flow"
 import { scenarioEvents } from "@team-31/agent-flow/scenario"
 import {
-  Activity,
   AudioLines,
   Bot,
   ChevronDown,
-  CircleDot,
   Maximize2,
   Minimize2,
   Pause,
   Play,
-  Radio,
-  ShieldCheck,
   UserRound,
   UsersRound,
   Waypoints,
 } from "lucide-react"
+import { BrandMark } from "@/components/brand"
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+} from "@/components/ui/item"
 import { Button } from "@/components/ui/button"
-import { ErrorState } from "@/components/page"
+import { ToneBadge } from "@/components/status"
+import { ErrorState, PageHeader } from "@/components/page"
 import { useFlowLive } from "@/lib/flow-live"
 import {
   agentBrand,
+  brokerPulse,
+  brokerSize,
   describeSignal,
   personName,
   placeStation,
   signalTone,
 } from "@/features/flow/presentation"
 
-const replay = scenarioEvents()
+const replay = import.meta.env.DEV ? scenarioEvents() : []
 const noop = () => {}
 const list = (value: string | null) =>
   value
@@ -76,7 +81,7 @@ function Identity({ actor }: { actor: FlowActor }) {
 
 export function FlowPage() {
   const [params, setParams] = useSearchParams()
-  const demo = params.get("modo") === "demo"
+  const demo = import.meta.env.DEV && params.get("modo") === "demo"
   const { events, status, error, truncated, reconnect } = useFlowLive(!demo)
   const viewport = useFlowViewport(false)
   const {
@@ -91,30 +96,18 @@ export function FlowPage() {
     cssFull,
     toggleFullscreen,
   } = viewport
-  const { flow, clock, paused, setPaused, reset } = useFlowPlayback({
+  const { flow, clock, paused, setPaused } = useFlowPlayback({
     flowEvents: demo ? replay : events,
     mode: demo ? "replay" : "live",
     loop: demo,
     autoPlay: true,
     initialSpeed: 1,
+    minGap: PULSE_MS,
     controls: false,
     reducedMotion: false,
     visibleRef,
     selectEvent: noop,
   })
-  const switchMode = () => {
-    reset()
-    setPaused(false)
-    if (demo) reconnect()
-    setParams(
-      (p) => {
-        if (demo) p.delete("modo")
-        else p.set("modo", "demo")
-        return p
-      },
-      { replace: true }
-    )
-  }
   const togglePause = useCallback(() => setPaused((p) => !p), [setPaused])
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
@@ -227,7 +220,7 @@ export function FlowPage() {
   const sourceName = participant(track?.requester)
   const targetName = participant(track?.recipient)
   const fresh = latest && clock - latest.t < 1700
-  const hubTone = fresh ? signalTone(latest.event) : undefined
+  const pulse = brokerPulse(network.log, clock)
   const pulses = network.log.filter(
     (entry) => clock - entry.t < PULSE_MS && entry.t <= clock
   )
@@ -241,27 +234,12 @@ export function FlowPage() {
   return (
     <div
       ref={rootRef}
-      className={`signal-page dark${cssFull ? "signal-expanded" : ""}`}
+      className={`signal-page${cssFull ? "signal-expanded" : ""}`}
     >
       <div className="signal-frame" ref={frameRef}>
-        <header className="signal-heading">
-          <div>
-            <span className="signal-kicker">
-              <Waypoints size={15} /> Protocolo Sideband
-            </span>
-            <h1>
-              Flujo de mensajes<span>.</span>
-            </h1>
-          </div>
-          <div className="signal-controls">
-            <Button variant="outline" onClick={switchMode}>
-              {demo ? (
-                <Radio data-icon="inline-start" />
-              ) : (
-                <Play data-icon="inline-start" />
-              )}
-              {demo ? "Volver al vivo" : "Ver demo"}
-            </Button>
+        <PageHeader
+          title="Flujo de mensajes"
+          actions={
             <Button
               variant="outline"
               size="icon"
@@ -273,20 +251,26 @@ export function FlowPage() {
             >
               {full ? <Minimize2 /> : <Maximize2 />}
             </Button>
-          </div>
-        </header>
+          }
+        />
         {!demo && error && status !== "live" ? (
           <ErrorState error={error} onRetry={reconnect} />
         ) : null}
         <section className="signal-console" aria-label="Mapa de conversaciones">
           <div className="signal-top">
-            <div
-              className="signal-source"
-              data-connected={demo || status === "live"}
+            <ToneBadge
+              tone={
+                demo
+                  ? "neutral"
+                  : status === "live"
+                    ? "ok"
+                    : status === "offline"
+                      ? "error"
+                      : "warn"
+              }
             >
-              <i />
               {source}
-            </div>
+            </ToneBadge>
             <details
               className="signal-filter"
               onToggle={(e) => setFilterOpen(e.currentTarget.open)}
@@ -336,19 +320,6 @@ export function FlowPage() {
                 className="signal-routes"
                 aria-hidden="true"
               >
-                <g
-                  className="signal-orbits"
-                  transform={`translate(${size.width / 2} ${height / 2})`}
-                >
-                  {[65, 96, 135, 186, 250].map((r) => (
-                    <circle key={r} r={r} />
-                  ))}
-                  <circle
-                    className="signal-ticks"
-                    r="78"
-                    strokeDasharray="1 7"
-                  />
-                </g>
                 {stations.map(({ actor, curve, d }) => {
                   const traffic = pulses.filter(
                     ({ event }) =>
@@ -361,7 +332,11 @@ export function FlowPage() {
                     ? signalTone(traffic.at(-1)!.event)
                     : undefined
                   return (
-                    <g key={actor.id} data-tone={tone}>
+                    <g
+                      key={actor.id}
+                      data-tone={tone}
+                      data-access={traffic.at(-1)?.access}
+                    >
                       <path className="signal-wire" d={d} />
                       <circle
                         className="signal-port"
@@ -369,7 +344,7 @@ export function FlowPage() {
                         cy={curve.start.y}
                         r="3.5"
                       />
-                      {traffic.map(({ event, t }) => {
+                      {traffic.map(({ event, t, access }) => {
                         const progress = Math.min(1, (clock - t) / PULSE_MS)
                         const p = pointOnCurve(
                           curve,
@@ -378,6 +353,7 @@ export function FlowPage() {
                         return (
                           <g
                             className="signal-packet"
+                            data-access={access ?? "neutral"}
                             data-tone={signalTone(event)}
                             key={event.id}
                             transform={`translate(${p.x} ${p.y})`}
@@ -392,21 +368,46 @@ export function FlowPage() {
                   )
                 })}
               </svg>
-              <div className="signal-hub" aria-label="Sideband">
-                <div className="signal-core" data-tone={hubTone}>
-                  <SidebandMark size={35} />
-                  <b>Sideband</b>
-                </div>
-              </div>
+              <Item
+                variant="outline"
+                size="xs"
+                className="signal-hub"
+                style={brokerSize}
+                data-decision={pulse?.decision}
+              >
+                {pulse && (
+                  <span
+                    aria-hidden="true"
+                    className="signal-decision-ring"
+                    style={{
+                      opacity: 0.8 * (1 - pulse.progress),
+                      transform: `scale(${1 + 0.16 * pulse.progress}, ${1 + 0.42 * pulse.progress})`,
+                    }}
+                  />
+                )}
+                <BrandMark className="size-8" />
+                <ItemContent>
+                  <ItemTitle>Sideband</ItemTitle>
+                  <ItemDescription className="whitespace-nowrap">
+                    {pulse
+                      ? pulse.decision === "allowed"
+                        ? "Acceso permitido"
+                        : "Acceso denegado"
+                      : "Permisos y entrega"}
+                  </ItemDescription>
+                </ItemContent>
+              </Item>
               {stations.map(({ actor, x, y, cardWidth, cardHeight }) => (
-                <div
+                <Item
+                  variant="outline"
+                  size="sm"
                   className="signal-station"
                   data-tone={
                     fresh &&
                     [latest.event.from, latest.event.to].some(
                       (e) => e !== BROKER && resolveId(flow, e.id) === actor.id
                     )
-                      ? hubTone
+                      ? signalTone(latest.event)
                       : undefined
                   }
                   key={actor.id}
@@ -419,7 +420,7 @@ export function FlowPage() {
                   title={`${personName(actor.owner)} · ${agentBrand(actor).name}`}
                 >
                   <Identity actor={actor} />
-                </div>
+                </Item>
               ))}
             </div>
           </div>
@@ -463,17 +464,17 @@ export function FlowPage() {
           </footer>
         </section>
         <div className="signal-legend" aria-label="Leyenda">
-          <span data-tone="question">
-            <CircleDot />
-            Pregunta
+          <span>
+            <i aria-hidden="true" />
+            En consulta
           </span>
-          <span data-tone="answer">
-            <Activity />
-            Respuesta
+          <span data-access="allowed">
+            <i aria-hidden="true" />
+            Permitido
           </span>
-          <span data-tone="decision">
-            <ShieldCheck />
-            Decisión de acceso
+          <span data-access="denied">
+            <i aria-hidden="true" />
+            Denegado
           </span>
           {network.total > capacity || (!demo && truncated) ? (
             <small>En pantalla · {stations.length} participantes</small>

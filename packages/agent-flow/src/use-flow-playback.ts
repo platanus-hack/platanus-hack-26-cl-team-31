@@ -12,6 +12,7 @@ type PlaybackOptions = {
   loop: boolean;
   autoPlay: boolean;
   initialSpeed: number;
+  minGap?: number;
   controls: boolean;
   reducedMotion: boolean;
   visibleRef: RefObject<boolean>;
@@ -19,7 +20,7 @@ type PlaybackOptions = {
 };
 
 export function useFlowPlayback({
-  flowEvents, mode, loop, autoPlay, initialSpeed, controls, reducedMotion, visibleRef, selectEvent,
+  flowEvents, mode, loop, autoPlay, initialSpeed, minGap, controls, reducedMotion, visibleRef, selectEvent,
 }: PlaybackOptions) {
   const [paused, setPaused] = useState(!autoPlay);
   const [speed, setSpeed] = useState<number>(() => Math.min(4, Math.max(0.25, initialSpeed)));
@@ -52,7 +53,7 @@ export function useFlowPlayback({
 
   const scheduleLiveTail = (events: readonly FlowEvent[]) => {
     for (let i = scheduleRef.current.length; i < events.length; i++) {
-      scheduleRef.current.push(scheduleLive(scheduleRef.current[i - 1], clockRef.current, 320, Boolean(events[i]!.meta.snapshot)));
+      scheduleRef.current.push(scheduleLive(scheduleRef.current[i - 1], clockRef.current, minGap, Boolean(events[i]!.meta.snapshot)));
     }
   };
 
@@ -82,7 +83,7 @@ export function useFlowPlayback({
       // Un arreglo nuevo con los mismos pasos (p. ej. scenarioEvents() en cada render) no reinicia.
       const same = previous.length === events.length && previous.every((event, i) => event.id === events[i]!.id);
       if (same && scheduleRef.current.length === events.length) return;
-      scheduleRef.current = scheduleReplay(events);
+      scheduleRef.current = scheduleReplay(events, { minGap });
       reset();
       return;
     }
@@ -114,7 +115,7 @@ export function useFlowPlayback({
       return;
     }
     scheduleLiveTail(events);
-  }, [flowEvents, mode, reset]);
+  }, [flowEvents, mode, minGap, reset]);
 
   // Bucle de animación.
   useEffect(() => {

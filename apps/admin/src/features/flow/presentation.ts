@@ -1,9 +1,11 @@
 import {
   BROKER,
+  PULSE_MS,
   type EdgeCurve,
   type FlowActor,
   type FlowEvent,
   type FlowOwner,
+  type FlowState,
 } from "@team-31/agent-flow"
 
 export function personName(owner: FlowOwner) {
@@ -45,7 +47,7 @@ export function describeSignal(event: FlowEvent) {
   const from = who(event.from),
     to = who(event.to)
   if (event.step === "delivered") {
-    if (event.status === "denied") return `${to} recibe la decisión de acceso`
+    if (event.status === "denied") return `${to} recibe la denegación`
     if (event.status === "expired") return "Terminó el plazo para responder"
     if (event.status === "failed") return "El aviso no llegó a destino"
     if (event.meta.outcome === "no_data")
@@ -59,7 +61,7 @@ export function describeSignal(event: FlowEvent) {
         : `El agente de ${from} envía una pregunta`
     case "policy":
       return event.status === "denied"
-        ? "Sideband protege la información privada"
+        ? "Sideband deniega el acceso"
         : event.status === "allowed"
           ? "Sideband confirma el permiso"
           : "Hace falta el permiso del titular"
@@ -108,6 +110,23 @@ export function signalTone(event: FlowEvent) {
     : "question"
 }
 
+// El pulso sigue el reloj del mapa para que la pausa también detenga la onda.
+export function brokerPulse(log: FlowState["log"], clock: number) {
+  const duration = 1500
+  for (let i = log.length - 1; i >= 0; i--) {
+    const { event, t, decision } = log[i]!
+    if (clock - t >= duration + PULSE_MS) break
+    if (!decision) continue
+    const arrival =
+      event.to === BROKER && event.from !== BROKER ? t + PULSE_MS : t
+    const age = clock - arrival
+    if (age >= 0 && age < duration)
+      return { decision, progress: age / duration }
+  }
+}
+
+export const brokerSize = { width: 192, height: 64 } as const
+
 // Los puntos de salida están en el borde interior de las tarjetas. Todos los puntos
 // de control quedan en el corredor central, incluso cuando cambia el ancho.
 export function placeStation(
@@ -141,8 +160,14 @@ export function placeStation(
     ? { x, y: y + (sign * cardHeight) / 2 }
     : { x: x + (sign * cardWidth) / 2, y }
   const end = mobile
-    ? { x: width / 2 + (fraction - 0.5) * 65, y: height / 2 - sign * 38 }
-    : { x: width / 2 - sign * 43, y: height / 2 + (fraction - 0.5) * 44 }
+    ? {
+        x: width / 2 + (fraction - 0.5) * 65,
+        y: height / 2 - (sign * brokerSize.height) / 2,
+      }
+    : {
+        x: width / 2 - (sign * brokerSize.width) / 2,
+        y: height / 2 + (fraction - 0.5) * 44,
+      }
   const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
   const curve: EdgeCurve = mobile
     ? { start, c1: { x, y: middle.y }, c2: { x: end.x, y: middle.y }, end }

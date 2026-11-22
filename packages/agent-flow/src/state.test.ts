@@ -51,6 +51,34 @@ describe("reduceFlow", () => {
     expect(activities(state).size).toBe(0);
   });
 
+  it("carries each request's access decision forward, including after its policy leaves the log", () => {
+    const run = (steps: Partial<FlowEvent>[]) => steps.reduce((state, fields, i) =>
+      reduceFlow(state, event(String(i), fields), i), emptyFlowState());
+    const state = run([
+      { step: "ask" },
+      { step: "policy", status: "allowed" },
+      { requestId: "r2", step: "ask" },
+      { requestId: "r2", step: "policy", status: "denied" },
+      { requestId: "r2", step: "delivered", status: "denied" },
+      { step: "wake", status: "failed" },
+    ]);
+    expect(state.log.map(e => e.access)).toEqual([undefined, undefined, undefined, undefined, "denied", "allowed"]);
+    expect(state.log.map(e => e.decision)).toEqual([undefined, "allowed", undefined, "denied", undefined, undefined]);
+    const delivered = reduceFlow({ ...state, log: [] }, event("7", { step: "delivered", status: "delivered" }), 7);
+    expect(delivered.log[0]?.access).toBe("allowed");
+    const revoked = reduceFlow(state, event("7", { step: "delivered", status: "denied" }), 7);
+    expect(revoked.log.at(-1)).toMatchObject({ access: "denied", decision: "denied" });
+  });
+
+  it("waits for the owner's decision before coloring subsequent messages", () => {
+    let state = reduceFlow(emptyFlowState(), event("1", { step: "policy", status: "escalated" }), 1);
+    state = reduceFlow(state, event("2", { step: "owner_decided", from: grok, status: "allowed" }), 2);
+    state = reduceFlow(state, event("3", { step: "delivered", status: "delivered" }), 3);
+    expect(state.log.map(e => [e.access, e.decision])).toEqual([
+      [undefined, undefined], [undefined, "allowed"], ["allowed", undefined],
+    ]);
+  });
+
   it("produces the same state for the same events", () => {
     const run = () => scenarioEvents().reduce((state, e, i) => reduceFlow(state, e, i * 100), emptyFlowState());
     const a = run();

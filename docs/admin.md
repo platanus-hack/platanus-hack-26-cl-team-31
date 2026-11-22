@@ -304,7 +304,7 @@ Grafo de la red y de cada solicitud que cruza el broker (`packages/agent-flow`).
 
 **Presencia.** En la red = agente con una conexión no revocada. La foto marca con `hasAgentHistory` a los titulares que alguna vez conectaron un agente, sin el límite de 24 h de la lista de conexiones. Solo un titular con dirección que nunca conectó uno aparece como agente provisional. Un agente entra con `broker.agent.connected`, con su primera aparición en un paso o cuando un refresco confirma que se reactivó; sale con `broker.agent.revoked` o cuando un refresco del directorio lo trae revocado. La inactividad nunca saca a nadie: el mapa prioriza a quienes participan cuando la red supera el espacio visible.
 
-URL: `?titulares=<dirección>,…` y `?ocultos=agent:<id>,…` guardan el filtro. La vista de presentación muestra el titular, el logo y el tipo de agente, los sobres en tránsito y el último movimiento. El nombre del cliente OAuth y el tipo de aviso identifican el agente. El modo `?modo=demo` reproduce el escenario ficticio. Pantalla completa con el botón o la tecla `f`.
+URL: `?titulares=<dirección>,…` y `?ocultos=agent:<id>,…` guardan el filtro. La vista de presentación muestra el titular, el logo y el tipo de agente, los sobres en tránsito y el último movimiento. El nombre del cliente OAuth y el tipo de aviso identifican el agente. Solo en desarrollo, `?modo=demo` reproduce el escenario ficticio. Pantalla completa con el botón o la tecla `f`.
 
 ## 8. Desarrollo local
 
