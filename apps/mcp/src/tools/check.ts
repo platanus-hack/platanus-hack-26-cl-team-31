@@ -12,6 +12,12 @@ export function registerCheck(server: McpServer, principal: Principal, agent: Ag
     inputSchema: { requestId: routes.agentStatus.params.shape.id },
   }, ({ requestId }) => runTool(telemetry, principal, { tool: "sideband_check", scope: agentScopes.status, requestId },
     () => agent.status(principal, requestId)));
+  server.registerTool("sideband_pending", {
+    description: "Lista las solicitudes que esperan una decisión de tu titular, como un pedido de acceso a su bóveda. Cuéntaselas: solo tu titular decide, desde Inicio. Tú no puedes conceder ni rechazar.",
+    annotations: { readOnlyHint: true },
+    outputSchema: routes.agentPending.response,
+  }, () => runTool(telemetry, principal, { tool: "sideband_pending", scope: agentScopes.pending },
+    async () => ({ items: await agent.pending(principal) })));
   server.registerTool("sideband_activity", {
     description: "Lista las solicitudes recientes de tu titular, enviadas y recibidas: con quién, qué tool, estado, resultado final y fechas. No trae el contenido de preguntas ni respuestas; para la respuesta de una enviada usa sideband_check con su requestId.",
     annotations: { readOnlyHint: true },
