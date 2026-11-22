@@ -59,17 +59,26 @@ function groundedRead(intent: Exclude<Intent, TargetIntent>, text: string): Inte
   }
 }
 
+function groundAddress(selector: Selector, text: string) {
+  if (selector.count !== "one") return false;
+  if (!selector.person) {
+    const addresses = literalAddresses(text);
+    if (addresses.length !== 1) return false;
+    selector.person = addresses[0]!;
+  }
+  return Address.safeParse(normalized(selector.person)).success;
+}
+
 function groundSelector(selector: Selector, text: string, statedScope: ReturnType<typeof explicitScope>) {
   if (statedScope && selector.scope !== statedScope) return false;
   if (!statedReference(text, selector.person) || !statedReference(text, selector.circle)) return false;
-  // The holder's words fill what the model left out: the one address they wrote, or contacts for a named person.
-  if (selector.scope === "address" && !selector.person && literalAddresses(text).length === 1) selector.person = literalAddresses(text)[0];
-  if (selector.count === "one" && selector.person && selector.scope === "unspecified") selector.scope = "contacts";
-  if (selector.scope === "address" && !Address.safeParse(normalized(selector.person ?? "")).success) return false;
-  if (selector.count === "many") {
-    if (!collective.test(text) || selector.person) return false;
-    if (!statedScope) selector.scope = "unspecified";
+  if (selector.scope === "address") return groundAddress(selector, text);
+  if (selector.count === "one") {
+    if (selector.person && selector.scope === "unspecified") selector.scope = "contacts";
+    return true;
   }
+  if (!collective.test(text) || selector.person) return false;
+  if (!statedScope) selector.scope = "unspecified";
   return true;
 }
 

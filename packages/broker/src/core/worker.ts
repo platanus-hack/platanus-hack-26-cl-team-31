@@ -1,6 +1,7 @@
 import { WAKE_EVENT, type WakeResult, type WakeTarget } from "@team-31/protocol";
 import type { BrokerDeps, TickReport } from "../ports.js";
 import type { AgentConnectionRow, RequestRow, StoreTx, WakeClaim } from "../store/store.js";
+import { notifiesRecipient } from "./lifecycle.js";
 
 const batchSize = 100;
 // Claim only work that can start immediately, independently of the expiry scan size.
@@ -10,7 +11,7 @@ const wakeLeaseMs = 60_000;
 const resultDetail = /^[a-z_]{1,40}$/;
 
 function actionable(row: RequestRow | null, job: WakeClaim, now: Date): row is RequestRow {
-  return row?.status === "awaiting_agent" && row.version === job.requestVersion && row.expiresAt > now;
+  return row !== null && notifiesRecipient(row) && row.version === job.requestVersion && row.expiresAt > now;
 }
 
 async function recipient(tx: StoreTx, row: RequestRow): Promise<AgentConnectionRow | undefined> {
@@ -103,6 +104,8 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
       await tx.appendEvent({ requestId: row.id, at: completedAt, kind: "wake", code });
       if (result.ok) return "wakesOk";
       if (retryAt) return "wakesRetried";
+      // A failed agent notification cannot close a decision still available to the holder.
+      if (row.status === "awaiting_owner") return "wakesFailed";
       return await closePending(tx, row, "delivery_failed", completedAt) ? "wakesFailed" : undefined;
     });
     if (outcome === "wakesFailed" && exhausted) {

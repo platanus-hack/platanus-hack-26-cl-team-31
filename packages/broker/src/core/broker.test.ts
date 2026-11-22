@@ -68,14 +68,14 @@ function advance(ms: number): void {
   now = new Date(now.getTime() + ms);
 }
 
-it("solo el titular concede lectura individual; rechazar no crea ni modifica categorías", async () => {
+it("el titular puede conceder o rechazar lectura desde Inicio", async () => {
   const input = { to: availability.to, tool: "vault_access", args: { categoryName: "Plan de salud" } } as const;
   expect(await broker.agent.ask(alice, input)).toMatchObject({ decision: "deny" });
   const invite = await broker.agent.ask(alice, { to: availability.to, tool: "connect", args: {} });
   await broker.owner.answerInvitation(bruno, invite.requestId, { accept: true });
   const declined = await broker.agent.ask(alice, input);
   expect(declined).toMatchObject({ waitingFor: "owner" });
-  expect(await broker.agent.inbox(bruno, true)).toEqual([]);
+  expect(await broker.agent.inbox(bruno)).toMatchObject([{ requestId: declined.requestId, allowedFields: ["accepted"] }]);
   const before = await broker.owner.vault(bruno);
   await broker.owner.decide(bruno, declined.requestId, { kind: "deny" });
   expect(await broker.owner.vault(bruno)).toEqual(before);
@@ -97,6 +97,47 @@ it("solo el titular concede lectura individual; rechazar no crea ni modifica cat
   // Any Sideband user sees the name of the category without being able to open it.
   expect((await broker.agent.queryVault(carla, { to: input.to })).categories.map(c => c.name)).toContain(input.args.categoryName);
   await expect(broker.owner.decide(bruno, pending.requestId, grant)).rejects.toMatchObject({ code: "conflict" });
+});
+
+it("avisa al agente y aplica solo la decisión delegada de lectura al contacto solicitante", async () => {
+  await broker.agent.connectWake(bruno, webhook);
+  const invitation = await broker.owner.connect(alice, { to: availability.to });
+  await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
+  const categoryName = "Proyecto";
+  const request = await broker.agent.ask(alice, { to: availability.to, tool: "vault_access", args: { categoryName } });
+  await broker.tick(now);
+  expect(wake.mock.calls.map(([, notice]) => notice)).toEqual([{ requestId: request.requestId, event: WAKE_EVENT }]);
+  const [item] = await broker.agent.inbox(bruno);
+  expect(item).toMatchObject({ requestId: request.requestId, from: "alice@sideband.app", args: { categoryName } });
+  const reply = { requestId: request.requestId, nonce: item!.nonce, outcome: "answered" as const, result: { accepted: true } };
+  const delegated: Principal = { ...bruno, scopes: [...bruno.scopes, "sideband:vault"] };
+  await expect(broker.agent.reply(bruno, { ...reply, outcome: "needs_owner" })).resolves.toMatchObject({ status: "awaiting_owner" });
+  await expect(broker.agent.reply(bruno, reply)).rejects.toMatchObject({ code: "forbidden" });
+  await expect(broker.agent.reply(delegated, { ...reply, nonce: "otro" })).rejects.toMatchObject({ code: "forbidden" });
+  await expect(broker.agent.reply(delegated, { ...reply, result: { accepted: false } })).rejects.toMatchObject({ code: "invalid_input" });
+  expect(await broker.owner.pending(bruno)).toMatchObject([{ requestId: request.requestId }]);
+  await expect(broker.agent.reply(delegated, reply)).resolves.toMatchObject({ status: "answered", deliveredFields: ["accepted"] });
+  await expectFinal(alice, request.requestId, "allow", "answered", { accepted: true });
+  const catalog = await broker.agent.queryVault(alice, { to: availability.to });
+  expect(catalog.categories.find(c => c.name === categoryName)).toMatchObject({ canRead: true });
+  expect(await broker.owner.pending(bruno)).toEqual([]);
+  await expect(broker.owner.decide(bruno, request.requestId, { kind: "deny" })).rejects.toMatchObject({ code: "conflict" });
+});
+
+it("conserva la solicitud de lectura si falla el aviso y admite rechazarla desde el agente", async () => {
+  await broker.agent.connectWake(bruno, webhook);
+  const invitation = await broker.owner.connect(alice, { to: availability.to });
+  await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
+  wake.mockResolvedValue({ ok: false, retryable: false, ms: 1 });
+  const request = await broker.agent.ask(alice, { to: availability.to, tool: "vault_access", args: { categoryName: "Proyecto" } });
+  expect(await broker.tick(now)).toMatchObject({ wakesFailed: 1 });
+  expect(await broker.owner.pending(bruno)).toMatchObject([{ requestId: request.requestId }]);
+  const before = await broker.owner.vault(bruno);
+  const [item] = await broker.agent.inbox(bruno);
+  const delegated: Principal = { ...bruno, scopes: [...bruno.scopes, "sideband:vault"] };
+  await broker.agent.reply(delegated, { requestId: request.requestId, nonce: item!.nonce, outcome: "declined" });
+  expect(await broker.agent.status(alice, request.requestId)).toMatchObject({ final: true, decision: "deny" });
+  expect(await broker.owner.vault(bruno)).toEqual(before);
 });
 
 it("mantiene privada la etiqueta de la invitación y activa su permiso solo al aceptar", async () => {

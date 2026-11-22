@@ -35,6 +35,7 @@ import {
 import { RelativeTime } from "@/components/relative-time"
 import { requestColumns } from "@/features/requests/request-columns"
 import { RevokeAgentDialog } from "@/features/agents/revoke-agent-dialog"
+import { buildPath } from "@/lib/api"
 import { userQuery } from "@/lib/queries"
 import { useSession } from "@/lib/session"
 
@@ -211,7 +212,7 @@ export function UserDetailPage() {
             columns={requestColumns}
             data={user.recentRequests}
             getRowId={(r) => r.id}
-            onRowClick={(r) => navigate(`/solicitudes/${r.id}`)}
+            onRowClick={({ id }) => navigate(buildPath("/solicitudes/:id", { id }))}
             empty={{ title: "Sin solicitudes recientes" }}
           />
         </Panel>

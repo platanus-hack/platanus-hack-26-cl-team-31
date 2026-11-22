@@ -12,7 +12,7 @@ import { FilterBar, SearchInput } from "@/components/filters"
 import { PersonHoverCard } from "@/components/hover-cards"
 import { Muted, Page, PageHeader, QueryPanel } from "@/components/page"
 import { RelativeTime } from "@/components/relative-time"
-import { api } from "@/lib/api"
+import { api, buildPath } from "@/lib/api"
 
 const columns: ColumnDef<UserSummary, unknown>[] = [
   {
@@ -134,7 +134,9 @@ export function UsersPage() {
           data={rows}
           loading={query.isPending}
           getRowId={(u) => u.userId}
-          onRowClick={(u) => navigate(`/personas/${u.userId}`)}
+          onRowClick={(u) =>
+            navigate(buildPath("/personas/:id", { id: u.userId }))
+          }
           empty={{
             title: "Sin personas",
             description: q ? `Nada coincide con «${q}».` : undefined,
