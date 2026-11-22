@@ -245,7 +245,7 @@ function matches(event: TelemetryEvent, filters: LiveFilters): boolean {
     return false
   if (filters.kind && event.kind !== filters.kind) return false
   if (filters.level && event.level !== filters.level) return false
-  if (filters.name && !event.name.includes(filters.name)) return false
+  if (filters.name && event.name !== filters.name) return false
   if (filters.requestId && event.requestId !== filters.requestId) return false
   if (filters.traceId && event.traceId !== filters.traceId) return false
   if (filters.userId && event.userId !== filters.userId) return false
