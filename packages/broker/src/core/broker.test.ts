@@ -576,10 +576,16 @@ describe("aislamiento y concurrencia", () => {
 
 describe("cierre y avisos", () => {
   it("atiende avisos entre lotes de solicitudes vencidas", async () => {
-    for (let i = 0; i < 101; i++) {
-      await askAvailability();
-      await broker.tick(now);
-    }
+    const backlogSize = 101;
+    for (let i = 0; i < backlogSize; i++) await askAvailability();
+    // Deja pendientes las solicitudes con sus avisos iniciales ya entregados.
+    await deps.store.tx(async (tx) => {
+      const claims = await tx.claimDueWakes(now, new Date(now.getTime() + 60_000), backlogSize);
+      expect(claims).toHaveLength(backlogSize);
+      for (const claim of claims) {
+        expect(await tx.recordWakeAttempt(claim, now, { ok: true, retryable: false, ms: 1 }, null)).toBe(true);
+      }
+    });
     advance(900_000);
     await broker.agent.inbox(bruno);
     await broker.owner.setWake(bruno, bruno.agentId, webhook);
