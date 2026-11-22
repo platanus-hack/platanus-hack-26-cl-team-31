@@ -573,12 +573,12 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
           expect(await tx.vaultMembers("bruno", categoryId)).toEqual([]);
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: true });
-          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories.filter(c => c.canRead))
+          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories.filter(c => c.canRead && c.id === categoryId))
             .toEqual([{ id: categoryId, name: "Prueba", visibility: "private", canRead: true }]);
           expect(await tx.deleteTag("bruno", tagId)).toBe(true);
           expect(await tx.vaultMembers("bruno", categoryId)).toEqual([friend]);
           await tx.changeVault("bruno", categoryId, { ...individual, allowed: false });
-          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories.filter(c => c.canRead)).toEqual([]);
+          expect((await tx.sharedVault(friend, "bruno@sideband.app")).categories.filter(c => c.canRead && c.id === categoryId)).toEqual([]);
           expect(await tx.deleteTag("bruno", "friend")).toBe(true);
           expect(await tx.setContactTags("bruno", friend, [])).toBe(true);
           expect(await tx.removeContact("bruno", friend)).toBe(true);

@@ -103,6 +103,8 @@ export const VaultChange = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("delete_entry"), categoryId, label: name }),
   z.strictObject({ action: z.literal("set_tag"), categoryId, tagId: TagId, allowed: z.boolean() }),
   z.strictObject({ action: z.literal("set_member"), categoryId, address: Address, allowed: z.boolean() }),
+  // Removes the individual decision, so visibility and tags decide again.
+  z.strictObject({ action: z.literal("clear_member"), categoryId, address: Address }),
 ]);
 export type VaultChange = z.infer<typeof VaultChange>;
 export const VaultReceipt = z.object({ categoryId });

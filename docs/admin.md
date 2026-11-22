@@ -141,8 +141,8 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | `broker.owner.decided` | lifecycle | decision |
 | `broker.grant.set` / `broker.grant.revoked` | policy | grantId, category |
 | `broker.contact.connected` / `broker.contact.removed` | policy | sin atributos; `requestId` y `userId` en el sobre |
-| `broker.contact.tagged` | policy | tags (cantidad), by (`owner` \| `agent`), sharingApplied. Sin dirección ni nombres |
-| `broker.tag.changed` | policy | action (`created` \| `updated` \| `deleted`), by, categories y followers (cantidades). Sin el nombre |
+| `broker.contact.tagged` | policy | tags (cantidad), by (`owner` \| `agent`). Sin dirección ni nombres |
+| `broker.tag.changed` | policy | action (`created` \| `updated` \| `deleted`), by, categories (cantidad). Sin el nombre |
 | `broker.circle.changed` | policy | circleId, action (`created` \| `deleted` \| `invited` \| `joined` \| `removed`) |
 | `broker.agent.connected` | lifecycle | kind (tipo de aviso al crearse: `none`). Se emite una vez por conexión, cuando la primera llamada autenticada del agente la crea; `userId` y `agentId` en el sobre. Presencia: el agente entra a la red |
 | `broker.agent.revoked` | lifecycle | by (`owner` \| `admin`). Solo la primera revocación. Presencia: el agente sale de la red |

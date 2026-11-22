@@ -118,7 +118,7 @@ it("mantiene privada la etiqueta de la invitación y activa su permiso solo al a
   expect((await broker.agent.tags(p)).tags.find(tag => tag.id === tagId)?.members).toEqual([availability.to]);
 });
 
-it("une las categorías de las etiquetas y solo recalcula a los contactos que las siguen", async () => {
+it("une las categorías de las etiquetas y la decisión a mano deja de seguirlas", async () => {
   const invitation = await broker.owner.connect(alice, { to: availability.to, tags: ["work"] });
   await broker.owner.answerInvitation(bruno, invitation.requestId, { accept: true });
   const gives = async () => (await broker.owner.contacts(alice)).contacts[0]?.gives;
@@ -1049,8 +1049,9 @@ describe("solicitudes de conexión", () => {
     await expect(broker.owner.connect(carla, { to: "bruno@sideband.app" })).rejects.toMatchObject({ code: "invalid_input" });
   });
 
-  it("las etiquetas ponen lo que se comparte y el contacto editado a mano conserva lo suyo", async () => {
+  it("las etiquetas abren sus categorías al momento y la decisión a mano sobre un contacto prevalece", async () => {
     const tagSharing = (id: string) => [...defaultTags.find(tag => tag.id === id)!.categories];
+    const gives = async () => (await broker.owner.contacts(carla)).contacts[0]?.gives;
     const first = await broker.owner.connect(carla, { to: "bruno@sideband.app", tags: ["work"] });
     expect((await broker.owner.contacts(carla)).outgoing[0]?.offer).toEqual(tagSharing("work"));
     await broker.owner.answerInvitation(bruno, first.requestId, { accept: true, tags: ["family"] });
@@ -1060,23 +1061,65 @@ describe("solicitudes de conexión", () => {
     expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tags: ["work"], gives: ["availability"] });
     expect((await broker.agent.contacts(carla)).contacts[0]).toMatchObject({ tags: ["work"] });
 
+    // What the tags open needs no individual decision, so the contact follows them.
     await broker.owner.updateTag(carla, "work", { categories: ["availability", "interests"] });
-    expect((await broker.owner.contacts(carla)).contacts[0]?.gives).toEqual(["availability", "interests"]);
+    expect(await gives()).toEqual(["availability", "interests"]);
     expect((await broker.owner.contacts(carla)).tags.find(tag => tag.id === "work")?.categories).toEqual(["availability", "interests"]);
 
     await broker.owner.setSharing(carla, "bruno@sideband.app", ["general"]);
     await broker.owner.updateTag(carla, "work", { categories: ["availability"] });
-    expect((await broker.owner.contacts(carla)).contacts[0]?.gives).toEqual(["general"]);
-
+    expect(await gives()).toEqual(["general"]);
     await broker.owner.setContactTags(carla, "bruno@sideband.app", ["friend"]);
-    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tags: ["friend"], gives: tagSharing("friend") });
+    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tags: ["friend"], gives: ["general"] });
+
+    // Choosing what the tags say removes the decisions by hand, and the contact follows its tags again.
+    await broker.owner.setSharing(carla, "bruno@sideband.app", tagSharing("friend"));
+    await broker.owner.setContactTags(carla, "bruno@sideband.app", ["work"]);
+    expect(await gives()).toEqual(tagSharing("work"));
     await expect(broker.owner.setContactTags(carla, "diego@sideband.app", ["friend"])).rejects.toMatchObject({ code: "not_found" });
     await expect(broker.owner.setContactTags(carla, "bruno@sideband.app", ["inexistente"])).rejects.toMatchObject({ code: "not_found" });
 
     await broker.owner.removeContact(carla, "bruno@sideband.app");
     const again = await broker.owner.connect(carla, { to: "bruno@sideband.app" });
     await broker.owner.answerInvitation(bruno, again.requestId, { accept: true });
-    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tags: [] });
+    expect((await broker.owner.contacts(carla)).contacts[0]).toMatchObject({ tags: [], gives: basicSharing });
+  });
+
+  it("quien puede leer una categoría de la bóveda puede preguntar por ella, y cerrarla deniega lo pendiente", async () => {
+    const { request } = await invite();
+    await broker.owner.answerInvitation(bruno, request.requestId, { accept: true, share: [] });
+    expect(await broker.agent.ask(carla, availability)).toMatchObject({ final: true, decision: "deny" });
+
+    // The holder accepts a read request for the vault category, and that also opens the question.
+    const access = await broker.agent.ask(carla, { to: availability.to, tool: "vault_access", args: { categoryName: "Disponibilidad horaria" } });
+    await broker.owner.decide(bruno, access.requestId, { kind: "grant_vault_read" });
+    expect((await broker.agent.contacts(carla)).contacts[0]?.theyShare).toEqual(["availability"]);
+    expect((await broker.owner.contacts(bruno)).contacts[0]?.gives).toEqual(["availability"]);
+    const pending = await broker.agent.ask(carla, availability);
+    expect(pending).toMatchObject({ final: false });
+
+    const close = { action: "set_member", categoryId: "availability", address: "carla@sideband.app", allowed: false } as const;
+    await broker.owner.changeVault(bruno, close);
+    expect(await broker.agent.status(carla, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
+    expect(await broker.agent.ask(carla, { ...availability, purpose: "Otra vez" })).toMatchObject({ final: true, decision: "deny" });
+
+    // A public default category lets any Sideband user ask, and the individual decision still closes it.
+    await broker.owner.changeVault(bruno, { action: "set_visibility", categoryId: "availability", visibility: "public" });
+    expect(await broker.agent.ask(carla, { ...availability, purpose: "Pública" })).toMatchObject({ final: true, decision: "deny" });
+    await broker.owner.changeVault(bruno, { action: "clear_member", categoryId: "availability", address: "carla@sideband.app" });
+    expect(await broker.agent.ask(carla, { ...availability, purpose: "Sin decisión" })).toMatchObject({ final: false });
+  });
+
+  it("el agente abre las categorías de una etiqueta al ponérsela a un contacto", async () => {
+    const { request } = await invite();
+    await broker.owner.answerInvitation(bruno, request.requestId, { accept: true, share: [] });
+    const p: Principal = { ...bruno, scopes: [...bruno.scopes, "sideband:vault"] };
+    await broker.agent.changeTag(p, { action: "add_contact", tagId: "work", address: "carla@sideband.app" });
+    expect((await broker.owner.contacts(bruno)).contacts[0]).toMatchObject({ tags: ["work"], gives: ["availability"] });
+    const pending = await broker.agent.ask(carla, availability);
+    expect(pending).toMatchObject({ final: false });
+    await broker.agent.changeTag(p, { action: "remove_contact", tagId: "work", address: "carla@sideband.app" });
+    expect(await broker.agent.status(carla, pending.requestId)).toMatchObject({ final: true, decision: "deny" });
   });
 
   it("el agente lista los contactos y los círculos aceptados de su titular", async () => {

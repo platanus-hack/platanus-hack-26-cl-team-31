@@ -1,5 +1,5 @@
-import { Address, defaultVaultCategories, type OwnerVault, type Tag } from "@team-31/protocol";
-import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit, seededTags, sortTags } from "./directory.js";
+import { Address, Category, defaultTags, defaultVaultCategories, type OwnerVault, type Tag } from "@team-31/protocol";
+import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit, sortTags } from "./directory.js";
 import { activeAgentConflict, BrokerError, notFound } from "../errors.js";
 import { wakeClaim } from "./store.js";
 import type {
@@ -13,7 +13,7 @@ type State = {
   grants: (GrantRow & { revokedAt?: Date })[];
   contacts: Map<string, Set<Address>>;
   contactTags: Map<string, Map<Address, string[]>>;
-  tags: Map<string, Tag[]>;
+  tags: Map<string, Omit<Tag, "categories">[]>;
   circles: Map<string, CircleRow>;
   circleMembers: CircleMemberRow[];
   requests: Map<string, RequestRow>;
@@ -44,7 +44,7 @@ function transaction(state: State): StoreTx {
     const rule = state.memberRules.get(pairKey(owner, c.id))?.get(reader);
     if (rule !== undefined) return rule;
     if (c.visibility === "public") return true;
-    // A default category shares its id with a grant category: whoever may ask about it may read it.
+    // A grant written before the vault held the permissions still opens the default category of its id.
     if (state.grants.some(g => g.grantorUserId === owner && g.granteeAddress === reader && g.category === c.id && !g.revokedAt)) return true;
     return !!state.contacts.get(owner)?.has(reader) && (state.contactTags.get(owner)?.get(reader) ?? []).some(tag => c.tags.includes(tag));
   }
@@ -57,12 +57,22 @@ function transaction(state: State): StoreTx {
       .sort(byCreatedAt));
   }
 
-  // Every holder starts with the default categories. A deleted default stays deleted.
+  // Every holder starts with the default categories and tags, and each default tag opens its categories.
+  // A deleted default stays deleted.
   function vaultOf(owner: string): OwnerVault {
     if (!state.vaults.has(owner) && state.users.has(owner)) {
-      state.vaults.set(owner, { categories: defaultVaultCategories.map(category => ({ ...category, visibility: "private", entries: [], tags: [] })) });
+      state.vaults.set(owner, { categories: defaultVaultCategories.map(category => ({
+        ...category, visibility: "private", entries: [], tags: defaultTags.filter(tag => tag.categories.includes(category.id)).map(tag => tag.id),
+      })) });
+      state.tags.set(owner, defaultTags.map(({ id, name, color }) => ({ id, name, color })));
     }
     return state.vaults.get(owner) ?? { categories: [] };
+  }
+
+  function tagsOf(userId: string) {
+    ensureUser(userId, new Date());
+    vaultOf(userId);
+    return state.tags.get(userId)!;
   }
 
   function categoryMembers(owner: string, category: OwnerVault["categories"][number]) {
@@ -103,6 +113,10 @@ function transaction(state: State): StoreTx {
     async vaultCatalog(owner) {
       return { categories: vaultOf(owner).categories.map(({ id, name, description, visibility, tags }) =>
         structuredClone({ id, name, ...(description ? { description } : {}), visibility, tags: [...tags].sort() })) };
+    },
+    async canReadVault(owner, reader, categoryId) {
+      const category = vaultOf(owner).categories.find(c => c.id === categoryId);
+      return !!category && canRead(owner, category, reader);
     },
     async vaultMembers(owner, categoryId) {
       const category = vaultOf(owner).categories.find(c => c.id === categoryId);
@@ -150,6 +164,7 @@ function transaction(state: State): StoreTx {
           state.memberRules.set(key, rules);
           break;
         }
+        case "clear_member": state.memberRules.get(pairKey(owner, id))?.delete(change.address); break;
         case "set_tag":
           if (!state.tags.get(owner)?.some(tag => tag.id === change.tagId)) return false;
           c.tags = c.tags.filter(tag => tag !== change.tagId);
@@ -267,10 +282,9 @@ function transaction(state: State): StoreTx {
       if (!me) return [];
       return [...(state.contacts.get(userId) ?? [])].sort().map(address => {
         const other = findUserByAddress(address);
-        const gives = liveGrants(userId).filter(g => g.granteeAddress === address);
-        const receives = other ? liveGrants(other.userId).filter(g => g.granteeAddress === me) : [];
+        const readable = (owner: string, reader: Address) => vaultOf(owner).categories.filter(c => canRead(owner, c, reader)).map(c => c.id);
         return directoryContact({ address, name: other?.displayName, tags: state.contactTags.get(userId)?.get(address),
-          gives: gives.map(g => g.category), receives: receives.map(g => g.category) });
+          gives: readable(userId, address), receives: other ? readable(other.userId, me) : [] });
       });
     },
     async listJoinedCircles(userId) {
@@ -301,17 +315,19 @@ function transaction(state: State): StoreTx {
       return state.contacts.get(userId)?.delete(address) ?? false;
     },
     async listTags(userId) {
-      if (!state.tags.has(userId)) {
-        state.tags.set(userId, seededTags());
-      }
-      return sortTags(structuredClone(state.tags.get(userId)!));
+      const open = (id: string) => vaultOf(userId).categories.filter(c => c.tags.includes(id)).map(c => c.id);
+      return sortTags(tagsOf(userId).map(tag => ({ ...tag, categories: Category.options.filter(id => open(tag.id).includes(id)) })));
     },
-    async putTag(userId, tag) {
-      const tags = state.tags.get(userId) ?? seededTags();
+    async putTag(userId, { categories, ...tag }) {
+      const tags = tagsOf(userId);
       if (tags.some(other => other.id !== tag.id && other.name.toLowerCase() === tag.name.toLowerCase())) {
         throw new BrokerError("conflict", "Ya tienes una etiqueta con ese nombre.");
       }
-      state.tags.set(userId, [...tags.filter(other => other.id !== tag.id), structuredClone(tag)]);
+      state.tags.set(userId, [...tags.filter(other => other.id !== tag.id), tag]);
+      for (const c of vaultOf(userId).categories.filter(c => Category.options.some(id => id === c.id))) {
+        c.tags = c.tags.filter(id => id !== tag.id);
+        if (categories.some(id => id === c.id)) c.tags.push(tag.id);
+      }
     },
     async deleteTag(userId, tagId) {
       const tags = state.tags.get(userId) ?? [];

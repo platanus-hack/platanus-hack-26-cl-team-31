@@ -53,7 +53,7 @@ import {
 } from "./views.js";
 import { createLifecycleEvents } from "./events.js";
 import { createWorker } from "./worker.js";
-import { categoriesOf, createGrantWriter, sharingRule, stillAuthorized } from "./grants.js";
+import { createGrantWriter, sharingRule, stillAuthorized } from "./grants.js";
 import { createCirclePort } from "./circles.js";
 import { createTags, sameTags } from "./tags.js";
 
@@ -95,7 +95,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   const events = createLifecycleEvents(deps.store, deps.telemetry);
   const { store, record } = events;
   const grants = createGrantWriter(clock, record);
-  const tags = createTags({ store }, record, grants, (tx, userId) => denyUnauthorizedInboxRequests(tx, userId));
+  const tags = createTags({ store }, record, (tx, userId) => denyUnauthorizedInboxRequests(tx, userId));
   const systemAddress = Address.parse(`${systemLocalPart}@${config.addressDomain}`);
 
   function requireScope(principal: Principal, operation: keyof typeof agentScopes): void {
@@ -261,7 +261,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     participants.sort((a, b) => a.userId.localeCompare(b.userId));
     for (const { userId, address, share } of participants) {
       if (!await tx.addContact(userId, address)) continue;
-      await grants.applySharing(tx, userId, address, share);
+      await shareWith(tx, userId, address, share);
     }
     record(tx, "broker.contact.connected", { requestId: row.id, userId: row.toUserId });
   }
@@ -322,13 +322,14 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         args = { share: offer };
       }
       const received = open.find((row) => row.toUserId === userId && row.fromAddress === to);
+      if (received && agentId) return new BrokerError("invalid_input", "Esta persona ya te invitó. Revisa la invitación recibida.");
+      // Tagged first, so what the tags already open needs no individual decision.
+      if (tagIds?.length) await tags.tagContact(tx, userId, to, tagIds, agentId ? "agent" : "owner");
+      else await tx.setContactTags(userId, to, []);
       if (received) {
-        if (agentId) return new BrokerError("invalid_input", "Esta persona ya te invitó. Revisa la invitación recibida.");
         await closeInvitation(tx, received, true, offer, "owner");
         crossedInvitationAccepted = true;
       }
-      if (tagIds?.length) await tags.tagContact(tx, userId, to, tagIds, agentId ? "agent" : "owner", false);
-      else await tx.setContactTags(userId, to, []);
     }
     let row = await initialRequest({
       fromUserId: userId, fromAddress: from, toUserId: recipient?.userId ?? null, toAddress: to, tool, args, purpose,
@@ -509,6 +510,26 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return { categoryId };
   }
 
+  // A vault permission also lets its reader ask, so a change may close pending requests.
+  async function changeOwnVault(tx: StoreTx, userId: string, input: VaultChange, agentId?: string) {
+    const receipt = await changeVault(tx, userId, input, agentId);
+    await denyUnauthorizedInboxRequests(tx, userId);
+    return receipt;
+  }
+
+  // What the holder shares with one contact. An individual decision stays only on the default
+  // categories where the choice differs from what visibility and tags already say.
+  async function shareWith(tx: StoreTx, userId: string, address: Address, sharing: Sharing) {
+    const own = (await tx.vaultCatalog(userId)).categories.map((category) => category.id);
+    for (const categoryId of Category.options.filter((id) => own.includes(id))) {
+      const allowed = sharing.includes(categoryId);
+      await changeVault(tx, userId, { action: "clear_member", categoryId, address });
+      if (await tx.canReadVault(userId, address, categoryId) !== allowed) {
+        await changeVault(tx, userId, { action: "set_member", categoryId, address, allowed });
+      }
+    }
+  }
+
   function documentMetadata(row: VaultDocumentRow): VaultDocumentMetadata {
     return {
       id: row.id,
@@ -572,7 +593,10 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       if (!removed) return;
       for (const { userId, address } of sides) {
         await tx.setContactTags(userId, address, []);
-        await grants.applySharing(tx, userId, address, []);
+        // The vault permissions go with the contact. A grant of the legacy port needs its own revocation.
+        for (const grant of await tx.listGrants(userId)) {
+          if (grant.granteeAddress === address) await grants.revokeGrant(tx, userId, grant.id);
+        }
         await denyUnauthorizedInboxRequests(tx, userId);
       }
       record(tx, "broker.contact.removed", { userId: o.userId });
@@ -628,7 +652,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         requireScope(p, "changeVault");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
-          return changeVault(tx, p.userId, change, p.agentId);
+          return changeOwnVault(tx, p.userId, change, p.agentId);
         });
       },
       async queryVault(p, input) {
@@ -850,7 +874,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     owner: {
       ...tags.port,
       vault: o => store.tx(tx => tx.ownerVault(o.userId)),
-      changeVault: (o, change) => store.tx(tx => changeVault(tx, o.userId, change)),
+      changeVault: (o, change) => store.tx(tx => changeOwnVault(tx, o.userId, change)),
       ask: (o, input, channel) => ask(o.userId, input, { channel }),
       status: (o, id) => status(o.userId, id),
 
@@ -1042,7 +1066,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (!address.success || !parsed.success) throw new BrokerError("invalid_input", "Lo que compartes no es válido.");
         await store.tx(async (tx) => {
           if (!(await tx.listContactAddresses(o.userId)).includes(address.data)) throw notFound();
-          await grants.applySharing(tx, o.userId, address.data, parsed.data);
+          await shareWith(tx, o.userId, address.data, parsed.data);
           await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
@@ -1059,8 +1083,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const { accept, tags: tagIds } = parsed.data;
           const ownTags = accept && tagIds?.length ? await tags.knownTags(tx, o.userId, tagIds) : [];
           const share = parsed.data.share ?? (tagIds?.length ? tagSharing(ownTags, tagIds) : undefined);
+          // Tagged first, so what the tags already open needs no individual decision.
+          if (accept && tagIds?.length) await tags.tagContact(tx, o.userId, row.fromAddress, tagIds, "owner");
           await closeInvitation(tx, row, accept, share, "owner");
-          if (accept && tagIds?.length) await tags.tagContact(tx, o.userId, row.fromAddress, tagIds, "owner", false);
           record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: parsed.data.accept ? "accept" : "decline" } });
         });
         if (error) throw error;

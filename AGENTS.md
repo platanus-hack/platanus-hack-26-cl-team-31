@@ -27,19 +27,19 @@ Un titular pregunta al agente de otro titular. El broker autoriza la pregunta se
 
 ### Permisos
 
-Un grant permite a una dirección Sideband preguntar sobre una categoría de información. Los permisos de un círculo compartido se suman a los grants directos.
+Una sola regla decide qué ve otro titular: si puede leer una categoría de la bóveda, también puede preguntar por ella. La regla es `canReadVault` del store (`packages/broker/src/store/postgres/vault-store.ts`): manda la decisión individual sobre el contacto; sin ella, lee una categoría pública cualquier usuario de Sideband y una privada el contacto con una etiqueta permitida. `sharingRule` (`packages/broker/src/core/grants.ts`) pregunta eso mismo por la categoría de la solicitud y suma los permisos de un círculo compartido.
 
 - Una categoría es el tema de la información y una tool es la forma de preguntar. El catálogo `categories` (`packages/protocol/src/constants.ts`) lista las tools de cada categoría: Disponibilidad horaria (`availability`), Intereses (`interests`), Salud (`health`) y Preguntas abiertas (`general`).
-- Un grant cubre todas las tools de su categoría y todos los campos de sus respuestas.
+- Leer una categoría cubre todas las tools que preguntan por ella y todos los campos de sus respuestas.
 - `availability` e `interest_check` pertenecen a una sola categoría. `question` sirve a todas y lleva la suya en `args.category`. Sin categoría es una pregunta abierta (`general`).
 - El broker no lee el texto de una `question`. El agente del destinatario recibe la categoría y responde solo sobre ella.
-- El tipo es `Grant` (`packages/protocol/src/grants.ts`) y se guarda en `sideband.grants`. Un titular tiene un solo grant vivo por dirección y categoría.
-- El titular los administra con `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`). Web los muestra por contacto en `/contacts`.
+- Lo que un titular comparte con un contacto se guarda en la bóveda: etiquetas permitidas (`set_tag`), decisión individual (`set_member`, `clear_member`) y visibilidad. Web lo muestra por contacto en `/contacts` y por categoría en `/vault`.
+- `sideband.grants` quedó congelada. `grants`, `setGrant` y `revokeGrant` del `OwnerPort` (`/v1/owner/grants`) siguen para los guiones de la demo y las pruebas: un grant vivo todavía abre la categoría por defecto de su ID. Web, MCP y WhatsApp ya no escriben grants.
 - Para agregar una categoría, declara su nombre en `categoryNames` y su etiqueta y tools en `categories` de `packages/protocol/src/constants.ts`. Contactos recorre el catálogo y necesita el texto de ayuda en `contacts/sharing.tsx`. En WhatsApp actualiza el texto de denegación y el vocabulario de invitaciones en `whatsapp/commands.ts`, y la guía del clasificador en `whatsapp/claude.ts`. Una tool nueva solo hace falta para una respuesta con otra forma, y se agrega a su categoría.
-- Los grants no se componen. Que Bob le dé un grant a Ana y Ana a Carla no le da a Carla nada de Bob.
+- Los permisos no se componen. Que Bob le comparta algo a Ana y Ana a Carla no le da a Carla nada de Bob.
 - La política base son las categorías que comparten los miembros de un círculo y las que vienen marcadas al conectar: `availability` e `interests`. Vive en `basicSharing` (`packages/protocol/src/sharing.ts`).
 - Un círculo es un conjunto con nombre (`Circle`, `/v1/owner/circles`). Solo quien lo creó invita, saca a otros y lo elimina, y cada invitado acepta antes de entrar. Mientras dos titulares estén en el mismo círculo se dan la política base. Web los administra en `/circles`.
-- Los permisos de círculo se calculan al preguntar, en `sharingRule`, y no se guardan como grants. Salir borra la membresía y cierra las solicitudes pendientes que quedan sin permiso. Si ambos siguen en otro círculo, o existe un grant, el acceso se mantiene.
+- Los permisos de círculo se calculan al preguntar, en `sharingRule`, y no abren la bóveda. Salir borra la membresía y cierra las solicitudes pendientes que quedan sin permiso. Si ambos siguen en otro círculo, o el titular comparte la categoría, el acceso se mantiene.
 
 Pendiente, cada uno en su PR:
 
@@ -53,13 +53,13 @@ Pendiente, cada uno en su PR:
 - **Categoría.** El titular elige qué categorías comparte con cada contacto. Nunca ve tools ni campos.
 - **Preguntas abiertas.** La categoría `general` cubre lo que no entra en otra. El agente del titular decide qué contesta. Queda fuera de lo básico.
 - **Básico.** Al conectar vienen marcadas Disponibilidad horaria e Intereses.
-- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro y puede cambiarlas después. El titular acepta desde Contactos, WhatsApp vinculado o su agente. El agente necesita `sideband:reply` y `sideband:accept` y envía las categorías elegidas en `share`; mientras espera al titular responde `needs_owner`. Dejar de ser contactos borra la conexión y sus grants en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeContact` del `OwnerPort`). `Sharing` es la lista de categorías que un titular le da a un contacto.
-- **Etiqueta.** Cada titular tiene sus etiquetas (`Tag` en `packages/protocol/src/sharing.ts`): nombre único sin distinguir mayúsculas, color de una paleta fija y las categorías que comparte. Parte con Amigo, Familia y Trabajo (IDs `friend`, `family`, `work`, en `defaultTags`) y puede crear, renombrar, recolorear, cambiar categorías y borrar cualquiera (`tags`, `createTag`, `updateTag`, `deleteTag` del `OwnerPort`).
-- **Etiquetas de un contacto.** Un contacto lleva cero o más etiquetas (`setContactTags`). Ponerlas o quitarlas le aplica la unión de sus categorías. Un contacto «sigue sus etiquetas» si comparte justo esa unión: al cambiar las categorías de una etiqueta o borrarla, solo esos contactos se recalculan, y un contacto editado a mano (`setSharing`) conserva lo suyo. Al invitar y al aceptar se eligen etiquetas (`tags`); sin `share`, se ofrece su unión.
+- **Contacto.** Se conecta por invitación y es mutuo: al aceptar, ambos quedan como contactos. Cada uno elige qué categorías le comparte al otro y puede cambiarlas después. El titular acepta desde Contactos, WhatsApp vinculado o su agente. El agente necesita `sideband:reply` y `sideband:accept` y envía las categorías elegidas en `share`; mientras espera al titular responde `needs_owner`. Dejar de ser contactos borra la conexión y lo que se compartían en ambos sentidos. Vive en `/contacts` (`contacts`, `setSharing`, `answerInvitation` y `removeContact` del `OwnerPort`). `Sharing` es la lista de categorías que un titular le da a un contacto.
+- **Etiqueta.** Cada titular tiene sus etiquetas (`Tag` en `packages/protocol/src/sharing.ts`): nombre único sin distinguir mayúsculas, color de una paleta fija y las categorías que comparte, que son las categorías por defecto de la bóveda que la etiqueta abre (las mismas filas que escribe `set_tag`). Parte con Amigo, Familia y Trabajo (IDs `friend`, `family`, `work`, en `defaultTags`) y puede crear, renombrar, recolorear, cambiar categorías y borrar cualquiera (`tags`, `createTag`, `updateTag`, `deleteTag` del `OwnerPort`).
+- **Etiquetas de un contacto.** Un contacto lleva cero o más etiquetas (`setContactTags`) y lee al momento la unión de lo que abren: ponerlas, quitarlas o cambiar sus categorías no escribe nada por contacto. `setSharing` deja una decisión individual solo en las categorías donde lo elegido difiere de lo que dicen la visibilidad y las etiquetas; esa decisión prevalece hasta que el titular elige de nuevo lo que dicen las etiquetas. Al invitar y al aceptar se eligen etiquetas (`tags`); sin `share`, se ofrece su unión.
 - **Categorías de la bóveda.** Cada titular parte con una categoría por cada una del catálogo, con el mismo ID (`defaultVaultCategories` en `packages/protocol/src/constants.ts`), y puede crear las suyas. Cada categoría lleva una descripción que cuenta de qué trata (`describe` de `VaultChange`). El agente del titular lista las categorías con `sideband_vault_catalog` y con `categoryId` lee los datos de una.
-- **Catálogo visible.** Cualquier usuario de Sideband lista las categorías de otro titular con nombre, descripción y visibilidad (`sideband_vault_access`), nunca sus datos; `canRead` indica si puede abrirlas. Una categoría pública (`set_visibility`) la lee cualquier usuario de Sideband, sea o no contacto; una privada necesita un contacto con etiqueta permitida o permiso individual. La decisión individual (`set_member`) cierra una pública a un contacto. Nacen privadas salvo que el titular las cree públicas (`visibility` de `create`). Una categoría por defecto la lee además quien tenga un grant vivo de la categoría con el mismo ID: quien puede preguntar por Disponibilidad horaria puede leer esa categoría de la bóveda.
+- **Catálogo visible.** Cualquier usuario de Sideband lista las categorías de otro titular con nombre, descripción y visibilidad (`sideband_vault_access`), nunca sus datos; `canRead` indica si puede abrirlas. Una categoría pública (`set_visibility`) la lee cualquier usuario de Sideband, sea o no contacto; una privada necesita un contacto con etiqueta permitida o permiso individual. La decisión individual (`set_member`) cierra una pública a un contacto. Nacen privadas salvo que el titular las cree públicas (`visibility` de `create`). Una categoría por defecto es la misma del catálogo: quien lee «Disponibilidad horaria» puede preguntar por `availability`, y una pública deja preguntar a cualquier usuario de Sideband.
 - **Bóveda por etiqueta.** Una categoría de la bóveda se lee por las etiquetas permitidas (`set_tag`); la decisión individual (`set_member`) prevalece. Borrar una etiqueta la quita de contactos y permisos.
-- **Agente y etiquetas.** El agente lista y organiza etiquetas (`sideband_tags`, `sideband_tag_change`, scope `sideband:vault`) pero nunca cambia lo que el titular comparte: no elige categorías y sus cambios no tocan grants. Se guardan en `sideband.tags` y `sideband.contact_tags`; telemetría `broker.tag.changed` y `broker.contact.tagged`.
+- **Agente y etiquetas.** El agente lista y organiza etiquetas (`sideband_tags`, `sideband_tag_change`, scope `sideband:vault`). No elige las categorías de una etiqueta, pero ponérsela o quitársela a un contacto le abre o cierra lo que esa etiqueta comparte. Se guardan en `sideband.tags` y `sideband.contact_tags`; telemetría `broker.tag.changed` y `broker.contact.tagged`.
 
 ### Modelo decidido, por construir
 
@@ -72,15 +72,15 @@ Usa un término por concepto, en el código y en los textos.
 
 | Término | En el código | Qué es |
 | --- | --- | --- |
-| Titular | `Owner`, `userId` | Persona que da los grants y responde por sus datos. «Dueño» en textos anteriores. |
+| Titular | `Owner`, `userId` | Persona que decide qué comparte y responde por sus datos. «Dueño» en textos anteriores. |
 | Agente | `Principal`, `agentId` | Asistente conectado que actúa por un titular con sus `scopes`. |
 | Dirección Sideband | `Address` | Identificador `nombre@dominio` con el que otros titulares le escriben. |
 | Solicitud | `AskInput`, `requestId` | Pregunta de un titular a otro con una tool. Termina en un `FinalOutcome`. |
 | Tool | `ToolName` | Forma de preguntar: `availability`, `question`, `interest_check`. `profile` aún no pertenece a una categoría. |
-| Grant | `Grant`, `GrantInput` | Permiso de un titular a una dirección para preguntar sobre una categoría. En la interfaz se llama «permiso». |
+| Grant | `Grant`, `GrantInput` | Permiso anterior a la regla única, de un titular a una dirección sobre una categoría. Congelado: lo usan los guiones de la demo y las pruebas. |
 | Categoría | `Category`, `categories` | Tema de la información sobre el que responde un agente. Lista las tools que lo consultan. |
 | Política base | `basicSharing` | Categorías que se dan los miembros de un círculo y que vienen marcadas al conectar. |
-| Contacto | `contacts`, tool `connect` | Titular con el que otro aceptó conectarse. Ambos eligen qué categorías se dan como grants. |
+| Contacto | `contacts`, tool `connect` | Titular con el que otro aceptó conectarse. Ambos eligen qué categorías se comparten. |
 | Etiqueta | `Tag`, `TagId` | Marca de un titular para sus contactos, con nombre, color y categorías. Un contacto puede llevar varias. «Grupo privado» en textos anteriores. |
 | Círculo | `Circle` | Conjunto de titulares con un creador. Sus miembros se dan la política base mientras estén dentro. «Grupo» en textos anteriores. |
 | Perfil | por construir | Nombre y frase de presentación de un titular, visibles para los demás usuarios. |

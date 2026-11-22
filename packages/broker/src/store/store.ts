@@ -158,6 +158,8 @@ export interface StoreTx {
   ownerVault(owner: string): Promise<OwnerVault>;
   changeVault(owner: string, id: string, change: VaultChange): Promise<boolean>;
   sharedVault(reader: Address, to: Address, categoryId?: string): Promise<VaultResult>;
+  // The one access rule: whoever reads a category of the holder's vault may also ask about it.
+  canReadVault(owner: string, reader: Address, categoryId: string): Promise<boolean>;
   putVaultDocument(row: VaultDocumentRow): Promise<VaultDocumentRow | null>;
   sharedVaultDocument(reader: Address, to: Address, query: VaultDocumentQuery): Promise<VaultDocumentRow | null>;
   searchPublicProfiles(query: string): Promise<PublicProfile[]>;
@@ -181,6 +183,7 @@ export interface StoreTx {
   // True when this transaction creates a new membership.
   addContact(userId: string, address: Address): Promise<boolean>;
   removeContact(userId: string, address: Address): Promise<boolean>;
+  // The categories of a tag are the default vault categories it opens.
   listTags(userId: string): Promise<Tag[]>;
   putTag(userId: string, tag: Tag): Promise<void>;
   deleteTag(userId: string, tagId: string): Promise<boolean>;

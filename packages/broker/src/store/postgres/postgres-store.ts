@@ -1,6 +1,6 @@
 import {
   ActivityEvent, Address, Category, ChannelName, FinalOutcome, RequestStatus, ToolArgs, ToolName, ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
-  Sharing, TagColor,
+  TagColor,
 } from "@team-31/protocol";
 import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -11,11 +11,11 @@ import { wakeClaim } from "../store.js";
 import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
 } from "../store.js";
-import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit, seededTags, sortTags } from "../directory.js";
+import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit, sortTags } from "../directory.js";
 import { createWakeCodec } from "./crypto.js";
-import { insertWithParents, vaultStore } from "./vault-store.js";
+import { contactAccess, insertWithParents, openToTag, seedHolder, vaultStore } from "./vault-store.js";
 import {
-  agentConnections, askReceipts, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tags, users, vaultDocuments, wakeJobs,
+  agentConnections, askReceipts, channels, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tags, users, vaultDocuments, vaultPermissions, wakeJobs,
 } from "./schema.js";
 
 export type PostgresStoreOptions = {
@@ -237,20 +237,18 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
     async listContacts(userId) {
       const { rows } = await db.execute<{
-        address: string; name: string | null; tags: string[]; gives: string[]; receives: string[];
+        address: string; name: string | null; tags: string[]; me: string;
       }>(sql`
-        SELECT f.address, other.display_name AS name,
-          ARRAY(SELECT t.tag_id FROM sideband.contact_tags t WHERE (t.user_id, t.address) = (f.user_id, f.address)) AS tags,
-          ARRAY(SELECT category FROM sideband.grants g
-                WHERE g.grantor_user_id = f.user_id AND g.grantee_address = f.address AND g.revoked_at IS NULL) AS gives,
-          ARRAY(SELECT category FROM sideband.grants g
-                WHERE g.grantor_user_id = other.user_id AND g.grantee_address = me.address AND g.revoked_at IS NULL) AS receives
+        SELECT f.address, other.display_name AS name, me.address AS me,
+          ARRAY(SELECT t.tag_id FROM sideband.contact_tags t WHERE (t.user_id, t.address) = (f.user_id, f.address)) AS tags
         FROM sideband.friends f
         JOIN sideband.users me ON me.user_id = f.user_id AND me.address IS NOT NULL
         LEFT JOIN sideband.users other ON other.address = f.address
         WHERE f.user_id = ${userId}
         ORDER BY f.address COLLATE "C"`);
-      return rows.map(directoryContact);
+      if (!rows[0]) return [];
+      const access = await contactAccess(db, userId, rows[0].me);
+      return rows.map(row => directoryContact({ ...row, ...access(row.address) }));
     },
 
     async listJoinedCircles(userId) {
@@ -288,12 +286,13 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
 
     async listTags(userId) {
       await ensureUser(userId);
-      const [seed] = await db.update(users).set({ tagsSeeded: true })
-        .where(and(eq(users.userId, userId), eq(users.tagsSeeded, false))).returning({ userId: users.userId });
-      if (seed) await db.insert(tags).values(seededTags().map((tag) => ({ userId, ...tag }))).onConflictDoNothing();
+      await seedHolder(db, userId);
       const rows = await db.select().from(tags).where(eq(tags.userId, userId));
+      // The categories of a tag are the default vault categories it opens.
+      const open = await db.select().from(vaultPermissions).where(eq(vaultPermissions.owner, userId));
       return sortTags(rows.map((row) => ({
-        id: row.id, name: row.name, color: parseStored(TagColor, row.color), categories: parseStored(Sharing, row.categories),
+        id: row.id, name: row.name, color: parseStored(TagColor, row.color),
+        categories: Category.options.filter((id) => open.some((permission) => permission.tagId === row.id && permission.id === id)),
       })));
     },
 
@@ -307,6 +306,10 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
         }
         throw error;
       }
+      await seedHolder(db, userId);
+      await db.delete(vaultPermissions).where(and(eq(vaultPermissions.owner, userId), eq(vaultPermissions.tagId, tag.id),
+        inArray(vaultPermissions.id, Category.options.filter((id) => !tag.categories.includes(id)))));
+      await openToTag(db, userId, tag.categories.map((id) => ({ id, tagId: tag.id })));
     },
 
     async deleteTag(userId, tagId) {
