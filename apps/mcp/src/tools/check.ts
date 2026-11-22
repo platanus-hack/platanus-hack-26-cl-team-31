@@ -7,7 +7,7 @@ import { runTool, type ToolTelemetry } from "./result.js";
 
 export function registerCheck(server: McpServer, principal: Principal, agent: AgentPort, telemetry: ToolTelemetry) {
   server.registerTool("sideband_check", {
-    description: "Consulta el estado o la respuesta final de una solicitud que enviaste usando su requestId.",
+    description: "Consulta el estado o la respuesta final de una solicitud que enviaste usando su requestId. En una rutina de cierre, úsala solo después de verificar el chat privado de origen guardado para ese ID.",
     annotations: { readOnlyHint: true },
     inputSchema: { requestId: routes.agentStatus.params.shape.id },
   }, ({ requestId }) => runTool(telemetry, principal, { tool: "sideband_check", scope: agentScopes.status, requestId },

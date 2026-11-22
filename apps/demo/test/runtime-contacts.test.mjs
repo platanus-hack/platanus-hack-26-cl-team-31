@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { RESULT_EVENT, WAKE_EVENT } from "@team-31/protocol";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { configureBroker, isolatedDatabase, listenForWakes, startBroker } from "./contact-stack.mjs";
 
@@ -88,11 +89,12 @@ it.skipIf(!process.env.TEST_DATABASE_URL)("aísla las solicitudes por sesión y 
     { to: jane, decision: "allow", result: { matches: false } },
   ]);
   expect(errors).toEqual([]);
-  expect(notices).toHaveLength(3);
-  expect(notices).toEqual(expect.arrayContaining([
-    { id: "bob", requestId: regular.requestId }, { id: "bob", requestId: overridden.requestId },
-    { id: "jane", requestId: other.requestId },
-  ]));
+  const requests = [[regular, "bob"], [overridden, "bob"], [other, "jane"]];
+  await expect.poll(() => notices.length, { timeout: 10_000 }).toBe(6);
+  expect(notices).toEqual(expect.arrayContaining(requests.flatMap(([{ requestId }, id]) => [
+    { id, requestId, event: WAKE_EVENT, status: 202, scheduled: true },
+    { id: "ana", requestId, event: RESULT_EVENT, status: 202, scheduled: false },
+  ])));
   const deniedJobs = await db.query("SELECT request_id FROM sideband.wake_jobs WHERE request_id = ANY($1)", [[privateQuestion.requestId, blocked.requestId]]);
   expect(deniedJobs.rows).toEqual([]);
 

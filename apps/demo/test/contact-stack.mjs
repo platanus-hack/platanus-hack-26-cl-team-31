@@ -76,10 +76,10 @@ export async function listenForWakes(cleanup, handle, root) {
     const id = req.url.split("/").at(-1);
     let body = "";
     for await (const chunk of req) body += chunk;
-    notices.push({ id, requestId: JSON.parse(body).requestId });
     const request = new Request("http://" + req.headers.host + req.url, { method: req.method, headers: req.headers, body });
     let afterResponse;
     const response = await handle(request, id, callback => { afterResponse = callback; }, root);
+    notices.push({ id, ...JSON.parse(body), status: response.status, scheduled: Boolean(afterResponse) });
     res.writeHead(response.status).end(await response.text());
     await afterResponse?.();
   }

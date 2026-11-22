@@ -747,6 +747,19 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     expect(refs.map((ref) => ref.id)).toEqual([ids.answered])
   })
 
+  it("conserva el historial del titular cuando su última revocación ya salió de la foto", async () => {
+    const { rows: [before] } = await db.query("SELECT revoked_at FROM sideband.agent_connections WHERE user_id = 'bruno' AND agent_id = 'main'")
+    try {
+      await db.query("UPDATE sideband.agent_connections SET revoked_at = now() - interval '2 days' WHERE user_id = 'bruno' AND agent_id = 'main'")
+      const snapshot = await queries.flowSnapshot()
+      expect(snapshot.agents).toEqual([])
+      expect(snapshot.users.find((u) => u.userId === "bruno")?.hasAgentHistory).toBe(true)
+      expect(snapshot.users.find((u) => u.userId === "alice")?.hasAgentHistory).toBe(false)
+    } finally {
+      await db.query("UPDATE sideband.agent_connections SET revoked_at = $1 WHERE user_id = 'bruno' AND agent_id = 'main'", [before!.revoked_at])
+    }
+  })
+
   it("audit pagina la bitácora del admin sin meta", async () => {
     const audit = page(AuditEntry).parse(await queries.audit())
     expect(audit.items.map((entry) => entry.action).sort()).toEqual([

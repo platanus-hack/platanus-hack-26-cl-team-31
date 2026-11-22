@@ -374,7 +374,7 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
         if (agent.revokedAt && present.has(id)) {
           present.delete(id);
           out.push({ id: `reconcile:left:${id}:${at}`, at, step: "left", status: "expired", from: actor, to: actor, meta: {} });
-        } else if (!agent.revokedAt && !present.has(id) && !seen.has(id)) {
+        } else if (!agent.revokedAt && !present.has(id)) {
           seen.add(id);
           present.add(id);
           drawnLabels.set(id, labelKey(actor));

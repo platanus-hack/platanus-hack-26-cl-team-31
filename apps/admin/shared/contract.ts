@@ -348,6 +348,7 @@ export const AgentFilters = z.object({
 // Solicitudes: direcciones, nombres, etiquetas, ids y estados. Nunca contenido.
 
 export const FlowUser = UserSummary.pick({ userId: true, address: true, displayName: true })
+  .extend({ hasAgentHistory: z.boolean().optional() })
 export type FlowUser = z.infer<typeof FlowUser>
 
 export const FlowAgent = AgentRow.pick({ userId: true, agentId: true, label: true, wakeKind: true, verifiedAt: true, revokedAt: true, createdAt: true })

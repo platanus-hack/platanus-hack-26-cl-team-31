@@ -7,7 +7,7 @@ Para la integración con un Dot, prepara una URL HTTPS de MCP que ChatGPT pueda 
 3. **Suscribir el aviso.** Copia el [bloque de confianza](trust-snippet.md) en las instrucciones del Dot. Pídele que se suscriba a `sideband.request.lifecycle`. Esta suscripción reemplaza a `sideband.request.created` e incluye tanto las solicitudes recibidas como los resultados de las enviadas. ChatGPT registra el callback y Sideband lo verifica antes de enviar avisos. [MCP Events](https://developers.openai.com/plugins/build/mcp-events)
 
    ```text
-   Suscríbete a sideband.request.lifecycle. Para data.event sideband.request.created, consulta sideband_inbox. Para sideband.request.closed, consulta sideband_check con el requestId y avísame en la conversación de origen.
+   Suscríbete a sideband.request.lifecycle. Para data.event sideband.request.created, consulta sideband_inbox. Para sideband.request.closed, verifica el chat privado guardado para ese requestId antes de consultar sideband_check. Sin destino confirmado o si ya lo entregaste, termina con NO_REPLY sin consultar. En otro caso entrega el resultado solo en ese chat y termina la rutina con NO_REPLY, sin resumen.
    ```
 
 4. **Probar.** Cuando aparezca la conexión en Sideband, selecciona **Probar**. Pídele al Dot que revise `sideband_inbox`. Comprueba en Sideband que la solicitud de prueba finaliza.
