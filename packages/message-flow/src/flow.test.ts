@@ -204,7 +204,34 @@ describe("turnos del titular", () => {
     const { run, ask } = harness(async () => ({ ...askAna, selector: { scope: "friend", count: "many" } }));
     ask.mockRejectedValueOnce(Object.assign(new Error("forbidden"), { code: "forbidden" }));
     const reply = await run("¿A mis amigos les interesa la cerámica?");
-    expect(reply).toMatchObject({ kind: "requests", unconfirmedCount: 1, items: [{ to: second }] });
+    expect(reply).toMatchObject({ kind: "requests", unconfirmedCount: 0, items: [{ to: second }] });
+  });
+
+  it.each(["invalid_input", "conflict"])("descarta el rechazo %s y continúa con los destinatarios posteriores", async code => {
+    const { run, ask, context } = harness(async () => ({ ...askAna, selector: { scope: "friend", count: "many" } }));
+    const addresses = Array.from({ length: 6 }, (_, i) => `amigo${i}@sideband.app`);
+    context.ops.contacts = async () => ({ contacts: addresses.map(address => ({ address, tags: ["friend"], theyShare: [], youShare: [] })), circles: [] });
+    const submit = ask.getMockImplementation()!;
+    ask.mockImplementation(async input => {
+      if (input.to === addresses[0]) throw Object.assign(new Error(code), { code });
+      return submit(input);
+    });
+    const first = await run("¿A mis amigos les interesa la cerámica?");
+    if (first.kind !== "requests") throw new Error("expected requests");
+    expect(first).toMatchObject({ unconfirmedCount: 2, items: [{ to: addresses[1] }, { to: addresses[2] }, { to: addresses[3] }] });
+    const next = await run("continuar", first.continuationId);
+    expect(next).toMatchObject({ kind: "requests", unconfirmedCount: 0 });
+    expect(ask.mock.calls.map(([input]) => input.to)).toEqual(addresses);
+  });
+
+  it.each(["forbidden", "unauthorized"])("cierra el despacho ante %s aunque haya un recibo", async code => {
+    const { run, ask, context } = harness(async () => ({ ...askAna, selector: { scope: "friend", count: "many" } }));
+    const addresses = Array.from({ length: 5 }, (_, i) => `amigo${i}@sideband.app`);
+    context.ops.contacts = async () => ({ contacts: addresses.map(address => ({ address, tags: ["friend"], theyShare: [], youShare: [] })), circles: [] });
+    ask.mockRejectedValueOnce(Object.assign(new Error(code), { code }));
+    const first = await run("¿A mis amigos les interesa la cerámica?");
+    expect(first).toMatchObject({ kind: "requests", unconfirmedCount: 0, items: [{ to: addresses[1] }, { to: addresses[2] }, { to: addresses[3] }] });
+    expect(ask).toHaveBeenCalledTimes(4);
   });
 
   it("relee la bóveda y el ámbito al repetir una entrega; una amistad revocada devuelve vacío", async () => {
