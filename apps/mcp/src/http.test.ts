@@ -203,6 +203,20 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     if: { properties: { tool: { const: "connect" } } },
     then: { required: ["tags"] },
   });
+  // El agente que responde sólo sabe qué mandar en result si la forma viaja en el esquema.
+  const reply = tools.find((tool) => tool.name === "sideband_reply");
+  expect(reply?.inputSchema.properties).toMatchObject({
+    result: {
+      description: expect.stringContaining("allowedFields"),
+      anyOf: expect.arrayContaining([expect.objectContaining({ properties: { answer: expect.anything() } })]),
+    },
+    share: { description: expect.stringContaining("connect") },
+  });
+  // Rechazarlo no basta: el motivo tiene que decirle al agente qué forma esperaba.
+  const asString = await bob.callTool({ name: "sideband_reply", arguments: { ...answer, result: JSON.stringify(answer.result) } });
+  expect(asString.isError).toBe(true);
+  expect(JSON.stringify(asString.content)).toContain("objeto JSON");
+
   expect((await ana.callTool({ name: "sideband_ask", arguments: { to: pending.to, tool: "connect", args: {} } })).isError).toBe(true);
   expect((await ana.callTool({ name: "sideband_ask", arguments: { ...question, userId: "eva" } })).structuredContent).toEqual(pending);
   expect((await bob.callTool({ name: "sideband_inbox" })).structuredContent).toEqual({ items: [inbox] });

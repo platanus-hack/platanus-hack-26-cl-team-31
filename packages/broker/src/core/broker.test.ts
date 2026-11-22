@@ -358,9 +358,21 @@ describe("contrato del broker", () => {
     expect(events.filter((event) => event.code).map((event) => event.code)).toEqual(["forbidden", "invalid_input", "conflict"]);
   });
 
-  it("rechaza una respuesta malformada antes de buscar la solicitud", async () => {
+  it("rechaza una respuesta malformada antes de buscar la solicitud y nombra el campo", async () => {
     const malformed = { requestId: "missing", nonce: "nonce", outcome: "answered" } as unknown as ReplyInput;
-    await expect(broker.agent.reply(bruno, malformed)).rejects.toMatchObject({ code: "invalid_input" });
+    await expect(broker.agent.reply(bruno, malformed)).rejects.toMatchObject({
+      code: "invalid_input", message: expect.stringContaining("result"),
+    });
+  });
+
+  it("ignora un share vacío fuera de connect y explica por qué rechaza uno con categorías", async () => {
+    const pending = await askAvailability();
+    const item = await inboxItem(bruno, pending.requestId);
+    await expect(broker.agent.reply(bruno, { ...item, outcome: "no_data", share: ["availability"] as Sharing }))
+      .rejects.toMatchObject({ code: "invalid_input", message: expect.stringContaining("connect") });
+    expect(await broker.agent.reply(bruno, { ...item, outcome: "no_data", share: [] as Sharing }))
+      .toMatchObject({ status: "no_data" });
+    expect((await broker.owner.contacts(bruno)).contacts).toEqual([]);
   });
 
   it("entrega no_data firmado y muestra el motivo exclusivamente al dueño destinatario", async () => {

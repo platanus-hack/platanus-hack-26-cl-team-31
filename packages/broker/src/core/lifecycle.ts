@@ -1,4 +1,4 @@
-import { ToolResultSchemas, type RequestStatus, type ToolName, type ToolResult } from "@team-31/protocol";
+import { ToolResultSchemas, invalidInputMessage, type RequestStatus, type ToolName, type ToolResult } from "@team-31/protocol";
 import { BrokerError } from "../errors.js";
 import type { RequestRow } from "../store/store.js";
 
@@ -43,6 +43,9 @@ export function escalate(row: RequestRow, expiresAt: Date): RequestRow {
 
 export function parseResult(tool: ToolName, result: unknown): ToolResult {
   const parsed = ToolResultSchemas[tool].safeParse(result);
-  if (!parsed.success) throw new BrokerError("invalid_input", "La respuesta no cumple el formato de la herramienta.");
+  // El resultado lo escribió quien responde: nombrar el campo que falla no revela nada ajeno.
+  if (!parsed.success) {
+    throw new BrokerError("invalid_input", invalidInputMessage(`La respuesta no cumple el formato de ${tool}.`, parsed.error));
+  }
   return parsed.data;
 }
