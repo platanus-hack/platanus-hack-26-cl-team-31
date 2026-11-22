@@ -12,14 +12,14 @@ export default async function VaultPage() {
       {categories.length === 0 ? (
         <div className={`${card} flex flex-col items-center gap-2 px-6 py-12 text-center`}>
           <p className="text-sm font-medium text-ink">Tu bóveda está vacía</p>
-          <p className="max-w-sm text-[13px] text-muted">Guarda tus tallas, una lista de regalos o lo que quieras que tus agentes puedan contestar. Cada categoría empieza privada.</p>
+          <p className="max-w-sm text-[13px] text-muted">Guarda tus tallas, una lista de regalos o lo que quieras que tus agentes puedan contestar. Cada categoría es privada salvo que la marques pública.</p>
         </div>
       ) : (
         <>
           <ul className={`${card} divide-y divide-line`}>
             {categories.map((category) => <CategoryRow key={`${category.id}:${category.name}:${category.description ?? ""}:${category.visibility}:${category.tags.join()}:${category.entries.length}`} category={category} tags={tags} />)}
           </ul>
-          <p className="mt-3 px-1 text-xs text-muted">Cada categoría empieza privada: solo la leen las personas con las etiquetas que elijas. Si la haces pública, la lee cualquier usuario de Sideband. El nombre y la descripción de tus categorías los ve cualquier usuario de Sideband, aunque no pueda leerlas.</p>
+          <p className="mt-3 px-1 text-xs text-muted">Una categoría privada la leen solo las personas con las etiquetas que elijas. Una pública la lee cualquier usuario de Sideband. El nombre y la descripción de tus categorías los ve cualquier usuario de Sideband, aunque no pueda leerlas.</p>
         </>
       )}
     </div>

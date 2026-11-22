@@ -96,7 +96,7 @@ export function vaultStore(db: Tx): Pick<StoreTx, "vaultCatalog" | "vaultMembers
       await seedDefaults(owner);
       const category = and(eq(c.owner, owner), eq(c.id, id));
       if (change.action === "create") {
-        await db.insert(c).values({ owner, id, name: change.name });
+        await db.insert(c).values({ owner, id, name: change.name, visibility: change.visibility });
         return true;
       }
       if (!(await db.select({ id: c.id }).from(c).where(category).for("update")).length) return false;

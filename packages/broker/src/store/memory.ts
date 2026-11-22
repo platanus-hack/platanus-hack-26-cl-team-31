@@ -119,7 +119,7 @@ function transaction(state: State): StoreTx {
     async changeVault(owner, id, change) {
       const vault = vaultOf(owner);
       if (change.action === "create") {
-        vault.categories.push({ id, name: change.name, visibility: "private", entries: [], tags: [] });
+        vault.categories.push({ id, name: change.name, visibility: change.visibility ?? "private", entries: [], tags: [] });
         state.vaults.set(owner, vault);
         return true;
       }

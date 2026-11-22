@@ -36,6 +36,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+function PublicSwitch({ isPublic, onToggle }: { isPublic: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={isPublic} onClick={onToggle}
+      className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl bg-stage px-3.5 py-2.5 text-left">
+      <span>
+        <span className="block text-sm font-medium text-ink">Pública</span>
+        <span className="block text-xs text-muted">Cualquier usuario de Sideband puede leerla.</span>
+      </span>
+      <span aria-hidden="true" className={`relative h-7 w-12 shrink-0 rounded-full transition ${isPublic ? "bg-accent" : "bg-line-strong"}`}>
+        <span className={`absolute top-0.5 left-0.5 size-6 rounded-full bg-white shadow transition-transform ${isPublic ? "translate-x-5" : ""}`} />
+      </span>
+    </button>
+  );
+}
+
 function CategorySheet({ category, tags, onDelete }: { category: Category; tags: Tag[]; onDelete: () => void }) {
   const close = useCloseModal();
   const { state, pending, run } = useVault();
@@ -117,16 +132,7 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
       </Section>
 
       <Section title="Quién puede leer">
-        <button type="button" role="switch" aria-checked={isPublic} onClick={togglePublic}
-          className="flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl bg-stage px-3.5 py-2.5 text-left">
-          <span>
-            <span className="block text-sm font-medium text-ink">Pública</span>
-            <span className="block text-xs text-muted">Cualquier usuario de Sideband puede leerla.</span>
-          </span>
-          <span aria-hidden="true" className={`relative h-7 w-12 shrink-0 rounded-full transition ${isPublic ? "bg-accent" : "bg-line-strong"}`}>
-            <span className={`absolute top-0.5 left-0.5 size-6 rounded-full bg-white shadow transition-transform ${isPublic ? "translate-x-5" : ""}`} />
-          </span>
-        </button>
+        <PublicSwitch isPublic={isPublic} onToggle={togglePublic} />
         <div className="flex flex-wrap gap-2">
           {tags.map((tag) => {
             const on = allowed.includes(tag.id);
@@ -211,12 +217,14 @@ function NewCategoryForm() {
   const close = useCloseModal();
   const { state, pending, run } = useVault();
   const [name, setName] = useState("");
+  const [isPublic, setIsPublic] = useState(false);
   return (
-    <form onSubmit={(event) => { event.preventDefault(); run({ action: "create", name }, (result) => { if (!result.error) close(); }); }} className="space-y-5">
+    <form onSubmit={(event) => { event.preventDefault(); run({ action: "create", name, visibility: isPublic ? "public" : "private" }, (result) => { if (!result.error) close(); }); }} className="space-y-5">
       <label className="block space-y-1.5">
         <span className="text-[13px] font-medium text-body">Nombre</span>
         <input value={name} onChange={(event) => setName(event.target.value)} required autoFocus maxLength={80} placeholder="Lista de regalos" className={input} />
       </label>
+      <PublicSwitch isPublic={isPublic} onToggle={() => setIsPublic(!isPublic)} />
       <Feedback error={state.error} errorId={state.errorId} />
       <div className="flex justify-end gap-2 pt-1">
         <ModalCancel />
@@ -228,7 +236,7 @@ function NewCategoryForm() {
 
 export function NewCategory() {
   return (
-    <Modal label="Nueva categoría" title="Nueva categoría" description="Empieza privada. Después agregas datos y eliges quién puede leerla.">
+    <Modal label="Nueva categoría" title="Nueva categoría" description="Empieza privada salvo que la marques pública. Después agregas datos y eliges quién puede leerla.">
       <NewCategoryForm />
     </Modal>
   );

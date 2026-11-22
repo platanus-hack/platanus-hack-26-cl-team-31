@@ -94,7 +94,7 @@ export const VaultResult = z.object({
 });
 export type VaultResult = z.infer<typeof VaultResult>;
 export const VaultChange = z.discriminatedUnion("action", [
-  z.strictObject({ action: z.literal("create"), name }),
+  z.strictObject({ action: z.literal("create"), name, visibility: VaultVisibility.optional() }),
   z.strictObject({ action: z.literal("rename"), categoryId, name }),
   z.strictObject({ action: z.literal("describe"), categoryId, description }),
   z.strictObject({ action: z.literal("set_visibility"), categoryId, visibility: VaultVisibility }),
