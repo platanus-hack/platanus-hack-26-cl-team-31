@@ -1,16 +1,14 @@
 "use client";
 
 import type { ActivityItem } from "@team-31/protocol";
-import { useEffect, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 
-import { parseActivity } from "./parse-activity";
+import { ActivitySubscription, type Connection } from "./activity-subscription";
 import { ActivityDetail } from "../activity-list";
 import { outcomeText, sentence } from "../activity-text";
 import { eventLabels } from "../labels";
 import { Modal } from "../modal";
 import { card, Empty, Heading, Initial, ListSkeleton } from "../ui";
-
-type Connection = "connecting" | "live" | "reconnecting";
 
 const connectionLabels: Record<Connection, string> = {
   connecting: "Conectando…",
@@ -48,7 +46,14 @@ function Steps({ item }: { item: ActivityItem }) {
   );
 }
 
-function LiveRow({ item, fresh }: { item: ActivityItem; fresh: boolean }) {
+function LiveRow({ item, ready }: { item: ActivityItem; ready: boolean }) {
+  const [settledItem, setSettledItem] = useState<ActivityItem>();
+  useEffect(() => {
+    const timer = setTimeout(setSettledItem, 1500, item);
+    return () => clearTimeout(timer);
+  }, [item]);
+
+  const fresh = ready && item !== settledItem;
   const { other, lead, rest } = sentence(item);
   const [status, color] = outcomeText[item.status];
   return (
@@ -73,49 +78,16 @@ function LiveRow({ item, fresh }: { item: ActivityItem; fresh: boolean }) {
 const clock = new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "America/Santiago" });
 
 export function LiveActivity() {
-  const [items, setItems] = useState<ActivityItem[]>([]);
+  const [items, receiveItem] = useReducer(upsert, []);
   const [connection, setConnection] = useState<Connection>("connecting");
-  const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let source: EventSource;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let retryDelay = 1_000;
-
-    function connect() {
-      source = new EventSource("/cable/stream");
-      source.onopen = () => {
-        retryDelay = 1_000;
-        setConnection("live");
-      };
-      source.onerror = () => {
-        setConnection("reconnecting");
-        // EventSource retries stream interruptions itself but stops on HTTP errors.
-        if (source.readyState === EventSource.CLOSED) {
-          retryTimer = setTimeout(connect, retryDelay);
-          retryDelay = Math.min(retryDelay * 2, 15_000);
-        }
-      };
-      source.addEventListener("activity", (event: MessageEvent<string>) => {
-        const item = parseActivity(event.data);
-        if (!item) return;
-        setItems((previous) => upsert(previous, item));
-        setFresh((previous) => new Set(previous).add(item.requestId));
-        setTimeout(() => setFresh((previous) => {
-          const next = new Set(previous);
-          next.delete(item.requestId);
-          return next;
-        }), 1500);
-      });
-    }
-
-    connect();
+    const subscription = new ActivitySubscription(receiveItem, setConnection);
     const settle = setTimeout(() => setReady(true), 1200);
     return () => {
+      subscription.close();
       clearTimeout(settle);
-      clearTimeout(retryTimer);
-      source.close();
     };
   }, []);
 
@@ -135,7 +107,7 @@ export function LiveActivity() {
 
       {items.length > 0 ? (
         <ul aria-label="Solicitudes" aria-live="polite" className={`${card} divide-y divide-line overflow-hidden`}>
-          {items.map((item) => <li key={item.requestId}><LiveRow item={item} fresh={ready && fresh.has(item.requestId)} /></li>)}
+          {items.map((item) => <li key={item.requestId}><LiveRow item={item} ready={ready} /></li>)}
         </ul>
       ) : connection === "connecting" ? <ListSkeleton rows={4} label="Conectando con el cable" /> : (
         <Empty>
