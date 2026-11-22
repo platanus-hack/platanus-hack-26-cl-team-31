@@ -105,8 +105,8 @@ export function TagMenu({ tags, value, custom, disabled, onChange }: {
           {tags.map((tag) => {
             const active = value.includes(tag.id);
             return (
-              <button key={tag.id} type="button" role="menuitemcheckbox" aria-checked={active} onClick={() => onChange(toggle(value, tag.id))}
-                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-ink transition hover:bg-chip-hover">
+              <button key={tag.id} type="button" role="menuitemcheckbox" disabled={disabled} aria-checked={active} onClick={() => onChange(toggle(value, tag.id))}
+                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-ink transition hover:bg-chip-hover disabled:cursor-wait">
                 <span aria-hidden="true" className={`size-2 rounded-full ${tagStyles[tag.color].dot}`} />
                 <span className="flex-1">{tag.name}</span>
                 {active && <span aria-hidden="true" className="text-muted">✓</span>}
