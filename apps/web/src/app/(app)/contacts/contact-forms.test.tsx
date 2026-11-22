@@ -50,6 +50,22 @@ it("submits exactly the categories selected in the contact form", async () => {
   await submit([]);
 });
 
+it("deshabilita Guardar al volver a seleccionar las mismas categorías en otro orden", async () => {
+  await act(() => root.render(<ContactRow contact={{
+    address, tags: [], gives: ["availability", "health"], receives: [],
+  }} tags={[]} />));
+  await act(() => list.querySelector<HTMLButtonElement>('[aria-label="Ver opciones"]')!.click());
+  const buttons = [...list.querySelectorAll<HTMLButtonElement>("button")];
+  const availability = buttons.find(button =>
+    document.getElementById(button.getAttribute("aria-labelledby") ?? "")?.textContent === categories.availability.label)!;
+  const save = buttons.find(button => button.textContent === "Guardar")!;
+
+  await act(() => availability.click());
+  expect(save.disabled).toBe(false);
+  await act(() => availability.click());
+  expect(save.disabled).toBe(true);
+});
+
 it("espera a que termine el guardado de etiquetas antes de aceptar otro cambio", async () => {
   const save = vi.mocked(saveContactTags);
   const pending = Promise.withResolvers<Awaited<ReturnType<typeof saveContactTags>>>();
