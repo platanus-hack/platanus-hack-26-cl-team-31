@@ -20,43 +20,70 @@ function readEnv<T extends z.ZodType>(name: string, schema: T): z.output<T> {
   return parsed.data;
 }
 
+function readTransport(stdio: boolean, devAuth: boolean) {
+  if (stdio) {
+    return {
+      kind: "stdio" as const,
+      principal: {
+        userId: readEnv("SIDEBAND_DEV_USER_ID", id),
+        agentId: readEnv("SIDEBAND_DEV_AGENT_ID", id),
+        scopes: [...Scope.options],
+      },
+    };
+  }
+  return {
+    kind: "http" as const,
+    oauth: { ...readOAuthConfig(process.env), devAuth },
+    port: readEnv("MCP_PORT", z.string().regex(/^\d+$/).pipe(z.coerce.number<string>().int().min(1).max(65535))),
+    host: process.env.MCP_HOST || "127.0.0.1",
+  };
+}
+
 export async function startSideband(stdio: boolean, devAuth: boolean) {
   if (stdio && !devAuth) throw new Error("El modo stdio requiere MCP_DEV_AUTH=1.");
 
   const baseUrl = readEnv("BROKER_URL", httpUrl);
   const getServiceToken = createServiceTokenMinter(process.env.MCP_SERVICE_PRIVATE_KEY);
-  const oauth = stdio ? null : readOAuthConfig(process.env);
-  // Created after validating the configuration: emits service.started and the heartbeat.
+  const transport = readTransport(stdio, devAuth);
   const telemetry = createMcpTelemetry(stdio);
-  const messages = createMessageRuntime(telemetry);
-  for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.once(signal, () => {
-      void Promise.all([telemetry.shutdown(), messages?.close()]).finally(() => process.exit());
-    });
-  }
-  const agent = createAgentClient({ baseUrl, getServiceToken, fetch: tracedFetch(telemetry) });
+  let messages: ReturnType<typeof createMessageRuntime>;
+  let stream: StdioServerTransport | undefined;
 
-  if (!oauth) {
-    const principal = {
-      userId: readEnv("SIDEBAND_DEV_USER_ID", id),
-      agentId: readEnv("SIDEBAND_DEV_AGENT_ID", id),
-      scopes: [...Scope.options],
-    };
-    await agent.connect(principal);
-    await createServer(principal, agent, telemetry, messages?.handleMessage).connect(new StdioServerTransport());
-    console.error("[sideband-mcp] Listo en stdio.");
-    return;
-  }
-
-  const server = createHttpServer({ ...oauth, devAuth }, agent, telemetry, messages?.handleMessage);
-  const port = readEnv("MCP_PORT", z.string().regex(/^\d+$/).pipe(z.coerce.number<string>().int().min(1).max(65535)));
-  server.listen(port, process.env.MCP_HOST || "127.0.0.1");
-  try {
-    await once(server, "listening");
-  } catch (error) {
-    telemetry.error("mcp.listen", error);
+  async function shutdown() {
+    const reportCloseError = (error: unknown) => telemetry.error("mcp.close", error);
+    await stream?.close().catch(reportCloseError);
+    await messages?.close().catch(reportCloseError);
     await telemetry.shutdown();
+  }
+
+  let operation = "mcp.start";
+  try {
+    messages = createMessageRuntime(telemetry);
+    const agent = createAgentClient({ baseUrl, getServiceToken, fetch: tracedFetch(telemetry) });
+    if (transport.kind === "stdio") {
+      operation = "mcp.connect";
+      await agent.connect(transport.principal);
+      const server = createServer(transport.principal, agent, telemetry, messages?.handleMessage);
+      stream = new StdioServerTransport();
+      await server.connect(stream);
+    } else {
+      const server = createHttpServer(transport.oauth, agent, telemetry, messages?.handleMessage);
+      operation = "mcp.listen";
+      server.listen(transport.port, transport.host);
+      await once(server, "listening");
+    }
+  } catch (error) {
+    telemetry.error(operation, error);
+    await shutdown();
     throw error;
   }
-  console.error(`[sideband-mcp] Listo en puerto ${port}.`);
+
+  function stop() {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    void shutdown().finally(() => process.exit());
+  }
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  console.error(transport.kind === "stdio" ? "[sideband-mcp] Listo en stdio." : `[sideband-mcp] Listo en puerto ${transport.port}.`);
 }
