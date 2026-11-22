@@ -113,68 +113,63 @@ function errorResponse(c: Context, error: unknown, telemetry: Pick<Telemetry, "e
   return c.json(ErrorBody.parse({ error: { code: "internal", message: "Ocurrió un error interno en el admin.", errorId } }), 500)
 }
 
-export function createAdminApi(deps: AdminApiDeps) {
-  const { auth, roleOf, queries, tokens, audit, broker, revealer, limiters, adminUrl, freshSeconds, telemetry } = deps
-  // Los errores esperados (401, 403, 404…) se responden aquí y no llegan a onError, para que
-  // honoTelemetry no los registre como errores. Los inesperados devuelven X-Error-Id.
-  const guarded = (handler: (c: Context) => Promise<Response>) => async (c: Context) => {
-    try {
-      return await handler(c)
-    } catch (error) {
-      return errorResponse(c, error, telemetry)
-    }
+// Sesión de Better Auth. Si getSession renueva la sesión (updateAge), reenvía la cookie.
+async function authenticate(c: Context, { auth, roleOf, telemetry }: AdminApiDeps): Promise<AdminPrincipal> {
+  const { headers, response } = await auth.api.getSession({ headers: c.req.raw.headers, returnHeaders: true })
+  for (const cookie of headers.getSetCookie()) c.header("Set-Cookie", cookie, { append: true })
+  if (!response) throw new AdminHttpError("unauthorized", "Inicia sesión para usar el admin.")
+  const role = roleOf(response.user.email)
+  if (!role) {
+    telemetry.emit("auth.token.rejected", { attrs: { issuer: "admin_session", reason: "not_allowed" } })
+    throw new AdminHttpError("forbidden", "Este correo no tiene acceso al admin de Sideband.")
   }
-  const now = deps.now ?? Date.now
-  const api = new Hono()
-  // Streams en vivo abiertos por admin (límite en live.ts).
-  const liveSlots = createLiveSlots()
-
-  // Flujo en vivo: solo los eventos que dibuja el grafo, con attrs recortados a su lista blanca
-  // (packages/agent-flow/src/telemetry.ts) y el resumen de cada solicitud antes de su primer evento.
-  function liveAccess(c: Context, principal: AdminPrincipal) {
-    return async () => {
-      const current = await auth.api.getSession({
-        headers: c.req.raw.headers,
-        query: { disableRefresh: true, disableCookieCache: true },
-      })
-      return current?.session.id === principal.session.id && current.user.id === principal.id && !!roleOf(current.user.email)
-    }
+  return {
+    id: response.user.id,
+    email: response.user.email,
+    name: response.user.name || null,
+    image: response.user.image ?? null,
+    role,
+    session: { id: response.session.id, createdAt: new Date(response.session.createdAt), expiresAt: new Date(response.session.expiresAt) },
   }
+}
 
-
-  // Sesión de Better Auth. Si getSession renueva la sesión (updateAge), reenvía la cookie.
-  async function authenticate(c: Context): Promise<AdminPrincipal> {
-    const { headers, response } = await auth.api.getSession({ headers: c.req.raw.headers, returnHeaders: true })
-    for (const cookie of headers.getSetCookie()) c.header("Set-Cookie", cookie, { append: true })
-    if (!response) throw new AdminHttpError("unauthorized", "Inicia sesión para usar el admin.")
-    const role = roleOf(response.user.email)
-    if (!role) {
-      telemetry.emit("auth.token.rejected", { attrs: { issuer: "admin_session", reason: "not_allowed" } })
-      throw new AdminHttpError("forbidden", "Este correo no tiene acceso al admin de Sideband.")
-    }
-    return {
-      id: response.user.id,
-      email: response.user.email,
-      name: response.user.name || null,
-      image: response.user.image ?? null,
-      role,
-      session: { id: response.session.id, createdAt: new Date(response.session.createdAt), expiresAt: new Date(response.session.expiresAt) },
-    }
+// Mutaciones: Origin = ADMIN_URL y, si llevan cuerpo, Content-Type application/json.
+function requireSameOrigin(c: Context, adminUrl: string, hasBody: boolean) {
+  if (c.req.header("origin") !== adminUrl) {
+    throw new AdminHttpError("forbidden", "Origen no permitido.")
   }
-
-  const isFresh = (principal: AdminPrincipal) => now() - principal.session.createdAt.getTime() < freshSeconds * 1000
-  const actorOf = (principal: AdminPrincipal): AuditActor => ({ type: "admin", id: principal.id, label: principal.email })
-
-  // Mutaciones: Origin = ADMIN_URL y, si llevan cuerpo, Content-Type application/json.
-  function requireSameOrigin(c: Context, hasBody: boolean) {
-    if (c.req.header("origin") !== adminUrl) {
-      throw new AdminHttpError("forbidden", "Origen no permitido.")
-    }
-    const contentType = c.req.header("content-type")?.split(";")[0]?.trim().toLowerCase()
-    if (hasBody && contentType !== "application/json") {
-      throw new AdminHttpError("invalid_input", "El cuerpo debe ser application/json.")
-    }
+  const contentType = c.req.header("content-type")?.split(";")[0]?.trim().toLowerCase()
+  if (hasBody && contentType !== "application/json") {
+    throw new AdminHttpError("invalid_input", "El cuerpo debe ser application/json.")
   }
+}
+
+function isFresh(principal: AdminPrincipal, { now = Date.now, freshSeconds }: AdminApiDeps) {
+  return now() - principal.session.createdAt.getTime() < freshSeconds * 1000
+}
+
+async function authorize(c: Context, route: Route, deps: AdminApiDeps) {
+  const principal = await authenticate(c, deps)
+  if (roleRank[principal.role] < roleRank[route.role]) {
+    throw new AdminHttpError("forbidden", "Tu rol no permite esta acción.")
+  }
+  if (mutation(route.method)) requireSameOrigin(c, deps.adminUrl, "body" in route)
+  if ("fresh" in route && route.fresh && !isFresh(principal, deps)) {
+    throw new AdminHttpError("not_fresh", "Vuelve a iniciar sesión para confirmar esta acción.")
+  }
+  return principal
+}
+
+const actorOf = (principal: AdminPrincipal): AuditActor => ({ type: "admin", id: principal.id, label: principal.email })
+
+type JsonRouteName = Exclude<AdminRouteName, "live" | "flowLive">
+type JsonHandlers = {
+  [K in JsonRouteName]: (c: Context, principal: AdminPrincipal) => Promise<z.input<(typeof adminRoutes)[K]["response"]>>
+}
+
+function createJsonHandlers(deps: AdminApiDeps): JsonHandlers {
+  const { queries, tokens, audit, broker, revealer, limiters, telemetry, now = Date.now } = deps
+  const brokerActor = (principal: AdminPrincipal) => ({ adminId: principal.id, email: principal.email })
 
   async function brokerAction(
     c: Context,
@@ -198,121 +193,120 @@ export function createAdminApi(deps: AdminApiDeps) {
     return { ok: true as const, auditId: await audit.record({ ...entry, meta: { ok: true } }) }
   }
 
-  async function handle(name: AdminRouteName, c: Context, principal: AdminPrincipal): Promise<unknown> {
-    const actor = { adminId: principal.id, email: principal.email }
-    switch (name) {
-      case "session":
-        return {
-          user: { id: principal.id, email: principal.email, name: principal.name, image: principal.image, role: principal.role },
-          session: {
-            id: principal.session.id,
-            createdAt: principal.session.createdAt.toISOString(),
-            expiresAt: principal.session.expiresAt.toISOString(),
-            fresh: isFresh(principal),
-          },
-        }
-      case "overview":
-        return queries.overview(parseInput(adminRoutes.overview.query, queryInput(c)).window)
-      case "services":
-        return { items: await queries.services() }
-      case "requests":
-        return queries.requests(parseInput(adminRoutes.requests.query, queryInput(c)))
-      case "request":
-        return found(await queries.request(parseInput(adminRoutes.request.params, c.req.param()).id), "No existe la solicitud.")
-      case "revealPayload": {
-        const { id } = parseInput(adminRoutes.revealPayload.params, c.req.param())
-        const { reason } = await parseBody(c, adminRoutes.revealPayload.body)
-        const blocked = limiters.reveal.consume(principal.id)
-        if (blocked) throw new AdminHttpError("rate_limited", "Alcanzaste el máximo de 10 revelaciones por hora.", blocked)
-        // Se audita antes de leer: queda registro aunque la lectura falle.
-        const auditId = await audit.record({ actor: actorOf(principal), action: "reveal", target: id, reason, ip: clientIp(c, deps.trustProxy) })
-        const payload = found(await revealer.reveal(id), "No existe la solicitud.")
-        return PayloadReveal.parse({
-          requestId: id,
-          args: payload.args,
-          purpose: payload.purpose ?? null,
-          result: payload.result ?? null,
-          auditId,
-          revealedAt: new Date(now()).toISOString(),
-        })
-      }
-      case "rewake": {
-        const { id } = parseInput(adminRoutes.rewake.params, c.req.param())
-        const { reason } = await parseBody(c, adminRoutes.rewake.body)
-        return brokerAction(c, principal, "rewake", id, reason, () => broker.rewake(actor, id, reason))
-      }
-      case "expire": {
-        const { id } = parseInput(adminRoutes.expire.params, c.req.param())
-        const { reason } = await parseBody(c, adminRoutes.expire.body)
-        return brokerAction(c, principal, "expire", id, reason, () => broker.expire(actor, id, reason))
-      }
-      case "revokeAgent": {
-        const { userId, agentId } = parseInput(adminRoutes.revokeAgent.params, c.req.param())
-        const { reason } = await parseBody(c, adminRoutes.revokeAgent.body)
-        return brokerAction(c, principal, "revoke-agent", `${userId}/${agentId}`, reason, () => broker.revokeAgent(actor, userId, agentId, reason))
-      }
-      case "trace":
-        return found(await queries.trace(parseInput(adminRoutes.trace.params, c.req.param()).id), "No existe la traza.")
-      case "events":
-        return { items: await queries.events(parseInput(adminRoutes.events.query, queryInput(c))) }
-      case "live":
-      case "flowLive":
-        throw new Error(`${name} se atiende como stream`)
-      case "flowSnapshot":
-        return queries.flowSnapshot()
-      case "errors":
-        return { items: await queries.errors(parseInput(adminRoutes.errors.query, queryInput(c))) }
-      case "error":
-        return found(await queries.error(parseInput(adminRoutes.error.params, c.req.param()).id), "No existe el error.")
-      case "users":
-        return queries.users(parseInput(adminRoutes.users.query, queryInput(c)))
-      case "user":
-        return found(await queries.user(parseInput(adminRoutes.user.params, c.req.param()).id), "No existe la persona.")
-      case "agents":
-        return { items: await queries.agents(parseInput(adminRoutes.agents.query, queryInput(c))) }
-      case "wakeQueue":
-        return { items: await queries.wakeQueue(parseInput(adminRoutes.wakeQueue.query, queryInput(c)).state) }
-      case "sql": {
-        const { sql } = await parseBody(c, adminRoutes.sql.body)
-        await audit.record({ actor: actorOf(principal), action: "sql", target: null, ip: clientIp(c, deps.trustProxy), meta: { length: sql.length } })
-        return queries.sql(sql)
-      }
-      case "audit":
-        return queries.audit(parseInput(adminRoutes.audit.query, queryInput(c)).cursor)
-      case "tokens":
-        return { items: await tokens.list() }
-      case "createToken": {
-        const input = await parseBody(c, adminRoutes.createToken.body)
-        const created = await tokens.create(input, principal.email)
-        await audit.record({
-          actor: actorOf(principal),
-          action: "token.create",
-          target: created.meta.id,
-          ip: clientIp(c, deps.trustProxy),
-          meta: { scopes: created.meta.scopes.join(" "), ttlDays: input.ttlDays },
-        })
-        return created
-      }
-      case "revokeToken": {
-        const { id } = parseInput(adminRoutes.revokeToken.params, c.req.param())
-        if (!(await tokens.revoke(id))) throw new AdminHttpError("not_found", "No existe el token o ya estaba revocado.")
-        await audit.record({ actor: actorOf(principal), action: "token.revoke", target: id, ip: clientIp(c, deps.trustProxy) })
-        return { ok: true }
-      }
+  return {
+    session: async (_c, principal) => ({
+      user: { id: principal.id, email: principal.email, name: principal.name, image: principal.image, role: principal.role },
+      session: {
+        id: principal.session.id,
+        createdAt: principal.session.createdAt.toISOString(),
+        expiresAt: principal.session.expiresAt.toISOString(),
+        fresh: isFresh(principal, deps),
+      },
+    }),
+    overview: (c) => queries.overview(parseInput(adminRoutes.overview.query, queryInput(c)).window),
+    services: async () => ({ items: await queries.services() }),
+    requests: (c) => queries.requests(parseInput(adminRoutes.requests.query, queryInput(c))),
+    request: async (c) => found(await queries.request(parseInput(adminRoutes.request.params, c.req.param()).id), "No existe la solicitud."),
+    revealPayload: async (c, principal) => {
+      const { id } = parseInput(adminRoutes.revealPayload.params, c.req.param())
+      const { reason } = await parseBody(c, adminRoutes.revealPayload.body)
+      const blocked = limiters.reveal.consume(principal.id)
+      if (blocked) throw new AdminHttpError("rate_limited", "Alcanzaste el máximo de 10 revelaciones por hora.", blocked)
+      // Se audita antes de leer: queda registro aunque la lectura falle.
+      const auditId = await audit.record({ actor: actorOf(principal), action: "reveal", target: id, reason, ip: clientIp(c, deps.trustProxy) })
+      const payload = found(await revealer.reveal(id), "No existe la solicitud.")
+      return PayloadReveal.parse({
+        requestId: id,
+        args: payload.args,
+        purpose: payload.purpose ?? null,
+        result: payload.result ?? null,
+        auditId,
+        revealedAt: new Date(now()).toISOString(),
+      })
+    },
+    rewake: async (c, principal) => {
+      const { id } = parseInput(adminRoutes.rewake.params, c.req.param())
+      const { reason } = await parseBody(c, adminRoutes.rewake.body)
+      return brokerAction(c, principal, "rewake", id, reason, () => broker.rewake(brokerActor(principal), id, reason))
+    },
+    expire: async (c, principal) => {
+      const { id } = parseInput(adminRoutes.expire.params, c.req.param())
+      const { reason } = await parseBody(c, adminRoutes.expire.body)
+      return brokerAction(c, principal, "expire", id, reason, () => broker.expire(brokerActor(principal), id, reason))
+    },
+    revokeAgent: async (c, principal) => {
+      const { userId, agentId } = parseInput(adminRoutes.revokeAgent.params, c.req.param())
+      const { reason } = await parseBody(c, adminRoutes.revokeAgent.body)
+      return brokerAction(c, principal, "revoke-agent", `${userId}/${agentId}`, reason, () => broker.revokeAgent(brokerActor(principal), userId, agentId, reason))
+    },
+    trace: async (c) => found(await queries.trace(parseInput(adminRoutes.trace.params, c.req.param()).id), "No existe la traza."),
+    events: async (c) => ({ items: await queries.events(parseInput(adminRoutes.events.query, queryInput(c))) }),
+    flowSnapshot: () => queries.flowSnapshot(),
+    errors: async (c) => ({ items: await queries.errors(parseInput(adminRoutes.errors.query, queryInput(c))) }),
+    error: async (c) => found(await queries.error(parseInput(adminRoutes.error.params, c.req.param()).id), "No existe el error."),
+    users: (c) => queries.users(parseInput(adminRoutes.users.query, queryInput(c))),
+    user: async (c) => found(await queries.user(parseInput(adminRoutes.user.params, c.req.param()).id), "No existe la persona."),
+    agents: async (c) => ({ items: await queries.agents(parseInput(adminRoutes.agents.query, queryInput(c))) }),
+    wakeQueue: async (c) => ({ items: await queries.wakeQueue(parseInput(adminRoutes.wakeQueue.query, queryInput(c)).state) }),
+    sql: async (c, principal) => {
+      const { sql } = await parseBody(c, adminRoutes.sql.body)
+      await audit.record({ actor: actorOf(principal), action: "sql", target: null, ip: clientIp(c, deps.trustProxy), meta: { length: sql.length } })
+      return queries.sql(sql)
+    },
+    audit: (c) => queries.audit(parseInput(adminRoutes.audit.query, queryInput(c)).cursor),
+    tokens: async () => ({ items: await tokens.list() }),
+    createToken: async (c, principal) => {
+      const input = await parseBody(c, adminRoutes.createToken.body)
+      const created = await tokens.create(input, principal.email)
+      await audit.record({
+        actor: actorOf(principal),
+        action: "token.create",
+        target: created.meta.id,
+        ip: clientIp(c, deps.trustProxy),
+        meta: { scopes: created.meta.scopes.join(" "), ttlDays: input.ttlDays },
+      })
+      return created
+    },
+    revokeToken: async (c, principal) => {
+      const { id } = parseInput(adminRoutes.revokeToken.params, c.req.param())
+      if (!(await tokens.revoke(id))) throw new AdminHttpError("not_found", "No existe el token o ya estaba revocado.")
+      await audit.record({ actor: actorOf(principal), action: "token.revoke", target: id, ip: clientIp(c, deps.trustProxy) })
+      return { ok: true }
+    },
+  }
+}
+
+export function createAdminApi(deps: AdminApiDeps) {
+  const { auth, roleOf, queries, limiters, adminUrl, telemetry } = deps
+  // Los errores esperados (401, 403, 404…) se responden aquí y no llegan a onError, para que
+  // honoTelemetry no los registre como errores. Los inesperados devuelven X-Error-Id.
+  const guarded = (handler: (c: Context) => Promise<Response>) => async (c: Context) => {
+    try {
+      return await handler(c)
+    } catch (error) {
+      return errorResponse(c, error, telemetry)
     }
   }
+  const api = new Hono()
+  // Streams en vivo abiertos por admin (límite en live.ts).
+  const liveSlots = createLiveSlots()
+
+  function liveAccess(c: Context, principal: AdminPrincipal) {
+    return async () => {
+      const current = await auth.api.getSession({
+        headers: c.req.raw.headers,
+        query: { disableRefresh: true, disableCookieCache: true },
+      })
+      return current?.session.id === principal.session.id && current.user.id === principal.id && !!roleOf(current.user.email)
+    }
+  }
+
+  const handlers = createJsonHandlers(deps)
 
   for (const [name, route] of Object.entries(adminRoutes) as [AdminRouteName, Route][]) {
     api.on([route.method], [route.path], guarded(async (c) => {
       c.header("Cache-Control", "no-store")
-      const principal = await authenticate(c)
-      if (roleRank[principal.role] < roleRank[route.role]) {
-        throw new AdminHttpError("forbidden", "Tu rol no permite esta acción.")
-      }
-      if (mutation(route.method)) requireSameOrigin(c, "body" in route)
-      if ("fresh" in route && route.fresh && !isFresh(principal)) {
-        throw new AdminHttpError("not_fresh", "Vuelve a iniciar sesión para confirmar esta acción.")
-      }
+      const principal = await authorize(c, route, deps)
       if (name === "live") {
         const filters = parseInput(adminRoutes.live.query, queryInput(c))
         return liveStream(c, queries, telemetry, liveSlots, {
@@ -323,7 +317,7 @@ export function createAdminApi(deps: AdminApiDeps) {
         const { after } = parseInput(adminRoutes.flowLive.query, queryInput(c))
         return liveStream(c, queries, telemetry, liveSlots, createFlowLiveSpec(queries, principal.id, liveAccess(c, principal), after), deps.live)
       }
-      return c.json(route.response.parse(await handle(name, c, principal)))
+      return c.json(route.response.parse(await handlers[name](c, principal)))
     }))
   }
 
@@ -336,7 +330,7 @@ export function createAdminApi(deps: AdminApiDeps) {
     })
     api.post("/api/admin/dev-login", guarded(async (c) => {
       c.header("Cache-Control", "no-store")
-      requireSameOrigin(c, false)
+      requireSameOrigin(c, adminUrl, false)
       const blocked = limiters.login.consume(clientIp(c, deps.trustProxy) ?? "unknown")
       if (blocked) throw new AdminHttpError("rate_limited", "Demasiados intentos de inicio de sesión.", blocked)
       const { headers } = await auth.api.issueSession({ body: { email: DEV_EMAIL, name: "Dev" }, returnHeaders: true })
