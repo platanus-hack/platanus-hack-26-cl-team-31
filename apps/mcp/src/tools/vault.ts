@@ -15,7 +15,7 @@ export function registerVault(server: McpServer, p: Principal, agent: AgentPort,
     inputSchema: z.object({}), outputSchema: TagsView, annotations: { readOnlyHint: true },
   }, () => runTool(telemetry, p, { tool: "sideband_tags", scope: agentScopes.tags }, () => agent.tags(p)));
   server.registerTool("sideband_tag_change", {
-    description: "Solo por orden directa del titular: crea, renombra, cambia de color o elimina una etiqueta, o se la pone o quita a un contacto existente. Una etiqueta abre al contacto las categorías de la bóveda permitidas para ella: puede leerlas y preguntar por ellas. Ponerla o quitarla cambia lo que el titular comparte con ese contacto, así que confírmalo con el titular. No cambia círculos.",
+    description: "Solo por orden directa del titular: crea, renombra, cambia de color o elimina una etiqueta, o se la pone o quita a un contacto existente. Antes de ponerle o quitarle una etiqueta a un contacto, confirma el cambio con el titular porque puede cambiar qué categorías puede leer ese contacto y sobre cuáles puede preguntar. No cambia círculos.",
     inputSchema: z.object({ change: TagChange }), outputSchema: TagReceipt,
   }, ({ change }) => runTool(telemetry, p, { tool: "sideband_tag_change", scope: agentScopes.changeTag }, () => agent.changeTag(p, change)));
   server.registerTool("sideband_vault_catalog", {
