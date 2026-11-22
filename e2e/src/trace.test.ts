@@ -125,6 +125,27 @@ describe("traza de punta a punta MCP → broker", () => {
     expect(JSON.stringify(sink.records)).not.toContain(secretText);
   });
 
+  it("acepta por MCP el acceso a la bóveda y vincula el cambio de permiso a la solicitud", async () => {
+    const sink = memorySink();
+    const stack = await startStack(sink);
+    const ana = await stack.connect("ana");
+    const bob = await stack.connect("bob");
+    const to = "bob@sideband.app";
+    const invitation = await stack.owner.connect({ userId: "ana" }, { to });
+    await stack.owner.answerInvitation({ userId: "bob" }, invitation.requestId, { accept: true });
+
+    const { requestId } = await ana.call("sideband_vault_request_access", { to, categoryName: "Proyecto" }, RequesterView);
+    const [item] = await bob.inbox();
+    expect(item).toMatchObject({ requestId, tool: "vault_access", from: "ana@sideband.app" });
+    await bob.reply({ requestId, nonce: item!.nonce, outcome: "answered", result: { accepted: true } });
+    expect(await ana.check(requestId)).toMatchObject({ final: true, result: { accepted: true } });
+    await stack.flush();
+    expect(sink.records).toContainEqual(expect.objectContaining({
+      requestId, userId: "bob", agentId: "bob-bot", name: "broker.vault.changed",
+      attrs: expect.objectContaining({ action: "set_member", allowed: true }),
+    }));
+  });
+
   const testDatabaseUrl = process.env.TEST_DATABASE_URL;
   it.skipIf(!testDatabaseUrl && !process.env.CI)("revocar bloquea tanto la respuesta pendiente como la ya guardada antes de leerla", async () => {
     const db = await createTestDatabase("revoke_test");

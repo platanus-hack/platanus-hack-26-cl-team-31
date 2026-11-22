@@ -14,6 +14,7 @@ export async function sharingRule(tx: StoreTx, toUserId: string, toAddress: Addr
 export async function stillAuthorized(tx: StoreTx, row: RequestRow, toUserId: string): Promise<boolean> {
   // Invitations, connection tests and one-time owner approvals have their own consent flow.
   if (row.tool === "connect" || row.fromUserId === null || row.approvedOnce) return true;
+  if (row.tool === "vault_access") return (await tx.listContactAddresses(toUserId)).includes(row.fromAddress);
   const category = categoryOf(row.tool, row.args);
   return category !== undefined && await sharingRule(tx, toUserId, row.toAddress, row.fromAddress, category) !== "no_grant";
 }

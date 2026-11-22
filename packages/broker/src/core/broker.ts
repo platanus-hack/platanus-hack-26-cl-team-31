@@ -47,9 +47,9 @@ import type { AgentConnectionRow, RequestRow, StoreTx, VaultDocumentRow } from "
 import { submitOnce } from "./ask-receipt.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
-import { approveOnce, escalate, parseResult, transition } from "./lifecycle.js";
+import { approveOnce, escalate, notifiesRecipient, parseResult, transition } from "./lifecycle.js";
 import {
-  senderMessage, toActivityItem, toAgentConnection, toGrant, toInboxItem, toOwnerPendingItem, toRequesterView,
+  replyFields, senderMessage, toActivityItem, toAgentConnection, toGrant, toInboxItem, toOwnerPendingItem, toRequesterView,
 } from "./views.js";
 import { createLifecycleEvents } from "./events.js";
 import { createWorker } from "./worker.js";
@@ -98,11 +98,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   const tags = createTags({ store }, record, grants, (tx, userId) => denyUnauthorizedInboxRequests(tx, userId));
   const systemAddress = Address.parse(`${systemLocalPart}@${config.addressDomain}`);
 
-  function requireScope(principal: Principal, operation: keyof typeof agentScopes): void {
+  function requireScope(principal: Principal, operation: keyof typeof agentScopes, requestId?: string): void {
     const scope = agentScopes[operation];
     if (principal.scopes.includes(scope)) return;
     events.emit("auth.scope.denied", {
-      userId: principal.userId, agentId: principal.agentId, attrs: { scope, operation: `agent.${operation}` },
+      requestId, userId: principal.userId, agentId: principal.agentId, attrs: { scope, operation: `agent.${operation}` },
     });
     throw new BrokerError("forbidden", "El agente no tiene permiso para esta acción.");
   }
@@ -188,7 +188,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       ? await sanitizeReply(reply.result, {
         ...deps.sanitize,
         tool: row.tool,
-        allowedFields: row.allowedFields,
+        allowedFields: replyFields(row),
         guidance: row.guidance,
         senderMessage: senderMessage(row),
       })
@@ -351,7 +351,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         ...row, status: "awaiting_agent", allowedFields: connectionFields, rule: "Invitación mutua",
       }, "answered", now, { accepted: true });
     } else if (accessRequest) {
-      row = { ...row, status: "awaiting_owner", rule: "Solicitud de lectura de la bóveda" };
+      row = { ...row, status: "awaiting_owner", allowedFields: fieldsOf(tool), rule: "Solicitud de lectura de la bóveda" };
     } else if (invitation) {
       row = {
         ...row, status: "awaiting_agent", allowedFields: connectionFields,
@@ -405,7 +405,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     }
     await tx.appendEvent({ requestId: row.id, at: now, kind: "received" });
     await tx.appendEvent({ requestId: row.id, at: now, kind: "permission", status: row.status });
-    if (row.status === "awaiting_agent") await enqueue(tx, row, now, row.version);
+    if (notifiesRecipient(row)) await enqueue(tx, row, now, row.version);
     if (row.closedAt) await tx.appendEvent({ requestId: row.id, at: now, kind: "delivery", status: row.status });
   }
 
@@ -495,7 +495,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return result;
   }
 
-  async function changeVault(tx: StoreTx, userId: string, input: VaultChange, agentId?: string) {
+  async function changeVault(tx: StoreTx, userId: string, input: VaultChange, agentId?: string, requestId?: string) {
     const parsed = VaultChange.safeParse(input);
     if (!parsed.success) throw new BrokerError("invalid_input", "Revisa los datos de la categoría.");
     if (!(await tx.getUser(userId))?.address) throw new BrokerError("invalid_input", "Primero elige tu dirección Sideband.");
@@ -503,10 +503,19 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const categoryId = change.action === "create" ? randomUUID() : change.categoryId;
     if (change.action === "set_tag") await tags.knownTags(tx, userId, [change.tagId]);
     if (!await tx.changeVault(userId, categoryId, change)) throw notFound();
-    record(tx, "broker.vault.changed", { userId, agentId, attrs: { action: change.action,
+    record(tx, "broker.vault.changed", { userId, agentId, requestId, attrs: { action: change.action,
       ...(change.action === "set_tag" || change.action === "set_member" ? { allowed: change.allowed } : {}),
       ...(change.action === "set_visibility" || change.action === "create" ? { visibility: change.visibility } : {}) } });
     return { categoryId };
+  }
+
+  async function grantVaultRead(tx: StoreTx, userId: string, row: RequestRow, agentId?: string) {
+    const { categoryName } = ToolArgs.vault_access.parse(row.args);
+    const { categories } = await tx.vaultCatalog(userId, true);
+    const matches = categories.filter(c => c.name.toLowerCase() === categoryName.toLowerCase());
+    if (matches.length > 1) throw new BrokerError("conflict", "Hay varias categorías con ese nombre. Distingue sus nombres antes de aceptar.");
+    const categoryId = matches[0]?.id ?? (await changeVault(tx, userId, { action: "create", name: categoryName }, agentId, row.id)).categoryId;
+    await changeVault(tx, userId, { action: "set_member", categoryId, address: row.fromAddress, allowed: true }, agentId, row.id);
   }
 
   function documentMetadata(row: VaultDocumentRow): VaultDocumentMetadata {
@@ -685,7 +694,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           if (!address) return [];
           const now = clock.now();
           const rows = await tx.listInbox(address);
-          if (includeInvitations) rows.push(...(await tx.listOwnerPending(address)).filter((row) => row.tool === "connect"));
+          rows.push(...(await tx.listOwnerPending(address)).filter((row) =>
+            row.tool === "vault_access" || (includeInvitations && row.tool === "connect")));
           return rows
             .filter((row) => row.toUserId === p.userId && (row.targetAgentId === undefined || row.targetAgentId === p.agentId) && row.expiresAt > now)
             .map((row) => toInboxItem(row, deriveNonce(nonceKey, row.id)));
@@ -720,7 +730,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             return error;
           }
           const answeringInvitation = row.tool === "connect" && parsed.data.outcome === "answered";
-          if (row.status !== "awaiting_agent" && !(answeringInvitation && row.status === "awaiting_owner")) return reject(closed());
+          const vaultDecision = row.tool === "vault_access" && row.status === "awaiting_owner";
+          if (!notifiesRecipient(row) && !(answeringInvitation && row.status === "awaiting_owner")) return reject(closed());
           if (row.expiresAt <= now) {
             const changed = await closePending(tx, row, "expired", now);
             return reject(changed ? expired() : closed());
@@ -742,6 +753,16 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
               "share sólo viaja al aceptar una invitación connect. Esta solicitud no es una invitación: omite share o envíalo vacío.",
             ));
           }
+          if (vaultDecision) {
+            if (parsed.data.outcome === "needs_owner") {
+              return { requestId, status: row.status, deliveredFields: [], droppedFields: [] };
+            }
+            if (parsed.data.outcome !== "declined" &&
+                !(parsed.data.outcome === "answered" && ToolResultSchemas.vault_access.safeParse(parsed.data.result).data?.accepted)) {
+              return reject(new BrokerError("invalid_input", "Para conceder lectura usa answered con accepted: true. Para rechazar usa declined."));
+            }
+            requireScope(p, "reply.vault_access", requestId);
+          }
           let response: Awaited<ReturnType<typeof prepareAgentReply>>;
           try {
             response = await prepareAgentReply(row, parsed.data, p.agentId, now);
@@ -751,6 +772,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           }
           const { changed, receipt, flags } = response;
           if (!await saveTransition(tx, row, changed)) return reject(closed());
+          if (vaultDecision && changed.status === "answered") await grantVaultRead(tx, p.userId, row, p.agentId);
           if (answeringInvitation) await applyConnection(tx, changed, parsed.data.share);
           await recordTransitionAndScheduleOriginWake(tx, row, changed, "agent");
           if (flags.length > 0 || changed.droppedFields.length > 0) {
@@ -934,12 +956,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           }
           if (!await saveTransition(tx, row, changed)) throw closed();
           if (decision.kind === "grant_vault_read") {
-            const { categoryName } = ToolArgs.vault_access.parse(row.args);
-            const { categories } = await tx.vaultCatalog(o.userId, true);
-            const matches = categories.filter(c => c.name.toLowerCase() === categoryName.toLowerCase());
-            if (matches.length > 1) throw new BrokerError("conflict", "Hay varias categorías con ese nombre. Distingue sus nombres antes de aceptar.");
-            const categoryId = matches[0]?.id ?? (await changeVault(tx, o.userId, { action: "create", name: categoryName })).categoryId;
-            await changeVault(tx, o.userId, { action: "set_member", categoryId, address: row.fromAddress, allowed: true });
+            await grantVaultRead(tx, o.userId, row);
           }
           await applyConnection(tx, changed);
           record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: decision.kind } });
