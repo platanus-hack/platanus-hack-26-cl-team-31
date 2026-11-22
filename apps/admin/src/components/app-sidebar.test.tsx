@@ -4,14 +4,16 @@ import type { Window as HappyWindow } from "happy-dom"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { createMemoryRouter, RouterProvider } from "react-router"
+import { toast } from "sonner"
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest"
+import type { AdminSession } from "@shared/contract"
 
 import { api } from "@/lib/api"
 import { queryClient } from "@/lib/query"
 import { overviewQuery } from "@/lib/queries"
 import { SessionProvider, sessionQueryKey } from "@/lib/session"
 import { WindowProvider } from "@/lib/window"
-import { writeMockState } from "@/mocks/handlers"
+import * as mockApi from "@/mocks/handlers"
 import { AppSidebar } from "./app-sidebar"
 import { ThemeProvider } from "./theme-provider"
 import { SidebarProvider, SidebarTrigger } from "./ui/sidebar"
@@ -39,6 +41,7 @@ afterEach(async () => {
   localStorage.clear()
   document.documentElement.classList.remove("dark", "light")
   viewport.setViewport({ width: desktopWidth })
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -48,7 +51,7 @@ async function openSidebar(
   path: string,
   role: "operator" | "viewer" = "viewer"
 ) {
-  writeMockState({ role })
+  mockApi.writeMockState({ role })
   queryClient.setQueryData(sessionQueryKey, await api("session"))
   router = createMemoryRouter(
     [
@@ -86,6 +89,93 @@ function menuLink(path: string) {
     `[data-sidebar="content"] a[href="${path}"]`
   )
 }
+
+async function openUserMenu() {
+  const trigger = host.querySelector<HTMLButtonElement>(
+    '[data-sidebar="footer"] button[aria-haspopup="menu"]'
+  )!
+  await act(() => {
+    trigger.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })
+    )
+  })
+}
+
+function menuItem(label: string) {
+  const item = Array.from(
+    document.querySelectorAll<HTMLElement>('[role^="menuitem"]')
+  ).find((element) => element.textContent === label)
+  expect(item, label).toBeDefined()
+  return item!
+}
+
+async function openSimulation() {
+  await openUserMenu()
+  await act(() => menuItem("Simulación (mock)").click())
+}
+
+async function waitForView(check: () => void) {
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    check()
+  })
+}
+
+it("aplica el tema elegido en el menú y recuerda la selección al abrirlo de nuevo", async () => {
+  await openSidebar("/")
+  await openUserMenu()
+  expect(menuItem("Claro").getAttribute("aria-checked")).toBe("true")
+  await act(() => menuItem("Oscuro").click())
+  expect(localStorage.getItem("theme")).toBe("dark")
+  expect(document.documentElement.classList.contains("dark")).toBe(true)
+  await openUserMenu()
+  expect(menuItem("Oscuro").getAttribute("aria-checked")).toBe("true")
+})
+
+it("actualiza la navegación y la frescura al cambiar la sesión simulada desde el menú", async () => {
+  await openSidebar("/", "viewer")
+  expect(menuLink("/tokens")).toBeNull()
+  await openSimulation()
+  expect(menuItem("Lector").getAttribute("aria-checked")).toBe("true")
+  await act(() => menuItem("Operador").click())
+  await waitForView(() =>
+    expect(menuLink("/tokens")?.textContent).toBe("Tokens MCP")
+  )
+
+  await openSimulation()
+  expect(menuItem("Sesión fresca").getAttribute("aria-checked")).toBe("true")
+  await act(() => menuItem("Sesión fresca").click())
+  await waitForView(() => {
+    expect(
+      queryClient.getQueryData<AdminSession>(sessionQueryKey)
+    ).toMatchObject({
+      user: { role: "operator" },
+      session: { fresh: false },
+    })
+    expect(menuLink("/tokens")).not.toBeNull()
+  })
+  await openSimulation()
+  expect(menuItem("Sesión fresca").getAttribute("aria-checked")).toBe("false")
+})
+
+it("avisa si falla el cierre de sesión y permite reintentarlo hasta volver al ingreso", async () => {
+  const error = vi.spyOn(toast, "error")
+  vi.spyOn(mockApi, "mockSignOut").mockRejectedValueOnce(
+    new Error("Sin conexión")
+  )
+  await openSidebar("/")
+  await openUserMenu()
+  await act(() => menuItem("Cerrar sesión").click())
+  expect(error).toHaveBeenCalledExactlyOnceWith("No se pudo cerrar la sesión.")
+  expect(menuLink("/auditoria")).not.toBeNull()
+
+  await openUserMenu()
+  await act(() => menuItem("Cerrar sesión").click())
+  await waitForView(() => {
+    expect(host.textContent).toContain("Entrar con Google")
+    expect(menuLink("/auditoria")).toBeNull()
+  })
+})
 
 it.each(["viewer", "operator"] as const)(
   "muestra la navegación correspondiente al rol %s",
