@@ -1,9 +1,8 @@
 // Runs in the owner's process. The only network dependency is their authenticated broker client.
 import {
-  isSystemSender, ToolArgs, ToolResultSchemas, toolExecution, WakeNotice, type Category, type InboxItem, type Principal, type RuntimeTool,
+  filterResult, isSystemSender, ToolArgs, ToolResultSchemas, toolExecution, WakeNotice, type Category, type InboxItem, type Principal, type RuntimeTool,
 } from "@team-31/protocol";
 import type { AgentPort } from "./ports.js";
-import { filterResult } from "./filter.js";
 
 type Args<K extends RuntimeTool> = ReturnType<(typeof ToolArgs)[K]["parse"]>;
 type Result<K extends RuntimeTool> = ReturnType<(typeof ToolResultSchemas)[K]["parse"]>;

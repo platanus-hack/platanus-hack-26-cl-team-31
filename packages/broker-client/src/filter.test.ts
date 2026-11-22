@@ -1,7 +1,6 @@
 import type { ToolName } from "@team-31/protocol";
 import { describe, expect, it } from "vitest";
-import { BrokerError } from "../errors.js";
-import { filterResult, type FilteredResult } from "./index.js";
+import { BrokerError, filterResult, type FilteredResult } from "./index.js";
 
 describe("filterResult", () => {
   it.each<{

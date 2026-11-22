@@ -1,6 +1,6 @@
-import { BrokerError } from "@team-31/broker-client";
+import { BrokerError } from "@team-31/protocol";
 
-export { BrokerError } from "@team-31/broker-client";
+export { BrokerError };
 export function notFound(): BrokerError {
   return new BrokerError("not_found", "No se encontró el recurso.");
 }

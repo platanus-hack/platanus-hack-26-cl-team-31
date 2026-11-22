@@ -1,7 +1,6 @@
-import { Owner } from "@team-31/protocol";
+import { BrokerError, Owner } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
 import { expect, it, vi } from "vitest";
-import { BrokerError } from "./errors.js";
 import { createHttpClient } from "./http.js";
 
 const owner = { userId: "alice" };

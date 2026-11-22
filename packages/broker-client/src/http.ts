@@ -1,4 +1,5 @@
 import {
+  BrokerError,
   ErrorBody,
   invalidInputMessage,
   invalidInputReasonLimit,
@@ -6,7 +7,6 @@ import {
   type IssueSource,
 } from "@team-31/protocol";
 import { routes, type RouteInput } from "@team-31/protocol/http";
-import { BrokerError } from "./errors.js";
 
 type Schema<Value> = {
   safeParse(input: unknown): { success: true; data: Value } | { success: false; error?: IssueSource };
