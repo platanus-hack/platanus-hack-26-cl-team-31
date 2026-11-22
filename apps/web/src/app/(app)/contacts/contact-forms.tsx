@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { startTransition, useActionState, useEffect, useState, useTransition } from "react";
 import type { Contact, Invitation, Sharing, Tag } from "@team-31/protocol";
 import { sameSharing, tagSharing } from "@team-31/protocol/constants";
 
 import { answerInvitation, removeContact, saveContactTags, saveSharing, sendInvitation } from "./actions";
 import { button, card, Feedback, Initial, input, primaryButton } from "../ui";
 import { Modal, ModalCancel, useCloseModal } from "../modal";
+import { useUndoWindow } from "../use-undo-window";
 import { describeSharing } from "./describe";
 import { SharingPicker } from "./sharing";
 import { TagMenu, TagPicker } from "./tags";
@@ -54,22 +55,18 @@ export function InviteButton({ tags }: { tags: Tag[] }) {
 export function IncomingInvitation({ invitation, tags }: { invitation: Invitation; tags: Tag[] }) {
   const [state, submit, pending] = useActionState(answerInvitation.bind(null, invitation.requestId), {});
   const [chosen, setChosen] = useState<string[]>(() => initialTags(tags));
-  const [declining, setDeclining] = useState(false);
-  const form = useRef<HTMLFormElement>(null);
-  const decline = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!declining) return;
-    const timer = setTimeout(() => form.current?.requestSubmit(decline.current), 5000);
-    return () => clearTimeout(timer);
-  }, [declining]);
-  const gone = (pending || state.message) && !state.error;
+  const { scheduled, schedule, undo } = useUndoWindow(() => {
+    const form = new FormData();
+    form.set("answer", "decline");
+    startTransition(() => submit(form));
+  });
+  const gone = pending || state.message;
 
-  if (declining && !state.error) {
+  if (scheduled) {
     return (
       <li className="flex items-center justify-between gap-3 px-4 py-3 text-[13px] text-muted">
         <span>Solicitud de {invitation.address} rechazada.</span>
-        {!pending && <button type="button" onClick={() => setDeclining(false)} className="cursor-pointer font-medium text-accent-ink hover:underline">Deshacer</button>}
-        <form ref={form} action={submit} hidden><button ref={decline} name="answer" value="decline" /></form>
+        <button type="button" onClick={undo} className="cursor-pointer font-medium text-accent-ink hover:underline">Deshacer</button>
       </li>
     );
   }
@@ -84,7 +81,7 @@ export function IncomingInvitation({ invitation, tags }: { invitation: Invitatio
       <TagMenu tags={tags} value={chosen} onChange={setChosen} />
       <form action={submit} className="flex items-center gap-2">
         {chosen.map((id) => <input key={id} type="hidden" name="tag" value={id} />)}
-        <button type="button" onClick={() => setDeclining(true)} className={button}>Rechazar</button>
+        <button type="button" onClick={schedule} disabled={pending} className={button}>Rechazar</button>
         <button className={primaryButton} name="answer" value="accept" disabled={pending}>Aceptar</button>
       </form>
       {state.error && <div className="basis-full"><Feedback {...state} /></div>}

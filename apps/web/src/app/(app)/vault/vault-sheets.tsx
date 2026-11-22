@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import type { OwnerVault, Tag } from "@team-31/protocol";
 
 import { tagStyles } from "../contacts/tags";
 import { Modal, ModalCancel, useCloseModal } from "../modal";
 import { Feedback, Initial, input, primaryButton } from "../ui";
+import { useUndoWindow } from "../use-undo-window";
 import { changeVault } from "./actions";
 
 type Category = OwnerVault["categories"][number];
@@ -164,18 +165,13 @@ function CategorySheet({ category, tags, onDelete }: { category: Category; tags:
 
 export function CategoryRow({ category, tags }: { category: Category; tags: Tag[] }) {
   const { state, pending, run } = useVault();
-  const [deleting, setDeleting] = useState(false);
-  useEffect(() => {
-    if (!deleting || pending) return;
-    const timer = setTimeout(() => run({ action: "delete", categoryId: category.id }), 5000);
-    return () => clearTimeout(timer);
-  }, [deleting, pending, category.id, run]);
+  const { scheduled, schedule, undo } = useUndoWindow(() => run({ action: "delete", categoryId: category.id }));
 
-  if (deleting && !state.error) {
+  if (scheduled || pending || state.message) {
     return (
       <li className="flex items-center justify-between gap-3 px-4 py-3 text-[13px] text-muted">
         <span>Eliminaste «{category.name}» con sus datos.</span>
-        {!pending && <button type="button" onClick={() => setDeleting(false)} className="cursor-pointer font-medium text-accent-ink hover:underline">Deshacer</button>}
+        {scheduled && <button type="button" onClick={undo} className="cursor-pointer font-medium text-accent-ink hover:underline">Deshacer</button>}
       </li>
     );
   }
@@ -202,7 +198,7 @@ export function CategoryRow({ category, tags }: { category: Category; tags: Tag[
           </span>
           <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted"><path d="m4.5 2.5 3.5 3.5-3.5 3.5" /></svg>
         </>}>
-        <CategorySheet category={category} tags={tags} onDelete={() => setDeleting(true)} />
+        <CategorySheet category={category} tags={tags} onDelete={schedule} />
       </Modal>
       {state.error && <div className="px-4 pb-3"><Feedback {...state} /></div>}
     </li>

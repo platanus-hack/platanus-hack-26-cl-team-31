@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { startTransition, useActionState, useEffect, useState, useTransition } from "react";
 import type { Sharing, Tag } from "@team-31/protocol";
 import { sameSharing, type TagColor } from "@team-31/protocol/constants";
 
@@ -10,6 +10,7 @@ import { SharingPicker } from "../contacts/sharing";
 import { ColorPicker, tagStyles } from "../contacts/tags";
 import { Modal, ModalCancel, useCloseModal } from "../modal";
 import { Feedback, input, primaryButton } from "../ui";
+import { useUndoWindow } from "../use-undo-window";
 
 type Member = Tag & { members: string[] };
 
@@ -63,20 +64,14 @@ function TagSheet({ tag, onDelete }: { tag: Member; onDelete: () => void }) {
 }
 
 export function TagRow({ tag }: { tag: Member }) {
-  const [deleting, setDeleting] = useState(false);
-  const [state, remove, pending] = useActionState(deleteTag.bind(null, tag.id), {});
-  const [, start] = useTransition();
-  useEffect(() => {
-    if (!deleting) return;
-    const timer = setTimeout(() => start(remove), 5000);
-    return () => clearTimeout(timer);
-  }, [deleting, remove]);
+  const [state, remove, pending] = useActionState(deleteTag.bind(null, tag.id), null);
+  const { scheduled, schedule, undo } = useUndoWindow(() => startTransition(remove));
 
-  if (deleting && !state.error) {
+  if (scheduled || pending || (state && !state.error)) {
     return (
       <li className="flex items-center justify-between gap-3 px-4 py-3 text-[13px] text-muted">
         <span>Etiqueta {tag.name} eliminada.</span>
-        {!pending && <button type="button" onClick={() => setDeleting(false)} className="cursor-pointer font-medium text-accent-ink hover:underline">Deshacer</button>}
+        {scheduled && <button type="button" onClick={undo} className="cursor-pointer font-medium text-accent-ink hover:underline">Deshacer</button>}
       </li>
     );
   }
@@ -93,9 +88,9 @@ export function TagRow({ tag }: { tag: Member }) {
           <span className="shrink-0 text-xs text-muted tabular-nums">{count === 1 ? "1 contacto" : `${count} contactos`}</span>
           <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted"><path d="m4.5 2.5 3.5 3.5-3.5 3.5" /></svg>
         </>}>
-        <TagSheet tag={tag} onDelete={() => setDeleting(true)} />
+        <TagSheet tag={tag} onDelete={schedule} />
       </Modal>
-      {state.error && <div className="px-4 pb-3"><Feedback {...state} /></div>}
+      {state?.error && <div className="px-4 pb-3"><Feedback {...state} /></div>}
     </li>
   );
 }
