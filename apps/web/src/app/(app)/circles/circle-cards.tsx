@@ -10,13 +10,13 @@ import { button, Feedback, Initial, primaryButton } from "../ui";
 
 type Result = { error?: string; message?: string; errorId?: string };
 
-function Faces({ members, size = "size-9" }: { members: Circle["members"]; size?: string }) {
+function Faces({ members }: { members: Circle["members"] }) {
   const shown = members.slice(0, 5);
   return (
     <div className="flex -space-x-2.5">
       {shown.map((member) => (
         <span key={member.address} className={`rounded-full ring-[3px] ring-card ${member.joined ? "" : "opacity-50"}`}>
-          <span className={`block ${size === "size-9" ? "" : "scale-90"}`}><Initial name={member.address} /></span>
+          <span className="block"><Initial name={member.address} /></span>
         </span>
       ))}
       {members.length > shown.length && (
