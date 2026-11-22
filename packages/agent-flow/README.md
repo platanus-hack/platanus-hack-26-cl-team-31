@@ -122,7 +122,7 @@ Señales:
 | `broker.agent.connected` (al crearse la conexión: primera llamada autenticada del agente) | `joined` |
 | `broker.agent.revoked` (titular o admin, solo la primera vez) | `left` |
 | primer paso de un agente que no estaba (p. ej. `mcp.tool.call`) | `joined` y luego el paso |
-| `mapper.reconcile(at)` tras refrescar el directorio | `left` por cada presente que ahora figura revocado y `joined` por cada agente nuevo (cubre señales perdidas mientras el stream estuvo caído) |
+| `mapper.reconcile(at)` tras refrescar el directorio | `left` por cada presente que ahora figura revocado y `joined` por cada agente nuevo o provisional elegible (cubre señales perdidas mientras el stream estuvo caído) |
 
 **Regla de salida.** Un agente está en la red mientras su conexión no esté revocada (un titular con dirección que nunca conectó un agente aparece en la foto como agente provisional; uno cuyos agentes se revocaron, no). Sale solo con una revocación, un `unlinked` o un refresco que lo trae revocado. La inactividad no es una salida: un agente sin pasos se ve como pasivo. `mapper.takeUnknown()` devuelve los usuarios y agentes que aparecieron sin estar en el directorio para que el host lo refresque.
 

@@ -267,6 +267,22 @@ describe("live edge cases", () => {
     expect(createTelemetryMapper(dir).snapshot(1).map((e) => actor(e.from))).toEqual(["agent@bob@sideband.app"]);
   });
 
+  it("adds eligible new placeholders once when the directory refreshes", () => {
+    const dir = createFlowDirectory();
+    const mapper = createTelemetryMapper(dir);
+    expect(mapper.snapshot(1)).toEqual([]);
+    dir.add({ users: [
+      { userId: "u1", address: "ana@sideband.app" },
+      { userId: "u2", address: "bob@sideband.app", hasAgentHistory: true },
+      { userId: "u3" },
+      { userId: "u4", address: "vera@sideband.app" },
+    ], agents: [{ userId: "u4", agentId: "old", revokedAt: "2026-01-01" }] });
+    expect(mapper.reconcile(2)).toMatchObject([
+      { step: "joined", from: { id: "agent@ana@sideband.app", placeholder: true }, meta: { snapshot: true } },
+    ]);
+    expect(mapper.reconcile(3)).toEqual([]);
+  });
+
   it("relabels an agent drawn before its owner reached the directory, without animation", () => {
     const dir = createFlowDirectory();
     const mapper = createTelemetryMapper(dir);
