@@ -12,11 +12,12 @@ const snapshot: FlowSnapshot = {
   generatedAt: new Date(0).toISOString(), cursor: "1", users: [], requests: [], agents: [], truncated: false,
 }
 
+let container: HTMLDivElement
 let root: ReturnType<typeof createRoot>
 
 function Stream() {
-  useFlowLive()
-  return null
+  const { truncated } = useFlowLive()
+  return truncated ? "truncated" : "complete"
 }
 
 beforeEach(async () => {
@@ -24,7 +25,8 @@ beforeEach(async () => {
   vi.useFakeTimers()
   vi.mocked(api).mockResolvedValue(snapshot)
   vi.mocked(subscribeFlow).mockReturnValue(() => {})
-  root = createRoot(document.createElement("div"))
+  container = document.createElement("div")
+  root = createRoot(container)
   await act(() => root.render(createElement(Stream)))
 })
 
@@ -66,4 +68,30 @@ it("resumes a short outage from the last event after an earlier native reconnect
   act(() => stream.onClosed())
   await advance(1_000)
   expect(subscribeFlow).toHaveBeenLastCalledWith("2", expect.any(Object))
+})
+
+it("resumes a long outage from the new snapshot cursor", async () => {
+  const stream = observeConnection()
+  act(() => stream.onRetrying())
+  await advance(60_000)
+  vi.mocked(api).mockResolvedValue({ ...snapshot, cursor: "9" })
+  act(() => stream.onClosed())
+  await advance(1_000)
+  expect(subscribeFlow).toHaveBeenLastCalledWith("9", expect.any(Object))
+})
+
+it("keeps the reset snapshot when an earlier directory refresh finishes late", async () => {
+  const stream = observeConnection()
+  vi.mocked(api).mockImplementationOnce(
+    () => new Promise<FlowSnapshot>((resolve) => setTimeout(() => resolve(snapshot), 1_000))
+  )
+  await advance(5_200)
+  expect(api).toHaveBeenCalledTimes(2)
+
+  vi.mocked(api).mockResolvedValue({ ...snapshot, cursor: "9", truncated: true })
+  await act(() => stream.onReset("8"))
+  expect(subscribeFlow).toHaveBeenLastCalledWith("9", expect.any(Object))
+
+  await advance(1_000)
+  expect(container.textContent).toBe("truncated")
 })
