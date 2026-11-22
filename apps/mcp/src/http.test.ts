@@ -68,6 +68,14 @@ const issuer = "https://auth.example.test/api/auth";
 const options = { audience, issuer, jwksUrl: `${issuer}/jwks`, devAuth: true };
 const metadataPath = "/.well-known/oauth-protected-resource";
 
+it.each([true, false])("menciona sideband_message en las instrucciones según esté habilitada (habilitada=%s)", async (enabled) => {
+  const messages = enabled ? vi.fn<HandleMessage>() : undefined;
+  const origin = await listen(createHttpServer(options, testPort(), undefined, messages));
+  const client = await connect(`${origin}/mcp`, "dev:ana:ana-bot");
+
+  expect(client.getInstructions()?.includes("sideband_message")).toBe(enabled);
+});
+
 it("exige autenticación en cada POST y publica ambos documentos de descubrimiento", async () => {
   const origin = await listen(createHttpServer(options, testPort()));
   // The SDK v1 client strips extension fields from its parsed capabilities.
