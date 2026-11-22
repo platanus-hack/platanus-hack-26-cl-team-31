@@ -18,6 +18,7 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     updateTag: (o, id, body) => request(routes.ownerUpdateTag, o, { params: { id }, body }),
     deleteTag: (o, id) => request(routes.ownerDeleteTag, o, { params: { id } }),
     vault: (o) => request(routes.ownerVault, o),
+    vaultVisits: (o, query) => request(routes.ownerVaultVisits, o, { query: query ?? {} }),
     changeVault: (o, body) => request(routes.ownerChangeVault, o, { body }),
     me: (owner) => request(routes.ownerMe, owner),
     claimAddress: async (owner, localPart) =>

@@ -12,6 +12,7 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
     networkUsers: (p, after, q) => request(routes.agentNetworkUsers, p, { query: { after, q } }),
     vaultCatalog: (p, categoryId) => request(routes.agentVaultCatalog, p, { query: { categoryId } }),
     vaultMembers: (p, categoryId) => request(routes.agentVaultMembers, p, { query: { categoryId } }),
+    vaultVisits: (p, query) => request(routes.agentVaultVisits, p, { query: query ?? {} }),
     tags: (p) => request(routes.agentTags, p),
     changeTag: (p, body) => request(routes.agentChangeTag, p, { body }),
     changeVault: (p, body) => request(routes.agentChangeVault, p, { body }),

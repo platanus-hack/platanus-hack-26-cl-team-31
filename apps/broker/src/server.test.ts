@@ -327,6 +327,26 @@ describe("HTTP interno del broker", () => {
     expect((await call(app, routes.ownerAgents, { token: bruno })).items[0]?.revokedAt).toBeDefined();
   });
 
+  it("expone las visitas de la bóveda a cada emisor en su propia ruta", async () => {
+    const { broker } = fixture();
+    const app = createHttpServer({ broker, publicKeys });
+    const [webToken, mcpToken] = await Promise.all([owner("alice"), agent("alice")]);
+    const agentVisits = vi.spyOn(broker.agent, "vaultVisits").mockResolvedValue({ visits: [], readers: 0 });
+    const ownerVisits = vi.spyOn(broker.owner, "vaultVisits").mockResolvedValue({ visits: [], readers: 0 });
+
+    expect(await call(app, routes.agentVaultVisits, { token: mcpToken, path: "/v1/agent/vault/visits?limit=5" }))
+      .toEqual({ visits: [], readers: 0 });
+    expect(agentVisits.mock.calls[0]?.[1]).toEqual({ limit: 5 });
+
+    await call(app, routes.ownerVaultVisits, { token: webToken });
+    expect(ownerVisits.mock.calls[0]?.[1]).toEqual({});
+
+    // Cada emisor solo entra por su propia ruta.
+    await expectError(await request(app, routes.agentVaultVisits, { token: webToken }), 401, "unauthorized");
+    await expectError(await request(app, routes.ownerVaultVisits, { token: mcpToken }), 401, "unauthorized");
+    await expectError(await request(app, routes.agentVaultVisits, { token: mcpToken, path: "/v1/agent/vault/visits?limit=0" }), 400, "invalid_input");
+  });
+
   it("separa emisores y rechaza tokens vencidos, faltantes o sin alcance", async () => {
     const app = createHttpServer({ ...fixture(), publicKeys });
     const [webToken, mcpToken] = await Promise.all([owner("alice"), agent("alice")]);
