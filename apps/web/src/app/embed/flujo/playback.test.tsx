@@ -63,6 +63,26 @@ it("resets playback when the replay is replaced", async () => {
   expect(timeline()[0]!.getAttribute("aria-label")).not.toBe(first);
 });
 
+it("holds new live events during inspection and plays each once when returning", async () => {
+  await render("live", events.slice(0, 1));
+  await advance(1_000);
+  await act(() => timeline()[0]!.click());
+
+  await render("live", events.slice(0, 2));
+  await render("live", events);
+  await advance(2_000);
+  const inspection = host.querySelector<HTMLElement>(".af-inspect")!;
+  expect(inspection.textContent).toContain("2 nuevos");
+  expect(timeline().map((item) => item.getAttribute("aria-label"))).toEqual([describeEvent(events[0]!)]);
+
+  const back = inspection.querySelector("button")!;
+  expect(back.textContent).toBe("Volver al vivo");
+  await act(() => back.click());
+  await advance(1_000);
+  expect(host.querySelector(".af-inspect")).toBeNull();
+  expect(timeline().map((item) => item.getAttribute("aria-label"))).toEqual(events.map(describeEvent).reverse());
+});
+
 it("returns to live playback when the host trims the event under inspection", async () => {
   await render("live", events.slice(0, 2));
   await advance(1_000);
