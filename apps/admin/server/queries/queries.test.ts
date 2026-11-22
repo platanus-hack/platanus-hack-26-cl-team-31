@@ -39,6 +39,7 @@ import {
 } from "../../shared/contract.js"
 import { AdminQueryError } from "../../shared/queries.js"
 import { migrateAdminTables } from "../audit.js"
+import { flowSnapshot } from "./flow.js"
 import {
   createPgAdminQueries,
   createPgRevealer,
@@ -735,6 +736,22 @@ describe.skipIf(!testDatabaseUrl)("createPgAdminQueries", () => {
     const text = JSON.stringify([snapshot, refs])
     for (const secret of [SECRET_QUESTION, SECRET_PURPOSE, SECRET_ANSWER, WAKE_SECRET, "no-filtrar", "hooks.example.com"]) {
       expect(text).not.toContain(secret)
+    }
+  })
+
+  it("la foto incluye una solicitud antigua si acaba de cerrarse", async () => {
+    const client = await db.connect()
+    try {
+      await client.query("BEGIN")
+      // La solicitud respondida de la semilla se creó hace más de 15 minutos.
+      await client.query("UPDATE sideband.requests SET closed_at = now() WHERE id = $1", [ids.answered])
+      await client.query("SET LOCAL ROLE sideband_admin_ro")
+
+      const snapshot = await flowSnapshot(client, ["awaiting_agent", "awaiting_owner"])
+      expect(snapshot.requests.map((request) => request.id)).toContain(ids.answered)
+    } finally {
+      await client.query("ROLLBACK")
+      client.release()
     }
   })
 
