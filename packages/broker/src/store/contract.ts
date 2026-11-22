@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { defaultVaultCategories, type VaultResult } from "@team-31/protocol";
 import type { AgentConnectionRow, GrantRow, RequestRow, Store, WakeJob } from "./store.js";
@@ -178,6 +178,22 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
           { id: second, name: "Salud", visibility: "private", entries: [], tags: ["family", "friend"], members: [] },
         ]);
       });
+    });
+
+    it("recupera el documento de cada titular al repetir la misma clave de subida", async () => {
+      const content = Buffer.from("Agenda");
+      const upload = {
+        categoryId: "general", fileName: "agenda.txt", idempotencyKey: "archivo-1",
+        content, sizeBytes: content.length, sha256: createHash("sha256").update(content).digest("hex"), createdAt: now,
+      };
+      const put = (owner: string, id: string) => store.tx(tx => tx.putVaultDocument({ ...upload, owner, id }));
+      const aliceId = randomUUID();
+      const brunoId = randomUUID();
+      await put("alice", aliceId);
+      await put("bruno", brunoId);
+
+      expect((await put("alice", randomUUID()))?.id).toBe(aliceId);
+      expect((await put("bruno", randomUUID()))?.id).toBe(brunoId);
     });
 
     it("starts each holder with the default categories and keeps a description per category", async () => {
