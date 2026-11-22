@@ -1,4 +1,4 @@
-import type { OwnerActivityQuery } from "@team-31/protocol/http";
+import type { ActivityQuery } from "@team-31/protocol/http";
 import type {
   ActivityItem,
   TagChange, TagsView, Tag, TagInput, TagUpdate, OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
@@ -49,6 +49,7 @@ export interface AgentPort {
   inbox(p: Principal, includeInvitations?: boolean): Promise<InboxItem[]>;
   reply(p: Principal, input: ReplyInput): Promise<ReplyReceipt>;
   status(p: Principal, requestId: string): Promise<RequesterView>;
+  activity(p: Principal, query?: ActivityQuery): Promise<ActivityItem[]>;
   // The caller's contacts and joined circles, so its agent knows whom it can ask.
   contacts(p: Principal): Promise<AgentContacts>;
   connectWake(p: Principal, target: WakeTarget): Promise<AgentConnection>;
@@ -72,7 +73,7 @@ export interface OwnerPort {
   setGrant(o: Owner, input: GrantInput): Promise<Grant>;
   revokeGrant(o: Owner, grantId: string): Promise<void>;
   pending(o: Owner): Promise<OwnerPendingItem[]>;
-  activity(o: Owner, query?: number | OwnerActivityQuery): Promise<ActivityItem[]>;
+  activity(o: Owner, query?: number | ActivityQuery): Promise<ActivityItem[]>;
   // A channel marks where the owner wrote the request: the broker notifies it when the request
   // waits for the recipient's owner or closes.
   ask(o: Owner, input: AskArguments, channel?: ChannelName): Promise<RequesterView>;

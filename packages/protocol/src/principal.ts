@@ -24,6 +24,7 @@ export const agentScopes = {
   reply: "sideband:reply",
   "reply.connect": "sideband:accept",
   status: "sideband:status",
+  activity: "sideband:status",
   connectWake: WAKE_SUBSCRIPTION_SCOPE,
   disconnectWake: WAKE_SUBSCRIPTION_SCOPE,
 } as const satisfies Record<string, Scope>;

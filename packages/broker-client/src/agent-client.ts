@@ -27,6 +27,7 @@ export function createAgentClient(options: ClientOptions<Principal>): AgentPort 
     reply: (principal, body) => request(routes.agentReply, principal, { body }),
     contacts: (principal) => request(routes.agentContacts, principal),
     status: (principal, id) => request(routes.agentStatus, principal, { params: { id } }),
+    activity: async (principal, query = {}) => (await request(routes.agentActivity, principal, { query })).items,
     connectWake: (principal, body) => request(routes.agentConnectWake, principal, { body }),
     disconnectWake: (principal, subscriptionId) =>
       request(routes.agentDisconnectWake, principal, { params: { subscriptionId } }),
