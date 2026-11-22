@@ -28,6 +28,7 @@ export type RequestRow = {
   fromUserId: string | null;
   toUserId: string | null;
   targetAgentId?: string;
+  originAgentId?: string;
   tool: ToolName;
   args: unknown;
   purpose?: string;

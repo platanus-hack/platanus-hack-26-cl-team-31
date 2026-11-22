@@ -26,6 +26,8 @@ Con `ANTHROPIC_API_KEY` y la base de turnos configuradas, el servidor publica `s
 
 El servicio usa MCP Streamable HTTP en `MCP_RESOURCE_URL` y verifica el token OAuth en cada POST. Expone las tools de solicitudes, bandeja, contactos y bóveda, incluidas `sideband_vault_upload` y `sideband_vault_download`. El evento `sideband.request.created` se suscribe por webhook y entrega solo el `requestId`. Tanto suscribirse como cancelar requieren `sideband:inbox`. Para cancelar, envía el nombre, los argumentos y la URL de entrega originales, o el `id` devuelto por la suscripción.
 
+Para recibir también resultados, suscribe `sideband.request.lifecycle` en lugar de `sideband.request.created` (una conexión tiene un solo callback). `data.event` distingue una solicitud nueva de `sideband.request.closed`; en este último caso el agente usa `sideband_check` con `data.requestId`. El webhook no contiene el resultado. El cliente guarda la asociación con la conversación de origen y deduplica antes de reenviar. Las conexiones sin push siguen consultando `sideband_check`.
+
 ## Arranque local
 
 Si un cliente envía `Origin` al endpoint `/mcp`, debe coincidir con el origen público de `MCP_RESOURCE_URL` (esquema, host y puerto). Los clientes nativos pueden omitirlo; la autenticación sigue siendo obligatoria.

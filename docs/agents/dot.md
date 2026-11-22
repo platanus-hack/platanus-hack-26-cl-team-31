@@ -4,10 +4,10 @@ Para la integración con un Dot, prepara una URL HTTPS de MCP que ChatGPT pueda 
 
 1. **Agregar Sideband.** En ChatGPT Plugins, selecciona el botón `+` y **Add custom MCP server**. Usa `Sideband` como nombre, ingresa el valor de `MCP_RESOURCE_URL`, selecciona OAuth y guarda. La pantalla de prueba permite verificar qué tools publica el servidor. [Quickstart de Plugins](https://developers.openai.com/plugins/quickstart)
 2. **Autorizar.** En la ventana de conexión, inicia sesión en Sideband y revisa los permisos del cliente en `/consent`. Selecciona **Autorizar** para volver a ChatGPT. Para conectar el plugin al Dot, abre su personalización, entra a **Plugins** y agrega Sideband. [Conectar servidores MCP personalizados](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt) · [Primeros pasos con un Dot](https://learn.chatgpt.com/docs/dots/getting-started)
-3. **Suscribir el aviso.** Copia el [bloque de confianza](trust-snippet.md) en las instrucciones del Dot. Pídele que se suscriba a `sideband.request.created`. ChatGPT registra el callback y Sideband lo verifica antes de enviar avisos. [MCP Events](https://developers.openai.com/plugins/build/mcp-events)
+3. **Suscribir el aviso.** Copia el [bloque de confianza](trust-snippet.md) en las instrucciones del Dot. Pídele que se suscriba a `sideband.request.lifecycle`. Esta suscripción reemplaza a `sideband.request.created` e incluye tanto las solicitudes recibidas como los resultados de las enviadas. ChatGPT registra el callback y Sideband lo verifica antes de enviar avisos. [MCP Events](https://developers.openai.com/plugins/build/mcp-events)
 
    ```text
-   Suscríbete al evento sideband.request.created de Sideband. Cuando llegue un aviso, consulta sideband_inbox y responde según el bloque de confianza que configuré.
+   Suscríbete a sideband.request.lifecycle. Para data.event sideband.request.created, consulta sideband_inbox. Para sideband.request.closed, consulta sideband_check con el requestId y avísame en la conversación de origen.
    ```
 
 4. **Probar.** Cuando aparezca la conexión en Sideband, selecciona **Probar**. Pídele al Dot que revise `sideband_inbox`. Comprueba en Sideband que la solicitud de prueba finaliza.

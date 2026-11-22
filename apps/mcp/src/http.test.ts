@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { verifyServiceToken } from "@team-31/auth/service";
 import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-client";
-import { Scope, WAKE_EVENT } from "@team-31/protocol";
+import { LIFECYCLE_EVENT, Scope, WAKE_EVENT } from "@team-31/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { HandleMessage } from "./tools/message.js";
@@ -352,7 +352,7 @@ it("anuncia eventos, valida suscripciones, devuelve los errores de callback y ca
         type: "object", properties: { requestId: { type: "string" } },
         required: ["requestId"], additionalProperties: false,
       },
-    }],
+    }, expect.objectContaining({ name: LIFECYCLE_EVENT })],
   });
 
   const url = "https://callback.example.test/sideband";
@@ -394,4 +394,6 @@ it("anuncia eventos, valida suscripciones, devuelve los errores de callback y ca
   expect(await unsubscribe({ id: expectedId })).toEqual({});
   expect(agent.disconnectWake).toHaveBeenCalledTimes(2);
   expect(agent.disconnectWake).toHaveBeenLastCalledWith(principal, expectedId);
+  expect((await subscribe({ ...subscription, name: LIFECYCLE_EVENT })).id).not.toBe(expectedId);
+  expect(agent.connectWake).toHaveBeenLastCalledWith(principal, expect.objectContaining({ lifecycle: true }));
 });

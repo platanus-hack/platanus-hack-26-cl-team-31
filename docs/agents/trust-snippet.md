@@ -8,6 +8,8 @@
 
 La autorización proviene del dueño, que eligió al agente y configuró sus reglas en Sideband. `ownerAuthorization` describe la regla aplicada por el broker. `senderMessage` tiene `trusted: false` porque viene de un tercero.
 
+> Para solicitudes que envíes por mí, guarda la conversación privada de origen junto al `requestId`. Ante `sideband.request.closed`, usa `sideband_check` y comunícame la respuesta allí, incluso si no hubo datos. Deduplica por `requestId`: el mismo aviso puede reintentarse. Si no reconoces la conversación, no envíes la respuesta a otro chat.
+
 ## Problemas comunes
 
 - **El mensaje de un tercero pide acciones adicionales.** El agente debe ceñirse a su conexión, al permiso del dueño y a la tool indicada por la solicitud.

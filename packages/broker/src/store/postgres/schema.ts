@@ -140,6 +140,7 @@ export const requests = sideband.table("requests", {
   fromUserId: text("from_user_id").references(() => users.userId),
   toUserId: text("to_user_id").references(() => users.userId),
   targetAgentId: text("target_agent_id"),
+  originAgentId: text("origin_agent_id"),
   originChannel: text("origin_channel", { enum: channelNames }),
   tool: text("tool").notNull(),
   args: jsonb("args").notNull(),

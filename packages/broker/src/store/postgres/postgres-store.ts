@@ -60,6 +60,7 @@ function readRequest({ originChannel: _retiredChannel, ...row }: typeof requests
     fromAddress: parseStored(Address, row.fromAddress),
     toAddress: parseStored(Address, row.toAddress),
     targetAgentId: row.targetAgentId ?? undefined,
+    originAgentId: row.originAgentId ?? undefined,
     args: parseStored<unknown>(ToolArgs[tool], row.args),
     purpose: row.purpose ?? undefined,
     status: parseStored(RequestStatus, row.status),

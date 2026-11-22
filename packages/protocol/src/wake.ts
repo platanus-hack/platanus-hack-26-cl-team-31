@@ -31,16 +31,19 @@ export const WakeTarget = z.discriminatedUnion("kind", [
     callbackUrl: z.url(),
     secret: webhookSecret,
     subscriptionId: z.string(),
+    lifecycle: z.literal(true).optional(),
     refreshBefore: z.string().nullable(),
   }),
 ]);
 export type WakeTarget = z.infer<typeof WakeTarget>;
 
 export const WAKE_EVENT = "sideband.request.created";
+export const RESULT_EVENT = "sideband.request.closed";
+export const LIFECYCLE_EVENT = "sideband.request.lifecycle";
 
 export const WakeNotice = z.strictObject({
   requestId: z.string(),
-  event: z.literal(WAKE_EVENT),
+  event: z.enum([WAKE_EVENT, RESULT_EVENT]),
 });
 export type WakeNotice = z.infer<typeof WakeNotice>;
 

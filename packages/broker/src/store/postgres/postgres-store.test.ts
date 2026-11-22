@@ -372,6 +372,7 @@ describe.skipIf(!testDatabaseUrl)("Store del broker en Postgres", () => {
 
   async function undoCustomTags() {
     await isolated.query(`
+      ALTER TABLE sideband.requests DROP COLUMN origin_agent_id;
       ALTER TABLE sideband.vault_categories DROP COLUMN visibility;
       ALTER TABLE sideband.vault_categories DROP COLUMN description;
       ALTER TABLE sideband.users DROP COLUMN vault_seeded;

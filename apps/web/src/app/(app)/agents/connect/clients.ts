@@ -1,4 +1,4 @@
-import { WAKE_EVENT } from "@team-31/protocol";
+import { LIFECYCLE_EVENT, RESULT_EVENT } from "@team-31/protocol";
 
 export const clients = {
   dot: {
@@ -6,14 +6,14 @@ export const clients = {
     description: "Conecta Sideband como plugin de ChatGPT y activa los eventos MCP.",
     wakeKind: "mcp_events",
     trustLocation: "las instrucciones personalizadas del Dot",
-    wakeInstruction: `Suscríbete al evento ${WAKE_EVENT} de Sideband. Cuando llegue un aviso, consulta sideband_inbox y responde según el bloque de confianza.`,
+    wakeInstruction: `Suscríbete a ${LIFECYCLE_EVENT}. Si data.event es ${RESULT_EVENT}, usa sideband_check y avísame en la conversación de origen. Para una solicitud nueva usa sideband_inbox.`,
   },
   grokbot: {
     name: "Grok Bot",
     description: "Conecta Sideband por HTTPS y recibe avisos en una rutina.",
     wakeKind: "grokbot_routine",
     trustLocation: "las instrucciones de la rutina de Grok Bot",
-    wakeInstruction: "Crea una rutina con disparador por webhook. Cuando llegue un aviso, consulta sideband_inbox usando este conector. Si la solicitud del aviso sigue pendiente, usa su requestId y nonce de la bandeja para responder con sideband_reply según el bloque de confianza. Para la prueba de conexión responde con no_data.",
+    wakeInstruction: `Crea una rutina con disparador por webhook. Para ${RESULT_EVENT}, usa sideband_check y avísame en la conversación de origen. Para una solicitud nueva, consulta sideband_inbox y responde con sideband_reply según el bloque de confianza. Para la prueba de conexión responde con no_data.`,
   },
   openclaw: {
     name: "OpenClaw",
