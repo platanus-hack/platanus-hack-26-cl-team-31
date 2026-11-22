@@ -23,7 +23,7 @@ import {
 } from "@team-31/agent-flow"
 import type { FlowRequestRef, FlowSnapshot } from "@shared/contract"
 
-import { api, isApiError, subscribeFlow } from "@/lib/api"
+import { api, isApiError, subscribeFlow, type FlowStreamHandlers } from "@/lib/api"
 
 export type FlowLiveStatus = "loading" | "live" | "reconnecting" | "offline"
 
@@ -59,6 +59,158 @@ function addSnapshot(directory: FlowDirectory, snapshot: FlowSnapshot) {
   })
 }
 
+type FlowView = {
+  setEvents: (events: FlowEvent[]) => void
+  setStatus: (status: FlowLiveStatus) => void
+  setError: (cause: unknown) => void
+  setTruncated: (truncated: boolean) => void
+  setLastEventAt: (at: number) => void
+}
+
+// Cada montaje o reconexión manual tiene su propio directorio, cursor y suscripción.
+class FlowSession {
+  private readonly view: FlowView
+  private readonly directory = createFlowDirectory()
+  private readonly mapper = createTelemetryMapper(this.directory)
+  private readonly feed = createLiveFeed(this.mapper, { holdMs: HOLD_MS })
+  private events: FlowEvent[] = []
+  private first = true
+  private lastId: string | null = null
+  private droppedAt: number | null = null
+  private attempt = 0
+  private retry?: ReturnType<typeof setTimeout>
+  private connection?: { controller: AbortController; stopStream?: () => void }
+  private refreshedAt = 0
+  private refreshing = false
+
+  constructor(view: FlowView) {
+    this.view = view
+  }
+
+  start() {
+    const timer = setInterval(() => this.tick(), TICK_MS)
+    void this.connect()
+    return () => {
+      clearInterval(timer)
+      this.closeConnection()
+    }
+  }
+
+  private closeConnection() {
+    clearTimeout(this.retry)
+    this.connection?.controller.abort()
+    this.connection?.stopStream?.()
+    this.connection = undefined
+  }
+
+  private append(next: FlowEvent[]) {
+    if (!next.length) return
+    this.events = this.events.concat(next)
+    if (this.events.length > MAX_EVENTS) this.events = this.events.slice(-KEEP_EVENTS)
+    this.view.setEvents(this.events)
+  }
+
+  private applySnapshot(snapshot: FlowSnapshot) {
+    addSnapshot(this.directory, snapshot)
+    this.view.setTruncated(snapshot.truncated)
+    const now = Date.now()
+    this.append(this.first ? this.mapper.snapshot(now) : this.mapper.reconcile(now))
+  }
+
+  private tick() {
+    const now = Date.now()
+    this.append(this.feed.drain(now))
+    const elapsed = now - this.refreshedAt
+    if (!this.connection?.stopStream || this.refreshing || elapsed <= UNKNOWN_REFRESH_MS) return
+    const unknown = this.mapper.takeUnknown()
+    if (elapsed > REFRESH_MS || unknown.users.length || unknown.agents.length) {
+      void this.refreshDirectory(this.connection.controller.signal)
+    }
+  }
+
+  private async refreshDirectory(signal: AbortSignal) {
+    this.refreshing = true
+    this.refreshedAt = Date.now()
+    try {
+      const snapshot = await api("flowSnapshot", undefined, { signal })
+      if (!signal.aborted) this.applySnapshot(snapshot)
+    } catch {
+      // Lo reintenta el próximo refresco mientras el stream sigue activo.
+    } finally {
+      this.refreshing = false
+    }
+  }
+
+  private scheduleRetry() {
+    const delay = BACKOFF_MS[Math.min(this.attempt++, BACKOFF_MS.length - 1)]
+    clearTimeout(this.retry)
+    this.retry = setTimeout(() => void this.connect(), delay)
+  }
+
+  private snapshotFailed(cause: unknown) {
+    this.view.setError(cause)
+    if (isApiError(cause, "unauthorized") || isApiError(cause, "forbidden")) {
+      this.view.setStatus("offline")
+      return
+    }
+    this.view.setStatus(this.first ? "offline" : "reconnecting")
+    this.scheduleRetry()
+  }
+
+  private async connect() {
+    this.closeConnection()
+    const controller = new AbortController()
+    const { signal } = controller
+    this.connection = { controller }
+    this.view.setStatus(this.first ? "loading" : "reconnecting")
+    let snapshot: FlowSnapshot
+    try {
+      snapshot = await api("flowSnapshot", undefined, { signal })
+    } catch (cause) {
+      if (!signal.aborted) this.snapshotFailed(cause)
+      return
+    }
+    if (signal.aborted) return
+    this.view.setError(null)
+    this.refreshedAt = Date.now()
+    this.applySnapshot(snapshot)
+    const shortGap = this.droppedAt !== null && this.refreshedAt - this.droppedAt < RESUME_GAP_MS
+    const after = shortGap ? this.lastId ?? snapshot.cursor : snapshot.cursor
+    this.first = false
+    this.droppedAt = null
+    this.connection.stopStream = subscribeFlow(after, this.handlers)
+  }
+
+  private markDisconnected() {
+    this.droppedAt ??= Date.now()
+    this.view.setStatus("reconnecting")
+  }
+
+  private readonly handlers: FlowStreamHandlers = {
+    onOpen: () => {
+      this.droppedAt = null
+      this.attempt = 0
+      this.view.setStatus("live")
+    },
+    onRetrying: () => this.markDisconnected(),
+    onClosed: () => {
+      this.markDisconnected()
+      this.scheduleRetry()
+    },
+    onReset: () => {
+      this.lastId = null
+      void this.connect()
+    },
+    onRequest: (ref) => this.directory.add({ requests: [toRequest(ref)] }),
+    onRow: (row) => {
+      const now = Date.now()
+      if (!this.feed.push(row, now)) return
+      if (this.lastId === null || compareIds(row.id, this.lastId) > 0) this.lastId = row.id
+      this.view.setLastEventAt(now)
+    },
+  }
+}
+
 export function useFlowLive() {
   const [events, setEvents] = React.useState<FlowEvent[]>([])
   const [status, setStatus] = React.useState<FlowLiveStatus>("loading")
@@ -68,134 +220,8 @@ export function useFlowLive() {
   const [generation, setGeneration] = React.useState(0)
 
   React.useEffect(() => {
-    const directory = createFlowDirectory()
-    const mapper = createTelemetryMapper(directory)
-    const feed = createLiveFeed(mapper, { holdMs: HOLD_MS })
-    let list: FlowEvent[] = []
-    let lastId: string | null = null
-    let droppedAt: number | null = null
-    let stop: (() => void) | null = null
-    let retry: ReturnType<typeof setTimeout> | undefined
-    let attempt = 0
-    let first = true
-    let disposed = false
-    let refreshedAt = 0
-    let refreshing = false
-
-    const append = (next: FlowEvent[]) => {
-      if (next.length === 0) return
-      list = list.concat(next)
-      // Ventana: el renderer detecta que se quitaron los primeros y conserva su estado.
-      if (list.length > MAX_EVENTS) list = list.slice(list.length - KEEP_EVENTS)
-      setEvents(list)
-    }
-
-    const refreshDirectory = async () => {
-      if (refreshing) return
-      refreshing = true
-      refreshedAt = Date.now()
-      try {
-        const snapshot = await api("flowSnapshot")
-        if (disposed) return
-        addSnapshot(directory, snapshot)
-        setTruncated(snapshot.truncated)
-        append(mapper.reconcile(Date.now()))
-      } catch {
-        // Lo reintenta el próximo refresco; el stream sigue.
-      } finally {
-        refreshing = false
-      }
-    }
-
-    const connect = async () => {
-      clearTimeout(retry)
-      stop?.()
-      stop = null
-      setStatus(first ? "loading" : "reconnecting")
-      let snapshot: FlowSnapshot
-      try {
-        snapshot = await api("flowSnapshot")
-      } catch (cause) {
-        if (disposed) return
-        setError(cause)
-        // Sin sesión o sin rol no tiene sentido reintentar solo.
-        if (
-          isApiError(cause, "unauthorized") ||
-          isApiError(cause, "forbidden")
-        ) {
-          setStatus("offline")
-          return
-        }
-        setStatus(first ? "offline" : "reconnecting")
-        retry = setTimeout(
-          connect,
-          BACKOFF_MS[Math.min(attempt++, BACKOFF_MS.length - 1)]
-        )
-        return
-      }
-      if (disposed) return
-      setError(null)
-      addSnapshot(directory, snapshot)
-      setTruncated(snapshot.truncated)
-      refreshedAt = Date.now()
-      // Primera foto: la red completa sin animación. Después: solo las diferencias.
-      append(first ? mapper.snapshot(Date.now()) : mapper.reconcile(Date.now()))
-      const resume =
-        lastId && droppedAt !== null && Date.now() - droppedAt < RESUME_GAP_MS
-      const after = resume ? lastId : snapshot.cursor
-      first = false
-      droppedAt = null
-
-      stop = subscribeFlow(after, {
-        onOpen: () => {
-          droppedAt = null
-          attempt = 0
-          setStatus("live")
-        },
-        onRetrying: () => {
-          droppedAt ??= Date.now()
-          setStatus("reconnecting")
-        },
-        onClosed: () => {
-          droppedAt ??= Date.now()
-          setStatus("reconnecting")
-          retry = setTimeout(
-            connect,
-            BACKOFF_MS[Math.min(attempt++, BACKOFF_MS.length - 1)]
-          )
-        },
-        onRequest: (ref) => directory.add({ requests: [toRequest(ref)] }),
-        onRow: (row) => {
-          if (feed.push(row, Date.now())) {
-            if (!lastId || compareIds(row.id, lastId) > 0) lastId = row.id
-            setLastEventAt(Date.now())
-          }
-        },
-        onReset: () => {
-          // Hueco demasiado grande: otra foto desde su cursor.
-          lastId = null
-          droppedAt = Date.now()
-          void connect()
-        },
-      })
-    }
-
-    const timer = setInterval(() => {
-      append(feed.drain(Date.now()))
-      if (first || refreshing) return
-      const elapsed = Date.now() - refreshedAt
-      if (elapsed <= UNKNOWN_REFRESH_MS) return
-      const unknown = mapper.takeUnknown()
-      if (elapsed > REFRESH_MS || unknown.users.length || unknown.agents.length) void refreshDirectory()
-    }, TICK_MS)
-
-    void connect()
-    return () => {
-      disposed = true
-      clearInterval(timer)
-      clearTimeout(retry)
-      stop?.()
-    }
+    const session = new FlowSession({ setEvents, setStatus, setError, setTruncated, setLastEventAt })
+    return session.start()
   }, [generation])
 
   const reconnect = React.useCallback(() => {
