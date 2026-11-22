@@ -221,10 +221,12 @@ it.each([false, true])("opens and exits expanded mode when native fullscreen is 
     await act(() => fullscreenButton().click());
     expect(request).toHaveBeenCalledTimes(enabled ? 1 : 0);
     expect(fullscreenButton().getAttribute("aria-pressed")).toBe("true");
-    expect(graph.classList.contains("af-expanded")).toBe(true);
+    const expanded = getComputedStyle(graph);
+    expect(expanded.position).toBe("fixed");
+    expect(expanded.inset).toMatch(/^0(px)?$/);
     await act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
     expect(fullscreenButton().getAttribute("aria-pressed")).toBe("false");
-    expect(graph.classList.contains("af-expanded")).toBe(false);
+    expect(getComputedStyle(graph).position).not.toBe("fixed");
   } finally {
     Reflect.deleteProperty(document, "fullscreenEnabled");
   }
