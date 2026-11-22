@@ -1,0 +1,9 @@
+# El contexto de build es infra/titular. Fuera lo que no viaja a la imagen.
+mock-mcp/node_modules
+mock-mcp/.turbo
+mock-mcp/test
+mock-mcp/vitest.config.ts
+mock-mcp/tsconfig.json
+README.md
+up.sh
+build.sh

@@ -6,6 +6,8 @@ const batchSize = 100;
 // Claim only work that can start immediately, independently of the expiry scan size.
 const wakeConcurrency = 8;
 const wakeLeaseMs = 60_000;
+// Same shape ops.v_wake_jobs accepts as `code`: a fixed identifier, never free text.
+const resultDetail = /^[a-z_]{1,40}$/;
 
 function actionable(row: RequestRow | null, job: WakeClaim, now: Date): row is RequestRow {
   return row?.status === "awaiting_agent" && row.version === job.requestVersion && row.expiresAt > now;
@@ -19,7 +21,12 @@ async function recipient(tx: StoreTx, row: RequestRow): Promise<AgentConnectionR
   }
   const agents = await tx.listAgentConnections(row.toUserId);
   return agents.filter((agent) => !agent.revokedAt && agent.wakeTarget.kind !== "none")
-    .sort((a, b) => Number(Boolean(b.verifiedAt)) - Number(Boolean(a.verifiedAt))
+    // Un CLI que sondea va al final: si el titular tiene un canal push, ese se lleva el aviso.
+    // Defensivo: hoy el índice agent_connections_one_active deja una sola conexión viva por titular,
+    // así que esta ordenación no se alcanza. Se conserva para que, si esa restricción se relaja,
+    // el sondeo no le robe el aviso a un canal push en silencio.
+    .sort((a, b) => Number(a.wakeTarget.kind === "polling") - Number(b.wakeTarget.kind === "polling")
+      || Number(Boolean(b.verifiedAt)) - Number(Boolean(a.verifiedAt))
       || a.createdAt.getTime() - b.createdAt.getTime()
       || a.agentId.localeCompare(b.agentId))[0];
 }
@@ -41,12 +48,13 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     owner: { userId: string; agentId?: string }): Promise<WakeResult> {
     const final = wakeRetryDelaysMs[job.attempt] === undefined;
     try {
-      const { ok, retryable, ms, status } = await waker.wake(target, { requestId: job.requestId, event }, {
+      const { ok, retryable, ms, status, detail } = await waker.wake(target, { requestId: job.requestId, event }, {
         queueWaitMs: Math.max(0, clock.now().getTime() - job.dueAt.getTime()),
         attempt: job.attempt, final, ...owner,
       });
-      // Adapters may return diagnostic text. Persist only structured metadata.
-      return { ok, retryable, ms, status };
+      // Adapters may return diagnostic text. Persist only a short code, the shape ops.v_wake_jobs renders.
+      const code = detail !== undefined && resultDetail.test(detail) ? { detail } : {};
+      return { ok, retryable, ms, status, ...code };
     } catch (error) {
       telemetry?.error?.("wake.deliver", error, { requestId: job.requestId, ...owner });
       if (final) telemetry?.emit("wake.exhausted", { requestId: job.requestId, ...owner,
@@ -63,7 +71,9 @@ export function createWorker({ store, waker, clock, telemetry, wakeRetryDelaysMs
     if (job.recovered) telemetry?.emit("wake.lease_recovered", { ...fields, attrs: { attempt: job.attempt } });
     const exhausted = exhaustedAttempts(job);
     const result: WakeResult = exhausted ? { ok: false, retryable: false, ms: 0, detail: "lease_exhausted" }
-      : !channel || channel.wakeTarget.kind === "none" ? { ok: false, retryable: false, ms: 0, detail: "skipped" }
+      // Nadie le escribe a un canal de sondeo: se omite el aviso igual que con "none".
+      : !channel || channel.wakeTarget.kind === "none" || channel.wakeTarget.kind === "polling"
+        ? { ok: false, retryable: false, ms: 0, detail: "skipped" }
       : await deliver(job, channel.wakeTarget, WAKE_UPDATE_EVENT, { userId: channel.userId });
     const completedAt = clock.now();
     const delay = result.retryable ? wakeRetryDelaysMs[job.attempt] : undefined;

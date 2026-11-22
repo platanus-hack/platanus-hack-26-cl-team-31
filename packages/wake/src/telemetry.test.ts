@@ -53,6 +53,19 @@ describe("telemetría del aviso", () => {
     expect(serialized).not.toContain(url);
   });
 
+  it("registra el sondeo como intento propio, distinguible de la ausencia de canal", async () => {
+    const { sink, waker } = setup();
+    await waker.wake({ kind: "polling" }, notice, { attempt: 1, final: false, userId: "u1", agentId: "a1" });
+
+    const [span] = sink.find("wake.attempt");
+    expect(span).toMatchObject({
+      kind: "wake", requestId: notice.requestId, userId: "u1", agentId: "a1", status: "ok",
+      attrs: { kind: "polling", attempt: 1, ok: true, code: "ok" },
+    });
+    expect(span?.attrs).not.toHaveProperty("httpStatus");
+    expect(sink.find("wake.exhausted")).toHaveLength(0);
+  });
+
   it("marca un fallo reintentable y emite wake.exhausted en el último intento", async () => {
     const { sink, waker } = setup();
     const url = await receiver(503);

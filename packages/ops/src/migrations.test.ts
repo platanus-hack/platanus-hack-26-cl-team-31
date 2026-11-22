@@ -69,6 +69,8 @@ describe.skipIf(!testDatabaseUrl)("migraciones de ops", () => {
       "0023_vault_visibility.sql",
       "0200_ask_receipts.sql",
       "0201_message_turns.sql",
+      // Rango alto reservado para esta rama: main sigue creciendo en 00xx y ya chocamos dos veces.
+      "0300_agent_revoked_by.sql",
     ]);
     expect(await applyOpsMigrations({ databaseUrl })).toEqual([]);
     expect(await views()).toEqual(["v_errors", "v_events", "v_service_health"]);

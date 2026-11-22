@@ -520,6 +520,97 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
+    it("revive una conexión revocada sin devolverle el canal push ni la verificación", async () => {
+      const revoked: AgentConnectionRow = {
+        userId: "carla", agentId: "bot", label: "Bot", createdAt: now, revokedAt: now, revokedBy: "owner",
+        wakeTarget: { kind: "standard_webhook", url: "https://example.com/callback", secret: "whsec_test" },
+        verifiedAt: now, lastWakeAt: now,
+      };
+      const revived: AgentConnectionRow = {
+        userId: "carla", agentId: "bot", label: "Bot", createdAt: now, wakeTarget: { kind: "none" }, lastWakeAt: now,
+      };
+      await store.tx(async (tx) => {
+        await tx.upsertAgentConnection(revoked);
+        const locked = await tx.ensureAgentConnection({ ...revoked, revokedAt: undefined });
+        expect(locked).toEqual(revoked);
+        // El titular revocó este canal: la conexión vuelve sin él, sin verificación y sin revocación.
+        expect(await tx.reviveAgentConnection(locked)).toEqual(revived);
+      });
+      await store.tx(async (tx) => {
+        expect(await tx.getAgentConnection("carla", "bot")).toEqual(revived);
+      });
+    });
+
+    it("no revive la conexión que revocó el admin: esa revocación es terminal", async () => {
+      const revoked: AgentConnectionRow = {
+        userId: "carla", agentId: "bot", label: "Bot", createdAt: now,
+        wakeTarget: { kind: "none" }, revokedAt: now, revokedBy: "admin",
+      };
+      await store.tx((tx) => tx.upsertAgentConnection(revoked));
+      await expect(store.tx(async (tx) => {
+        const locked = await tx.ensureAgentConnection({ ...revoked, revokedAt: undefined, revokedBy: undefined });
+        return tx.reviveAgentConnection(locked);
+      })).rejects.toMatchObject({ code: "not_found" });
+      await store.tx(async (tx) => {
+        expect(await tx.getAgentConnection("carla", "bot")).toEqual(revoked);
+      });
+    });
+
+    it("no revive una conexión revocada si su titular ya tiene otra viva", async () => {
+      const base: AgentConnectionRow = { userId: "carla", agentId: "old", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now };
+      await store.tx(async (tx) => {
+        await tx.upsertAgentConnection({ ...base, revokedAt: now });
+        await tx.ensureAgentConnection({ ...base, agentId: "new" });
+      });
+      await expect(store.tx(async (tx) => {
+        const locked = await tx.getAgentConnection("carla", "old", true);
+        return tx.reviveAgentConnection(locked!);
+      })).rejects.toMatchObject({ code: "conflict" });
+      await store.tx(async (tx) => {
+        expect(await tx.getAgentConnection("carla", "old")).toMatchObject({ revokedAt: now });
+        expect((await tx.getAgentConnection("carla", "new"))?.revokedAt).toBeUndefined();
+      });
+    });
+
+    it("guarda una conexión y un canal de sondeo sin secreto y los devuelve sin campos extra", async () => {
+      const polling = { kind: "polling" } as const;
+      await store.tx(async (tx) => {
+        await tx.ensureAgentConnection({ userId: "carla", agentId: "cli", label: "CLI", wakeTarget: polling, createdAt: now });
+        await tx.putChannel({ userId: "carla", name: "whatsapp", wakeTarget: polling, createdAt: now });
+      });
+      await store.tx(async (tx) => {
+        const connection = await tx.getAgentConnection("carla", "cli");
+        expect(connection).toMatchObject({ agentId: "cli", label: "CLI" });
+        // Nadie le escribe: la conexión vuelve sin secreto ni ningún otro campo.
+        expect(connection?.wakeTarget).toEqual(polling);
+        expect(Object.keys(connection?.wakeTarget ?? {})).toEqual(["kind"]);
+        expect((await tx.getChannel("carla", "whatsapp"))?.wakeTarget).toEqual(polling);
+      });
+    });
+
+    it("promueve a sondeo una conexión ya bloqueada sin perder sus otros campos", async () => {
+      // markPolling escribe desde dentro de la transacción que ya tomó el row lock en ensureAgentConnection
+      // (en Postgres, SELECT … FOR UPDATE). Ningún otro caso del contrato actualiza una fila existente a "polling".
+      const row: AgentConnectionRow = {
+        userId: "carla", agentId: "cli", label: "CLI", wakeTarget: { kind: "none" },
+        verifiedAt: now, lastWakeAt: now, createdAt: now,
+      };
+      const promoted: AgentConnectionRow = { ...row, wakeTarget: { kind: "polling" } };
+      await store.tx(async (tx) => {
+        const locked = await tx.ensureAgentConnection(row);
+        expect(locked).toEqual(row);
+        await tx.upsertAgentConnection({ ...locked, wakeTarget: { kind: "polling" } });
+        // Sólo cambia el canal: etiqueta, fechas y revocación quedan como estaban.
+        expect(await tx.getAgentConnection("carla", "cli")).toEqual(promoted);
+      });
+      await store.tx(async (tx) => {
+        const reread = await tx.getAgentConnection("carla", "cli");
+        expect(reread).toEqual(promoted);
+        // Nadie le escribe: el canal vuelve sin secreto ni ningún otro campo.
+        expect(Object.keys(reread?.wakeTarget ?? {})).toEqual(["kind"]);
+      });
+    });
+
     it("only lets one of two different agents claim the same owner concurrently", async () => {
       const base: AgentConnectionRow = { userId: "alice", agentId: "a", label: "Bot", createdAt: now, wakeTarget: { kind: "none" } };
       const outcomes = await Promise.allSettled(["a", "b"].map(agentId =>

@@ -162,8 +162,11 @@ describe("telemetría del core del broker", () => {
       expect.objectContaining({ userId: "carla", agentId: "carla-bot", attrs: { by: "owner" } }),
       expect.objectContaining({ userId: "alice", agentId: "alice-bot", attrs: { by: "admin" } }),
     ]);
-    // Una llamada de un agente revocado no lo vuelve a conectar.
-    await expect(broker.agent.inbox(carla)).rejects.toMatchObject({ code: "not_found" });
+    // Una llamada de un agente revocado lo revive: es un cambio de estado propio, no una segunda alta.
+    await broker.agent.inbox(carla);
+    expect(sink.find("broker.agent.revived")).toEqual([
+      expect.objectContaining({ userId: "carla", agentId: "carla-bot", attrs: { kind: "none" } }),
+    ]);
     expect(sink.find("broker.agent.connected").filter((record) => record.userId === "carla")).toHaveLength(1);
   });
 

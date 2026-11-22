@@ -42,7 +42,7 @@ import { BrokerError, notFound } from "../errors.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import { sanitizeReply } from "../sanitize/pipeline.js";
 import { SanitizeBlockedError, type SanitizeFlag } from "../sanitize/types.js";
-import type { RequestRow, StoreTx, VaultDocumentRow } from "../store/store.js";
+import type { AgentConnectionRow, RequestRow, StoreTx, VaultDocumentRow } from "../store/store.js";
 import { submitOnce } from "./ask-receipt.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
@@ -214,10 +214,36 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     const connection = await tx.ensureAgentConnection({
       userId, agentId, label: agentId, wakeTarget: { kind: "none" }, createdAt: clock.now(),
     }, () => record(tx, "broker.agent.connected", { userId, agentId, attrs: { kind: "none" } }));
-    if (connection.revokedAt) throw notFound();
+    // Revocar no es irreversible: para volver, el titular pasa otra vez por el consentimiento OAuth, así que
+    // presentar un token válido ya es un acto deliberado suyo. La conexión revive como nueva —sin el canal
+    // push que apagó al revocar—, y si entretanto conectó otro agente, el conflicto se le dice en voz alta.
+    if (connection.revokedAt) {
+      // La del admin es la excepción: cortar a un agente comprometido no puede deshacerse con el token
+      // que sigue vivo. El agente ve el mismo not_found de un recurso ajeno —nunca sabe que lo cortó un
+      // operador y no su titular— y el operador lo lee en broker.agent.revive_denied.
+      if (connection.revokedBy === "admin") {
+        // Fuera de la transacción: esta lanza, y lo que se revierte no se emite.
+        events.emit("broker.agent.revive_denied", { userId, agentId, attrs: { by: "admin" } });
+        throw notFound();
+      }
+      const revived = await tx.reviveAgentConnection(connection);
+      record(tx, "broker.agent.revived", { userId, agentId, attrs: { kind: revived.wakeTarget.kind } });
+      return revived;
+    }
     return connection;
   }
 
+  // Leer la bandeja *es* sondear: ningún CLI declara su canal, así que la primera lectura de una
+  // conexión sin canal la marca como destinataria de sondeo. Nunca degrada un canal push ya configurado,
+  // y repetir la lectura no vuelve a escribir. Va en el núcleo para que la obtenga todo cliente del AgentPort.
+  // "none" es el valor por defecto —nunca configuró canal push, o lo quitó con disconnectWake—, no una baja:
+  // "polling" describe lo observado, no una suscripción, y quien sigue leyendo su bandeja está sondeando.
+  // Por eso una conexión puesta en "none" a propósito vuelve a promoverse en la siguiente lectura.
+  // Para que un agente deje de ser destinatario, el titular usa revokeAgent; disconnectWake no sirve para eso.
+  async function markPolling(tx: StoreTx, connection: AgentConnectionRow): Promise<void> {
+    if (connection.wakeTarget.kind !== "none") return;
+    await tx.upsertAgentConnection({ ...connection, wakeTarget: { kind: "polling" } });
+  }
   function offerOf(row: RequestRow): Sharing {
     const parsed = ToolArgs.connect.safeParse(row.args);
     return (parsed.success && parsed.data.share) || basicSharing;
@@ -630,7 +656,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       async inbox(p, includeInvitations = false) {
         requireScope(p, "inbox");
         return store.tx(async (tx) => {
-          await ensureActiveAgentConnection(tx, p);
+          await markPolling(tx, await ensureActiveAgentConnection(tx, p));
           const address = (await tx.getUser(p.userId))?.address;
           if (!address) return [];
           const now = clock.now();
@@ -778,6 +804,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         });
       },
 
+      // Quita el canal push de la conexión y la deja en "none". No la da de baja como destinataria:
+      // si el agente sigue leyendo su bandeja, markPolling la vuelve a marcar como sondeo. La baja es revokeAgent.
       async disconnectWake(p, subscriptionId) {
         requireScope(p, "disconnectWake");
         await store.tx(async (tx) => {
@@ -1026,7 +1054,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       removeFriend: removeContact,
 
       async revokeAgent(o, agentId) {
-        await store.tx((tx) => revokeConnection(tx, o.userId, agentId, clock.now(), (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "owner" } })));
+        await store.tx((tx) => revokeConnection(tx, o.userId, agentId, clock.now(), "owner", (fields) => record(tx, "broker.agent.revoked", { ...fields, attrs: { by: "owner" } })));
       },
     },
 

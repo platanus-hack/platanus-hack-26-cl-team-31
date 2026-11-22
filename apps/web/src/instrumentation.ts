@@ -4,6 +4,9 @@ import type { Instrumentation } from "next";
 // first request. Only in the Node runtime: the sink uses pg and AsyncLocalStorage.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // El entorno se lee al arrancar: con SIDEBAND_DEV_AUTH=1 en producción el proceso no parte.
+  const { getDevAuth } = await import("./lib/auth-env.mjs");
+  getDevAuth();
   const { getTelemetry } = await import("./lib/telemetry");
   getTelemetry();
 }

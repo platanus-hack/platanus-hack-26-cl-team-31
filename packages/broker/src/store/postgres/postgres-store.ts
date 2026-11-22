@@ -2,11 +2,11 @@ import {
   ActivityEvent, Address, Category, ChannelName, FinalOutcome, RequestStatus, ToolArgs, ToolName, ToolResultSchemas, WakeKind, WakeResult, type ToolResult,
   Sharing, TagColor,
 } from "@team-31/protocol";
-import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, DrizzleQueryError, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { activeAgentConflict, BrokerError } from "../../errors.js";
+import { activeAgentConflict, BrokerError, notFound } from "../../errors.js";
 import { wakeClaim } from "../store.js";
 import type {
   AgentConnectionRow, ChannelRow, GrantRow, RequestEvent, RequestRow, Store, StoreTx, UserRow, WakeJob,
@@ -110,7 +110,8 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
   function writeConnection({ wakeTarget, ...row }: AgentConnectionRow) {
     return {
       ...row, ...codec.encode(wakeTarget, row),
-      verifiedAt: row.verifiedAt ?? null, lastWakeAt: row.lastWakeAt ?? null, revokedAt: row.revokedAt ?? null,
+      verifiedAt: row.verifiedAt ?? null, lastWakeAt: row.lastWakeAt ?? null,
+      revokedAt: row.revokedAt ?? null, revokedBy: row.revokedBy ?? null,
     };
   }
 
@@ -121,6 +122,7 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       verifiedAt: row.verifiedAt ?? undefined,
       lastWakeAt: row.lastWakeAt ?? undefined,
       revokedAt: row.revokedAt ?? undefined,
+      revokedBy: row.revokedBy ?? undefined,
     };
   }
 
@@ -535,6 +537,30 @@ function transaction(db: Transaction, codec: ReturnType<typeof createWakeCodec>)
       const connection = await getAgentConnection(row.userId, row.agentId, true);
       if (!connection) throw activeAgentConflict();
       return connection;
+    },
+
+    async reviveAgentConnection(row) {
+      // La revocación del admin no se deshace presentando un token: el agente ve el mismo not_found
+      // de cualquier recurso ajeno y nunca sabe que lo cortó un operador.
+      if (row.revokedBy === "admin") throw notFound();
+      const revived: AgentConnectionRow = {
+        ...row, revokedAt: undefined, revokedBy: undefined, verifiedAt: undefined, wakeTarget: { kind: "none" },
+      };
+      const [live] = await db.select({ agentId: agentConnections.agentId }).from(agentConnections).where(and(
+        eq(agentConnections.userId, row.userId), ne(agentConnections.agentId, row.agentId), isNull(agentConnections.revokedAt),
+      )).limit(1);
+      if (live) throw activeAgentConflict();
+      const { userId, agentId, ...configuration } = writeConnection(revived);
+      try {
+        await db.update(agentConnections).set(configuration)
+          .where(and(eq(agentConnections.userId, userId), eq(agentConnections.agentId, agentId)));
+      } catch (error) {
+        // Otro agente pudo conectarse entre la consulta y este UPDATE: el índice parcial
+        // agent_connections_one_active tiene la última palabra sobre quién queda vivo.
+        if (error instanceof DrizzleQueryError && (error.cause as { code?: string })?.code === "23505") throw activeAgentConflict();
+        throw error;
+      }
+      return revived;
     },
 
     async upsertAgentConnection(row) {

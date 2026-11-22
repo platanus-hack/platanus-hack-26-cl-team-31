@@ -1,0 +1,4 @@
+ALTER TABLE "sideband"."agent_connections" DROP CONSTRAINT "agent_connections_wake_secret_check";--> statement-breakpoint
+ALTER TABLE "sideband"."channels" DROP CONSTRAINT "channels_wake_secret_check";--> statement-breakpoint
+ALTER TABLE "sideband"."agent_connections" ADD CONSTRAINT "agent_connections_wake_secret_check" CHECK (("sideband"."agent_connections"."wake_kind" in ('none', 'polling')) = ("sideband"."agent_connections"."wake_secret" is null));--> statement-breakpoint
+ALTER TABLE "sideband"."channels" ADD CONSTRAINT "channels_wake_secret_check" CHECK (("sideband"."channels"."wake_kind" in ('none', 'polling')) = ("sideband"."channels"."wake_secret" is null));

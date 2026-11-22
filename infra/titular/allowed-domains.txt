@@ -1,0 +1,15 @@
+# Egreso permitido del contenedor titular. El entrypoint resuelve cada entrada a
+# IPv4, la mete en un ipset y REJECT-ea todo lo demás.
+#
+# La lista es corta a propósito: que el agente llegue a Sideband y a su modelo, y
+# a nada más, es justamente lo que esta prueba demuestra. No la abras por comodidad.
+# Cada línea nueva necesita una razón escrita en el PR.
+
+# Sideband: el MCP remoto por el túnel Tailscale. Única vía hacia el otro titular.
+alfredo-martnezs-macbook-pro.tail88af94.ts.net
+
+# Modelo de claude y de pi.
+api.anthropic.com
+
+# Modelo de codex (Ollama Cloud, dialecto OpenAI).
+ollama.com

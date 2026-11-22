@@ -150,6 +150,13 @@ describe("wake", () => {
       .resolves.toEqual({ ok: true, retryable: false, ms: expect.any(Number) });
   });
 
+  // `adapterPost` excluye "polling" por tipo: no hay adaptador al que llamar, así que
+  // el resultado sólo puede venir del atajo. Un POST habría dejado `status` o un detalle de fallo.
+  it("entrega a una conexión de sondeo sin enviar ningún POST", async () => {
+    await expect(waker.wake({ kind: "polling" }, notice))
+      .resolves.toEqual({ ok: true, retryable: false, detail: "polling", ms: expect.any(Number) });
+  });
+
   it.each([
     [400, false], [401, false], [408, true], [425, true], [429, true], [500, true], [503, true],
   ])("clasifica HTTP %s sin incluir la respuesta del servidor", async (status, retryable) => {

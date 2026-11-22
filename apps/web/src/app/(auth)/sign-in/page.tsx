@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 
 import { getAuth, getSession } from "@/lib/auth";
+import { getDevAuth } from "@/lib/auth-env.mjs";
 import { InvalidAuthorizationLink } from "../invalid-authorization-link";
 import { getOAuthRequest } from "@/lib/auth-request";
 import { onboardingFlow } from "@/lib/onboarding-flow";
 import { observeWebRequest, getTelemetry } from "@/lib/telemetry";
 
+import { DevLoginForm } from "./dev-login-form";
 import { GoogleButton } from "./google-button";
 
 export const instant = false;
@@ -57,6 +59,10 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
         <p className="mt-4 text-sm text-muted" role="status">
           Configura las credenciales de Google en el entorno local para iniciar sesión.
         </p>
+      )}
+      {/* Fuera de producción: identidades de prueba sin Google. El consentimiento sigue igual. */}
+      {getDevAuth() && (
+        <DevLoginForm next={request ? `/consent?${request.signedQuery}` : flow.signInComplete} />
       )}
     </>
   );

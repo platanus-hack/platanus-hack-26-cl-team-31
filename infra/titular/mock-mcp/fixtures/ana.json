@@ -1,0 +1,19 @@
+{
+  "identity": {
+    "name": "Ana",
+    "address": "ana@sideband.app",
+    "headline": "Diseña cerámica los fines de semana"
+  },
+  "calendar": {
+    "timezone": "America/Santiago",
+    "coverage": { "from": "2026-11-23", "to": "2026-11-24" },
+    "dayWindow": { "start": "09:00", "end": "13:00" },
+    "busy": [
+      { "date": "2026-11-23", "start": "09:00", "end": "11:00", "title": "Taller de torno" },
+      { "date": "2026-11-23", "start": "12:00", "end": "13:00", "title": "Almuerzo con Dani" },
+      { "date": "2026-11-24", "start": "09:00", "end": "13:00", "title": "Feria de cerámica" }
+    ]
+  },
+  "interests": ["cerámica", "ciclismo urbano", "cine documental"],
+  "health": { "notes": ["Alergia al maní"] }
+}

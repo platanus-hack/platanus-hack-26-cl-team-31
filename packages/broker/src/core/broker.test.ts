@@ -20,6 +20,7 @@ import { createTelemetry, memorySink } from "@team-31/telemetry";
 import { createWaker } from "@team-31/wake";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "../index.js";
+import type { Store } from "../store/store.js";
 import { createOwnerRuntime, localQuestionSource, localReadTool } from "@team-31/broker-client";
 import { deriveNonce, verifyJson } from "./crypto.js";
 
@@ -661,12 +662,127 @@ describe("conexiones y prueba de aviso", () => {
     const pendingItem = await inboxItem(bruno, pending.requestId);
     await broker.owner.revokeAgent(bruno, bruno.agentId);
     await broker.agent.connect(another);
-    await expect(broker.agent.reply(bruno, { ...pendingItem, outcome: "no_data" })).rejects.toMatchObject({ code: "not_found" });
-    await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "not_found" });
-    await expect(broker.agent.connectWake(bruno, { kind: "none" })).rejects.toMatchObject({ code: "not_found" });
+    // Con otro agente vivo, la conexión revocada no revive: el titular tendría dos conexiones activas.
+    await expect(broker.agent.reply(bruno, { ...pendingItem, outcome: "no_data" })).rejects.toMatchObject({ code: "conflict" });
+    await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "conflict" });
+    await expect(broker.agent.connectWake(bruno, { kind: "none" })).rejects.toMatchObject({ code: "conflict" });
     expect((await broker.owner.agents(bruno)).find(({ agentId }) => agentId === bruno.agentId)).toMatchObject({
       revokedAt: now.toISOString(), wakeKind: "standard_webhook",
     });
+  });
+
+  it("promueve a sondeo la conexión que lee su bandeja", async () => {
+    // Ningún CLI declara su canal: leer la bandeja *es* sondear, y el broker lo anota por él.
+    await broker.agent.inbox(bruno);
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ agentId: bruno.agentId, wakeKind: "polling" }]);
+    // Sólo la lectura de bandeja promueve: preguntar deja la conexión como estaba.
+    await askAvailability();
+    expect(await broker.owner.agents(alice)).toMatchObject([{ agentId: alice.agentId, wakeKind: "none" }]);
+  });
+
+  it("no degrada una conexión con canal push", async () => {
+    await broker.agent.connectWake(bruno, webhook);
+    await broker.agent.inbox(bruno);
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ wakeKind: "standard_webhook" }]);
+  });
+
+  it("vuelve a promover a sondeo una conexión desconectada a propósito: es la decisión, no un descuido", async () => {
+    const target: WakeTarget = {
+      kind: "mcp_events", callbackUrl: "https://example.com/mcp", secret: "whsec_demo", subscriptionId: "sub", refreshBefore: null,
+    };
+    await broker.agent.connectWake(bruno, target);
+    await broker.agent.disconnectWake(bruno, target.subscriptionId);
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ wakeKind: "none" }]);
+    await broker.agent.inbox(bruno);
+    // "polling" describe lo observado, no una suscripción: quien se da de baja del push y sigue leyendo su
+    // bandeja *está* sondeando. Para dejar de ser destinatario, el titular usa revokeAgent, no disconnectWake.
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ wakeKind: "polling" }]);
+    await broker.owner.revokeAgent(bruno, bruno.agentId);
+    expect(await broker.owner.agents(bruno)).toMatchObject([{ revokedAt: now.toISOString() }]);
+  });
+
+  it("revive la conexión revocada que vuelve a presentar su token, sin devolverle el canal push", async () => {
+    await broker.agent.connectWake(bruno, webhook);
+    await deps.store.tx(async (tx) => {
+      const connection = await tx.getAgentConnection(bruno.userId, bruno.agentId);
+      await tx.upsertAgentConnection({ ...connection!, verifiedAt: now });
+    });
+    await broker.owner.revokeAgent(bruno, bruno.agentId);
+    // El titular pasa otra vez por el consentimiento OAuth para traer un token: revocar no es irreversible.
+    await broker.agent.connect(bruno);
+    const [revived] = await broker.owner.agents(bruno);
+    expect(revived).toMatchObject({ agentId: bruno.agentId, wakeKind: "none" });
+    expect(revived?.revokedAt).toBeUndefined();
+    // Revocar apagó el canal push y su verificación: revivir no los resucita.
+    expect(revived?.verifiedAt).toBeUndefined();
+    const view = await askAvailability();
+    expect(await inboxItem(bruno, view.requestId)).toMatchObject({ requestId: view.requestId });
+  });
+
+  it("es idempotente", async () => {
+    const writes: string[] = [];
+    const inner = deps.store;
+    const counted: Store = {
+      tx: (fn) => inner.tx((tx) => fn({
+        ...tx,
+        upsertAgentConnection: async (row) => { writes.push(row.wakeTarget.kind); await tx.upsertAgentConnection(row); },
+      })),
+    };
+    const counting = createBroker({ ...deps, store: counted });
+    await counting.agent.inbox(bruno);
+    await counting.agent.inbox(bruno);
+    // La segunda lectura no vuelve a escribir: la promoción sólo corre sobre una conexión sin canal.
+    expect(writes).toEqual(["polling"]);
+  });
+
+  it("una segunda respuesta a la misma solicitud recibe conflict", async () => {
+    // Un titular ya no puede tener dos conexiones vivas (índice agent_connections_one_active),
+    // así que la segunda respuesta realista es la misma conexión reintentando o repitiendo.
+    const view = await askAvailability();
+    const item = await inboxItem(bruno, view.requestId);
+    await broker.agent.reply(bruno, { ...item, outcome: "no_data" });
+    await expect(broker.agent.reply(bruno, { ...item, outcome: "declined" })).rejects.toMatchObject({ code: "conflict" });
+    const events = await deps.store.tx((tx) => tx.listEvents([view.requestId]));
+    expect(events.filter(({ kind }) => kind === "delivery")).toHaveLength(1);
+  });
+
+  it("despacha a una conexión de sondeo sin entregarle un objetivo push", async () => {
+    await broker.agent.connectWake(bruno, { kind: "polling" });
+    const view = await askAvailability();
+    expect((await broker.tick(now)).wakesOk).toBe(1);
+    // El sondeo se despacha por el mismo camino que un canal push: el waker es quien no hace el POST.
+    expect(wake).toHaveBeenCalledExactlyOnceWith({ kind: "polling" }, { requestId: view.requestId, event: WAKE_EVENT },
+      expect.objectContaining({ attempt: 1, userId: bruno.userId, agentId: bruno.agentId }));
+    expect((await broker.owner.agents(bruno))[0]).toMatchObject({ wakeKind: "polling", lastWakeAt: now.toISOString() });
+  });
+
+  it("guarda el detalle del despacho de sondeo y descarta el texto libre del adaptador", async () => {
+    wake.mockResolvedValue({ ok: true, retryable: false, ms: 1, detail: "polling" });
+    await broker.agent.connectWake(bruno, { kind: "polling" });
+    const sondeo = await askAvailability();
+    expect((await broker.tick(now)).wakesOk).toBe(1);
+    // Sin el detail, ops.v_wake_jobs.code rendería 'ok': idéntico a un webhook entregado.
+    expect(await deps.store.tx((tx) => tx.getWakeForUpdate(sondeo.requestId, 0)))
+      .toMatchObject({ lastResult: { ok: true, detail: "polling" } });
+
+    wake.mockResolvedValue({ ok: false, retryable: false, ms: 1, detail: "diagnóstico sensible del adaptador" });
+    await broker.owner.setWake(bruno, bruno.agentId, webhook);
+    const libre = await askAvailability();
+    await broker.tick(now);
+    const job = await deps.store.tx((tx) => tx.getWakeForUpdate(libre.requestId, 0));
+    expect(job?.lastResult).toMatchObject({ ok: false });
+    expect(job?.lastResult?.detail).toBeUndefined();
+  });
+
+  it("ignora una conexión de sondeo revocada", async () => {
+    await broker.agent.connectWake(bruno, { kind: "polling" });
+    await broker.owner.revokeAgent(bruno, bruno.agentId);
+    await askAvailability();
+    expect((await broker.tick(now)).wakesOk).toBe(1);
+    expect(wake).not.toHaveBeenCalled();
+    const [connection] = await broker.owner.agents(bruno);
+    expect(connection).toMatchObject({ wakeKind: "polling", revokedAt: now.toISOString() });
+    expect(connection?.lastWakeAt).toBeUndefined();
   });
 
   it("verifica callbacks antes de guardar y limita la desconexión a la suscripción propia", async () => {
@@ -1208,6 +1324,18 @@ describe("avisos al canal de origen", () => {
     }
     expect(channelNotices()).toHaveLength(3);
     await expectFinal(alice, view.requestId, "allow", "answered", { answer: "Sí" });
+  });
+
+  it("omite el aviso a un canal de sondeo en vez de darlo por entregado", async () => {
+    await broker.owner.setChannel(alice, "whatsapp", { kind: "polling" });
+    const view = await broker.owner.ask(alice, question, "whatsapp");
+    await broker.agent.reply(bruno, { ...await inboxItem(bruno, view.requestId), outcome: "answered", result: { answer: "Sí" } });
+    await broker.tick(now);
+    await broker.tick(now);
+    expect(wake).not.toHaveBeenCalled();
+    // Nadie lee ese canal: el intento queda omitido, no entregado.
+    expect(await deps.store.tx((tx) => tx.getWakeForUpdate(view.requestId, 1)))
+      .toMatchObject({ audience: "origin", lastResult: { ok: false, detail: "skipped" } });
   });
 
   it.each(["recovered", "attempted", "threw"] as const)("reports one exhausted origin notice (%s)", async (mode) => {

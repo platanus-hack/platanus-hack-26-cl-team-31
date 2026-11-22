@@ -7,7 +7,8 @@ import { standardWebhookPost } from "./adapters/standard-webhook.js";
 import { createSafeFetch } from "./safe-fetch.js";
 export { readWebhookBody } from "./read-webhook-body.js";
 
-function adapterPost(target: Exclude<WakeTarget, { kind: "none" }>, notice: WakeNotice) {
+// "none" and "polling" have no adapter: nobody writes to them.
+function adapterPost(target: Exclude<WakeTarget, { kind: "none" | "polling" }>, notice: WakeNotice) {
   switch (target.kind) {
     case "openclaw_hooks": return openclawPost(target, notice);
     case "grokbot_routine": return grokbotPost(target, notice);
@@ -46,6 +47,8 @@ export function createWaker({ allowInsecure, telemetry }: {
     }
     const validTarget = parsedTarget.data;
     if (validTarget.kind === "none") return finish({ ok: true, retryable: false });
+    // A polling agent reads its own inbox: the dispatch succeeds without any request leaving.
+    if (validTarget.kind === "polling") return finish({ ok: true, retryable: false, detail: "polling" });
 
     try {
       const result = await safeFetch(adapterPost(validTarget, parsedNotice.data));

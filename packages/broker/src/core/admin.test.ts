@@ -271,11 +271,32 @@ function runAdminPortTests(name: string, factory: StoreFactory) {
         await broker.admin.revokeAgent(operator, "bruno", "bruno-bot", reason);
         const [connection] = await broker.owner.agents(bruno);
         expect(connection).toMatchObject({ agentId: "bruno-bot", revokedAt: now.toISOString() });
-        await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "not_found" });
 
         advance(1_000);
         await broker.admin.revokeAgent(operator, "bruno", "bruno-bot", reason);
         expect((await broker.owner.agents(bruno))[0]?.revokedAt).toBe(connection!.revokedAt);
+        // La revocación del admin es terminal: el token del agente sigue vivo una hora, y presentarlo
+        // no revive nada. Recibe el mismo not_found que cualquier recurso ajeno: nunca sabe que lo
+        // cortó un operador y no un titular. Quien lo ve es el admin, en broker.agent.revive_denied.
+        await expect(broker.agent.inbox(bruno)).rejects.toMatchObject({ code: "not_found" });
+        await expect(broker.agent.connect(bruno)).rejects.toMatchObject({ code: "not_found" });
+        expect((await broker.owner.agents(bruno))[0]?.revokedAt).toBe(connection!.revokedAt);
+      });
+
+      it("el titular no revive lo que revocó el admin, ni revocando encima para borrar la huella", async () => {
+        await broker.admin.revokeAgent(operator, "bruno", "bruno-bot", reason);
+        const cut = (await broker.owner.agents(bruno))[0]?.revokedAt;
+        advance(1_000);
+        // Revocar lo ya revocado no reescribe quién cortó: la segunda revocación no lava la primera.
+        await broker.owner.revokeAgent(bruno, "bruno-bot");
+        await expect(broker.agent.connect(bruno)).rejects.toMatchObject({ code: "not_found" });
+        expect((await broker.owner.agents(bruno))[0]?.revokedAt).toBe(cut);
+      });
+
+      it("deja volver al agente que revocó su titular: esa sigue siendo reversible", async () => {
+        await broker.owner.revokeAgent(bruno, "bruno-bot");
+        await broker.agent.connect(bruno);
+        expect((await broker.owner.agents(bruno))[0]?.revokedAt).toBeUndefined();
       });
 
       it("devuelve not_found para una conexión inexistente y valida el motivo", async () => {

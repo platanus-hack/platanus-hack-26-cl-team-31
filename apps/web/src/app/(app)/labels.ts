@@ -34,6 +34,7 @@ export const wakeLabels = {
   grokbot_routine: "Rutina de Grok Bot",
   standard_webhook: "Webhook",
   mcp_events: "Eventos MCP",
+  polling: "Sondeo del agente",
 } satisfies Record<WakeKind, string>;
 
 export const fieldLabels: Partial<Record<string, string>> = {

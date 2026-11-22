@@ -49,7 +49,9 @@ export function createWakeCodec(secretsKey: string) {
       const configuration = target.data;
       const context = { ...identity, wakeKind: configuration.kind };
       switch (configuration.kind) {
+        // Neither has a secret: nobody writes to them.
         case "none":
+        case "polling":
           return { wakeKind: configuration.kind, wakePublic: {}, wakeSecret: null };
         case "openclaw_hooks": {
           const { kind, token, ...wakePublic } = configuration;
@@ -74,7 +76,8 @@ export function createWakeCodec(secretsKey: string) {
         return WakeTarget.parse({
           ...(row.wakePublic as Record<string, unknown>),
           kind: row.wakeKind,
-          [field]: secret,
+          // A kind without a secret carries no such key: "polling" is a strict object and would reject it.
+          ...(secret === undefined ? {} : { [field]: secret }),
         });
       } catch {
         throw new BrokerError("internal", "No se pudo leer la configuración de aviso.");

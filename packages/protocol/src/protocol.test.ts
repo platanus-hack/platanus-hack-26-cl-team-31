@@ -163,6 +163,14 @@ describe("wake contracts", () => {
     ).toBe(false);
   });
 
+  it("acepta un objetivo de sondeo sin campos", () => {
+    expect(WakeTarget.parse({ kind: "polling" })).toEqual({ kind: "polling" });
+  });
+
+  it("rechaza un objetivo de sondeo con URL", () => {
+    expect(WakeTarget.safeParse({ kind: "polling", url: "https://x.test" }).success).toBe(false);
+  });
+
   it("rejects a wake notice that includes request content", () => {
     expect(
       WakeNotice.safeParse({ requestId: "request-1", event: WAKE_EVENT, text: "Contenido" }).success,

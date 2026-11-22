@@ -1,4 +1,5 @@
 import { ChannelName, RequestStatus } from "@team-31/protocol";
+import { revokers } from "../store.js";
 import { sql } from "drizzle-orm";
 import {
   bigserial, boolean, check, customType, index, integer, jsonb, pgSchema,
@@ -211,11 +212,17 @@ export const agentConnections = sideband.table("agent_connections", {
   verifiedAt: time("verified_at"),
   lastWakeAt: time("last_wake_at"),
   revokedAt: time("revoked_at"),
+  // Quién revocó. La del titular es reversible; la del admin es terminal (ver reviveAgentConnection).
+  // Vacío en las filas anteriores a esta columna: valen como del titular, lo único que existía.
+  revokedBy: text("revoked_by", { enum: revokers }),
   createdAt: time("created_at").notNull(),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.agentId] }),
   uniqueIndex("agent_connections_one_active").on(table.userId).where(sql`${table.revokedAt} is null`),
-  check("agent_connections_wake_secret_check", sql`(${table.wakeKind} = 'none') = (${table.wakeSecret} is null)`),
+  check("agent_connections_revoked_by_check",
+    sql`${table.revokedBy} is null or ${table.revokedBy} in (${values(revokers)})`),
+  // "none" y "polling" no tienen secreto: nadie les escribe.
+  check("agent_connections_wake_secret_check", sql`(${table.wakeKind} in ('none', 'polling')) = (${table.wakeSecret} is null)`),
 ]);
 
 export const channels = sideband.table("channels", {
@@ -228,7 +235,7 @@ export const channels = sideband.table("channels", {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.name] }),
   check("channels_name_check", sql`${table.name} in (${values(channelNames)})`),
-  check("channels_wake_secret_check", sql`(${table.wakeKind} = 'none') = (${table.wakeSecret} is null)`),
+  check("channels_wake_secret_check", sql`(${table.wakeKind} in ('none', 'polling')) = (${table.wakeSecret} is null)`),
 ]);
 
 // Conversation checkpoints are accessed only by the message-flow runtime.

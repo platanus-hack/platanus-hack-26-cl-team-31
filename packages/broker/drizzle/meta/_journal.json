@@ -141,6 +141,20 @@
       "when": 1795303006108,
       "tag": "0017_vault_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1795304679985,
+      "tag": "0300_sondeo_sin_secreto",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795304681107,
+      "tag": "0301_revocacion_del_admin",
+      "breakpoints": true
     }
   ]
 }

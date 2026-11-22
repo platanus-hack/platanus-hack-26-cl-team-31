@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   getOAuthRequest: vi.fn(),
   claimAddress: vi.fn(),
   googleButton: vi.fn(),
+  devLoginForm: vi.fn(),
+  devAuth: vi.fn(),
   addressForm: vi.fn(),
 }));
 
@@ -22,6 +24,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getSession: mocks.getSession, getAuth: () => ({ options: { socialProviders: { google: {} } } }) }));
+vi.mock("@/lib/auth-env.mjs", () => ({ getDevAuth: () => mocks.devAuth() }));
 vi.mock("@/lib/auth-owner", () => ({ getOwnerAddress: mocks.getAddress }));
 vi.mock("@/lib/auth-request", () => ({ getOAuthRequest: mocks.getOAuthRequest }));
 vi.mock("@/lib/broker", () => ({ ownerClient: () => ({ claimAddress: mocks.claimAddress }) }));
@@ -40,6 +43,9 @@ vi.mock("../app/(app)/onboarding/form", () => ({
 }));
 vi.mock("../app/(auth)/sign-in/google-button", () => ({
   GoogleButton: (props: object) => { mocks.googleButton(props); return null; },
+}));
+vi.mock("../app/(auth)/sign-in/dev-login-form", () => ({
+  DevLoginForm: (props: object) => { mocks.devLoginForm(props); return null; },
 }));
 
 function pageProps(searchParams: Record<string, string | string[] | undefined>) {
@@ -109,5 +115,18 @@ describe("registrarse desde una invitación", () => {
       callbackURL: "/sign-in/complete",
       errorCallbackURL: `/sign-in?${signedQuery}`,
     });
+    expect(mocks.devLoginForm).not.toHaveBeenCalled();
+  });
+
+  it("ofrece el login de desarrollo sin saltarse el consentimiento", async () => {
+    const signedQuery = "client_id=agente&sig=firma";
+    mocks.devAuth.mockReturnValue(true);
+    mocks.getOAuthRequest.mockResolvedValue({ signedQuery, scopes: [] });
+
+    renderToStaticMarkup(await SignInPage(pageProps({ client_id: "agente", sig: "firma" })));
+    expect(mocks.devLoginForm).toHaveBeenCalledWith({ next: `/consent?${signedQuery}` });
+
+    renderToStaticMarkup(await SignInPage(invitation()));
+    expect(mocks.devLoginForm).toHaveBeenLastCalledWith({ next: "/sign-in/complete?from=invite" });
   });
 });
