@@ -23,7 +23,7 @@ export function Modal({ label, title, description, trigger, triggerClassName, wi
   const titleId = useId();
   const close = useCallback(() => {
     const element = dialog.current;
-    if (!element?.open || element.dataset.closing) return;
+    if (!element?.open || element.hasAttribute("data-closing")) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return element.close();
     element.dataset.closing = "";
     window.setTimeout(() => {
