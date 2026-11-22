@@ -17,10 +17,10 @@ La prueba de `sideband_message` en ese mismo archivo invoca al SDK de Anthropic 
 Pon `MCP_DEV_AUTH=1` en el proceso MCP antes de iniciarlo. La suite genera usuarios nuevos y usa tokens `dev:<userId>:<agentId>`. Desde la raíz, ejecuta lo siguiente con el stack levantado.
 
 ```sh
-pnpm with-env sh -c 'E2E_MCP_URL="$MCP_RESOURCE_URL" E2E_AUTH_MODE=dev pnpm --filter @team-31/e2e test'
+pnpm with-env sh -c 'E2E_MCP_URL="$MCP_RESOURCE_URL" E2E_AUTH_MODE=dev pnpm --filter @team-31/e2e test --exclude src/isolation.test.ts'
 ```
 
-`pnpm test` omite estas pruebas si `E2E_MCP_URL` está ausente. Para ejecutar una sola prueba, añade el nombre del archivo, por ejemplo `pnpm --filter @team-31/e2e test src/isolation.test.ts`, después de cargar el entorno y exportar `E2E_MCP_URL`. Configura `E2E_ISOLATION_COUNT` para cambiar la cantidad de solicitudes en paralelo (80 por defecto).
+`pnpm test` omite estas pruebas si `E2E_MCP_URL` está ausente. Para comprobar el aislamiento en modo dev u OAuth, reinicia el broker con `REQUEST_TTL_SECONDS=120` para cubrir los 90 segundos de la prueba. Ejecuta `pnpm --filter @team-31/e2e test src/isolation.test.ts`, con el mismo entorno, incluidos `E2E_MCP_URL` y `E2E_AUTH_MODE`. Configura `E2E_ISOLATION_COUNT` para cambiar la cantidad de solicitudes en paralelo (80 por defecto).
 
 ## Modo OAuth
 
@@ -35,5 +35,5 @@ E2E_OAUTH_TOKENS='{"contract":["<token>","<token>","<token>"],"blocks":["<token>
 Para aislamiento, se usan al menos tres cuentas y como máximo 28 solicitudes por remitente. Si subes `E2E_ISOLATION_COUNT` por encima de 84, añade una cuenta por cada 28 solicitudes adicionales o fracción. Si repites el modo OAuth con los mismos usuarios, deja pasar un minuto entre corridas para que se restablezca la cuota de solicitudes.
 
 ```sh
-pnpm with-env sh -c 'E2E_MCP_URL="$MCP_RESOURCE_URL" E2E_AUTH_MODE=oauth pnpm --filter @team-31/e2e test'
+pnpm with-env sh -c 'E2E_MCP_URL="$MCP_RESOURCE_URL" E2E_AUTH_MODE=oauth pnpm --filter @team-31/e2e test --exclude src/isolation.test.ts'
 ```
