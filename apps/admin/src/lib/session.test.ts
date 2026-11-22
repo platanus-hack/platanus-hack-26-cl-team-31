@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client"
 import { toast } from "sonner"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import type { AdminSession } from "@shared/contract"
-import { api, ApiError, devLogin } from "./api"
+import { api, ApiError, devLogin, signOut } from "./api"
 import { queryClient } from "./query"
 import { SessionProvider, sessionQueryKey } from "./session"
 
@@ -13,6 +13,7 @@ vi.mock("./api", async (load) => ({
   ...await load<typeof import("./api")>(),
   api: vi.fn(),
   devLogin: vi.fn(),
+  signOut: vi.fn(),
   probeDevLogin: vi.fn().mockResolvedValue(false),
 }))
 
@@ -55,6 +56,58 @@ it.each(["unauthorized", "forbidden"] as const)("drops cached admin reads when s
   })
   expect(host.textContent).not.toContain("Contenido privado")
   expect(queryClient.getQueryData(["audit"])).toBeUndefined()
+})
+
+it("muestra el error del proveedor y ofrece volver a entrar cuando falla el callback", async ({ onTestFinished }) => {
+  const originalUrl = window.location.href
+  onTestFinished(() => window.history.replaceState(null, "", originalUrl))
+  window.history.replaceState(null, "", "/login?error=temporarily_unavailable")
+  vi.mocked(api).mockRejectedValueOnce(new ApiError("unauthorized", "Sin sesión", 401))
+
+  await openSession()
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    const alert = host.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain("No se pudo iniciar sesión")
+    expect(alert?.textContent).toContain("temporarily_unavailable")
+    expect(host.textContent).toContain("Entrar con Google")
+  })
+})
+
+it("permite reintentar el cambio de cuenta tras un 403 y limpia el callback al cerrar la sesión", async ({ onTestFinished }) => {
+  const originalUrl = window.location.href
+  onTestFinished(() => window.history.replaceState(null, "", originalUrl))
+  const callback = "/login?error=temporarily_unavailable"
+  window.history.replaceState(null, "", callback)
+  const historyLength = window.history.length
+  const errorToast = vi.spyOn(toast, "error").mockImplementation(() => "toast")
+  vi.mocked(api)
+    .mockRejectedValueOnce(new ApiError("forbidden", "Cuenta sin acceso", 403))
+    .mockRejectedValueOnce(new ApiError("unauthorized", "Sin sesión", 401))
+  vi.mocked(signOut).mockRejectedValueOnce(new Error("Sin conexión")).mockResolvedValueOnce()
+
+  await openSession()
+  const switchAccount = await vi.waitFor(async () => {
+    await act(async () => {})
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Correo no autorizado")
+    const button = host.querySelector("button")
+    expect(button?.textContent).toBe("Usar otra cuenta")
+    return button!
+  })
+  await act(() => switchAccount.click())
+  expect(errorToast).toHaveBeenCalledExactlyOnceWith("No se pudo cerrar la sesión.")
+  expect(window.location.pathname + window.location.search).toBe(callback)
+  expect(api).toHaveBeenCalledTimes(1)
+
+  await act(() => switchAccount.click())
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    expect(host.textContent).toContain("Entrar con Google")
+  })
+  expect(host.querySelector('[role="alert"]')).toBeNull()
+  expect(window.location.pathname + window.location.search).toBe("/")
+  expect(window.history.length).toBe(historyLength)
+  expect(vi.mocked(api).mock.calls.map(([route]) => route)).toEqual(["session", "session"])
 })
 
 it("permite reintentar tras un fallo temporal al cargar la sesión", async () => {
