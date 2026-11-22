@@ -2,12 +2,11 @@ import { Address, Category, categories } from "@team-31/protocol";
 import type { Intent, Field, InterpretMessage, Selector, TurnState } from "./types.js";
 import { normalized, selectChoice } from "./recipients.js";
 
+const literalAddresses = (text: string): readonly string[] => text.match(/[a-z0-9._+%-]+@[a-z0-9.-]+[a-z0-9]/g) ?? [];
+
 // Only bounded literal references are eligible. A suffix of an address or a name is not a new identity.
 function includesLiteral(text: string, value: string) {
-  if (value.includes("@")) {
-    const addresses: readonly string[] = text.match(/[a-z0-9._+%-]+@[a-z0-9.-]+[a-z0-9]/g) ?? [];
-    return addresses.includes(normalized(value));
-  }
+  if (value.includes("@")) return literalAddresses(text).includes(normalized(value));
   const key = normalized(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const alphabet = "\\p{L}\\p{N}";
   return new RegExp("(?<![" + alphabet + "])" + key + "(?![" + alphabet + "])", "u").test(text);
@@ -63,6 +62,9 @@ function groundedRead(intent: Exclude<Intent, TargetIntent>, text: string): Inte
 function groundSelector(selector: Selector, text: string, statedScope: ReturnType<typeof explicitScope>) {
   if (statedScope && selector.scope !== statedScope) return false;
   if (!statedReference(text, selector.person) || !statedReference(text, selector.circle)) return false;
+  // The holder's words fill what the model left out: the one address they wrote, or contacts for a named person.
+  if (selector.scope === "address" && !selector.person && literalAddresses(text).length === 1) selector.person = literalAddresses(text)[0];
+  if (selector.count === "one" && selector.person && selector.scope === "unspecified") selector.scope = "contacts";
   if (selector.scope === "address" && !Address.safeParse(normalized(selector.person ?? "")).success) return false;
   if (selector.count === "many") {
     if (!collective.test(text) || selector.person) return false;
@@ -98,6 +100,9 @@ function groundedAsk(intent: Ask, text: string, source: string): Intent {
       return intent;
     case "interest_check":
       if (!statedReference(text, intent.args.interest)) delete intent.args.interest;
+      return intent;
+    case "vault_access":
+      if (!statedReference(text, intent.args.categoryName)) delete intent.args.categoryName;
       return intent;
     default:
       return intent;
@@ -142,7 +147,7 @@ export function parseSharingCategories(text: string): Category[] | undefined {
 
 type Pending = Extract<TurnState, { phase: "clarify" }>;
 export type Selection = { intent: Intent; invitationTag?: string | null; circleId?: string; categoryId?: string };
-const slotFields = new Set<Field>(["text", "category", "date", "start", "durationMinutes", "timezone", "interest", "share"]);
+const slotFields = new Set<Field>(["text", "category", "date", "start", "durationMinutes", "timezone", "interest", "share", "categoryName"]);
 
 function selectVaultCategory(keep: Selection, value: string, option?: string): Selection | undefined {
   const { intent } = keep;

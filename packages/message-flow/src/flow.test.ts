@@ -135,6 +135,32 @@ describe("turnos del titular", () => {
     expect(ask).not.toHaveBeenCalled();
   });
 
+  it("pide acceso a una categoría de la bóveda y pregunta cuál si el nombre no está en el mensaje", async () => {
+    const access: Intent = { action: "ask", tool: "vault_access", selector: { scope: "contacts", count: "one", person: ana }, args: { categoryName: "Salud" } };
+    const interpret = vi.fn<InterpretMessage>().mockResolvedValueOnce(access)
+      .mockResolvedValueOnce({ ...access, args: { categoryName: "Finanzas" } })
+      .mockResolvedValueOnce({ ...access, args: { categoryName: "Salud" } });
+    const { run, ask } = harness(interpret);
+    expect(await run("Pídele a " + ana + " acceso a Salud")).toMatchObject({ kind: "requests", items: [{ to: ana, tool: "vault_access" }] });
+    expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ to: ana, tool: "vault_access", args: { categoryName: "Salud" } }));
+
+    const choice = await run("Pídele a " + ana + " acceso a su bóveda");
+    expect(choice).toMatchObject({ kind: "clarification", question: "¿Qué categoría de su bóveda quieres pedir?" });
+    if (choice.kind !== "clarification") throw new Error("expected category question");
+    expect((await run("Salud", choice.continuationId)).kind).toBe("requests");
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["Pídele a Ana Soto acceso a Salud", { scope: "unspecified", count: "one", person: "Ana Soto" }],
+    ["Pídele a " + ana + " acceso a Salud", { scope: "address", count: "one" }],
+  ] as const)("completa el destinatario con las palabras del titular en «%s»", async (text, selector) => {
+    const { run, ask, context } = harness(async () => ({ action: "ask", tool: "vault_access", selector: { ...selector }, args: { categoryName: "Salud" } }));
+    context.ops.contacts = async () => ({ ...directory, contacts: [{ ...directory.contacts[0]!, displayName: "Ana Soto" }] });
+    expect((await run(text)).kind).toBe("requests");
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ to: ana, tool: "vault_access" }));
+  });
+
   it("busca perfiles explícitos y lee categorías de bóveda por el ID devuelto", async () => {
     const interpret = vi.fn<InterpretMessage>().mockResolvedValueOnce({ action: "profiles", query: "Ana" })
       .mockResolvedValueOnce({ action: "vault", selector: { scope: "contacts", count: "one", person: ana }, categoryName: "Talleres" });

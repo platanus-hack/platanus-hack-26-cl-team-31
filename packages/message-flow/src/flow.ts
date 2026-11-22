@@ -16,6 +16,7 @@ const questions: Partial<Record<Field, string>> = {
   date: "¿Para qué fecha?", start: "¿A qué hora empieza? Indica la hora en formato de 24 horas.",
   durationMinutes: "¿Cuántos minutos duraría?", timezone: "¿En qué zona horaria?",
   interest: "¿Qué interés quieres consultar?", text: "¿Qué pregunta quieres enviar?",
+  categoryName: "¿Qué categoría de su bóveda quieres pedir?",
   category: "¿Sobre qué categoría quieres preguntar?", share: "¿Qué categorías quieres compartir?",
   intent: "¿Quieres consultar a una persona, revisar una solicitud, buscar un perfil, leer la bóveda de un contacto o ver la tuya?",
 };
