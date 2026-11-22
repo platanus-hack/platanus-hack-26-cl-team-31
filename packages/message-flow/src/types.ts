@@ -69,7 +69,7 @@ export type RoutedAsk = AskInput & { idempotencyKey: string };
 export type Field = "invitationTag" | "intent" | "scope" | "person" | "circle" | "categoryId" | "requestId" | "query"
   | keyof z.infer<typeof argumentsDraft>;
 export type ReadPlan = { action: "contacts" } | { action: "profiles"; query: string }
-  | { action: "vault"; selector: Selector; circleId?: string; categoryId?: string; empty?: true }
+  | { action: "vault"; selector: Selector & { person: string }; circleId?: string; categoryId?: string; empty?: true }
   | { action: "vaults"; selector: Selector; circleId?: string; categoryName: string; reads: { to: string; categoryId: string }[]; missing: string[] }
   | { action: "own_vault"; categoryId?: string };
 export type TurnState =
