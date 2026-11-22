@@ -13,6 +13,28 @@ export const ErrorCode = z.enum([
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
+type ErrorDetails = ErrorOptions & {
+  errorId?: string;
+  stage?: "url" | "signing" | "transport" | "decoding" | "response";
+  reason?: WakeVerificationReason;
+};
+
+export class BrokerError extends Error {
+  readonly code: ErrorCode;
+  readonly errorId?: string;
+  readonly stage?: ErrorDetails["stage"];
+  readonly reason?: WakeVerificationReason;
+
+  constructor(code: ErrorCode, message: string, details?: ErrorDetails) {
+    super(message, details);
+    this.code = code;
+    this.name = "BrokerError";
+    this.errorId = details?.errorId;
+    this.stage = details?.stage;
+    this.reason = details?.reason;
+  }
+}
+
 export const ErrorBody = z.object({
   error: z.object({ code: ErrorCode, message: z.string(), reason: WakeVerificationReason.optional() }),
 });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { categories, Category } from "./categories.js";
 import { toolNames } from "./constants.js";
+import { BrokerError } from "./errors.js";
 import { Sharing } from "./sharing.js";
 
 export const ToolName = z.enum(toolNames);
@@ -80,6 +81,39 @@ export const ToolResult = z.union([
   ToolResultSchemas.connect,
 ]);
 export type ToolResult = z.infer<typeof ToolResult>;
+
+export type FilteredResult = {
+  result: ToolResult;
+  delivered: string[];
+  dropped: string[];
+};
+
+function parseResult(tool: ToolName, result: unknown): ToolResult {
+  const parsed = ToolResultSchemas[tool].safeParse(result);
+  if (!parsed.success) {
+    const field = parsed.error.issues[0]?.path.join(".") || "resultado";
+    throw new BrokerError("invalid_input", `La respuesta no cumple el formato de ${tool}: revisa ${field}.`);
+  }
+
+  return parsed.data;
+}
+
+export function filterResult(
+  tool: ToolName,
+  result: unknown,
+  allowedFields: readonly string[],
+): FilteredResult {
+  const parsed = parseResult(tool, result);
+  const allowed = Object.entries(parsed).filter(([field]) => allowedFields.includes(field));
+  const filtered = parseResult(tool, Object.fromEntries(allowed));
+  const delivered = Object.keys(filtered);
+
+  return {
+    result: filtered,
+    delivered,
+    dropped: Object.keys(result as object).filter((field) => !delivered.includes(field)),
+  };
+}
 
 export function fieldsOf(tool: ToolName): string[] {
   return Object.keys(ToolResultSchemas[tool].shape);

@@ -27,7 +27,7 @@ Cada etapa es una función pura `(state, ctx) => state` y tiene sus propias prue
 | --- | --- | --- |
 | parse | `parse.ts` | Lee el objeto una sola vez (sin getters, sin `__proto__`/`constructor`/`prototype`, con límites de tamaño) y lo valida contra `ToolResultSchemas[tool]`. Los campos desconocidos se descartan y se reportan (`unknownKeys: "reject"` los rechaza). |
 | canonicalize | `canonicalize.ts` | Elimina caracteres de control, de ancho cero, bidi y tags Unicode. Aplica NFC, colapsa espacios y recorta a largos máximos (`fields.ts`). Ordena, deduplica y fusiona los horarios `HH:MM-HH:MM`. Normaliza fechas a ISO. |
-| policy | `policy.ts` | Delega en `filterResult` de `src/policy` y no reimplementa la lista blanca. |
+| policy | `policy.ts` | Aplica `filterResult` de `@team-31/protocol` con los campos que autorizó el broker. |
 | redact | `redact.ts` | Opcional y solo para texto libre (`question.answer`). Usa la interfaz `Redactor`: por defecto `identityRedactor`, y `createFakeRedactor()` para pruebas. |
 | parse → canonicalize → policy | | Se repiten después de redact porque su salida no es confiable. |
 | leak-guard | `leak-guard.ts` | Barrera determinista final. Bloquea pistas privadas (incluso ofuscadas con homoglifos, leetspeak o separadores), canarios, emails, teléfonos, URLs y ecos del `senderMessage` o marcadores de inyección. Un canario o una fuga en un campo obligatorio lanza `SanitizeBlockedError` (`forbidden`), y una fuga en un campo opcional elimina ese campo. |

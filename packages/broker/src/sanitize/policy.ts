@@ -1,4 +1,4 @@
-import { filterResult } from "../policy/index.js";
+import { filterResult } from "@team-31/protocol";
 import { addDropped, addFlags, asRecord, type SyncStage } from "./types.js";
 
 /** Delegates to the shared policy filter; never reimplements field whitelisting. */
