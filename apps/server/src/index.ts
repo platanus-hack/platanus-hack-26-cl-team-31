@@ -44,6 +44,8 @@ process.once("SIGTERM", stop);
 server.listen(port, process.env.COORDINATION_HOST ?? "127.0.0.1", () => {
   const address = server.address();
   if (address && typeof address === "object") {
+    telemetry.emit("service.listening", { attrs: { address: address.address, port: address.port } });
+    process.send?.({ type: "listening", port: address.port });
     console.log("Coordinación lista en puerto", address.port);
   }
 });
