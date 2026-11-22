@@ -372,13 +372,13 @@ it("applies the ten-second deadline while reading a JSON response body", async (
 
 it("sanitizes signer failures before sending the request", async () => {
   const { agent, getAgentToken, requests } = await broker((response) => send(response, 500));
-  getAgentToken.mockImplementationOnce(() => {
-    throw new Error("private signing material");
-  });
+  const cause = new Error("private signing material");
+  getAgentToken.mockImplementationOnce(() => { throw cause; });
 
   const result = agent.inbox(principal);
   await expect(result).rejects.toMatchObject({ code: "internal", stage: "signing" });
-  await expect(result).rejects.not.toThrow("private signing material");
+  await expect(result).rejects.toSatisfy((error: BrokerError) => error.cause === cause);
+  await expect(result).rejects.not.toThrow(cause.message);
   expect(getAgentToken).toHaveBeenCalledTimes(1);
   expect(requests).toEqual([]);
 });
