@@ -14,6 +14,19 @@ const mapper = () =>
 const row = (id: string, name: string, at: number, fields: Partial<TelemetryRow> = {}): TelemetryRow => ({ id, at, service: "broker", name, requestId: "r1", attrs: {}, ...fields });
 
 describe("createLiveFeed", () => {
+  it("resolves a buffered row after older request references are evicted", () => {
+    const ref = (id: string) => ({ id, fromAddress: "ana@sideband.app", toAddress: `${id}@sideband.app` });
+    const directory = createFlowDirectory({ requests: [ref("old"), ref("r1")] }, { requestLimit: 2 });
+    const feed = createLiveFeed(createTelemetryMapper(directory));
+    feed.push(row("1", "broker.policy.evaluated", 1_000, { attrs: { decision: "allow" } }), 0);
+    directory.add({ requests: [ref("new")] });
+
+    expect(directory.request("old")).toBeUndefined();
+    const events = feed.drain(1_000);
+    const sender = events.find((event) => event.step === "ask")?.from;
+    expect(sender && sender !== "broker" && sender.owner.key).toBe("ana@sideband.app");
+  });
+
   it("holds rows, then releases them in the order they happened", () => {
     const feed = createLiveFeed(mapper(), { holdMs: 500 });
     // El broker escribe su lote antes que el span del MCP que lo contiene y que el aviso.

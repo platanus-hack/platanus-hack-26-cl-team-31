@@ -11,7 +11,8 @@
 // - Directorio: se refresca si aparece un usuario o agente desconocido (como mucho cada 5 s) y cada
 //   minuto; cada refresco reconcilia la presencia (revocados salen, nuevos entran).
 // - Memoria: como mucho MAX_EVENTS pasos; al pasarse se descartan los más viejos (el renderer
-//   conserva el estado) y el mapeo acota sus propias tablas.
+//   conserva el estado); el directorio retiene 10.000 referencias, más que las 5.000 que
+//   recuerda el servidor, con margen para la foto y las filas en espera.
 import * as React from "react"
 import {
   compareIds,
