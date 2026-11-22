@@ -14,6 +14,7 @@ function summary(item: OwnerPendingItem) {
     case "availability": return `¿Estás libre el ${formatSlotDay(item.args.date)} · ${item.args.start} (${item.args.durationMinutes} min)?`;
     case "interest_check": return `¿Te interesa ${item.args.interest}?`;
     case "question": return `Pregunta sobre ${categories[item.args.category ?? "general"].label}`;
+    case "category_access": return `Quiere permiso para consultar ${categories[item.args.category].label} y leer esa categoría predeterminada de tu bóveda`;
     case "vault_access": return `Quiere leer «${item.args.categoryName}» de tu bóveda`;
     case "connect": return "Quiere conectar contigo";
     case "profile": return "Quiere ver tu perfil";
@@ -22,6 +23,7 @@ function summary(item: OwnerPendingItem) {
 
 function choices(item: OwnerPendingItem): [string, string, string, string] | undefined {
   if (item.tool === "vault_access") return ["grant_vault_read", "Conceder", "deny", "Rechazar"];
+  if (item.tool === "category_access") return ["grant_category", "Conceder", "deny", "Rechazar"];
   if (!item.escalated) return ["approve_once", "Aprobar", "deny", "Rechazar"];
   if (item.tool === "availability") return ["yes", "Sí puedo", "no", "No puedo"];
   if (item.tool === "interest_check") return ["yes", "Me interesa", "no", "No"];

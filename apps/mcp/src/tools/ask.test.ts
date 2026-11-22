@@ -28,6 +28,15 @@ afterEach(async () => {
   await server.close();
 });
 
+it("transporta una petición de permiso como categoría y no como pregunta de texto", async () => {
+  const input = { to, tool: "category_access", args: { category: "general" } } as const;
+  ask.mockResolvedValue({ to, tool: input.tool, decision: "pending", final: false, waitingFor: "owner",
+    requestId: "request-1", expiresAt: "2026-11-22T00:00:00Z" });
+  const result = await client.callTool({ name: "sideband_ask", arguments: input });
+  expect(ask).toHaveBeenCalledExactlyOnceWith(principal, input);
+  expect(result.structuredContent).toMatchObject({ waitingFor: "owner" });
+});
+
 it("rechaza una question con argumentos de interest_check antes de llamar al broker", async () => {
   const result = await client.callTool({
     name: "sideband_ask", arguments: { to, tool: "question", args: { interest: "cerámica" } },

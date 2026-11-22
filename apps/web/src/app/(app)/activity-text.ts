@@ -6,6 +6,7 @@ export const receivedText: Record<ToolName, string> = {
   question: "te hizo una pregunta",
   connect: "quiere conectar contigo",
   vault_access: "pidió leer tu bóveda",
+  category_access: "pidió permiso para consultar una categoría",
   profile: "pidió ver tu perfil",
 };
 
@@ -15,6 +16,7 @@ export const sentText: Record<ToolName, (to: string) => string> = {
   question: (to) => `Le hiciste una pregunta a ${to}`,
   connect: (to) => `Invitaste a ${to}`,
   vault_access: (to) => `Pediste leer la bóveda de ${to}`,
+  category_access: (to) => `Pediste permiso de categoría a ${to}`,
   profile: (to) => `Pediste el perfil de ${to}`,
 };
 

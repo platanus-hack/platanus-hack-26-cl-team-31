@@ -17,6 +17,7 @@ export type FieldSpecs = Record<ToolName, Record<string, FieldSpec>>;
 
 export const FIELD_SPECS: FieldSpecs = {
   vault_access: { accepted: { kind: "boolean" } },
+  category_access: { accepted: { kind: "boolean" } },
   interest_check: {
     matches: { kind: "boolean" },
   },

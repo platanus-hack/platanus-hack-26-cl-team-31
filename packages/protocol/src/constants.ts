@@ -3,7 +3,7 @@
 
 export const ADDRESS_DOMAIN = "sideband.app";
 
-export const toolNames = ["profile", "availability", "question", "interest_check", "connect", "vault_access"] as const;
+export const toolNames = ["profile", "availability", "question", "interest_check", "connect", "vault_access", "category_access"] as const;
 type ToolName = (typeof toolNames)[number];
 
 export const categoryNames = ["availability", "interests", "health", "general"] as const;
