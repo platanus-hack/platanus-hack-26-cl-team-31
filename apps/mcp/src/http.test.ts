@@ -7,6 +7,8 @@ import { verifyServiceToken } from "@team-31/auth/service";
 import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-client";
 import { createMessageFlow, type InterpretMessage } from "@team-31/message-flow";
 import { LIFECYCLE_EVENT, Scope, WAKE_EVENT } from "@team-31/protocol";
+import { fixtureUsers } from "@team-31/protocol/fixtures";
+import { routes } from "@team-31/protocol/http";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { HandleMessage } from "./tools/message.js";
@@ -281,6 +283,27 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     { path: "GET /v1/agent/activity?limit=5", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "GET /v1/agent/pending", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
   ]);
+});
+
+it("conserva la búsqueda al continuar el directorio con el cursor de la primera página", async () => {
+  const agent = testPort();
+  const firstAddress = fixtureUsers.diego.address;
+  const lastAddress = fixtureUsers.simon.address;
+  const networkUsers = vi.mocked(agent.networkUsers)
+    .mockResolvedValueOnce({ addresses: [firstAddress], nextCursor: firstAddress })
+    .mockResolvedValueOnce({ addresses: [lastAddress] });
+  const origin = await listen(createHttpServer(options, agent));
+  const client = await connect(`${origin}/mcp`, "dev:ana:ana-bot");
+  const q = "sideband.app";
+  const name = "sideband_network_users";
+
+  const first = await client.callTool({ name, arguments: { q } });
+  const page = routes.agentNetworkUsers.response.parse(first.structuredContent);
+  expect(page).toEqual({ addresses: [firstAddress], nextCursor: firstAddress });
+
+  const last = await client.callTool({ name, arguments: { q, after: page.nextCursor } });
+  expect(last.structuredContent).toEqual({ addresses: [lastAddress] });
+  expect(networkUsers.mock.calls.map(([, query]) => query)).toEqual([{ q }, { q, after: firstAddress }]);
 });
 
 async function oauthFixture() {
