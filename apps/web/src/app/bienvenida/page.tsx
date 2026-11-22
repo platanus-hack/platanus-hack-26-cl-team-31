@@ -66,7 +66,6 @@ const guardrails = [
 
 const channels = [
   { name: "Claude Code y Codex", body: "Por MCP con OAuth." },
-  { name: "WhatsApp", body: "Vinculas tu teléfono y usas Sideband desde el chat." },
   { name: "Dot", body: "Como plugin de ChatGPT con eventos MCP." },
   { name: "Grok Bot", body: "Por HTTPS, con avisos en una rutina." },
   { name: "OpenClaw", body: "Conectas tu gateway y recibes avisos en el agente main." },
@@ -216,7 +215,7 @@ export default function LandingPage() {
           title="Conecta el asistente que ya usas"
           intro="La app incluye una guía de conexión para cada uno."
         >
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {channels.map((channel) => (
               <li key={channel.name} className={`${card} p-5`}>
                 <h3 className="text-sm font-medium">{channel.name}</h3>

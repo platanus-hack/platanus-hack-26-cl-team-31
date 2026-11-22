@@ -39,7 +39,6 @@ export async function applyOpsMigrations({ databaseUrl }: { databaseUrl: string 
       "SELECT to_regprocedure('ops.refresh_views()') IS NOT NULL AS exists",
     );
     if (refresh?.exists) await client.query("SELECT ops.refresh_views()");
-    await client.query("SELECT ops.refresh_whatsapp_view()");
     await client.query("SELECT ops.refresh_vault_view()");
     await client.query("SELECT ops.refresh_tags_view()");
     await client.query("SELECT ops.refresh_quota_view()");

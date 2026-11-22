@@ -454,33 +454,6 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
-    it("keeps a request's origin channel and a notice's audience", async () => {
-      const row = await makeRequest({ originChannel: "whatsapp" });
-      const id = randomUUID();
-      await store.tx((tx) => tx.enqueueWake({
-        id, requestId: row.id, requestVersion: row.version + 1, audience: "origin", attempt: 1, runAt: now, state: "queued",
-      }));
-      await store.tx(async (tx) => {
-        expect(await tx.getRequest(row.id)).toMatchObject({ originChannel: "whatsapp" });
-        expect(await tx.getWakeForUpdate(row.id, row.version + 1)).toMatchObject({ id, audience: "origin" });
-      });
-      const plain = await makeRequest();
-      await store.tx(async (tx) => expect((await tx.getRequest(plain.id))?.originChannel).toBeUndefined());
-    });
-
-    it("stores one channel per owner and name, and replaces its wake target", async () => {
-      const webhook = { kind: "standard_webhook", url: "https://example.org/wake", secret: "whsec_c2VjcmV0LXNlY3JldC1zZWNyZXQ=" } as const;
-      await store.tx(async (tx) => {
-        expect(await tx.getChannel("alice", "whatsapp")).toBeNull();
-        await tx.putChannel({ userId: "carla", name: "whatsapp", wakeTarget: { kind: "none" }, createdAt: now });
-        await tx.putChannel({ userId: "carla", name: "whatsapp", wakeTarget: webhook, createdAt: now });
-      });
-      await store.tx(async (tx) => {
-        expect(await tx.getChannel("carla", "whatsapp")).toEqual({ userId: "carla", name: "whatsapp", wakeTarget: webhook, createdAt: now });
-        expect(await tx.getUser("carla")).toMatchObject({ userId: "carla" });
-      });
-    });
-
     it("recovers expired leases and rejects late results from the previous attempt", async () => {
       const row = await makeRequest();
       const id = randomUUID();
@@ -578,11 +551,10 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
       });
     });
 
-    it("guarda una conexión y un canal de sondeo sin secreto y los devuelve sin campos extra", async () => {
+    it("guarda una conexión de sondeo sin secreto y la devuelve sin campos extra", async () => {
       const polling = { kind: "polling" } as const;
       await store.tx(async (tx) => {
         await tx.ensureAgentConnection({ userId: "carla", agentId: "cli", label: "CLI", wakeTarget: polling, createdAt: now });
-        await tx.putChannel({ userId: "carla", name: "whatsapp", wakeTarget: polling, createdAt: now });
       });
       await store.tx(async (tx) => {
         const connection = await tx.getAgentConnection("carla", "cli");
@@ -590,7 +562,6 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         // Nadie le escribe: la conexión vuelve sin secreto ni ningún otro campo.
         expect(connection?.wakeTarget).toEqual(polling);
         expect(Object.keys(connection?.wakeTarget ?? {})).toEqual(["kind"]);
-        expect((await tx.getChannel("carla", "whatsapp"))?.wakeTarget).toEqual(polling);
       });
     });
 

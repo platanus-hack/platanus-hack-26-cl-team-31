@@ -75,7 +75,7 @@ interface FlowActor {
   role: "agent" | "owner"
   label: string                // etiqueta del agente ("Claude Code") o "Titular"
   owner: { key: string; label: string }  // key: dirección Sideband (o "user:<id>"); label: nombre visible
-  channel?: string             // MCP, WhatsApp, OpenClaw…
+  channel?: string             // MCP, OpenClaw…
   placeholder?: boolean        // agente aún no identificado; se fusiona con el primer agente real del titular
 }
 ```
@@ -121,7 +121,6 @@ Señales:
 | `mapper.snapshot(at)` sobre la foto (`/api/admin/flow/snapshot`) | `joined` (snapshot) por agente con `revokedAt` vacío y uno provisional («Agente») por titular con dirección y sin agentes |
 | `broker.agent.connected` (al crearse la conexión: primera llamada autenticada del agente) | `joined` |
 | `broker.agent.revoked` (titular o admin, solo la primera vez) | `left` |
-| `whatsapp.link` (`confirmed` / `unlinked`, con `userId`) | `joined` / `left` del agente WhatsApp del titular |
 | primer paso de un agente que no estaba (p. ej. `mcp.tool.call`) | `joined` y luego el paso |
 | `mapper.reconcile(at)` tras refrescar el directorio | `left` por cada presente que ahora figura revocado y `joined` por cada agente nuevo (cubre señales perdidas mientras el stream estuvo caído) |
 

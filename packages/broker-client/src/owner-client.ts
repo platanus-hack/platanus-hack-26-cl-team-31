@@ -28,16 +28,13 @@ export function createOwnerClient(options: ClientOptions<Owner>): OwnerPort {
     pending: async (owner) => (await request(routes.ownerPending, owner)).items,
     activity: async (owner, query = {}) =>
       (await request(routes.ownerActivity, owner, { query: typeof query === "number" ? { limit: query } : query })).items,
-    ask: (owner, body, channel) => channel
-      ? request(routes.ownerChannelAsk, owner, { params: { name: channel }, body: encodeAsk(body) })
-      : request(routes.ownerAsk, owner, { body: encodeAsk(body) }),
+    ask: (owner, body) => request(routes.ownerAsk, owner, { body: encodeAsk(body) }),
     status: (owner, id) => request(routes.ownerStatus, owner, { params: { id } }),
     decide: (owner, id, body) => request(routes.ownerDecide, owner, { params: { id }, body }),
     agentDirectory: async (owner) => (await request(routes.ownerAgentDirectory, owner)).items,
     agents: async (owner) => (await request(routes.ownerAgents, owner)).items,
     setWake: (owner, agentId, body) =>
       request(routes.ownerSetWake, owner, { params: { agentId }, body }),
-    setChannel: (owner, name, body) => request(routes.ownerSetChannel, owner, { params: { name }, body }),
     ping: (owner, agentId) => request(routes.ownerPing, owner, { params: { agentId } }),
     revokeAgent: (owner, agentId) => request(routes.ownerRevokeAgent, owner, { params: { agentId } }),
     connect: (owner, body) => request(routes.ownerConnect, owner, { body }),

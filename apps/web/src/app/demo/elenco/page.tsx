@@ -11,7 +11,7 @@ import "../demo.css";
 import "./elenco.css";
 
 export const metadata: Metadata = {
-  title: "Sideband — Elenco de WhatsApp",
+  title: "Sideband — Contactos de demostración",
   description: "Perfiles públicos, datos privados y permisos de los contactos ficticios.",
 };
 
@@ -113,7 +113,7 @@ export default function CastPage() {
   if (process.env.NODE_ENV !== "development") notFound();
   return <main className="sideband-demo cast-page">
     <div className="cast-intro">
-      <h1>Elenco de WhatsApp</h1>
+      <h1>Contactos de demostración</h1>
       <p>Cinco contactos ficticios. Lo público lo ve cualquiera. Lo privado lo responde el agente de cada uno, o lo lee el broker de su bóveda, solo si quien pregunta tiene permiso.</p>
       <ul>{tries.map((text) => <li key={text}>{text}</li>)}</ul>
     </div>

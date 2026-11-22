@@ -103,27 +103,6 @@ export const catalog = [
   defineEvent({ name: "message.turn.completed", kind: "lifecycle", description: "Resultado del turno.", attrs: { outcome: code() } }),
   defineEvent({ name: "broker.profiles.searched", kind: "tool", description: "Búsqueda autenticada en perfiles públicos.", attrs: { count: int() } }),
   defineEvent({
-    name: "whatsapp.link", kind: "auth", description: "Estado del vínculo de WhatsApp, sin números ni códigos.",
-    attrs: { action: z.enum(["started", "detected", "invalid_code", "confirmed", "unlinked"]) },
-  }),
-  defineEvent({
-    name: "whatsapp.request", kind: "tool", description: "Solicitud de Sideband creada o consultada por WhatsApp.",
-    attrs: { action: z.enum(["ask", "status"]), decision: code(), tool: code() },
-  }),
-  defineEvent({
-    name: "whatsapp.send", kind: "http", description: "Envío de una respuesta por Kapso, sin el contenido ni el destinatario.",
-    attrs: {},
-  }),
-  defineEvent({
-    name: "whatsapp.delivery", kind: "lifecycle",
-    description: "Aviso del broker entregado al teléfono, guardado fuera de la ventana de 24 horas, enviado después o descartado. Sin el contenido ni el número.",
-    attrs: { state: z.enum(["sent", "pending", "flushed", "dropped"]), decision: code() },
-  }),
-  defineEvent({
-    name: "whatsapp.interpret", kind: "http", description: "Interpretación en Claude, sin guardar texto ni destinatario.",
-    attrs: { action: z.enum(["ask", "status", "contacts", "help"]), category: code() },
-  }),
-  defineEvent({
     name: "web.invite.progress",
     kind: "lifecycle",
     description: "Paso observado en el alta por invitación de Sideband.",
@@ -204,12 +183,6 @@ export const catalog = [
     kind: "policy",
     description: "El titular dio un permiso. Sin la dirección autorizada: solo el id y la categoría.",
     attrs: { grantId: id(), category: code() },
-  }),
-  defineEvent({
-    name: "broker.channel.set",
-    kind: "lifecycle",
-    description: "El titular registró dónde avisar las solicitudes que escribe en un canal. Sin la URL ni el secreto.",
-    attrs: { channel: code(), kind: code() },
   }),
   defineEvent({
     name: "broker.agent.connected",

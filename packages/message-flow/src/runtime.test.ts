@@ -56,7 +56,7 @@ it.each([
   expect(createPostgresTurnStore).toHaveBeenCalledExactlyOnceWith(dedicated ?? shared, telemetry);
   const directory = { contacts: [], circles: [] };
   const ops = { contacts: vi.fn().mockResolvedValue(directory), ask: vi.fn(), status: vi.fn() };
-  const owner = { userId: "ana", binding: "whatsapp:fixture" };
+  const owner = { userId: "ana", binding: "test:fixture" };
   const reply = await runtime.handleMessage({ ...owner, ops }, { text: "Mis contactos" });
   expect(reply).toEqual({ kind: "contacts", data: directory });
   expect(await runtime.latestContinuation(owner.userId, owner.binding)).toBe("turn");

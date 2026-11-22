@@ -67,13 +67,11 @@ Una fila por evento o span. Columnas clave: `service`, `instance`, `kind`, `name
 | `ops.v_requests` | `sideband.requests` + `sideband.wake_jobs` | id, tool, from_address, to_address, from_user_id, to_user_id, status, outcome, rule, escalated, target_agent_id, answered_by_agent_id, allowed_fields, dropped_fields, decision_reason, internal_reason, args_keys, result_keys, has_purpose, response_signed, created_at, expires_at, closed_at, duration_ms, stuck, wake_attempts, last_wake_ok, origin_channel | Sin `args`, `result`, `purpose`, firmas ni nonce. Solo las llaves de args y result. |
 | `ops.v_request_payloads` | `sideband.requests` | id, args, purpose, result | **Solo** rol `sideband_admin_reveal`. Se usa únicamente en `POST /requests/:id/reveal`. |
 | `ops.v_request_events` | `sideband.request_events` | request_id, id, at, kind, status, code | `detail` se reduce a status y code. |
-| `ops.v_wake_jobs` | `sideband.wake_jobs` + conexión o canal | id, request_id, attempt, state, run_at, kind, ok, http_status, code, latency_ms, user_id, agent_id, audience | Sin cuerpo de respuesta. `code` es `ok`, `retryable`, `failed` o un código `[a-z_]` del adaptador.  Cuando el estado es `running`, `run_at` indica cuándo vence la concesión. |
+| `ops.v_wake_jobs` | `sideband.wake_jobs` + conexión o canal | id, request_id, attempt, state, run_at, kind, ok, http_status, code, latency_ms, user_id, agent_id, audience | Sin cuerpo de respuesta. `code` es `ok`, `retryable`, `failed` o un código `[a-z_]` del adaptador. Los avisos de origen pendientes al retirar WhatsApp quedan en estado `done` con código `channel_retired`. Cuando el estado es `running`, `run_at` indica cuándo vence la concesión. |
 | `ops.v_agent_connections` | `sideband.agent_connections` | user_id, agent_id, label, wake_kind, wake_host, verified_at, last_wake_at, revoked_at, created_at | Solo el host de la URL. Nunca `wake_secret`. |
 | `ops.v_users` | `sideband.users` + `sideband.sharing_rules` | user_id, address, display_name, created_at, rules | |
 | `ops.v_circles` | `sideband.circles` + `sideband.circle_members` | circle_id, name, owner_user_id, created_at, members, invitations | Sin las direcciones de los miembros |
-| `ops.v_channels` | `sideband.channels` | user_id, name, wake_kind, wake_host, created_at | Solo el host de la URL. Nunca `wake_secret`. `audience = 'origin'` en `ops.v_wake_jobs` marca sus avisos. |
-| `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions, has_phone_number | Sin tokens de sesión. Del teléfono solo se ve si existe, nunca el número. `user.id` es el mismo `user_id` de `sideband.users`. |
-| `ops.v_whatsapp` | Better Auth y esquema `whatsapp` (migración de web antes de ops) | linked_accounts, active_pairings, inbound_receipts, pending_deliveries, pending_registrations | Solo recuentos. En Eventos, filtra por `whatsapp.link`, `whatsapp.request`, `whatsapp.send` o `whatsapp.delivery` para seguir el flujo. |
+| `ops.v_identities` | Better Auth de web: `public."user"`, `public.session` (columnas camelCase) | user_id, email, name, created_at, active_sessions | Sin tokens de sesión. `user.id` es el mismo `user_id` de `sideband.users`. |
 | `ops.v_oauth_clients` | `public."oauthClient"`, `"oauthAccessToken"`, `"oauthRefreshToken"` | client_id, name, user_id, redirect_hosts, created_at, last_token_at, active_tokens | Sin `client_secret` ni tokens. Token activo: sin revocar y sin vencer (access o refresh). |
 | `ops.v_oauth_grants` | mismas tablas OAuth | user_id, client_id, client_name, last_token_at, active_tokens | Clientes que autorizó cada persona (los del registro dinámico no tienen dueño). Alimenta `UserDetail.identity.oauthClients`. |
 | `ops.v_events` | `ops.events` | todas | Ya viene redactada. |
@@ -148,17 +146,12 @@ El resumen expone `activeQuotaWindows`: suma de las ventanas de cuota vigentes e
 | `broker.agent.revoked` | lifecycle | by (`owner` \| `admin`). Solo la primera revocación. Presencia: el agente sale de la red |
 | `broker.agent.revived` | lifecycle | kind (tipo de aviso con el que vuelve: siempre `none`). Una conexión revocada volvió a la red al presentar su agente un token válido. Presencia: el agente vuelve a entrar |
 | `broker.agent.revive_denied` | lifecycle | by (siempre `admin`). Un agente presentó un token válido para una conexión que revocó el admin: sigue fuera de la red y recibe un `not_found` que no le dice quién lo cortó. La revocación del admin es terminal; la del titular no |
-| `broker.channel.set` | lifecycle | channel (`whatsapp`), kind (tipo de aviso); nunca la URL ni el secreto |
 | `worker.tick.completed` | lifecycle | expired, wakesOk, wakesRetried, wakesFailed (solo pasadas con actividad) |
 | `wake.attempt` | wake | kind, attempt, queueWaitMs, ok, httpStatus, code |
 | `wake.exhausted` | wake | kind, attempts |
 | `wake.lease_recovered` | wake | attempt |
 | `wake.callback_verification` | wake | ok, reason |
 | `coordination.tool.call` | tool | tool, outcome |
-| `whatsapp.link` | auth | action |
-| `whatsapp.request` | tool | action, decision, tool |
-| `whatsapp.send` | http | — |
-| `whatsapp.interpret` | http | action, category |
 | `demo.contact.seeded` | lifecycle | action (`rules`, `address` o `wake`), userId y agentId de la identidad ficticia |
 | `error` | error | operation, type, issues, frames |
 | `admin.login` / `admin.logout` / `admin.reveal` / `admin.action` / `admin.token.created` / `admin.token.revoked` / `admin.mcp.call` | admin | action, target, tool |
@@ -309,7 +302,7 @@ Grafo de la red y de cada solicitud que cruza el broker (`packages/agent-flow`).
 
 **Cliente** (`apps/admin/src/lib/flow-live.ts`): foto → stream desde su cursor → `createLiveFeed` (descarta ids repetidos y reordena por momento de ocurrencia dentro de 700 ms, así un span del MCP escrito después que los eventos del broker se dibuja en su lugar; el reloj de cada servicio solo afecta dentro de esa ventana). Si el navegador deja de reintentar, toma otra foto: con un corte menor a 60 s retoma desde el último id; si no (o con `reset`), desde el cursor nuevo y reconcilia la presencia. Refresca el directorio cada minuto y cuando aparece un usuario o agente desconocido. Guarda como mucho 4.000 pasos: al pasarse descarta los más viejos y el renderer conserva el estado (presencia incluida).
 
-**Presencia.** En la red = agente con una conexión no revocada (un titular con dirección que nunca conectó un agente aparece en la foto inicial como agente provisional; uno cuyos agentes se revocaron, no). Entra con `broker.agent.connected`, `whatsapp.link` `confirmed` o su primera aparición en un paso; sale con `broker.agent.revoked`, `whatsapp.link` `unlinked` o cuando un refresco del directorio lo trae revocado. La inactividad nunca saca a nadie: un agente sin pasos se ve como pasivo (atenuado y sin arista).
+**Presencia.** En la red = agente con una conexión no revocada (un titular con dirección que nunca conectó un agente aparece en la foto inicial como agente provisional; uno cuyos agentes se revocaron, no). Entra con `broker.agent.connected` o su primera aparición en un paso; sale con `broker.agent.revoked` o cuando un refresco del directorio lo trae revocado. La inactividad nunca saca a nadie: un agente sin pasos se ve como pasivo (atenuado y sin arista).
 
 URL: `?titulares=<dirección>,…` y `?ocultos=agent:<id>,…` guardan el filtro. El detalle de un paso enlaza a `/solicitudes/:id` y `/trazas/:id`. Pantalla completa con el botón o la tecla `f`.
 

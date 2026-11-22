@@ -8,7 +8,7 @@ import { Sharing, Tag, TagId, TagIds, TagInput, TagUpdate } from "./sharing.js";
 import { Capability } from "./tools.js";
 import { Owner } from "./principal.js";
 import { AskInput, type AskArguments, InboxItem, ReplyInput, ReplyReceipt, RequesterViewSchema } from "./request.js";
-import { ChannelName, WakeTarget } from "./wake.js";
+import { WakeTarget } from "./wake.js";
 import {
   TagChange, TagReceipt, TagsView, OwnerVault, VaultCatalog, VaultCatalogQuery, VaultMembers, VaultMembersQuery, VaultQuery, VaultResult,
   VaultChange, VaultReceipt, VaultDocumentDownload, VaultDocumentQuery, VaultDocumentMetadata, VaultDocumentUpload,
@@ -27,7 +27,6 @@ export function decodeAsk(body: AskBody): AskInput {
 
 const requestParams = z.object({ id: z.string() });
 const agentParams = z.object({ agentId: z.string() });
-const channelParams = z.object({ name: ChannelName });
 const adminAgentParams = z.object({ userId: z.string(), agentId: z.string() });
 const noContent = { status: 204, response: z.undefined() } as const;
 const circleMemberParams = z.object({ id: z.string(), address: Address });
@@ -185,19 +184,6 @@ export const routes = {
   ownerAsk: {
     method: "POST", path: "/v1/owner/requests", body: AskBody,
     response: RequesterViewSchema, iss: "web", port: "owner.ask",
-  },
-  ownerChannelAsk: {
-    method: "POST", path: "/v1/owner/channels/:name/requests", params: channelParams, body: AskBody,
-    response: RequesterViewSchema, iss: "web", port: "owner.channelAsk",
-  },
-  ownerSetChannel: {
-    method: "PUT",
-    path: "/v1/owner/channels/:name",
-    params: channelParams,
-    body: WakeTarget,
-    ...noContent,
-    iss: "web",
-    port: "owner.setChannel",
   },
   ownerStatus: {
     method: "GET", path: "/v1/owner/requests/:id", params: requestParams,

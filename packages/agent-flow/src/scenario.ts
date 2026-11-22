@@ -20,13 +20,12 @@ const initialUsers = new Set(["u-ana", "u-bob", "u-carla", "u-dani"]);
 
 const agents = [
   { agentId: "ana-claude", userId: "u-ana", label: "Claude Code", kind: "mcp_events" },
-  { agentId: "ana-whatsapp", userId: "u-ana", label: "WhatsApp", kind: "whatsapp" },
-  { agentId: "bob-whatsapp", userId: "u-bob", label: "WhatsApp", kind: "whatsapp" },
+  { agentId: "bob-grok", userId: "u-bob", label: "Grok Bot", kind: "grokbot_routine" },
   { agentId: "carla-openclaw", userId: "u-carla", label: "OpenClaw", kind: "openclaw_hooks" },
   { agentId: "dani-codex", userId: "u-dani", label: "Codex", kind: "mcp_events" },
-  { agentId: "fran-whatsapp", userId: "u-fran", label: "WhatsApp", kind: "whatsapp" },
-  { agentId: "gabi-whatsapp", userId: "u-gabi", label: "WhatsApp", kind: "whatsapp" },
-  { agentId: "hugo-whatsapp", userId: "u-hugo", label: "WhatsApp", kind: "whatsapp" },
+  { agentId: "fran-grok", userId: "u-fran", label: "Grok Bot", kind: "grokbot_routine" },
+  { agentId: "gabi-grok", userId: "u-gabi", label: "Grok Bot", kind: "grokbot_routine" },
+  { agentId: "hugo-grok", userId: "u-hugo", label: "Grok Bot", kind: "grokbot_routine" },
   { agentId: "ines-claude", userId: "u-ines", label: "Claude Code", kind: "mcp_events" },
 ];
 
@@ -62,8 +61,8 @@ function flows(): Row[] {
   return [
     // 1. Ana (Claude Code) pregunta la disponibilidad de Bob: permiso directo, aviso, respuesta y entrega.
     ...ask(0, "req-ana-bob", "u-ana", "ana-claude", "availability", "availability", "allow", "grant"),
-    wake(1.2, "req-ana-bob", "u-bob", "bob-whatsapp", "standard_webhook", 1, true, 200),
-    { t: 3.4, service: "mcp", name: "mcp.tool.call", userId: "u-bob", agentId: "bob-whatsapp", durationMs: 60, status: "ok", attrs: { tool: "sideband_inbox", outcome: "ok" } },
+    wake(1.2, "req-ana-bob", "u-bob", "bob-grok", "grokbot_routine", 1, true, 200),
+    { t: 3.4, service: "mcp", name: "mcp.tool.call", userId: "u-bob", agentId: "bob-grok", durationMs: 60, status: "ok", attrs: { tool: "sideband_inbox", outcome: "ok" } },
     changed(5.2, "req-ana-bob", "awaiting_agent", "answered", "agent"),
     closed(5.25, "req-ana-bob", "answered"),
     { t: 6.4, service: "mcp", name: "mcp.tool.call", requestId: "req-ana-bob", userId: "u-ana", agentId: "ana-claude", durationMs: 40, status: "ok", attrs: { tool: "sideband_check", outcome: "ok" } },
@@ -74,16 +73,16 @@ function flows(): Row[] {
 
     // 3. Bob pregunta a Carla por un interés (círculo). La primera respuesta filtra datos y se bloquea;
     //    la segunda pasa saneada.
-    ...ask(13, "req-bob-carla", "u-bob", "bob-whatsapp", "interest_check", "interests", "allow", "circle"),
+    ...ask(13, "req-bob-carla", "u-bob", "bob-grok", "interest_check", "interests", "allow", "circle"),
     wake(14.2, "req-bob-carla", "u-carla", "carla-openclaw", "openclaw_hooks", 1, true, 202),
     { t: 17, service: "broker", name: "broker.reply.rejected", requestId: "req-bob-carla", attrs: { code: "leak_blocked", flags: "leak-guard:leak_private_hint,leak-guard:leak_email" } },
     changed(20, "req-bob-carla", "awaiting_agent", "answered", "agent"),
     { t: 20.05, service: "broker", name: "broker.reply.sanitized", requestId: "req-bob-carla", attrs: { flags: "parse:unknown_field_dropped,redact:redacted", dropped: "note" } },
     closed(20.1, "req-bob-carla", "answered"),
 
-    // 4. Dani (Codex) hace una pregunta abierta a Ana. Su agente de WhatsApp pide al titular y Ana responde.
+    // 4. Dani (Codex) hace una pregunta abierta a Ana. Su agente pide la decisión de Ana.
     ...ask(23, "req-dani-ana", "u-dani", "dani-codex", "question", "general", "allow", "grant"),
-    wake(24.2, "req-dani-ana", "u-ana", "ana-whatsapp", "standard_webhook", 1, true, 200),
+    wake(24.2, "req-dani-ana", "u-ana", "ana-claude", "mcp_events", 1, true, 200),
     changed(26.4, "req-dani-ana", "awaiting_agent", "awaiting_owner", "agent"),
     { t: 30.5, service: "broker", name: "broker.owner.decided", requestId: "req-dani-ana", userId: "u-ana", attrs: { decision: "answer" } },
     changed(30.55, "req-dani-ana", "awaiting_owner", "answered", "owner"),
@@ -95,17 +94,16 @@ function flows(): Row[] {
     wake(36.4, "req-carla-dani", "u-dani", "dani-codex", "mcp_events", 2, true, 200),
     closed(41.5, "req-carla-dani", "expired"),
 
-    // La red crece y cambia. Fran vincula WhatsApp (entrada sola); Gabi, Hugo e Inés llegan juntos
-    // (una ola de tres: dos vínculos de WhatsApp y la primera llamada MCP de Inés); Hugo se desvincula.
-    { t: 11, service: "web", name: "whatsapp.link", userId: "u-fran", attrs: { action: "confirmed" } },
-    { t: 27, service: "web", name: "whatsapp.link", userId: "u-gabi", attrs: { action: "confirmed" } },
-    { t: 27.15, service: "web", name: "whatsapp.link", userId: "u-hugo", attrs: { action: "confirmed" } },
+    // Fran llega primero. Luego entran Gabi, Hugo e Inés y más tarde Hugo sale.
+    { t: 11, service: "broker", name: "broker.agent.connected", userId: "u-fran", agentId: "fran-grok", attrs: { kind: "grokbot_routine" } },
+    { t: 27, service: "broker", name: "broker.agent.connected", userId: "u-gabi", agentId: "gabi-grok", attrs: { kind: "grokbot_routine" } },
+    { t: 27.15, service: "broker", name: "broker.agent.connected", userId: "u-hugo", agentId: "hugo-grok", attrs: { kind: "grokbot_routine" } },
     { t: 27.3, service: "mcp", name: "mcp.tool.call", userId: "u-ines", agentId: "ines-claude", durationMs: 50, status: "ok", attrs: { tool: "sideband_inbox", outcome: "ok" } },
-    { t: 36.5, service: "web", name: "whatsapp.link", userId: "u-hugo", attrs: { action: "unlinked" } },
+    { t: 36.5, service: "broker", name: "broker.agent.revoked", userId: "u-hugo", agentId: "hugo-grok", attrs: { by: "owner" } },
 
     // 6. Dani le pregunta a Fran, que llegó como participante pasivo, por un interés en común.
     ...ask(44, "req-dani-fran", "u-dani", "dani-codex", "interest_check", "interests", "allow", "circle"),
-    wake(45.2, "req-dani-fran", "u-fran", "fran-whatsapp", "standard_webhook", 1, true, 200),
+    wake(45.2, "req-dani-fran", "u-fran", "fran-grok", "grokbot_routine", 1, true, 200),
     changed(47.6, "req-dani-fran", "awaiting_agent", "answered", "agent"),
     closed(47.65, "req-dani-fran", "answered"),
   ];
