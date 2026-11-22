@@ -39,7 +39,7 @@ const inputSchema = ReplyArguments.extend({ share, result: result.optional() }).
   then: { required: ["result"], properties: { result: { type: "object", minProperties: 1 } } },
 });
 
-export function registerReply(server: McpServer, principal: Principal, agent: AgentPort, telemetry: ToolTelemetry) {
+export function registerReply(server: McpServer, principal: Principal, agent: Pick<AgentPort, "reply">, telemetry: ToolTelemetry) {
   server.registerTool("sideband_reply", {
     description: "Responde una solicitud de tu bandeja con requestId y nonce. Usa answered con result como objeto JSON de los campos permitidos (allowedFields), no_data si no tienes el dato, needs_owner si tu dueño debe decidir o declined si prefieres no compartir. needs_owner deriva la decisión fuera del chat: no lo uses para esperar el siguiente turno ni cuando sí tienes la respuesta —revisa la forma de result y vuelve a intentar.",
     inputSchema,
