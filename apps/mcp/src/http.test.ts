@@ -141,6 +141,17 @@ it("rechaza el inicio del cliente cuando el titular tiene otro agente activo", a
   expect(agent.connect).toHaveBeenCalledWith(expect.objectContaining({ userId: "ana", agentId: "otro" }));
 });
 
+it("pide al broker las invitaciones que esperan al titular cuando se solicitan en sideband_inbox", async () => {
+  const agent = testPort();
+  vi.mocked(agent.inbox).mockResolvedValue([]);
+  const origin = await listen(createHttpServer(options, agent));
+  const bob = await connect(`${origin}/mcp`, "dev:bob:bob-bot");
+
+  await bob.callTool({ name: "sideband_inbox", arguments: { includeInvitations: true } });
+
+  expect(agent.inbox).toHaveBeenCalledWith(expect.objectContaining({ userId: "bob" }), true);
+});
+
 it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de cada conexión al broker", async () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const getServiceToken = createServiceTokenMinter(JSON.stringify(privateKey.export({ format: "jwk" })));
