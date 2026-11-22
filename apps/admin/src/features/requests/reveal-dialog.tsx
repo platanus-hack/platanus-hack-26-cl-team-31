@@ -52,14 +52,16 @@ export function RevealDialog({ requestId }: { requestId: string }) {
   const [pending, setPending] = React.useState(false)
   const [payload, setPayload] = React.useState<PayloadReveal | null>(null)
 
+  function close() {
+    setOpen(false)
+    setPayload(null)
+    setReason("")
+  }
+
   function change(next: boolean) {
     if (pending) return
-    setOpen(next)
-    if (!next) {
-      // Al cerrar se descarta todo: motivo y payload.
-      setPayload(null)
-      setReason("")
-    }
+    if (next) setOpen(true)
+    else close()
   }
 
   async function reveal(event: React.FormEvent) {
@@ -75,7 +77,7 @@ export function RevealDialog({ requestId }: { requestId: string }) {
       )
     } catch (error) {
       if (isApiError(error, "not_fresh")) {
-        setOpen(false)
+        close()
         requestReauth()
       } else if (isApiError(error, "unauthorized")) {
         await refreshSession()
