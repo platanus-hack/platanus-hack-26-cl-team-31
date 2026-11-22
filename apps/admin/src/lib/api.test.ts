@@ -46,7 +46,7 @@ it("maps rejected fetches and interrupted JSON bodies to network errors", async 
   await expect(api("session")).rejects.toMatchObject({ name: "AbortError" })
 })
 
-it("discards malformed stream data and lets subscribers handle valid events", () => {
+it("discards malformed telemetry and delivers every flow reset", () => {
   const listeners = new Map<string, (event: MessageEvent<string>) => void>()
   vi.stubGlobal("EventSource", class {
     addEventListener(name: string, handler: (event: MessageEvent<string>) => void) { listeners.set(name, handler) }
@@ -67,9 +67,9 @@ it("discards malformed stream data and lets subscribers handle valid events", ()
 
   const onReset = vi.fn()
   const closeFlow = subscribeFlow(null, { onReset, onOpen: vi.fn(), onClosed: vi.fn(), onRetrying: vi.fn(), onRequest: vi.fn(), onRow: vi.fn() })
-  deliver("reset", "{}")
-  expect(onReset).not.toHaveBeenCalled()
-  deliver("reset", '{"cursor":null}')
-  expect(onReset).toHaveBeenCalledExactlyOnceWith(null)
+  for (const data of ["{", "{}", '{"cursor":null}', '{"cursor":"8"}']) {
+    deliver("reset", data)
+  }
+  expect(onReset.mock.calls).toEqual([[null], [null], [null], ["8"]])
   closeFlow()
 })

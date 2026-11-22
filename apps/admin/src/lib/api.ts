@@ -376,6 +376,9 @@ export function subscribeFlow(
       : handlers.onRetrying()
   listenFor(source, "telemetry", TelemetryEvent, (row) => handlers.onRow(row))
   listenFor(source, "request", FlowRequestRef, (ref) => handlers.onRequest(ref))
-  listenFor(source, "reset", FlowReset, (reset) => handlers.onReset(reset.cursor))
+  // El evento reset invalida la foto incluso si su cursor es ilegible.
+  source.addEventListener("reset", (message) => {
+    handlers.onReset(parseStreamEvent(FlowReset, message)?.cursor ?? null)
+  })
   return () => source.close()
 }
