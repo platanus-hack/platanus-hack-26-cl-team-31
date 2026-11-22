@@ -6,7 +6,20 @@ import type { FlowSnapshot, TelemetryEvent } from "@shared/contract"
 import { api, subscribeFlow } from "./api"
 import { useFlowLive } from "./flow-live"
 
-vi.mock("./api", () => ({ api: vi.fn(), subscribeFlow: vi.fn(), isApiError: () => false }))
+vi.mock(import("./api"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, api: vi.fn(), subscribeFlow: vi.fn(actual.subscribeFlow) }
+})
+
+class EventSourceStub extends EventTarget {
+  static current: EventSourceStub
+  close = vi.fn()
+
+  constructor() {
+    super()
+    EventSourceStub.current = this
+  }
+}
 
 const snapshot: FlowSnapshot = {
   generatedAt: new Date(0).toISOString(), cursor: "1", users: [], requests: [], agents: [], truncated: false,
@@ -24,7 +37,7 @@ beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true)
   vi.useFakeTimers()
   vi.mocked(api).mockResolvedValue(snapshot)
-  vi.mocked(subscribeFlow).mockReturnValue(() => {})
+  vi.stubGlobal("EventSource", EventSourceStub)
   container = document.createElement("div")
   root = createRoot(container)
   await act(() => root.render(createElement(Stream)))
@@ -85,6 +98,18 @@ it("resumes a long outage from the new snapshot cursor", async () => {
   vi.mocked(api).mockResolvedValue({ ...snapshot, cursor: "9" })
   act(() => stream.onClosed())
   await advance(1_000)
+  expect(subscribeFlow).toHaveBeenLastCalledWith("9", expect.any(Object))
+})
+
+it.each(["{", "{}"])("recovers from a reset with malformed data %j using a fresh snapshot", async (data) => {
+  const stream = EventSourceStub.current
+  vi.mocked(api).mockResolvedValue({ ...snapshot, cursor: "9", truncated: true })
+  await act(() => {
+    stream.dispatchEvent(new MessageEvent("reset", { data, lastEventId: "8" }))
+  })
+  expect(stream.close).toHaveBeenCalledOnce()
+  expect(api).toHaveBeenCalledTimes(2)
+  expect(container.textContent).toBe("truncated")
   expect(subscribeFlow).toHaveBeenLastCalledWith("9", expect.any(Object))
 })
 
