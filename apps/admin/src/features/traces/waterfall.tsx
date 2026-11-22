@@ -53,8 +53,8 @@ export function Waterfall({
             ))}
           </div>
           {rows.map((row) => {
-            const left = ((row.start - t0) / total) * 100
             const width = Math.max(0.4, ((row.end - row.start) / total) * 100)
+            const left = Math.min(((row.start - t0) / total) * 100, 100 - width)
             const error = isError(row)
             return (
               <button
