@@ -254,6 +254,17 @@ describe("live edge cases", () => {
     dir.add({ agents: [{ agentId: "a1", userId: "u1", label: "Claude Code", revokedAt: "2026-11-21T00:00:00Z" }, { agentId: "b1", userId: "u2", label: "Codex" }] });
     expect(mapper.reconcile(2).map((e) => `${e.step}:${actor(e.from)}`)).toEqual(["left:agent:u1:a1", "joined:agent:u2:b1"]);
     expect(mapper.reconcile(3)).toEqual([]);
+    dir.add({ agents: [{ agentId: "a1", userId: "u1", label: "Claude Code", revokedAt: null }] });
+    expect(mapper.reconcile(4).map((e) => `${e.step}:${actor(e.from)}`)).toEqual(["joined:agent:u1:a1"]);
+    expect(mapper.reconcile(5)).toEqual([]);
+  });
+
+  it("only draws provisional agents for owners with no connection history", () => {
+    const dir = createFlowDirectory({ users: [
+      { userId: "u1", address: "ana@sideband.app", hasAgentHistory: true },
+      { userId: "u2", address: "bob@sideband.app", hasAgentHistory: false },
+    ] });
+    expect(createTelemetryMapper(dir).snapshot(1).map((e) => actor(e.from))).toEqual(["agent@bob@sideband.app"]);
   });
 
   it("relabels an agent drawn before its owner reached the directory, without animation", () => {

@@ -33,7 +33,9 @@ export async function flowSnapshot(db: Db, openStatuses: readonly RequestStatus[
   // El cursor va primero: lo que se escriba al leer las listas llega por el stream.
   const cursor = await latestEventId(db)
   const users = await db.query(
-    `SELECT user_id, address, display_name FROM ops.v_users
+    `SELECT u.user_id, u.address, u.display_name,
+       EXISTS (SELECT 1 FROM ops.v_agent_connections a WHERE a.user_id = u.user_id) AS has_agent_history
+     FROM ops.v_users u
      ORDER BY address IS NULL, created_at DESC, user_id LIMIT ${FLOW_USERS + 1}`
   )
   const hasClients = await viewExists(db, "ops.v_oauth_clients")
@@ -60,6 +62,7 @@ export async function flowSnapshot(db: Db, openStatuses: readonly RequestStatus[
       userId: row.user_id,
       address: row.address ?? null,
       displayName: row.display_name ?? null,
+      hasAgentHistory: row.has_agent_history,
     })),
     agents: agents.rows.slice(0, FLOW_AGENTS).map((row) => ({
       userId: row.user_id,
