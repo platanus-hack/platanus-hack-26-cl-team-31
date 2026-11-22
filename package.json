@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@10.6.2",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "bootstrap": "pnpm install && pnpm env:init && node infra/gen-keys.ts && pnpm infra:up && pnpm sideband:auth:migrate && pnpm sideband:broker:migrate",
