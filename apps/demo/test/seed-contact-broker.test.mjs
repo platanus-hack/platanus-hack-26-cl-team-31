@@ -6,9 +6,9 @@ it.skipIf(!process.env.TEST_DATABASE_URL)("reanuda una seed en conflicto sin con
   try {
     vi.stubEnv("TELEMETRY_SINK", "off");
     const db = await isolatedDatabase(cleanup);
-    await configureBroker();
-    vi.stubEnv("WEB_PORT", process.env.BROKER_PORT);
+    configureBroker();
     await startBroker(cleanup);
+    vi.stubEnv("WEB_PORT", process.env.BROKER_PORT);
     const { contactOwner, contactPrincipal } = await import("../src/contact-broker.mjs");
     const { seedContactBroker } = await import("../src/seed-contact-broker.mjs");
     const owner = contactOwner();
