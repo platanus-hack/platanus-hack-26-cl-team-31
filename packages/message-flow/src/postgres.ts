@@ -11,6 +11,27 @@ type Options = Pick<Telemetry, "emit" | "error">;
 const ownerFilter = "user_id = $1 AND binding = $2 AND agent_id = $3";
 const live = "expires_at > now()";
 const columns = "id, parent_id, delivery_id, state, outcome, clarification";
+const admissionTimeoutMs = 30_000;
+const admissionRetryMs = 50;
+
+async function acquireBinding(pool: pg.Pool, lock: string) {
+  const deadline = Date.now() + admissionTimeoutMs;
+  while (Date.now() < deadline) {
+    const client = await pool.connect();
+    try {
+      const { rows } = await client.query<{ locked: boolean }>(
+        "SELECT pg_try_advisory_lock(hashtextextended($1, 19)) AS locked", [lock]);
+      if (rows[0]?.locked) return client;
+      client.release();
+    } catch (error) {
+      // A failed query may have acquired the session lock before the connection failed.
+      client.release(true);
+      throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.min(admissionRetryMs, Math.max(0, deadline - Date.now()))));
+  }
+  throw new Error("Timed out waiting for message turn admission; retry the request.");
+}
 
 export function createPostgresTurnStore(connectionString: string, telemetry?: Options) {
   const pool = new pg.Pool({ connectionString, max: 8, connectionTimeoutMillis: 5_000, statement_timeout: 20_000 });
@@ -21,12 +42,9 @@ export function createPostgresTurnStore(connectionString: string, telemetry?: Op
   const run: TurnStore["run"] = async (owner, continuationId, turn) => {
     const identity = [owner.userId, owner.binding, owner.agentId ?? ""];
     const lock = JSON.stringify(identity);
-    const client = await pool.connect();
-    let locked = false;
+    const client = await acquireBinding(pool, lock);
     let discard = false;
     try {
-      await client.query("SELECT pg_advisory_lock(hashtextextended($1, 19))", [lock]);
-      locked = true;
       const lookup = async (field: "id" | "parent_id" | "delivery_id", value: string) =>
         (await client.query<Row>(`SELECT ${columns} FROM sideband.message_turns
           WHERE ${ownerFilter} AND ${live} AND ${field} = $4`, [...identity, value])).rows[0];
@@ -72,12 +90,12 @@ export function createPostgresTurnStore(connectionString: string, telemetry?: Op
       return reply;
     } finally {
       try {
-        if (locked) await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 19))", [lock]);
+        await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 19))", [lock]);
       } catch (error) {
         discard = true;
         telemetry?.error("message.turn.unlock", error);
       } finally {
-        client.release(discard || !locked);
+        client.release(discard);
       }
     }
   };
