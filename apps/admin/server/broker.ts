@@ -27,7 +27,7 @@ export function createBrokerAdminClient({ baseUrl, privateKey, fetch = globalThi
       await run(client)
     } catch (error) {
       if (!(error instanceof BrokerError)) throw error
-      const options = { errorId: error.errorId }
+      const options = { errorId: error.errorId, cause: error }
       if (error.code === "not_found") throw new AdminHttpError("not_found", "El broker no encontró el recurso.", options)
       if (error.code === "invalid_input" || error.code === "conflict" || error.code === "expired") {
         throw new AdminHttpError("invalid_input", `El broker rechazó la acción (${error.code}).`, options)
