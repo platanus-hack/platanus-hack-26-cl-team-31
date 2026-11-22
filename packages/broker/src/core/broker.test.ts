@@ -308,6 +308,18 @@ it("recupera el recibo inicial después de una respuesta y aísla claves por tit
   expect(new Set([first, ...separate].map(view => view!.requestId)).size).toBe(4);
 });
 
+it("recupera el recibo pendiente del titular incluso después de que deniega el acceso", async () => {
+  const to = availability.to;
+  const invite = await broker.owner.connect(alice, { to });
+  await broker.owner.answerInvitation(bruno, invite.requestId, { accept: true });
+  const input = { to, tool: "vault_access", args: { categoryName: "Proyecto" }, idempotencyKey: "lectura-1" } as const;
+  const receipt = await broker.agent.ask(alice, input);
+  expect(receipt).toMatchObject({ waitingFor: "owner" });
+  await broker.owner.decide(bruno, receipt.requestId, { kind: "deny" });
+
+  expect(await broker.agent.ask(alice, input)).toEqual(receipt);
+});
+
 it("comprueba contacto y etiqueta antes de crear una solicitud, incluso cuando existe un grant directo", async () => {
   const requireRelation = { kind: "contact", tag: "friend" } as const;
   const input = { ...availability, requireRelation, idempotencyKey: "friend-test" };
