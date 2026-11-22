@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { verifyServiceToken } from "@team-31/auth/service";
 import { BrokerError, createAgentClient, type AgentPort } from "@team-31/broker-client";
+import { createMessageFlow, type InterpretMessage } from "@team-31/message-flow";
 import { LIFECYCLE_EVENT, Scope, WAKE_EVENT } from "@team-31/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -278,22 +279,13 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   ]);
 });
 
-it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", async () => {
-  const agent = testPort();
-  vi.mocked(agent.inbox).mockResolvedValue([]);
-  vi.mocked(agent.status).mockRejectedValue(new BrokerError("not_found", "No se encontró la solicitud."));
+async function oauthFixture() {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const jwksOrigin = await listen(createServer((_req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
       keys: [{ ...publicKey.export({ format: "jwk" }), kid: "oauth-test", alg: "EdDSA" }],
     }));
   }));
-  const messages = vi.fn<HandleMessage>(async (context, input) => {
-    if (input.text === "estado") await context.ops.status("request-1");
-    else await context.ops.contacts();
-    return { kind: "clarification", question: "¿A quién?", continuationId: "opaque" };
-  });
-  const origin = await listen(createHttpServer({ audience, issuer, jwksUrl: `${jwksOrigin}/jwks` }, agent, undefined, messages));
   const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
   function token(scope: string) {
     const jwt = `${encode({ typ: "at+jwt", alg: "EdDSA", kid: "oauth-test" })}.${encode({
@@ -302,6 +294,20 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
     })}`;
     return `${jwt}.${sign(null, Buffer.from(jwt), privateKey).toString("base64url")}`;
   }
+  return { jwksUrl: `${jwksOrigin}/jwks`, token };
+}
+
+it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", async () => {
+  const agent = testPort();
+  vi.mocked(agent.inbox).mockResolvedValue([]);
+  vi.mocked(agent.status).mockRejectedValue(new BrokerError("not_found", "No se encontró la solicitud."));
+  const { jwksUrl, token } = await oauthFixture();
+  const messages = vi.fn<HandleMessage>(async (context, input) => {
+    if (input.text === "estado") await context.ops.status("request-1");
+    else await context.ops.contacts();
+    return { kind: "clarification", question: "¿A quién?", continuationId: "opaque" };
+  });
+  const origin = await listen(createHttpServer({ audience, issuer, jwksUrl }, agent, undefined, messages));
   const client = await connect(`${origin}/mcp`, token("sideband:inbox sideband:status"));
 
   expect(await client.callTool({ name: "sideband_ask", arguments: { to: "bob@sideband.app", tool: "profile", args: {} } }))
@@ -337,6 +343,34 @@ it("verifica un token OAuth con JWKS y usa sus scopes para bloquear llamadas", a
     .rejects.toMatchObject({ code: -32000, data: { code: "forbidden" } });
   expect(agent.connectWake).not.toHaveBeenCalled();
   expect(agent.disconnectWake).not.toHaveBeenCalled();
+});
+
+it("con sideband:vault permite leer la bóveda propia y exige sideband:ask para preguntar", async () => {
+  const agent = testPort();
+  const catalog = { categories: [{ id: "health", name: "Salud", visibility: "private" as const, tags: [] }] };
+  vi.mocked(agent.vaultCatalog).mockResolvedValue(catalog);
+  const to = "bob@sideband.app";
+  const interpret = vi.fn<InterpretMessage>()
+    .mockResolvedValueOnce({ action: "own_vault" })
+    .mockResolvedValueOnce({ action: "ask", selector: { scope: "address", count: "one", person: to },
+      tool: "interest_check", args: { interest: "cerámica" } });
+  const { handleMessage } = createMessageFlow({
+    interpret,
+    store: { run: (_owner, _token, turn) => turn({ id: "turn", continuationId: "next", save: vi.fn() }) },
+  });
+  const { jwksUrl, token } = await oauthFixture();
+  const origin = await listen(createHttpServer({ audience, issuer, jwksUrl }, agent, undefined, handleMessage));
+  const client = await connect(`${origin}/mcp`, token("sideband:vault"));
+  const message = (text: string) => client.callTool({ name: "sideband_message", arguments: { text } });
+
+  expect((await message("¿Qué bóvedas tengo?")).structuredContent).toEqual({ kind: "own_vault", data: catalog });
+  expect(agent.vaultCatalog).toHaveBeenCalledExactlyOnceWith({
+    userId: "oauth-user", agentId: "oauth-agent", scopes: ["sideband:vault"],
+  }, undefined);
+  expect(await message(`¿A ${to} le interesa la cerámica?`)).toMatchObject({
+    isError: true, structuredContent: { error: { code: "forbidden" } },
+  });
+  expect(agent.ask).not.toHaveBeenCalled();
 });
 
 it("anuncia eventos, valida suscripciones, devuelve los errores de callback y cancela por identidad", async () => {
