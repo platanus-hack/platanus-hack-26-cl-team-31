@@ -13,7 +13,7 @@ const SNAPSHOT_SIZE = 30;
 
 export async function ownerStream(
   c: Context<AuthContext>,
-  owner: OwnerPort,
+  owner: Pick<OwnerPort, "activity">,
   schema: typeof routes.ownerStream.response,
   telemetry: Pick<Telemetry, "error">,
   shutdown?: AbortSignal,
