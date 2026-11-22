@@ -194,7 +194,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     ["sideband_ask", undefined], ["sideband_inbox", true], ["sideband_reply", undefined], ["sideband_check", true], ["sideband_contacts", true],
     ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_tags", true], ["sideband_tag_change", undefined],
     ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_access", true], ["sideband_vault_change", undefined],
-    ["sideband_vault_upload", undefined], ["sideband_vault_download", true], ["sideband_vault_query", true],
+    ["sideband_vault_download", true], ["sideband_vault_query", true],
     ["sideband_vault_request_access", undefined],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
