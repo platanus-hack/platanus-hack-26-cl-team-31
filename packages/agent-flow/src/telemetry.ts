@@ -128,7 +128,7 @@ export interface TelemetryMapper {
   snapshot(at: number): FlowEvent[];
   /**
    * Compara el directorio (recién refrescado) con quienes el mapeo cree presentes: `left` por cada
-   * agente que ahora figura revocado y `joined` por cada agente nuevo no revocado. Cubre señales
+   * agente que ahora figura revocado y `joined` por cada agente nuevo o provisional elegible. Cubre señales
    * perdidas mientras el stream estuvo caído. Idempotente.
    */
   reconcile(at: number): FlowEvent[];
@@ -386,6 +386,12 @@ export function createTelemetryMapper(directory: FlowDirectory): TelemetryMapper
           drawnLabels.set(id, labelKey(actor));
           out.push({ id: `reconcile:label:${id}:${at}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: { snapshot: true } });
         }
+      }
+      for (const actor of snapshotActors()) {
+        if (!actor.placeholder || seen.has(actor.id)) continue;
+        seen.add(actor.id);
+        drawnLabels.set(actor.id, labelKey(actor));
+        out.push({ id: `reconcile:joined:${actor.id}:${at}`, at, step: "joined", status: "ok", from: actor, to: actor, meta: { snapshot: true } });
       }
       return out;
     },
