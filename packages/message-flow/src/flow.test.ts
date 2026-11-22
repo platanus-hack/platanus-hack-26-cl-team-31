@@ -52,6 +52,22 @@ describe("turnos del titular", () => {
     expect(ask).toHaveBeenCalledWith(expect.objectContaining({ to: ana, tags, tool: "connect" }));
   });
 
+  it.each([
+    ["disponibilidad y salud", ["availability", "health"]],
+    ["nada", []],
+  ] as const)("envía las categorías escritas al invitar y compartir %s", async (phrase, share) => {
+    const interpret = vi.fn<InterpretMessage>().mockResolvedValue({
+      action: "ask", tool: "connect", args: { share: ["interests"] },
+      selector: { scope: "address", count: "one", person: ana },
+    });
+    const { run, ask } = harness(interpret);
+    const first = await run(`Invita a ${ana} y compártele solo ${phrase}.`);
+    if (first.kind !== "clarification") throw new Error("expected tag selection");
+    await run("Sin etiqueta", first.continuationId);
+    expect(ask).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ to: ana, tool: "connect", args: { share } }));
+    expect(interpret).toHaveBeenCalledTimes(1);
+  });
+
   it("elige dentro de amigos, conserva el interés y consulta el recibo después", async () => {
     const interpret = vi.fn<InterpretMessage>().mockResolvedValueOnce(askAna).mockResolvedValueOnce({ action: "status" });
     const { run, ask, context } = harness(interpret);
