@@ -3,6 +3,7 @@ import { mintServiceToken } from "@team-31/auth/service";
 import { createBroker, createMemoryStore } from "@team-31/broker";
 import { ErrorBody, Scope, type Principal } from "@team-31/protocol";
 import { routes } from "@team-31/protocol/http";
+import { createTelemetry, memorySink, type Telemetry } from "@team-31/telemetry";
 import { describe, expect, it } from "vitest";
 import { createHttpServer } from "./server.js";
 
@@ -28,7 +29,7 @@ const agentToken = () => mintServiceToken({
   iss: "mcp", sub: "bruno", azp: "bruno-agent", scopes: Scope.options, privateKey: mcp.privateKey.export({ format: "jwk" }),
 });
 
-async function fixture(keys: Partial<typeof publicKeys> = publicKeys) {
+async function fixture(keys: Partial<typeof publicKeys> = publicKeys, telemetry?: Telemetry) {
   const broker = createBroker({
     store: createMemoryStore(),
     waker: { wake: async () => ({ ok: true, retryable: false, ms: 1 }), verifyCallback: async () => ({ ok: true }) },
@@ -40,7 +41,7 @@ async function fixture(keys: Partial<typeof publicKeys> = publicKeys) {
   await broker.owner.setGrant(bruno, { grantee: "alice@sideband.app", category: "general" });
   await broker.agent.connectWake(bruno, { kind: "standard_webhook", url: "https://example.com/hook", secret: "whsec_test" });
   const { requestId } = await broker.agent.ask(alice, { to: "bruno@sideband.app", tool: "question", args: { text: "¿Vienes?", category: "general" } });
-  return { broker, requestId, app: createHttpServer({ broker, publicKeys: keys }) };
+  return { broker, requestId, app: createHttpServer({ broker, publicKeys: keys, telemetry }) };
 }
 
 type App = Awaited<ReturnType<typeof fixture>>["app"];
@@ -112,8 +113,13 @@ describe("rutas /v1/admin/* del broker", () => {
     }
   });
 
-  it("responde 401 si el broker no tiene configurada la clave pública admin", async () => {
-    const { app, requestId } = await fixture({ mcp: publicKeys.mcp, web: publicKeys.web });
+  it("responde 401 y registra invalid_claims si falta la clave pública admin", async () => {
+    const sink = memorySink();
+    const telemetry = createTelemetry({ service: "broker", sink, heartbeatMs: 0, lifecycle: false });
+    const { app, requestId } = await fixture({ mcp: publicKeys.mcp, web: publicKeys.web }, telemetry);
     await expectError(await post(app, expirePath(requestId), { token: await adminToken() }), 401, "unauthorized");
+    expect(sink.find("auth.service_jwt.rejected").map((event) => event.attrs)).toEqual([
+      { expectedIss: "admin", reason: "invalid_claims" },
+    ]);
   });
 });
