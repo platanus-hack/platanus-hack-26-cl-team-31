@@ -1,10 +1,9 @@
 import type { RequestStatus } from "@team-31/protocol"
-import type { ServiceHealth, TelemetryEvent } from "@shared/contract"
+import type { TelemetryEvent } from "@shared/contract"
 import { cn } from "cn"
 
 import { Badge } from "@/components/ui/badge"
 import {
-  healthMeta,
   levelLabel,
   levelTone,
   requestStatusMeta,
@@ -71,11 +70,6 @@ export function ToneBadge({
 
 export function RequestStatusBadge({ status }: { status: RequestStatus }) {
   const meta = requestStatusMeta[status]
-  return <ToneBadge tone={meta.tone}>{meta.label}</ToneBadge>
-}
-
-export function HealthBadge({ state }: { state: ServiceHealth["state"] }) {
-  const meta = healthMeta[state]
   return <ToneBadge tone={meta.tone}>{meta.label}</ToneBadge>
 }
 

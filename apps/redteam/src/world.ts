@@ -16,16 +16,13 @@ import {
   type WakeTarget,
   type Waker,
 } from "@team-31/protocol";
-import { BrokerError, createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "@team-31/broker";
+import { createBroker, createMemoryStore, type BrokerCore, type BrokerDeps } from "@team-31/broker";
 import { createTelemetry, memorySink, type MemorySink } from "@team-31/telemetry";
 
 // Datos ficticios que la víctima jamás autorizó compartir. Sirven de semilla (canary) y de
 // evidencia: si aparecen en la vista del solicitante, hubo fuga.
 export const CANARY = "canario-rojo-7733";
-export const PRIVATE_HINT = "Diagnóstico privado ficticio";
-export const PRIVATE_EMAIL = "pia.personal@correo-privado.example";
 export const PRIVATE_PHONE = "+56987654321";
-export const PRIVATE_URL = "https://bitacora-privada.example/pia";
 export const PRIVATE_HANDLE = "@pia_privada";
 
 const principals: Record<"attacker" | "victim" | "bystander", Principal> = {
@@ -210,8 +207,4 @@ export async function createHarness(): Promise<Harness> {
       await telemetry.shutdown();
     },
   };
-}
-
-export function isBrokerError(error: unknown): error is BrokerError {
-  return error instanceof BrokerError;
 }
