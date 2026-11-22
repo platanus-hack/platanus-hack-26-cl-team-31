@@ -89,3 +89,123 @@ it.each([true, false])("restores playback after replacing inspected history (aut
   const expected = autoPlay ? replacement : replacement.slice(0, 1);
   expect(timeline().map((button) => button.getAttribute("aria-label"))).toEqual(expected.map(describeEvent).reverse());
 });
+
+it("pauses the replay offscreen and resumes from the same step when visible", async () => {
+  let setVisible: ((visible: boolean) => void) | undefined;
+  vi.stubGlobal("IntersectionObserver", class {
+    constructor(private notify: (entries: { isIntersecting: boolean }[]) => void) {}
+    observe(target: Element) {
+      expect(target).toBe(host.firstElementChild);
+      setVisible = (visible) => this.notify([{ isIntersecting: visible }]);
+    }
+    disconnect() { setVisible = undefined; }
+  });
+
+  const [first, second] = scheduleReplay(events);
+  await render("replay", events);
+  await advance(first! + 32);
+  expect(timeline()).toHaveLength(1);
+  setVisible!(false);
+  await advance(second!);
+  expect(timeline()).toHaveLength(1);
+  setVisible!(true);
+  await advance(second! - first!);
+  expect(timeline().map((item) => item.getAttribute("aria-label"))).toEqual(events.slice(0, 2).map(describeEvent).reverse());
+  await act(() => root.render(null));
+  expect(setVisible).toBeUndefined();
+});
+
+it("fits the embedded graph to the limiting dimension and updates the map on resize", async () => {
+  const observed = new Map<Element, () => void>();
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(private notify: () => void) {}
+    observe(target: Element) { observed.set(target, this.notify); }
+    disconnect() { observed.clear(); }
+  });
+  await act(() => root.render(<AgentFlow mode="replay" events={events} autoPlay={false} fill />));
+  const graph = host.firstElementChild as HTMLElement;
+  const frame = graph.querySelector<HTMLElement>(".af-frame")!;
+  const layout = frame.querySelector<HTMLElement>(".af-layout")!;
+  const stage = layout.querySelector<HTMLElement>(".af-stage")!;
+
+  const resize = async (element: HTMLElement, width: number, height: number) => {
+    Object.defineProperties(element, {
+      clientWidth: { configurable: true, value: width },
+      clientHeight: { configurable: true, value: height },
+    });
+    await act(() => observed.get(element)!());
+  };
+  await resize(graph, 2160, 1620); // Width limits the scale.
+  expect(frame.style.transform).toBe("scale(1.5)");
+  expect(frame.style.width).toBe("1440px");
+  await resize(graph, 2880, 972); // Height now limits it.
+  expect(frame.style.transform).toBe("scale(1.2)");
+  expect(frame.style.height).toBe("810px");
+  await resize(graph, 3840, 2160);
+  expect(frame.style.transform).toBe("scale(1.75)");
+  await resize(graph, 800, 600);
+  expect(frame.style.transform).toBe("");
+
+  await resize(stage, 780, 450);
+  await resize(layout, 800, 520);
+  expect(stage.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 780 520");
+  await act(() => root.render(null));
+  expect(observed.size).toBe(0);
+});
+
+const fullscreenButton = () => host.querySelector<HTMLButtonElement>('button[aria-label*="pantalla completa" i]')!;
+
+it("tracks native fullscreen for this graph and follows an external exit", async () => {
+  await render("replay", events, false);
+  const graph = host.firstElementChild as HTMLElement;
+  let current: Element | null = null;
+  const change = (element: Element | null) => {
+    current = element;
+    document.dispatchEvent(new Event("fullscreenchange"));
+  };
+  const request = vi.fn(async () => change(graph));
+  const exit = vi.fn(async () => change(null));
+  Object.defineProperty(graph, "requestFullscreen", { value: request });
+  Object.defineProperties(document, {
+    fullscreenEnabled: { configurable: true, value: true },
+    fullscreenElement: { configurable: true, get: () => current },
+    exitFullscreen: { configurable: true, value: exit },
+  });
+  try {
+    await act(() => change(document.body));
+    expect(fullscreenButton().getAttribute("aria-pressed")).toBe("false");
+    await act(() => change(null));
+    await act(() => fullscreenButton().click());
+    expect(request).toHaveBeenCalledOnce();
+    expect(fullscreenButton().getAttribute("aria-pressed")).toBe("true");
+    await act(() => change(null)); // The viewer leaves via the browser.
+    expect(fullscreenButton().getAttribute("aria-pressed")).toBe("false");
+    await act(() => fullscreenButton().click());
+    await act(() => fullscreenButton().click());
+    expect(exit).toHaveBeenCalledOnce();
+    expect(fullscreenButton().getAttribute("aria-pressed")).toBe("false");
+  } finally {
+    Reflect.deleteProperty(document, "fullscreenEnabled");
+    Reflect.deleteProperty(document, "fullscreenElement");
+    Reflect.deleteProperty(document, "exitFullscreen");
+  }
+});
+
+it.each([false, true])("opens and exits expanded mode when native fullscreen is unavailable (API enabled=%s)", async (enabled) => {
+  await render("replay", events, false);
+  const graph = host.firstElementChild as HTMLElement;
+  const request = vi.fn().mockRejectedValue(new Error("Fullscreen denied"));
+  Object.defineProperty(graph, "requestFullscreen", { value: request });
+  Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: enabled });
+  try {
+    await act(() => fullscreenButton().click());
+    expect(request).toHaveBeenCalledTimes(enabled ? 1 : 0);
+    expect(fullscreenButton().getAttribute("aria-pressed")).toBe("true");
+    expect(graph.classList.contains("af-expanded")).toBe(true);
+    await act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
+    expect(fullscreenButton().getAttribute("aria-pressed")).toBe("false");
+    expect(graph.classList.contains("af-expanded")).toBe(false);
+  } finally {
+    Reflect.deleteProperty(document, "fullscreenEnabled");
+  }
+});
