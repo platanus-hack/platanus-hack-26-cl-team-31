@@ -138,7 +138,7 @@ export function createHttpClient<Identity>(
       url = buildUrl(baseUrl, route, input);
     } catch (error) {
       if (error instanceof BrokerError) throw error;
-      throw new BrokerError("internal", errorMessages.internal, { stage: "url" });
+      throw new BrokerError("internal", errorMessages.internal, { stage: "url", cause: error });
     }
 
     const body = route.body ? encodeBody(route.body, input.body) : undefined;
@@ -175,8 +175,8 @@ export function createHttpClient<Identity>(
         await response.body?.cancel();
         response = await send();
       }
-    } catch {
-      throw new BrokerError("internal", errorMessages.internal, { stage });
+    } catch (cause) {
+      throw new BrokerError("internal", errorMessages.internal, { stage, cause });
     }
 
     const header = response.headers.get("X-Error-Id");
@@ -184,8 +184,8 @@ export function createHttpClient<Identity>(
     let payload: unknown;
     try {
       payload = response.status === 204 ? undefined : await response.json();
-    } catch {
-      throw new BrokerError("internal", errorMessages.internal, { errorId, stage: "decoding" });
+    } catch (cause) {
+      throw new BrokerError("internal", errorMessages.internal, { errorId, stage: "decoding", cause });
     }
 
     if (!response.ok) throw responseError(route, payload, errorId);
