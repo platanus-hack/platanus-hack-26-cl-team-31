@@ -8,6 +8,7 @@ export const WAKE_SUBSCRIPTION_SCOPE = "sideband:inbox" satisfies Scope;
 export const agentScopes = {
   tags: "sideband:vault",
   changeTag: "sideband:vault",
+  inviteToCircle: "sideband:vault",
   vaultCatalog: "sideband:vault",
   vaultMembers: "sideband:vault",
   changeVault: "sideband:vault",

@@ -128,6 +128,10 @@ async function callPort(route: Exclude<Route, { port: null }>, c: HttpContext, {
       const { id, address } = parseInput(route.params, c.req.param());
       return owner.inviteToCircle(c.get("web"), id, address);
     }
+    case "agent.inviteToCircle": {
+      const { id, address } = parseInput(route.params, c.req.param());
+      return agent.inviteToCircle(c.get("mcp"), id, address);
+    }
     case "owner.joinCircle":
       return owner.joinCircle(c.get("web"), parseInput(route.params, c.req.param()).id);
     case "owner.removeFromCircle": {

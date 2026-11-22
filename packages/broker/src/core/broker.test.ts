@@ -1090,6 +1090,16 @@ describe("solicitudes de conexión", () => {
     await expect(broker.agent.contacts({ ...carla, scopes: ["sideband:inbox"] })).rejects.toMatchObject({ code: "forbidden" });
   });
 
+  it("el agente invita a un círculo de su titular y nunca a uno ajeno", async () => {
+    const circle = await broker.owner.createCircle(alice, "Fútbol");
+    const agent: Principal = { ...alice, scopes: [...alice.scopes, "sideband:vault"] };
+    await expect(broker.agent.inviteToCircle(alice, circle.id, "bruno@sideband.app")).rejects.toMatchObject({ code: "forbidden" });
+    await broker.agent.inviteToCircle(agent, circle.id, "bruno@sideband.app");
+    expect((await broker.owner.circles(alice))[0]?.members).toContainEqual({ address: "bruno@sideband.app", joined: false });
+    await expect(broker.agent.inviteToCircle({ ...carla, scopes: ["sideband:vault"] }, circle.id, "eva@sideband.app"))
+      .rejects.toMatchObject({ code: "not_found" });
+  });
+
   it("cada titular cambia lo que comparte sin tocar lo del otro", async () => {
     const { request } = await invite();
     await broker.owner.answerInvitation(bruno, request.requestId, { accept: true });
