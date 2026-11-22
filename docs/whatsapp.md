@@ -46,3 +46,4 @@ El elenco son cinco titulares ficticios (Carla, Benja, Sofía, Tomás y Valentin
 1. Con el stack local arriba y tu dirección reclamada en web, ejecuta `pnpm agents:cast:seed tu-direccion@sideband.app`. Repetirlo restaura los datos y lo que comparte cada contacto.
 2. Abre `/demo/elenco` en el puerto web del worktree. Muestra lo público, lo privado y quién puede pedir cada dato, leído del broker.
 3. Desde WhatsApp prueba «¿A alguien de mis contactos le interesa el fútbol?», «¿Quién de mis contactos está libre el sábado a las 11 por una hora?» o «¿Qué tiene guardado Sofía en Salud?».
+4. Para pedir acceso escribe «Pídele a Carla acceso a su Salud». En `/demo/elenco` la tarjeta de Carla muestra el pedido con **Conceder** y **Rechazar**, así puedes decidir como ella. Al conceder, la respuesta llega sola al teléfono y Carla aparece en la próxima lectura de Salud.

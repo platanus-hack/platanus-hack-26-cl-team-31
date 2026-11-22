@@ -140,9 +140,25 @@ it("escribe una lectura de bóveda de varios contactos con quienes no la compart
     "sofia@sideband.app · Salud: Tipo de sangre: O negativo; Donante: Sí",
     "tomas@sideband.app · Salud: aún no guarda datos",
     "No te comparten «Salud»: carla@sideband.app",
+    "Para pedir acceso escribe «pídele a carla@sideband.app acceso a Salud».",
   ].join("\n"));
-  await expect(runCommand(broker, owner, "¿Alguien tiene sangre O negativo?", report, flow))
-    .resolves.toBe("Ninguno de tus contactos te comparte «Salud».");
+  await expect(runCommand(broker, owner, "¿Alguien tiene sangre O negativo?", report, flow)).resolves.toBe(
+    "Ninguno de tus contactos te comparte «Salud».\nPara pedir acceso escribe «pídele a carla@sideband.app acceso a Salud».");
+});
+
+it("habla de acceso, no de respuestas, en un pedido de lectura de la bóveda", async () => {
+  const { broker, report } = fixture();
+  const access = { ...pending, tool: "vault_access" };
+  const flow = vi.fn()
+    .mockResolvedValueOnce({ kind: "requests", unconfirmedCount: 0, continuationId: "c", items: [{ ...access, waitingFor: "owner" }] })
+    .mockResolvedValueOnce({ kind: "requests", unconfirmedCount: 0, continuationId: "c", items: [
+      { ...access, final: true, decision: "allow", result: { accepted: true } },
+      { ...access, to: "carla@sideband.app", final: true, decision: "deny" },
+    ] });
+  await expect(runCommand(broker, owner, "pídele a Simón acceso a Salud", report, flow))
+    .resolves.toBe(`Le pedí acceso a ${to}. Espera su aprobación; te aviso apenas decida.`);
+  await expect(runCommand(broker, owner, "¿ya me dieron acceso?", report, flow)).resolves.toBe(
+    `${to} te dio acceso. Vuelve a preguntar para ver lo que guarda.\ncarla@sideband.app no te dio acceso.`);
 });
 
 it("avisa cuando todavía no hay contactos", async () => {

@@ -8,7 +8,7 @@ import { Intent, type InterpretMessage } from "./types.js";
 const schema = z.object({ intent: Intent });
 const system = [
   "Interpreta el mensaje del titular de Sideband. Devuelve una sola intención. Una petición mixta, ambigua o ajena usa clarify.",
-  "Usa ask y su tool: interest_check para un gusto concreto sí/no; availability para una franja horaria; question para respuestas de texto; connect para invitar.",
+  "Usa ask y su tool: interest_check para un gusto concreto sí/no; availability para una franja horaria; question para respuestas de texto; connect para invitar; vault_access para pedir acceso o permiso de leer una categoría de su bóveda, con args.categoryName como cita literal de la categoría. Pedir acceso nunca es vault.",
   "Para question copia la pregunta textual y clasifica por tema: availability, interests, health o general. Omite la categoría si hay duda.",
   "contacts lista la agenda; profiles requiere descubrimiento público explícito; vault lee datos guardados en la bóveda de uno o varios contactos, también cuando pregunta por un dato que guardan, como su tipo de sangre o alergias. categoryName solo es la categoría que nombra. status lee una solicitud anterior.",
   "own_vault lee la bóveda del propio titular, sin ninguna otra persona: sin categoryName lista sus categorías; categoryName es la cita literal de la categoría que pide abrir.",

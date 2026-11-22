@@ -5,5 +5,5 @@ import { summarize } from "./commands";
 // approval is worth a message: waiting for their agent is what the ask reply already said.
 export function noticeText(view: RequesterView): string | undefined {
   if (view.decision !== "pending") return summarize(view);
-  if (view.waitingFor === "owner") return `Esperando a que ${view.to} apruebe tu pregunta.`;
+  if (view.waitingFor === "owner") return `Esperando a que ${view.to} apruebe tu ${view.tool === "vault_access" ? "pedido de acceso" : "pregunta"}.`;
 }

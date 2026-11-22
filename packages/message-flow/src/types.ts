@@ -20,9 +20,11 @@ const argumentsDraft = z.object({
   interest: literal.optional(),
   date: z.string().optional(), start: z.string().optional(), durationMinutes: z.number().optional(), timezone: z.string().optional(),
   text: z.string().max(1000).optional(), category: Category.optional(), share: Sharing.optional(),
+  // The vault category a vault_access request asks to read, as the holder named it.
+  categoryName: literal.optional(),
 });
 export const Intent = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("ask"), selector, tool: z.enum(["availability", "interest_check", "question", "connect"]), args: argumentsDraft }),
+  z.object({ action: z.literal("ask"), selector, tool: z.enum(["availability", "interest_check", "question", "connect", "vault_access"]), args: argumentsDraft }),
   z.object({ action: z.literal("vault"), selector, categoryName: literal.optional() }),
   z.object({ action: z.literal("own_vault"), categoryName: literal.optional() }),
   z.object({ action: z.literal("profiles"), query: literal.optional() }),

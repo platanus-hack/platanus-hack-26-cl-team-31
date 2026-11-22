@@ -27,4 +27,8 @@
   .cast-card .chips span { padding: 2px 8px; border-radius: 50px; background: var(--soft); font-size: 12px; }
   .cast-card .readers { font: 11px/1.4 var(--mono); color: #767676; }
   .cast-card .shared .readers { color: #7ddba3; }
+  .cast-request { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; background: rgba(242, 198, 109, .1); color: #f2c66d; }
+  .cast-request p { flex: 1 1 100%; }
+  .cast-request button { height: 30px; padding: 0 12px; border-radius: 50px; background: var(--soft); color: var(--ink); font-size: 13px; }
+  .cast-request button[value="grant_vault_read"] { background: var(--blue); color: #fff; }
 }
