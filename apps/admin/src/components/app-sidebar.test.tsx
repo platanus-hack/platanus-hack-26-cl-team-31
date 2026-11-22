@@ -132,7 +132,7 @@ it("aplica el tema elegido en el menú y recuerda la selección al abrirlo de nu
   expect(menuItem("Oscuro").getAttribute("aria-checked")).toBe("true")
 })
 
-it("actualiza la navegación y la frescura al cambiar la sesión simulada desde el menú", async () => {
+it("habilita la navegación de operador al cambiar el rol simulado desde el menú", async () => {
   await openSidebar("/", "viewer")
   expect(menuLink("/tokens")).toBeNull()
   await openSimulation()
@@ -141,7 +141,14 @@ it("actualiza la navegación y la frescura al cambiar la sesión simulada desde 
   await waitForView(() =>
     expect(menuLink("/tokens")?.textContent).toBe("Tokens MCP")
   )
+  expect(queryClient.getQueryData<AdminSession>(sessionQueryKey)).toMatchObject({
+    user: { role: "operator" },
+    session: { fresh: true },
+  })
+})
 
+it("conserva el acceso de operador al desactivar la frescura de la sesión desde el menú", async () => {
+  await openSidebar("/", "operator")
   await openSimulation()
   expect(menuItem("Sesión fresca").getAttribute("aria-checked")).toBe("true")
   await act(() => menuItem("Sesión fresca").click())
