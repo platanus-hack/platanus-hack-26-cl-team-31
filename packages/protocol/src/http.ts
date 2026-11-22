@@ -174,6 +174,13 @@ export const routes = {
     iss: "web",
     port: "owner.activity",
   },
+  agentPending: {
+    method: "GET",
+    path: "/v1/agent/pending",
+    response: z.object({ items: z.array(OwnerPendingItem) }),
+    iss: "mcp",
+    port: "agent.pending",
+  },
   agentActivity: {
     method: "GET",
     path: "/v1/agent/activity",

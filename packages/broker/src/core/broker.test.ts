@@ -407,6 +407,10 @@ describe("contrato del broker", () => {
     });
     expect(await broker.owner.pending(bruno)).toMatchObject([{ requestId: item.requestId, escalated: true }]);
     expect(await broker.owner.pending(alice)).toEqual([]);
+    // The holder's agent reads the same list, and only its own.
+    expect(await broker.agent.pending(bruno)).toEqual(await broker.owner.pending(bruno));
+    expect(await broker.agent.pending(alice)).toEqual([]);
+    await expect(broker.agent.pending({ ...bruno, scopes: ["sideband:ask"] })).rejects.toMatchObject({ code: "forbidden" });
     await expect(broker.owner.decide(alice, item.requestId, { kind: "approve_once" })).rejects.toMatchObject({ code: "not_found" });
     await broker.owner.decide(bruno, item.requestId, { kind: "approve_once" });
     expect(await inboxItem(bruno, item.requestId)).toMatchObject({ allowedFields: ["available"] });

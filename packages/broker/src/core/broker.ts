@@ -471,6 +471,19 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     });
   }
 
+  // Requests waiting for the holder's decision, read by the holder in Inicio or by its agent.
+  async function pending(userId: string, principal?: Principal) {
+    return store.tx(async (tx) => {
+      if (principal) await ensureActiveAgentConnection(tx, principal);
+      const address = (await tx.getUser(userId))?.address;
+      if (!address) return [];
+      const now = clock.now();
+      return (await tx.listOwnerPending(address))
+        .filter((row) => row.toUserId === userId && row.expiresAt > now)
+        .map(toOwnerPendingItem);
+    });
+  }
+
   async function directory(tx: StoreTx, userId: string) {
     const contacts = (await tx.listContacts(userId))
       .map(({ gives, receives, ...identity }) => ({ ...identity, theyShare: receives, youShare: gives }));
@@ -803,6 +816,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         return status(p.userId, id, p);
       },
 
+      async pending(p) {
+        requireScope(p, "pending");
+        return pending(p.userId, p);
+      },
+
       async activity(p, query = {}) {
         requireScope(p, "activity");
         return activity(p.userId, query, p);
@@ -894,14 +912,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       async pending(o) {
-        return store.tx(async (tx) => {
-          const address = (await tx.getUser(o.userId))?.address;
-          if (!address) return [];
-          const now = clock.now();
-          return (await tx.listOwnerPending(address))
-            .filter((row) => row.toUserId === o.userId && row.expiresAt > now)
-            .map(toOwnerPendingItem);
-        });
+        return pending(o.userId);
       },
 
       async activity(o, query = {}) {

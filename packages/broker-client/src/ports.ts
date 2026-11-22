@@ -49,6 +49,8 @@ export interface AgentPort {
   inbox(p: Principal, includeInvitations?: boolean): Promise<InboxItem[]>;
   reply(p: Principal, input: ReplyInput): Promise<ReplyReceipt>;
   status(p: Principal, requestId: string): Promise<RequesterView>;
+  // Requests waiting for the holder's own decision. The agent reads them; only the holder decides.
+  pending(p: Principal): Promise<OwnerPendingItem[]>;
   activity(p: Principal, query?: ActivityQuery): Promise<ActivityItem[]>;
   // The caller's contacts and joined circles, so its agent knows whom it can ask.
   contacts(p: Principal): Promise<AgentContacts>;
