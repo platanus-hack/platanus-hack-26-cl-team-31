@@ -37,7 +37,7 @@ export interface FlowDirectory {
   list(): { users: DirectoryUser[]; agents: DirectoryAgent[] };
 }
 
-export function createFlowDirectory(initial?: Parameters<FlowDirectory["add"]>[0]): FlowDirectory {
+export function createFlowDirectory(initial?: Parameters<FlowDirectory["add"]>[0], { requestLimit = 10_000 }: { requestLimit?: number } = {}): FlowDirectory {
   const users = new Map<string, DirectoryUser>();
   const addresses = new Map<string, DirectoryUser>();
   const clients = new Map<string, Map<string, DirectoryAgent>>();
@@ -53,7 +53,12 @@ export function createFlowDirectory(initial?: Parameters<FlowDirectory["add"]>[0
         connections.set(agent.userId ?? "", agent);
         clients.set(agent.agentId, connections);
       }
-      for (const request of entries.requests ?? []) requests.set(request.id, request);
+      for (const request of entries.requests ?? []) {
+        // Una referencia repetida vuelve a ser reciente, incluso si sus datos cambiaron.
+        requests.delete(request.id);
+        requests.set(request.id, request);
+        if (requests.size > requestLimit) requests.delete(requests.keys().next().value as string);
+      }
     },
     user: (id) => users.get(id),
     address: (address) => addresses.get(address),
