@@ -61,7 +61,7 @@ export default async function HomePage() {
           <h2 id="pending-title" className={`${sectionTitle} mb-3`}>Lo más urgente</h2>
           {first ? (
             <div className="space-y-3">
-              <FocusRequest item={first} expires={expires(first.expiresAt)} />
+              <FocusRequest key={first.requestId} item={first} expires={expires(first.expiresAt)} />
               {rest.length > 0 && (
                 <>
                   <p className="pt-3 text-[13px] text-muted">Y {rest.length} más</p>
