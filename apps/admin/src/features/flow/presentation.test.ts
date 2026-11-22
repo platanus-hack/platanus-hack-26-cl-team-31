@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { pointOnCurve, type FlowActor } from "@team-31/agent-flow"
-import { agentBrand, placeStation } from "./presentation"
+import { agentBrand, brokerSize, placeStation } from "./presentation"
 
 describe("mapa de conversaciones", () => {
   it.each([320, 390, 579, 580, 900, 1600])(
@@ -12,6 +12,11 @@ describe("mapa de conversaciones", () => {
           placeStation(i, n, width, 345)
         )
         for (const { curve } of stations) {
+          const halfExtent =
+            width < 580 ? brokerSize.height / 2 : brokerSize.width / 2
+          const portOffset =
+            width < 580 ? curve.end.y - 345 / 2 : curve.end.x - width / 2
+          expect(Math.abs(portOffset)).toBeCloseTo(halfExtent)
           for (let t = 0; t <= 1; t += 0.02) {
             const p = pointOnCurve(curve, t)
             expect(

@@ -108,6 +108,8 @@ export function signalTone(event: FlowEvent) {
     : "question"
 }
 
+export const brokerSize = { width: 192, height: 64 } as const
+
 // Los puntos de salida están en el borde interior de las tarjetas. Todos los puntos
 // de control quedan en el corredor central, incluso cuando cambia el ancho.
 export function placeStation(
@@ -141,8 +143,14 @@ export function placeStation(
     ? { x, y: y + (sign * cardHeight) / 2 }
     : { x: x + (sign * cardWidth) / 2, y }
   const end = mobile
-    ? { x: width / 2 + (fraction - 0.5) * 65, y: height / 2 - sign * 38 }
-    : { x: width / 2 - sign * 43, y: height / 2 + (fraction - 0.5) * 44 }
+    ? {
+        x: width / 2 + (fraction - 0.5) * 65,
+        y: height / 2 - (sign * brokerSize.height) / 2,
+      }
+    : {
+        x: width / 2 - (sign * brokerSize.width) / 2,
+        y: height / 2 + (fraction - 0.5) * 44,
+      }
   const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
   const curve: EdgeCurve = mobile
     ? { start, c1: { x, y: middle.y }, c2: { x: end.x, y: middle.y }, end }

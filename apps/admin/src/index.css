@@ -165,8 +165,7 @@
 .signal-space { position: relative; height: clamp(345px, calc(100svh - 305px), 720px) }
 :fullscreen .signal-space, .signal-expanded .signal-space { height: clamp(330px, calc(100dvh - 245px), 1000px) }
 .signal-map, .signal-routes { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden }
-.signal-map { background: radial-gradient(circle, var(--border) .7px, transparent .9px) center / 20px 20px }
-.signal-orbits { fill: none; stroke: var(--border); stroke-width: 1 }
+.signal-map { background: radial-gradient(circle, color-mix(in srgb,var(--muted-foreground) 16%,transparent) .7px, transparent .9px) center / 20px 20px }
 .signal-wire { fill: none; stroke: color-mix(in srgb,var(--muted-foreground) 55%,var(--card)); stroke-width: 1.5 }
 .signal-routes g[data-tone] > .signal-wire { stroke: var(--foreground); stroke-width: 2.25 }
 .signal-routes [data-tone="answer"] > .signal-wire { stroke-dasharray: 7 4 }
@@ -174,16 +173,14 @@
 .signal-port { fill: var(--muted-foreground); stroke: var(--card); stroke-width: 1 }
 .signal-packet { fill: var(--foreground) }
 .signal-packet path { fill: none; stroke: var(--background); stroke-width: 1.4 }
-.signal-hub { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center }
-.signal-core { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 86px; height: 86px; border-radius: 50%; background: var(--primary); color: var(--primary-foreground) }
-.signal-core[data-tone] { outline: 1px solid var(--muted-foreground); outline-offset: 4px }
-.signal-hub b { font-size: 12px; font-weight: 550; letter-spacing: -.025em }
-.signal-station { display: flex; align-items: center; position: absolute; transform: translate(-50%,-50%); padding: 12px; gap: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow-xs) }
-.signal-station[data-tone] { border-color: var(--foreground); box-shadow: inset 2px 0 var(--foreground) }
+.signal-hub, .signal-station { position: absolute; transform: translate(-50%,-50%); flex-wrap: nowrap; background: var(--card) }
+.signal-hub { top: 50%; left: 50%; padding-inline: 14px; gap: 10px; background: color-mix(in srgb,var(--card) 75%,var(--muted)); border-color: color-mix(in srgb,var(--muted-foreground) 44%,var(--card)); box-shadow: 0 0 0 3px var(--card), 0 0 0 4px var(--border) }
+.signal-hub[data-tone] { border-color: var(--muted-foreground) }
+.signal-station { box-shadow: var(--shadow-xs) }
+.signal-station[data-tone] { border-color: var(--muted-foreground); box-shadow: 0 0 0 1px var(--border) }
 .signal-avatar { display: grid; place-items: center; flex-shrink: 0; height: 42px; width: 42px; background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius) }
-.signal-avatar[data-logo] { background: light-dark(var(--muted),var(--primary)) }
+.signal-avatar:is([data-logo="grok"], [data-logo="openai"]) { background: light-dark(var(--muted),var(--primary)) }
 .signal-avatar img, .signal-avatar svg { width: 65%; height: 65%; object-fit: contain }
-.signal-avatar img { filter: grayscale(1) }
 .signal-identity { display: grid; min-width: 0; gap: 2px }
 .signal-identity strong, .signal-identity small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .signal-identity strong { font-size: clamp(16px,1.6cqw,21px); line-height: 1.2; font-weight: 550; letter-spacing: -.035em }
@@ -206,7 +203,6 @@
     .signal-space { height: clamp(330px,calc(100svh - 292px),600px) }
     .signal-station { gap: 7px; padding: 8px }
     .signal-avatar { height: 31px; width: 31px }
-    .signal-core { width: 72px; height: 72px }
     .signal-top, .signal-footer { padding: 12px }
     .signal-legend { gap: 12px; font-size: 11px }
 }

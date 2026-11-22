@@ -6,7 +6,6 @@ import {
   pointOnCurve,
   PULSE_MS,
   resolveId,
-  SidebandMark,
   useFlowPlayback,
   useFlowViewport,
   type FlowActor,
@@ -24,12 +23,20 @@ import {
   UsersRound,
   Waypoints,
 } from "lucide-react"
+import { BrandMark } from "@/components/brand"
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+} from "@/components/ui/item"
 import { Button } from "@/components/ui/button"
 import { ToneBadge } from "@/components/status"
 import { ErrorState, PageHeader } from "@/components/page"
 import { useFlowLive } from "@/lib/flow-live"
 import {
   agentBrand,
+  brokerSize,
   describeSignal,
   personName,
   placeStation,
@@ -311,14 +318,6 @@ export function FlowPage() {
                 className="signal-routes"
                 aria-hidden="true"
               >
-                <g
-                  className="signal-orbits"
-                  transform={`translate(${size.width / 2} ${height / 2})`}
-                >
-                  {[64, 96].map((r) => (
-                    <circle key={r} r={r} />
-                  ))}
-                </g>
                 {stations.map(({ actor, curve, d }) => {
                   const traffic = pulses.filter(
                     ({ event }) =>
@@ -362,14 +361,25 @@ export function FlowPage() {
                   )
                 })}
               </svg>
-              <div className="signal-hub" aria-label="Sideband">
-                <div className="signal-core" data-tone={hubTone}>
-                  <SidebandMark size={35} />
-                  <b>Sideband</b>
-                </div>
-              </div>
+              <Item
+                variant="outline"
+                size="xs"
+                className="signal-hub"
+                style={brokerSize}
+                data-tone={hubTone}
+              >
+                <BrandMark className="size-8" />
+                <ItemContent>
+                  <ItemTitle>Sideband</ItemTitle>
+                  <ItemDescription className="whitespace-nowrap">
+                    Permisos y entrega
+                  </ItemDescription>
+                </ItemContent>
+              </Item>
               {stations.map(({ actor, x, y, cardWidth, cardHeight }) => (
-                <div
+                <Item
+                  variant="outline"
+                  size="sm"
                   className="signal-station"
                   data-tone={
                     fresh &&
@@ -389,7 +399,7 @@ export function FlowPage() {
                   title={`${personName(actor.owner)} · ${agentBrand(actor).name}`}
                 >
                   <Identity actor={actor} />
-                </div>
+                </Item>
               ))}
             </div>
           </div>
