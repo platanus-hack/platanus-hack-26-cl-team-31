@@ -23,6 +23,7 @@ const questions: Partial<Record<Field, string>> = {
 type Step = "interpret" | "read" | "resolve" | "prepare" | "dispatch" | "done";
 type AskDraft = Extract<Intent, { action: "ask" }>;
 const refOf = ({ to, requestId }: RequesterView): ReceiptRef => ({ to, requestId });
+const replayableReceipts = (items: RequesterView[]) => items.filter(item => item.decision !== "allow");
 
 // Only the routing decision passes through LangGraph's state and callbacks. The private
 // per-invocation context lives as long as this call, and only explicit checkpoints persist.
@@ -304,7 +305,6 @@ class Turn {
     const jobs = [...pending.values()];
     let errorId: string | undefined;
     let terminalError: unknown;
-    let accepted = 0;
     for (let start = 0; start < jobs.length; start += 4) {
       const batch = jobs.slice(start, start + 4);
       const results = await Promise.allSettled(batch.map(input => this.context.ops.ask(input)));
@@ -315,26 +315,31 @@ class Turn {
           items.push(result.value);
           refs.set(job.to, refOf(result.value));
           pending.delete(job.to);
-          accepted++;
         } else {
           const error: unknown = result.reason;
           const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
           if (code === "not_found" && job.requireRelation) { pending.delete(job.to); continue; }
-          if (code === "forbidden" || code === "unauthorized" || code === "conflict" || code === "invalid_input") terminalError = error;
-          if (code === "rate_limited" || terminalError) stop = true;
+          if (code === "forbidden" || code === "unauthorized") {
+            terminalError = error;
+            pending.clear();
+            stop = true;
+          } else if (code === "conflict" || code === "invalid_input") {
+            terminalError = error;
+            pending.delete(job.to);
+            stop = true;
+          } else if (code === "rate_limited") stop = true;
           errorId = this.telemetry.error("message.dispatch", error, this.identity);
         }
       }
       // Confirmed writes never consume ask quota again. Only opaque refs survive
       // for answers carrying private data; other initial receipts are safe to replay.
-      await this.session.save({ phase: "dispatch", jobs: [...pending.values()], refs: [...refs.values()],
-        receipts: items.filter(item => item.decision !== "allow") });
+      await this.session.save({ phase: "dispatch", jobs: [...pending.values()], refs: [...refs.values()], receipts: replayableReceipts(items) });
       if (stop) break;
     }
-    if (terminalError && !accepted) throw terminalError;
+    if (terminalError && !pending.size && !refs.size) throw terminalError;
     if (!pending.size && !refs.size) return this.unavailable("empty_selection");
     if (!pending.size) await this.session.save({ phase: "requests", refs: [...refs.values()],
-      receipts: items.filter(item => item.decision !== "allow") });
+      receipts: replayableReceipts(items) });
     const included = new Set(items.map(v => v.requestId));
     const confirmed = [...refs.values()].filter(ref => !included.has(ref.requestId));
     return this.finish({ kind: "requests", items, ...(confirmed.length && { confirmed }),
