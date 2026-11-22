@@ -293,6 +293,18 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   ]);
 });
 
+it("devuelve en items los perfiles públicos que coinciden con la búsqueda del cliente MCP", async () => {
+  const agent = testPort();
+  const profile = { address: "bob@sideband.app", displayName: "Bob", headline: "Ceramista" };
+  vi.mocked(agent.searchPublicProfiles).mockImplementation(async (_, query) =>
+    query === "Bob" ? [profile] : []);
+  const origin = await listen(createHttpServer(options, agent));
+  const client = await connect(`${origin}/mcp`, "dev:ana:ana-bot");
+
+  const result = await client.callTool({ name: "search_public_profiles", arguments: { query: "Bob" } });
+  expect(result.structuredContent).toEqual({ items: [profile] });
+});
+
 it("conserva la búsqueda al continuar el directorio con el cursor de la primera página", async () => {
   const agent = testPort();
   const firstAddress = fixtureUsers.diego.address;
