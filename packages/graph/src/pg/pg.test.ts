@@ -4,10 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MemoryGraphIndex } from "../memory.js";
 import type { GraphMutation, NodeId } from "../model.js";
 import { interestMutation, membershipMutation, projectCore } from "../projection.js";
-import { matchers } from "../search/api.js";
+import { matchers, nearestSearch } from "../search/api.js";
 import { syntheticGraph } from "../synthetic.js";
 import type { EdgeFilter } from "../view.js";
 import { PgGraphIndex } from "./index.js";
+import { runPgSearch } from "./query.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const CORE_SQL = new URL("../../../../apps/server/sql/01-core.sql", import.meta.url);
@@ -78,6 +79,20 @@ describe.skipIf(!url)("PgGraphIndex (Postgres)", () => {
         expect(a.paths[0]?.cost).toBeCloseTo(b.paths[0]?.cost ?? NaN, 9);
       }
     }
+  });
+
+  it("permite filtrar los grupos por el atributo canAsk de la membresía", async () => {
+    dirty = true;
+    await index.apply([
+      membershipMutation({ person_id: "ana", group_id: "lectura", can_ask: true, can_share: false }),
+      membershipMutation({ person_id: "ana", group_id: "cine", can_ask: false, can_share: true }),
+    ]);
+
+    const result = await runPgSearch(db, (view) => nearestSearch(view, "person:ana", {
+      match: matchers.ofKind("group"),
+      filter: (arc) => arc.attrs?.canAsk === true,
+    }));
+    expect(result.paths.map((path) => path.target)).toEqual(["group:lectura"]);
   });
 
   it("interestedIn carga adyacencias y cuenta las consultas de cada búsqueda", async () => {
