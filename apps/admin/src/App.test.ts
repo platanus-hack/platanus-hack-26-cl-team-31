@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest"
 import App from "./App"
 import { errorQuery } from "@/lib/queries"
 import { queryClient } from "@/lib/query"
-import { errorEvents } from "@/mocks/fixtures"
+import { audit, errorEvents } from "@/mocks/fixtures"
 import { writeMockState } from "@/mocks/handlers"
 import * as live from "@/mocks/live"
 
@@ -172,6 +172,42 @@ it("copia los atributos del evento seleccionado en En vivo y abre su solicitud",
       host.querySelector('nav[aria-label="breadcrumb"] [aria-current="page"]')
         ?.textContent
     ).toBe(event.requestId)
+  )
+})
+
+it("permite a un viewer recorrer la auditoría sin perder la atribución de cada acción", async () => {
+  writeMockState({ loggedIn: true, role: "viewer" })
+  await openApp("/auditoria")
+
+  const loadMore = () =>
+    Array.from(host.querySelectorAll("button")).find(
+      (button) => button.textContent === "Cargar más"
+    )
+  const rows = () =>
+    Array.from(host.querySelectorAll<HTMLTableRowElement>("tbody tr"))
+  await waitForView(() => expect(loadMore()).toBeDefined())
+  expect(rows().length).toBeLessThan(audit.length)
+
+  while (loadMore()) {
+    const previousCount = rows().length
+    await act(() => loadMore()!.click())
+    await waitForView(() => expect(rows().length).toBeGreaterThan(previousCount))
+    expect(rows().length).toBeLessThanOrEqual(audit.length)
+  }
+
+  const displayed = rows().map((row) => [
+    row.querySelector("time")?.dateTime,
+    ...Array.from(row.cells, (cell) => cell.textContent).slice(1),
+  ])
+  expect(displayed).toEqual(
+    audit.map(({ at, actorLabel, action, target, reason, ip }) => [
+      at,
+      actorLabel,
+      action,
+      target ?? "—",
+      reason ?? "—",
+      ip ?? "—",
+    ])
   )
 })
 
