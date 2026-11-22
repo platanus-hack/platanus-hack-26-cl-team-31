@@ -61,8 +61,8 @@ describe("reduceFlow", () => {
     // Escenario: 8 titulares, 8 agentes y el titular Ana que decide. Hugo salió de la red.
     expect(a.owners.size).toBe(8);
     expect([...a.actors.values()].filter((e) => e.actor.role === "agent")).toHaveLength(8);
-    expect(a.actors.get("agent:hugo-grok")?.presence).toBe("left");
-    expect(a.actors.get("agent:fran-grok")?.presence).toBe("present");
+    expect(a.actors.get("agent:u-hugo:hugo-grok")?.presence).toBe("left");
+    expect(a.actors.get("agent:u-fran:fran-grok")?.presence).toBe("present");
     expect([...a.actors.values()].filter((e) => e.actor.role === "owner").map((e) => e.actor.owner.label)).toEqual(["Ana"]);
     expect([...a.requests.values()].every((t) => t.phase === "closed")).toBe(true);
   });

@@ -29,7 +29,7 @@ export interface FlowDirectory {
   add(entries: { users?: DirectoryUser[]; agents?: DirectoryAgent[]; requests?: DirectoryRequest[] }): void;
   user(userId: string): DirectoryUser | undefined;
   address(address: string): DirectoryUser | undefined;
-  agent(agentId: string): DirectoryAgent | undefined;
+  agent(agentId: string, userId?: string): DirectoryAgent | undefined;
   request(requestId: string): DirectoryRequest | undefined;
   /** Todo lo conocido, en orden de alta (para la foto inicial de la red). */
   list(): { users: DirectoryUser[]; agents: DirectoryAgent[] };
@@ -38,7 +38,7 @@ export interface FlowDirectory {
 export function createFlowDirectory(initial?: Parameters<FlowDirectory["add"]>[0]): FlowDirectory {
   const users = new Map<string, DirectoryUser>();
   const addresses = new Map<string, DirectoryUser>();
-  const agents = new Map<string, DirectoryAgent>();
+  const clients = new Map<string, Map<string, DirectoryAgent>>();
   const requests = new Map<string, DirectoryRequest>();
   const directory: FlowDirectory = {
     add(entries) {
@@ -46,14 +46,22 @@ export function createFlowDirectory(initial?: Parameters<FlowDirectory["add"]>[0
         users.set(user.userId, user);
         if (user.address) addresses.set(user.address, user);
       }
-      for (const agent of entries.agents ?? []) agents.set(agent.agentId, agent);
+      for (const agent of entries.agents ?? []) {
+        const connections = clients.get(agent.agentId) ?? new Map<string, DirectoryAgent>();
+        connections.set(agent.userId ?? "", agent);
+        clients.set(agent.agentId, connections);
+      }
       for (const request of entries.requests ?? []) requests.set(request.id, request);
     },
     user: (id) => users.get(id),
     address: (address) => addresses.get(address),
-    agent: (id) => agents.get(id),
+    agent(id, userId) {
+      const connections = clients.get(id);
+      if (userId !== undefined) return connections?.get(userId);
+      return connections?.size === 1 ? connections.values().next().value : undefined;
+    },
     request: (id) => requests.get(id),
-    list: () => ({ users: [...users.values()], agents: [...agents.values()] }),
+    list: () => ({ users: [...users.values()], agents: [...clients.values()].flatMap((connections) => [...connections.values()]) }),
   };
   if (initial) directory.add(initial);
   return directory;
@@ -108,11 +116,13 @@ export function createActorResolver(directory: FlowDirectory) {
   };
 
   const agentActor = (agentId: string, fallback: FlowOwner): FlowActor => {
-    const agent = directory.agent(agentId);
+    const userId = directory.address(fallback.key)?.userId ?? (fallback.key.startsWith("user:") ? fallback.key.slice(5) : undefined);
+    const agent = userId || fallback === unknownOwner ? directory.agent(agentId, userId) : undefined;
     if (!agent) unknownAgents.add(agentId);
     const owner = agent?.userId ? ownerOfUser(agent.userId) : fallback;
     const channel = channelLabel(agent?.kind);
-    return { id: `agent:${agentId}`, role: "agent", label: agent?.label || channel || "Agente", owner, ...(channel ? { channel } : {}) };
+    const principal = agent?.userId ?? userId ?? fallback.key;
+    return { id: `agent:${encodeURIComponent(principal)}:${encodeURIComponent(agentId)}`, clientId: agentId, role: "agent", label: (agent?.label !== agentId && agent?.label) || channel || "Agente", owner, ...(channel ? { channel } : {}) };
   };
   function* snapshotActors(): IterableIterator<FlowActor> {
     const { users, agents } = directory.list();
@@ -146,7 +156,7 @@ export function createActorResolver(directory: FlowDirectory) {
     takeUnknown() {
       const result = {
         users: [...unknownUsers].filter((id) => !directory.user(id)),
-        agents: [...unknownAgents].filter((id) => !directory.agent(id)),
+        agents: [...unknownAgents],
       };
       unknownUsers.clear();
       unknownAgents.clear();

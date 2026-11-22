@@ -1,7 +1,7 @@
 import type { RequestStatus } from "@team-31/protocol"
 
 import { FlowRequestRef, FlowSnapshot } from "../../shared/contract.js"
-import { iso, isoOrNull, type Db } from "./db.js"
+import { iso, isoOrNull, viewExists, type Db } from "./db.js"
 
 // Foto del flujo en vivo (página Flujo): límites por lista y ventana de solicitudes recientes.
 const FLOW_USERS = 1000
@@ -36,11 +36,14 @@ export async function flowSnapshot(db: Db, openStatuses: readonly RequestStatus[
     `SELECT user_id, address, display_name FROM ops.v_users
      ORDER BY address IS NULL, created_at DESC, user_id LIMIT ${FLOW_USERS + 1}`
   )
+  const hasClients = await viewExists(db, "ops.v_oauth_clients")
   const agents = await db.query(
-    `SELECT user_id, agent_id, label, wake_kind, verified_at, revoked_at, created_at
-     FROM ops.v_agent_connections
+    `SELECT a.user_id, a.agent_id, ${hasClients ? "coalesce(nullif(c.name, ''), a.label)" : "a.label"} AS label,
+       a.wake_kind, a.verified_at, a.revoked_at, a.created_at
+     FROM ops.v_agent_connections a
+     ${hasClients ? "LEFT JOIN ops.v_oauth_clients c ON c.client_id = a.agent_id" : ""}
      WHERE revoked_at IS NULL OR revoked_at > now() - interval '24 hours'
-     ORDER BY created_at DESC, user_id, agent_id LIMIT ${FLOW_AGENTS + 1}`
+     ORDER BY a.created_at DESC, a.user_id, a.agent_id LIMIT ${FLOW_AGENTS + 1}`
   )
   const requests = await db.query(
     `SELECT ${FLOW_REQUEST_COLUMNS} FROM ops.v_requests

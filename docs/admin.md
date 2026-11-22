@@ -302,9 +302,9 @@ Grafo de la red y de cada solicitud que cruza el broker (`packages/agent-flow`).
 
 **Cliente** (`apps/admin/src/lib/flow-live.ts`): foto → stream desde su cursor → `createLiveFeed` (descarta ids repetidos y reordena por momento de ocurrencia dentro de 700 ms, así un span del MCP escrito después que los eventos del broker se dibuja en su lugar; el reloj de cada servicio solo afecta dentro de esa ventana). Si el navegador deja de reintentar, toma otra foto: con un corte menor a 60 s retoma desde el último id; si no (o con `reset`), desde el cursor nuevo y reconcilia la presencia. Refresca el directorio cada minuto y cuando aparece un usuario o agente desconocido. Guarda como mucho 4.000 pasos: al pasarse descarta los más viejos y el renderer conserva el estado (presencia incluida).
 
-**Presencia.** En la red = agente con una conexión no revocada (un titular con dirección que nunca conectó un agente aparece en la foto inicial como agente provisional; uno cuyos agentes se revocaron, no). Entra con `broker.agent.connected` o su primera aparición en un paso; sale con `broker.agent.revoked` o cuando un refresco del directorio lo trae revocado. La inactividad nunca saca a nadie: un agente sin pasos se ve como pasivo (atenuado y sin arista).
+**Presencia.** En la red = agente con una conexión no revocada (un titular con dirección que nunca conectó un agente aparece en la foto inicial como agente provisional; uno cuyos agentes se revocaron, no). Entra con `broker.agent.connected` o su primera aparición en un paso; sale con `broker.agent.revoked` o cuando un refresco del directorio lo trae revocado. La inactividad nunca saca a nadie: el mapa prioriza a quienes participan cuando la red supera el espacio visible.
 
-URL: `?titulares=<dirección>,…` y `?ocultos=agent:<id>,…` guardan el filtro. El detalle de un paso enlaza a `/solicitudes/:id` y `/trazas/:id`. Pantalla completa con el botón o la tecla `f`.
+URL: `?titulares=<dirección>,…` y `?ocultos=agent:<id>,…` guardan el filtro. La vista de presentación muestra el titular, el logo y el tipo de agente, los sobres en tránsito y el último movimiento. El nombre del cliente OAuth y el tipo de aviso identifican el agente. El modo `?modo=demo` reproduce el escenario ficticio. Pantalla completa con el botón o la tecla `f`.
 
 ## 8. Desarrollo local
 

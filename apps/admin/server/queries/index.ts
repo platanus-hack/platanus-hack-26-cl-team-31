@@ -38,6 +38,7 @@ import {
   numOrNull,
   readOnly,
   UUID_PATTERN,
+  viewExists,
   Where,
   type Db,
 } from "./db.js"
@@ -177,14 +178,6 @@ function page<T>(
     items: items.map(map),
     nextCursor: rows.length > limit && last ? cursorOf(last) : null,
   }
-}
-
-async function viewExists(db: Db, view: string): Promise<boolean> {
-  const { rows } = await db.query<{ ok: boolean }>(
-    "SELECT to_regclass($1) IS NOT NULL AS ok",
-    [view]
-  )
-  return rows[0]?.ok === true
 }
 
 async function agentsOf(db: Db, where: Where): Promise<AgentRow[]> {

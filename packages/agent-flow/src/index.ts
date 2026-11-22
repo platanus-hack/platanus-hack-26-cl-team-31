@@ -21,3 +21,9 @@ export {
   type TelemetryRow,
 } from "./telemetry.js";
 export { compareIds, createLiveFeed, occurredAt, type LiveFeed, type LiveFeedOptions } from "./live.js";
+export { useFlowPlayback } from "./use-flow-playback.js";
+export { useFlowViewport } from "./use-flow-viewport.js";
+export { flowVisibility } from "./flow-visibility.js";
+export { SidebandMark } from "./icons.js";
+export { pointOnCurve, type EdgeCurve } from "./layout.js";
+export { PULSE_MS } from "./schedule.js";

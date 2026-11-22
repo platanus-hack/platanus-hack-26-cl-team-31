@@ -201,3 +201,11 @@ export class Where {
     return this.clauses.length ? `WHERE ${this.clauses.join(" AND ")}` : ""
   }
 }
+
+export async function viewExists(db: Db, view: string): Promise<boolean> {
+  const { rows } = await db.query<{ ok: boolean }>(
+    "SELECT to_regclass($1) IS NOT NULL AS ok",
+    [view]
+  )
+  return rows[0]?.ok === true
+}

@@ -13,7 +13,7 @@ export function flowVisibility(shownOwners: ReadonlySet<string> | null, ownerQue
     if (id === BROKER) return true;
     const entry = state.actors.get(id);
     if (!entry) return false;
-    return ownerShown(entry.actor.owner) && !hiddenActors.has(id);
+    return ownerShown(entry.actor.owner) && !hiddenActors.has(id) && !(entry.actor.clientId && hiddenActors.has(`agent:${entry.actor.clientId}`));
   };
   const eventVisibleIn = (state: FlowState, event: FlowEvent) => {
     const { fromId, toId } = eventEndpoints(state, event);

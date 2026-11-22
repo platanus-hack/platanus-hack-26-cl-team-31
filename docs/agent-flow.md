@@ -20,23 +20,20 @@ El grafo muestra en tiempo real cómo los agentes de distintos titulares convers
 3. En otra terminal, inicia el admin con login de desarrollo: `pnpm with-env env ADMIN_DEV_AUTH=1 pnpm dev --filter @team-31/admin`.
 4. Prepara los contactos ficticios de Ana: `pnpm agents:contacts:seed`.
 5. Abre `$ADMIN_URL/flujo` (`cat .env`), entra con **Entrar como dev** y pulsa `f` para pantalla completa. Al abrir, el grafo dibuja la red actual (Personas y Agentes) como participantes pasivos.
-6. Para mostrar solo algunos titulares, usa **Agentes** en la barra o abre `$ADMIN_URL/flujo?titulares=demo-ana@sideband.app,demo-bob@sideband.app` (acepta dirección, nombre o la parte antes de `@`). El filtro queda en la URL (`titulares`, `ocultos`), así que el enlace se puede compartir.
+6. Para mostrar solo algunos titulares, abre **Personas** en el mapa o abre `$ADMIN_URL/flujo?titulares=demo-ana@sideband.app,demo-bob@sideband.app` (acepta dirección, nombre o la parte antes de `@`). El filtro queda en la URL (`titulares`), así que el enlace se puede compartir.
 7. Lanza una conversación con Claude Code autenticado:
 
    ```sh
    corepack pnpm with-env corepack pnpm agents:runtime-demo "¿A alguien le interesa la cerámica?"
    ```
 
-   El grafo muestra la pregunta de Ana a cada contacto, la política (las denegaciones llegan firmadas y sin aviso), los avisos a los contactos, sus respuestas y la entrega. Si el receptor de avisos de web no está corriendo verás reintentos y `delivery_failed`.
+   El grafo muestra la pregunta de Ana a cada contacto, la política (las denegaciones llegan firmadas y sin aviso), los avisos a los contactos, sus respuestas y la entrega. Si el receptor de avisos de web está apagado, el pie del mapa indica que el aviso no llegó.
 
-Durante la presentación:
+Las tarjetas muestran el nombre de cada persona y el agente conectado. Los sobres viajan entre las tarjetas y Sideband. El pie del mapa cuenta el último movimiento. Cuando hay más personas de las que caben, el mapa prioriza a quienes conversan. El selector de personas permite enfocar a participantes específicos.
 
-- Clic en un paso de la línea de tiempo: pausa y repite su animación con el estado de ese momento. `←`/`→` recorre los pasos y `Esc` (o **Volver al vivo**) vuelve; los eventos que llegaron mientras tanto se aplican al volver.
-- **Repetir la solicitud**, en el detalle, repite toda la cadena de una solicitud.
-- `p` pausa, la velocidad va de 0.5× a 4× y el botón de panel oculta el detalle y la línea de tiempo para dejar solo el grafo.
-- El detalle de un paso enlaza a **Ver solicitud** y **Ver traza** del admin.
-- La insignia de la barra dice **En vivo**, **Reconectando…** o **Sin conexión**. Al reconectar no se repiten pasos ni se pierden los que ocurrieron durante un corte corto.
-- Para mostrar entradas y salidas: un agente nuevo entra al hacer su primera llamada (`broker.agent.connected`) y sale al revocarlo desde la app o desde **Agentes** del admin (`broker.agent.revoked`).
+- **Ver demo** abre el escenario ficticio en bucle. También puedes entrar por `/flujo?modo=demo`. **Volver al vivo** abre una foto actual de la red.
+- `f` activa la pantalla completa. `p` pausa o reanuda la animación.
+- La fuente indica **En vivo**, **Conectando**, **Reconectando**, **Sin conexión** o **Demo guiada**.
 
 ## Repetición y embed
 
