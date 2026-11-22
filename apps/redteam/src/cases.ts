@@ -4,7 +4,7 @@
 //   known_gap  — el ataque pasa hoy; su falta queda documentada como deuda de seguridad.
 // Si un caso known_gap deja de fugarse, el test falla: actualiza el veredicto y celebra.
 import { Buffer } from "node:buffer";
-import type { Address, AskInput, Category, InboxItem, RequesterView } from "@team-31/protocol";
+import type { AskInput, Category, InboxItem, RequesterView } from "@team-31/protocol";
 import { CANARY, PRIVATE_HANDLE, errorCode, type Harness } from "./world.js";
 
 export type Verdict = "contained" | "known_gap";

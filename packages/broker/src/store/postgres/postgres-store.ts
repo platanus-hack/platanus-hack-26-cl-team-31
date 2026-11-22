@@ -15,7 +15,7 @@ import { directoryCircles, directoryContact, normalizeSearch, publicProfileLimit
 import { createWakeCodec } from "./crypto.js";
 import { contactAccess, insertWithParents, openToTag, seedHolder, vaultStore } from "./vault-store.js";
 import {
-  agentConnections, askReceipts, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tags, users, vaultDocuments, vaultPermissions, wakeJobs,
+  agentConnections, askReceipts, circleMembers, circles, contactTags, friends, grants, requestEvents, requests, tags, users, vaultPermissions, wakeJobs,
 } from "./schema.js";
 
 export type PostgresStoreOptions = {
