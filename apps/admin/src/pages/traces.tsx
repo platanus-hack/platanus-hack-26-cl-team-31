@@ -41,6 +41,7 @@ import { AttrChips } from "@/components/timeline"
 import type { Span } from "@/features/traces/model"
 import { useRecentTraces, useTraceLayout } from "@/features/traces/queries"
 import { Waterfall } from "@/features/traces/waterfall"
+import { buildPath } from "@/lib/api"
 import { formatAbsolute, formatDuration } from "@/lib/format"
 import { serviceColor, serviceLabel } from "@/lib/status"
 
@@ -91,7 +92,7 @@ function SpanDetail({ span }: { span: Span }) {
               value: span.requestId ? (
                 <CopyId
                   value={span.requestId}
-                  to={`/solicitudes/${span.requestId}`}
+                  to={buildPath("/solicitudes/:id", { id: span.requestId })}
                 />
               ) : (
                 <Muted />
@@ -101,7 +102,7 @@ function SpanDetail({ span }: { span: Span }) {
               label: "Error",
               value: span.errorId ? (
                 <Link
-                  to={`/errores/${span.errorId}`}
+                  to={buildPath("/errores/:id", { id: span.errorId })}
                   className="inline-flex items-center gap-1 font-mono text-xs text-status-error hover:underline"
                 >
                   <BugIcon className="size-3" />
@@ -173,7 +174,9 @@ export function TraceDetailPage() {
         actions={
           summary?.requestId ? (
             <Button variant="outline" size="sm" asChild>
-              <Link to={`/solicitudes/${summary.requestId}`}>
+              <Link
+                to={buildPath("/solicitudes/:id", { id: summary.requestId })}
+              >
                 <InboxIcon data-icon="inline-start" />
                 Ver solicitud
               </Link>
@@ -217,7 +220,8 @@ export function TracesPage() {
         className="max-w-xl"
         onSubmit={(event) => {
           event.preventDefault()
-          if (value.trim()) navigate(`/trazas/${value.trim()}`)
+          const id = value.trim()
+          if (id) navigate(buildPath("/trazas/:id", { id }))
         }}
       >
         <Field>
@@ -282,7 +286,9 @@ export function TracesPage() {
                 <TableRow
                   key={t.traceId}
                   className="cursor-pointer"
-                  onClick={() => navigate(`/trazas/${t.traceId}`)}
+                  onClick={() =>
+                    navigate(buildPath("/trazas/:id", { id: t.traceId }))
+                  }
                 >
                   <TableCell className="py-1.5 pl-4">
                     <span className="flex items-center gap-1.5">
@@ -293,7 +299,7 @@ export function TracesPage() {
                       )}
                       <CopyId
                         value={t.traceId}
-                        to={`/trazas/${t.traceId}`}
+                        to={buildPath("/trazas/:id", { id: t.traceId })}
                         max={16}
                       />
                     </span>
@@ -324,7 +330,7 @@ export function TracesPage() {
                     {t.requestId ? (
                       <CopyId
                         value={t.requestId}
-                        to={`/solicitudes/${t.requestId}`}
+                        to={buildPath("/solicitudes/:id", { id: t.requestId })}
                       />
                     ) : (
                       <Muted />

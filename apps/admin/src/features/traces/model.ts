@@ -73,6 +73,7 @@ export function recentTraces({ items }: { items: TelemetryEvent[] }) {
       }
       byId.set(event.traceId, trace)
     }
+    trace.requestId ??= event.requestId
     trace.services.add(event.service)
     if (event.level === "error" || event.errorId) trace.errors += 1
     if (event.at < trace.at) {
