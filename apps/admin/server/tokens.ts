@@ -24,10 +24,10 @@ type TokenRow = {
 }
 
 export interface TokenStore {
-  create(input: z.input<typeof CreateAdminToken>, createdBy: string): Promise<{ token: string; meta: AdminToken }>
+  create(input: z.input<typeof CreateAdminToken>, createdBy: string, client?: pg.PoolClient): Promise<{ token: string; meta: AdminToken }>
   list(): Promise<AdminToken[]>
   // false si no existe o ya estaba revocado.
-  revoke(id: string): Promise<boolean>
+  revoke(id: string, client?: pg.PoolClient): Promise<boolean>
   // null si el token no existe, venció o fue revocado. Acepta el token con o sin "Bearer ".
   authenticate(bearer: string): Promise<TokenPrincipal | null>
 }
@@ -55,10 +55,10 @@ const Uuid = z.uuid()
 
 export function createPgTokenStore(pool: pg.Pool, now: () => number = Date.now): TokenStore {
   return {
-    async create(input, createdBy) {
+    async create(input, createdBy, client) {
       const { name, ttlDays, scopes } = CreateAdminToken.parse(input)
       const token = `${ADMIN_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`
-      const { rows } = await pool.query<TokenRow>(
+      const { rows } = await (client ?? pool).query<TokenRow>(
         `INSERT INTO admin.tokens (name, token_hash, prefix, scopes, created_by, created_at, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${COLUMNS}`,
         [name, hashToken(token), token.slice(0, PREFIX_LENGTH), [...new Set(scopes)], createdBy, new Date(now()), new Date(now() + ttlDays * DAY_MS)],
@@ -71,9 +71,9 @@ export function createPgTokenStore(pool: pg.Pool, now: () => number = Date.now):
       return rows.map(toAdminToken)
     },
 
-    async revoke(id) {
+    async revoke(id, client) {
       if (!Uuid.safeParse(id).success) return false
-      const { rowCount } = await pool.query(
+      const { rowCount } = await (client ?? pool).query(
         "UPDATE admin.tokens SET revoked_at = $2 WHERE id = $1 AND revoked_at IS NULL",
         [id, new Date(now())],
       )

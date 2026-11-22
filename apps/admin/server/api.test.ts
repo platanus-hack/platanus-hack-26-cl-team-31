@@ -307,7 +307,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     const errorId = "2b6953de-f8cd-44e5-a34a-4de79dad2d96"
     brokerFetch.mockResolvedValue(Response.json({ error: { code: "not_found", message: "cerrada" } },
       { status: 404, headers: { "X-Error-Id": errorId } }))
-    const audit = { record: vi.fn().mockResolvedValue("audit-1"), complete: vi.fn().mockRejectedValue(new Error("audit unavailable")) }
+    const audit = { transaction: vi.fn(), record: vi.fn().mockResolvedValue("audit-1"), complete: vi.fn().mockRejectedValue(new Error("audit unavailable")) }
     const cookie = await login("op@test.cl")
     const response = await buildApp({ audit }).request("/api/admin/requests/req_1/expire", post(cookie, { reason: "cerrar solicitud" }))
     expect(response.status).toBe(404)
@@ -318,7 +318,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
 
   it("reports an applied action when completing its audit fails", async () => {
     brokerFetch.mockResolvedValue(new Response(null, { status: 204 }))
-    const audit = { record: vi.fn().mockResolvedValue("audit-1"), complete: vi.fn().mockRejectedValue(new Error("audit unavailable")) }
+    const audit = { transaction: vi.fn(), record: vi.fn().mockResolvedValue("audit-1"), complete: vi.fn().mockRejectedValue(new Error("audit unavailable")) }
     const cookie = await login("op@test.cl")
     const response = await buildApp({ audit }).request("/api/admin/requests/req_1/rewake", post(cookie, { reason: "revisar el aviso" }))
     expect(response.status).toBe(500)
@@ -329,7 +329,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
   })
 
   it("does not dispatch when the audit attempt cannot be recorded", async () => {
-    const audit = { record: vi.fn().mockRejectedValue(new Error("audit unavailable")), complete: vi.fn() }
+    const audit = { transaction: vi.fn(), record: vi.fn().mockRejectedValue(new Error("audit unavailable")), complete: vi.fn() }
     const cookie = await login("op@test.cl")
     const response = await buildApp({ audit }).request("/api/admin/requests/req_1/rewake", post(cookie, { reason: "revisar el aviso" }))
     expect(response.status).toBe(500)
@@ -409,6 +409,34 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     expect((await app.request(`/api/admin/tokens/${meta.id}`, { method: "DELETE", headers: { cookie, origin: ADMIN_URL } })).status).toBe(404)
 
     expect((await auditRows()).map((row) => row.action)).toEqual(expect.arrayContaining(["token.create", "token.revoke"]))
+  })
+
+  it("revierte creación y revocación si falla la auditoría y permite reintentar", async () => {
+    const cookie = await login("op@test.cl")
+    const app = buildApp()
+    const tokens = createPgTokenStore(pool)
+    const body = { name: "rollback", ttlDays: 2, scopes: ["admin:read"] }
+    await pool.query("ALTER TABLE admin.audit ADD CONSTRAINT reject_token_audit CHECK (action NOT IN ('token.create', 'token.revoke'))")
+    try {
+      expect((await app.request("/api/admin/tokens", post(cookie, body))).status).toBe(500)
+      expect(await tokens.list()).toHaveLength(0)
+      expect(sink.find("admin.token.created")).toHaveLength(0)
+    } finally {
+      await pool.query("ALTER TABLE admin.audit DROP CONSTRAINT reject_token_audit")
+    }
+    const created = await (await app.request("/api/admin/tokens", post(cookie, body))).json()
+    const revoke = () => app.request(`/api/admin/tokens/${created.meta.id}`, { method: "DELETE", headers: { cookie, origin: ADMIN_URL } })
+    await pool.query("ALTER TABLE admin.audit ADD CONSTRAINT reject_token_audit CHECK (action <> 'token.revoke')")
+    try {
+      expect((await revoke()).status).toBe(500)
+      expect(await tokens.authenticate(created.token)).not.toBeNull()
+      expect(sink.find("admin.token.revoked")).toHaveLength(0)
+    } finally {
+      await pool.query("ALTER TABLE admin.audit DROP CONSTRAINT reject_token_audit")
+    }
+    expect((await revoke()).status).toBe(200)
+    expect(await tokens.authenticate(created.token)).toBeNull()
+    expect((await auditRows()).filter((row) => row.action === "token.revoke")).toHaveLength(1)
   })
 
   it("/mcp acepta tokens sba_ vigentes, audita cada tool y rechaza los revocados", async () => {
