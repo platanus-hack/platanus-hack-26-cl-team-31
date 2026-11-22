@@ -81,6 +81,111 @@ const scopeHelp: Record<AdminTokenScope, string> = {
   "admin:sql": "Además, SELECT libre sobre las vistas ops.v_* con admin_sql.",
 }
 
+function TokenScopeField({
+  scopes,
+  onChange,
+}: {
+  scopes: AdminTokenScope[]
+  onChange: (scopes: AdminTokenScope[]) => void
+}) {
+  return (
+    <FieldSet>
+      <FieldLegend variant="label">Permisos</FieldLegend>
+      <FieldGroup className="gap-3">
+        {AdminTokenScope.options.map((scope) => (
+          <Field key={scope} orientation="horizontal">
+            <Checkbox
+              id={`scope-${scope}`}
+              checked={scopes.includes(scope)}
+              onCheckedChange={(checked) =>
+                onChange(
+                  checked
+                    ? [...scopes, scope]
+                    : scopes.filter((selected) => selected !== scope)
+                )
+              }
+            />
+            <div className="flex flex-col gap-0.5">
+              <FieldLabel
+                htmlFor={`scope-${scope}`}
+                className="font-mono text-xs font-normal"
+              >
+                {scope}
+              </FieldLabel>
+              <FieldDescription className="text-xs">
+                {scopeHelp[scope]}
+              </FieldDescription>
+            </div>
+          </Field>
+        ))}
+      </FieldGroup>
+    </FieldSet>
+  )
+}
+
+type CreatedToken = { token: string; name: string }
+
+function CreatedTokenDetails({ token, name }: CreatedToken) {
+  const origin = typeof window === "undefined" ? "" : window.location.origin
+  const command = `claude mcp add --transport http sideband-admin "${origin}/mcp" --header "Authorization: Bearer ${token}"`
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Token creado</DialogTitle>
+        <DialogDescription>
+          «{name}» está listo. Cópialo ahora:{" "}
+          <span className="font-medium text-foreground">
+            no se volverá a mostrar
+          </span>
+          .
+        </DialogDescription>
+      </DialogHeader>
+      <div className="flex min-w-0 flex-col gap-4">
+        <InputGroup className="h-9">
+          <InputGroupAddon>
+            <KeyRoundIcon />
+          </InputGroupAddon>
+          <InputGroupInput
+            readOnly
+            value={token}
+            aria-label="Token"
+            className="font-mono text-xs"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          <InputGroupAddon align="inline-end">
+            <CopyButton value={token} label="Copiar token" />
+          </InputGroupAddon>
+        </InputGroup>
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              Conectar Claude Code
+            </span>
+            <CopyButton value={command} label="Copiar comando" />
+          </div>
+          <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
+            {command}
+          </pre>
+        </div>
+        <Alert>
+          <TriangleAlertIcon />
+          <AlertTitle>Guárdalo como un secreto</AlertTitle>
+          <AlertDescription>
+            Solo sirve en /mcp, nunca revela payloads ni ejecuta acciones.
+            Revócalo aquí si se filtra.
+          </AlertDescription>
+        </Alert>
+      </div>
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button>Listo, ya lo copié</Button>
+        </DialogClose>
+      </DialogFooter>
+    </>
+  )
+}
+
 function CreateTokenDialog() {
   const queryClient = useQueryClient()
   const [open, setOpen] = React.useState(false)
@@ -89,10 +194,7 @@ function CreateTokenDialog() {
   const [scopes, setScopes] = React.useState<AdminTokenScope[]>(["admin:read"])
   const [pending, setPending] = React.useState(false)
   // El token completo vive solo aquí y se descarta al cerrar. El servidor guarda sha256.
-  const [created, setCreated] = React.useState<{
-    token: string
-    name: string
-  } | null>(null)
+  const [created, setCreated] = React.useState<CreatedToken | null>(null)
   const valid = name.trim().length >= 3 && scopes.length > 0
 
   function change(next: boolean) {
@@ -130,11 +232,6 @@ function CreateTokenDialog() {
     }
   }
 
-  const origin = typeof window === "undefined" ? "" : window.location.origin
-  const command = created
-    ? `claude mcp add --transport http sideband-admin "${origin}/mcp" --header "Authorization: Bearer ${created.token}"`
-    : ""
-
   return (
     <Dialog open={open} onOpenChange={change}>
       <DialogTrigger asChild>
@@ -145,59 +242,7 @@ function CreateTokenDialog() {
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         {created ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>Token creado</DialogTitle>
-              <DialogDescription>
-                «{created.name}» está listo. Cópialo ahora:{" "}
-                <span className="font-medium text-foreground">
-                  no se volverá a mostrar
-                </span>
-                .
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex min-w-0 flex-col gap-4">
-              <InputGroup className="h-9">
-                <InputGroupAddon>
-                  <KeyRoundIcon />
-                </InputGroupAddon>
-                <InputGroupInput
-                  readOnly
-                  value={created.token}
-                  aria-label="Token"
-                  className="font-mono text-xs"
-                  onFocus={(e) => e.currentTarget.select()}
-                />
-                <InputGroupAddon align="inline-end">
-                  <CopyButton value={created.token} label="Copiar token" />
-                </InputGroupAddon>
-              </InputGroup>
-              <div className="flex min-w-0 flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    Conectar Claude Code
-                  </span>
-                  <CopyButton value={command} label="Copiar comando" />
-                </div>
-                <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
-                  {command}
-                </pre>
-              </div>
-              <Alert>
-                <TriangleAlertIcon />
-                <AlertTitle>Guárdalo como un secreto</AlertTitle>
-                <AlertDescription>
-                  Solo sirve en /mcp, nunca revela payloads ni ejecuta acciones.
-                  Revócalo aquí si se filtra.
-                </AlertDescription>
-              </Alert>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button>Listo, ya lo copié</Button>
-              </DialogClose>
-            </DialogFooter>
-          </>
+          <CreatedTokenDetails {...created} />
         ) : (
           <form onSubmit={submit} className="flex flex-col gap-6">
             <DialogHeader>
@@ -240,37 +285,7 @@ function CreateTokenDialog() {
                   ))}
                 </ToggleGroup>
               </Field>
-              <FieldSet>
-                <FieldLegend variant="label">Permisos</FieldLegend>
-                <FieldGroup className="gap-3">
-                  {AdminTokenScope.options.map((scope) => (
-                    <Field key={scope} orientation="horizontal">
-                      <Checkbox
-                        id={`scope-${scope}`}
-                        checked={scopes.includes(scope)}
-                        onCheckedChange={(checked) =>
-                          setScopes((prev) =>
-                            checked
-                              ? [...prev, scope]
-                              : prev.filter((s) => s !== scope)
-                          )
-                        }
-                      />
-                      <div className="flex flex-col gap-0.5">
-                        <FieldLabel
-                          htmlFor={`scope-${scope}`}
-                          className="font-mono text-xs font-normal"
-                        >
-                          {scope}
-                        </FieldLabel>
-                        <FieldDescription className="text-xs">
-                          {scopeHelp[scope]}
-                        </FieldDescription>
-                      </div>
-                    </Field>
-                  ))}
-                </FieldGroup>
-              </FieldSet>
+              <TokenScopeField scopes={scopes} onChange={setScopes} />
             </FieldGroup>
             <DialogFooter>
               <DialogClose asChild>
@@ -345,13 +360,11 @@ function RevokeTokenDialog({
   )
 }
 
-export function TokensPage() {
-  const { isOperator } = useSession()
+function TokenList() {
   const [revoking, setRevoking] = React.useState<AdminToken | null>(null)
   const query = useQuery({
     queryKey: ["tokens"],
     queryFn: ({ signal }) => api("tokens", undefined, { signal }),
-    enabled: isOperator,
   })
 
   const columns = React.useMemo<ColumnDef<AdminToken, unknown>[]>(
@@ -450,6 +463,31 @@ export function TokensPage() {
     []
   )
 
+  return (
+    <>
+      <QueryError query={query} />
+      <Panel>
+        <DataTable
+          columns={columns}
+          data={query.data?.items}
+          loading={query.isPending}
+          getRowId={(t) => t.id}
+          rowClassName={(row) =>
+            row.original.revokedAt ? "opacity-60" : undefined
+          }
+          empty={{
+            title: "Sin tokens",
+            description: "Crea uno para conectar un agente al MCP admin.",
+          }}
+        />
+      </Panel>
+      <RevokeTokenDialog token={revoking} onClose={() => setRevoking(null)} />
+    </>
+  )
+}
+
+export function TokensPage() {
+  const { isOperator } = useSession()
   if (!isOperator) {
     return (
       <Page>
@@ -476,23 +514,7 @@ export function TokensPage() {
         description="Tokens personales sba_ para que Claude Code o Codex consulten el MCP de administración. Solo lectura y auditados."
         actions={<CreateTokenDialog />}
       />
-      <QueryError query={query} />
-      <Panel>
-        <DataTable
-          columns={columns}
-          data={query.data?.items}
-          loading={query.isPending}
-          getRowId={(t) => t.id}
-          rowClassName={(row) =>
-            row.original.revokedAt ? "opacity-60" : undefined
-          }
-          empty={{
-            title: "Sin tokens",
-            description: "Crea uno para conectar un agente al MCP admin.",
-          }}
-        />
-      </Panel>
-      <RevokeTokenDialog token={revoking} onClose={() => setRevoking(null)} />
+      <TokenList />
     </Page>
   )
 }
