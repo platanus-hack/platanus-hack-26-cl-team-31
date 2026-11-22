@@ -486,6 +486,15 @@ describe("recurso admin://schema", () => {
     return JSON.parse(first.text) as AdminSchema
   }
 
+  it("rechaza la lectura antes de consultar el esquema si falla la auditoría", async () => {
+    const { app, deps, queries } = setup()
+    const client = await connect(app)
+    deps.audit.mockRejectedValueOnce(new Error("db down"))
+
+    await expect(client.readResource({ uri: "admin://schema" })).rejects.toThrow(/auditoría/)
+    expect(queries.sql).not.toHaveBeenCalled()
+  })
+
   it("usa information_schema vía AdminQueries.sql y oculta v_request_payloads", async () => {
     const queries = fakeQueries()
     vi.mocked(queries.sql).mockResolvedValue({
