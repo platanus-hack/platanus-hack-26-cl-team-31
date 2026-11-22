@@ -254,6 +254,12 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
         expect(await tx.sharedVault(fromAddress, toAddress, id)).toEqual({ categories: [] });
         expect(await tx.vaultMembers("bruno", id)).toEqual([]);
 
+        // A category created public is readable from the start.
+        const open = randomUUID();
+        await tx.changeVault("bruno", open, { action: "create", name: "Recetas", visibility: "public" });
+        expect((await tx.sharedVault(stranger, toAddress, open)).categories).toEqual([{ id: open, name: "Recetas", visibility: "public", canRead: true, entries: [] }]);
+        await tx.changeVault("bruno", open, { action: "delete", categoryId: open });
+
         // Back to private, only the contact with an individual permission reads it.
         await tx.changeVault("bruno", id, { action: "set_member", categoryId: id, address: fromAddress, allowed: true });
         await tx.changeVault("bruno", id, { action: "set_visibility", categoryId: id, visibility: "private" });
