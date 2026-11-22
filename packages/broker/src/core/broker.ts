@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   Address,
   ConnectInput,
@@ -15,7 +15,7 @@ import {
   Sharing,
   tagSharing,
   ToolArgs,
-  VaultChange, VaultQuery,
+  type VaultChange,
   ToolResultSchemas,
   ToolName,
   LocalPart, ProfileSearch,
@@ -29,12 +29,7 @@ import {
   type ReplyReceipt,
   type RequesterView,
   type ToolResult,
-  VaultDocumentQuery,
-  VaultDocumentUpload,
-  MAX_VAULT_DOCUMENT_BYTES,
   invalidInputMessage,
-  type VaultDocumentDownload,
-  type VaultDocumentMetadata,
 } from "@team-31/protocol";
 import { sameSharing } from "@team-31/protocol/constants";
 import type { ActivityQuery } from "@team-31/protocol/http";
@@ -42,7 +37,7 @@ import { BrokerError, notFound } from "../errors.js";
 import type { BrokerCore, BrokerDeps } from "../ports.js";
 import { sanitizeReply } from "../sanitize/pipeline.js";
 import { SanitizeBlockedError, type SanitizeFlag } from "../sanitize/types.js";
-import type { AgentConnectionRow, RequestRow, StoreTx, VaultDocumentRow } from "../store/store.js";
+import type { AgentConnectionRow, RequestRow, StoreTx } from "../store/store.js";
 import { submitOnce } from "./ask-receipt.js";
 import { createAdminPort, revokeConnection } from "./admin.js";
 import { deriveNonce, hasNonce, signJson } from "./crypto.js";
@@ -54,7 +49,8 @@ import { createLifecycleEvents } from "./events.js";
 import { createWorker, resultRecipient } from "./worker.js";
 import { createGrantWriter, sharingRule, stillAuthorized } from "./grants.js";
 import { createCirclePort } from "./circles.js";
-import { createTags, sameTags } from "./tags.js";
+import { createVault } from "./vault.js";
+import { createTags, knownTags, sameTags } from "./tags.js";
 
 const connectionFields = fieldsOf("connect");
 const connectionGuidance =
@@ -94,6 +90,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
   const events = createLifecycleEvents(deps.store, deps.telemetry);
   const { store, record } = events;
   const grants = createGrantWriter(clock, record);
+  const vault = createVault(clock, record);
   const tags = createTags({ store }, record, (tx, userId) => denyUnauthorizedInboxRequests(tx, userId));
   const systemAddress = Address.parse(`${systemLocalPart}@${config.addressDomain}`);
 
@@ -259,7 +256,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     participants.sort((a, b) => a.userId.localeCompare(b.userId));
     for (const { userId, address, share } of participants) {
       if (!await tx.addContact(userId, address)) continue;
-      await shareWith(tx, userId, address, share);
+      await vault.shareWith(tx, userId, address, share);
     }
     record(tx, "broker.contact.connected", { requestId: row.id, userId: row.toUserId });
   }
@@ -299,7 +296,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     if (recipient && tool === "connect") {
       let ownTags;
       try {
-        ownTags = await tags.knownTags(tx, userId, tagIds ?? []);
+        ownTags = await knownTags(tx, userId, tagIds ?? []);
       } catch (error) {
         if (error instanceof BrokerError) return error;
         throw error;
@@ -496,113 +493,11 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
     return profiles;
   }
 
-  async function queryVault(tx: StoreTx, userId: string, input: VaultQuery, agentId?: string) {
-    const query = VaultQuery.safeParse(input);
-    if (!query.success) throw new BrokerError("invalid_input", "Revisa la dirección y la categoría.");
-    const reader = (await tx.getUser(userId))?.address;
-    const result = reader ? await tx.sharedVault(reader, query.data.to, query.data.categoryId) : { categories: [] };
-    record(tx, "broker.vault.queried", { userId, agentId,
-      attrs: { lookup: query.data.categoryId ? "entries" : "categories", visible: result.categories.length > 0 } });
-    return result;
-  }
-
-  async function changeVault(tx: StoreTx, userId: string, input: VaultChange, agentId?: string, requestId?: string) {
-    const parsed = VaultChange.safeParse(input);
-    if (!parsed.success) throw new BrokerError("invalid_input", "Revisa los datos de la categoría.");
-    if (!(await tx.getUser(userId))?.address) throw new BrokerError("invalid_input", "Primero elige tu dirección Sideband.");
-    const change = parsed.data;
-    const categoryId = change.action === "create" ? randomUUID() : change.categoryId;
-    if (change.action === "set_tag") await tags.knownTags(tx, userId, [change.tagId]);
-    if (!await tx.changeVault(userId, categoryId, change)) throw notFound();
-    record(tx, "broker.vault.changed", { userId, agentId, requestId, attrs: { action: change.action,
-      ...(change.action === "set_tag" || change.action === "set_member" ? { allowed: change.allowed } : {}),
-      ...(change.action === "set_visibility" || change.action === "create" ? { visibility: change.visibility } : {}) } });
-    return { categoryId };
-  }
-
   // A vault permission also lets its reader ask, so a change may close pending requests.
   async function changeOwnVault(tx: StoreTx, userId: string, input: VaultChange, agentId?: string) {
-    const receipt = await changeVault(tx, userId, input, agentId);
+    const receipt = await vault.changeVault(tx, userId, input, agentId);
     await denyUnauthorizedInboxRequests(tx, userId);
     return receipt;
-  }
-
-  // What the holder shares with one contact. An individual decision stays only on the default
-  // categories where the choice differs from what visibility and tags already say.
-  async function shareWith(tx: StoreTx, userId: string, address: Address, sharing: Sharing) {
-    const own = (await tx.vaultCatalog(userId)).categories.map((category) => category.id);
-    for (const categoryId of Category.options.filter((id) => own.includes(id))) {
-      const allowed = sharing.includes(categoryId);
-      await changeVault(tx, userId, { action: "clear_member", categoryId, address });
-      if (await tx.canReadVault(userId, address, categoryId) !== allowed) {
-        await changeVault(tx, userId, { action: "set_member", categoryId, address, allowed });
-      }
-    }
-  }
-
-  async function grantVaultRead(tx: StoreTx, userId: string, row: RequestRow, agentId?: string) {
-    const { categoryName } = ToolArgs.vault_access.parse(row.args);
-    const { categories } = await tx.vaultCatalog(userId, true);
-    const matches = categories.filter(c => c.name.toLowerCase() === categoryName.toLowerCase());
-    if (matches.length > 1) throw new BrokerError("conflict", "Hay varias categorías con ese nombre. Distingue sus nombres antes de aceptar.");
-    const categoryId = matches[0]?.id ?? (await changeVault(tx, userId, { action: "create", name: categoryName }, agentId, row.id)).categoryId;
-    await changeVault(tx, userId, { action: "set_member", categoryId, address: row.fromAddress, allowed: true }, agentId, row.id);
-  }
-
-  async function grantRequestedCategory(tx: StoreTx, userId: string, row: RequestRow, agentId?: string) {
-    const { category } = ToolArgs.category_access.parse(row.args);
-    if (!await tx.lockRequiredRelation(userId, row.toAddress, row.fromAddress, { kind: "contact" })) {
-      throw new BrokerError("forbidden", "El solicitante ya no es tu contacto.");
-    }
-    await changeVault(tx, userId, { action: "set_member", categoryId: category, address: row.fromAddress, allowed: true }, agentId, row.id);
-  }
-
-  function documentMetadata(row: VaultDocumentRow): VaultDocumentMetadata {
-    return {
-      id: row.id,
-      fileName: row.fileName,
-      ...(row.mimeType ? { mimeType: row.mimeType } : {}),
-      sizeBytes: row.sizeBytes,
-      sha256: row.sha256,
-      createdAt: row.createdAt.toISOString(),
-    };
-  }
-
-  async function uploadVaultDocument(tx: StoreTx, userId: string, input: VaultDocumentUpload, agentId?: string) {
-    const parsed = VaultDocumentUpload.safeParse(input);
-    if (!parsed.success) throw new BrokerError("invalid_input", "Revisa el archivo y la categoría.");
-    if (!(await tx.getUser(userId))?.address) throw new BrokerError("invalid_input", "Primero elige tu dirección Sideband.");
-    const content = Buffer.from(parsed.data.contentBase64, "base64");
-    if (content.length > MAX_VAULT_DOCUMENT_BYTES) throw new BrokerError("invalid_input", "El archivo supera el límite de 5 MiB.");
-    const row = await tx.putVaultDocument({
-      id: randomUUID(),
-      owner: userId,
-      categoryId: parsed.data.categoryId,
-      fileName: parsed.data.fileName,
-      mimeType: parsed.data.mimeType,
-      sizeBytes: content.length,
-      sha256: createHash("sha256").update(content).digest("hex"),
-      content,
-      idempotencyKey: parsed.data.idempotencyKey,
-      createdAt: clock.now(),
-    });
-    if (!row) throw notFound();
-    record(tx, "broker.vault.document.uploaded", { userId, agentId, attrs: { sizeBytes: row.sizeBytes } });
-    return documentMetadata(row);
-  }
-
-  async function downloadVaultDocument(tx: StoreTx, userId: string, input: VaultDocumentQuery, agentId?: string): Promise<VaultDocumentDownload> {
-    const parsed = VaultDocumentQuery.safeParse(input);
-    if (!parsed.success) throw new BrokerError("invalid_input", "Revisa el documento y la categoría.");
-    const reader = (await tx.getUser(userId))?.address;
-    if (!reader) throw notFound();
-    const row = await tx.sharedVaultDocument(reader, parsed.data.to, parsed.data);
-    if (!row) throw notFound();
-    const metadata = documentMetadata(row);
-    record(tx, "broker.vault.document.downloaded", {
-      userId, agentId, attrs: { sizeBytes: row.sizeBytes },
-    });
-    return { ...metadata, contentBase64: Buffer.from(row.content).toString("base64") };
   }
 
   async function removeContact(o: Owner, contact: Address) {
@@ -686,21 +581,21 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         requireScope(p, "queryVault");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
-          return queryVault(tx, p.userId, input, p.agentId);
+          return vault.queryVault(tx, p.userId, input, p.agentId);
         });
       },
       async uploadVaultDocument(p, input) {
         requireScope(p, "uploadVaultDocument");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
-          return uploadVaultDocument(tx, p.userId, input, p.agentId);
+          return vault.uploadVaultDocument(tx, p.userId, input, p.agentId);
         });
       },
       async downloadVaultDocument(p, input) {
         requireScope(p, "downloadVaultDocument");
         return store.tx(async tx => {
           await ensureActiveAgentConnection(tx, p);
-          return downloadVaultDocument(tx, p.userId, input, p.agentId);
+          return vault.downloadVaultDocument(tx, p.userId, input, p.agentId);
         });
       },
       async capabilities(p, to) {
@@ -815,8 +710,8 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           }
           const { changed, receipt, flags } = response;
           if (!await saveTransition(tx, row, changed)) return reject(closed());
-          if (vaultDecision && changed.status === "answered") await grantVaultRead(tx, p.userId, row, p.agentId);
-          if (categoryDecision && changed.status === "answered") await grantRequestedCategory(tx, p.userId, row, p.agentId);
+          if (vaultDecision && changed.status === "answered") await vault.grantVaultRead(tx, p.userId, row, p.agentId);
+          if (categoryDecision && changed.status === "answered") await vault.grantRequestedCategory(tx, p.userId, row, p.agentId);
           if (answeringInvitation) await applyConnection(tx, changed, parsed.data.share);
           recordTransition(tx, row, changed, "agent");
           if (flags.length > 0 || changed.droppedFields.length > 0) {
@@ -1002,9 +897,9 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
             changed = await finalize(transition(row, "answered"), "answered", now, parseResult(row.tool, decision.result));
           }
           if (!await saveTransition(tx, row, changed)) throw closed();
-          if (decision.kind === "grant_category") await grantRequestedCategory(tx, o.userId, row);
+          if (decision.kind === "grant_category") await vault.grantRequestedCategory(tx, o.userId, row);
           if (decision.kind === "grant_vault_read") {
-            await grantVaultRead(tx, o.userId, row);
+            await vault.grantVaultRead(tx, o.userId, row);
           }
           await applyConnection(tx, changed);
           record(tx, "broker.owner.decided", { requestId, userId: o.userId, attrs: { decision: decision.kind } });
@@ -1020,7 +915,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
       },
 
       directory: o => store.tx(tx => directory(tx, o.userId)),
-      queryVault: (o, input) => store.tx(tx => queryVault(tx, o.userId, input)),
+      queryVault: (o, input) => store.tx(tx => vault.queryVault(tx, o.userId, input)),
       searchPublicProfiles: (o, query) => store.tx(tx => searchProfiles(tx, o.userId, query)),
 
       async agentDirectory() {
@@ -1097,7 +992,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
         if (!address.success || !parsed.success) throw new BrokerError("invalid_input", "Lo que compartes no es válido.");
         await store.tx(async (tx) => {
           if (!(await tx.listContactAddresses(o.userId)).includes(address.data)) throw notFound();
-          await shareWith(tx, o.userId, address.data, parsed.data);
+          await vault.shareWith(tx, o.userId, address.data, parsed.data);
           await denyUnauthorizedInboxRequests(tx, o.userId);
         });
       },
@@ -1112,7 +1007,7 @@ export function createBroker(deps: BrokerDeps): BrokerCore {
           const now = clock.now();
           if (row.expiresAt <= now) return await closePending(tx, row, "expired", now) ? expired() : closed();
           const { accept, tags: tagIds } = parsed.data;
-          const ownTags = accept && tagIds?.length ? await tags.knownTags(tx, o.userId, tagIds) : [];
+          const ownTags = accept && tagIds?.length ? await knownTags(tx, o.userId, tagIds) : [];
           const share = parsed.data.share ?? (tagIds?.length ? tagSharing(ownTags, tagIds) : undefined);
           // Tagged first, so what the tags already open needs no individual decision.
           if (accept && tagIds?.length) await tags.tagContact(tx, o.userId, row.fromAddress, tagIds, "owner");
