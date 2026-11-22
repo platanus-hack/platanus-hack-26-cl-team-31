@@ -1,16 +1,37 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { fork } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 
 // Guardrails de la API HTTP de coordinación, probados contra el servidor compilado real.
 const tokens = { ana: "token-ana", bob: "token-bob", eva: "token-eva" };
 const slot = "2026-11-28T19:00:00Z";
 const hash = token => createHash("sha256").update(token).digest("hex");
+
+async function listeningPort(server) {
+  const wait = new AbortController();
+  const options = { signal: wait.signal };
+  try {
+    const [message] = await Promise.race([
+      once(server, "message", options),
+      once(server, "exit", options).then(([code, signal]) => {
+        throw new Error(`Coordinación terminó antes de escuchar (${signal ?? `código ${code}`})`);
+      }),
+      delay(10_000, undefined, options).then(() => {
+        throw new Error("Coordinación no comunicó su puerto en 10 s");
+      }),
+    ]);
+    assert.equal(message?.type, "listening", "Se esperaba la señal de escucha de coordinación");
+    assert.ok(Number.isInteger(message.port) && message.port > 0 && message.port <= 65535, "Puerto de escucha inválido");
+    return message.port;
+  } finally {
+    wait.abort();
+  }
+}
 
 async function startServer(t) {
   assert.ok(process.env.TEST_DATABASE_URL, "Run pnpm bootstrap to provision TEST_DATABASE_URL");
@@ -28,22 +49,17 @@ async function startServer(t) {
   await db.query(`INSERT INTO memberships VALUES ('ana','futbol',true,false),('bob','futbol',false,true);
     INSERT INTO busy_slots VALUES ('bob','${slot}','2026-11-28T20:00:00Z','Cita médica privada')`);
 
-  const server = spawn(process.execPath, [fileURLToPath(new URL("../dist/index.js", import.meta.url))], {
+  const server = fork(new URL("../dist/index.js", import.meta.url), {
+    execArgv: [],
     env: { ...process.env, DATABASE_URL: url.href, COORDINATION_PORT: "0", COORDINATION_HOST: "127.0.0.1" },
-    stdio: ["ignore", "pipe", "inherit"],
+    stdio: ["ignore", "ignore", "inherit", "ipc"],
   });
   t.after(async () => {
-    server.kill();
+    server.kill("SIGKILL");
     try { await db.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); } finally { await db.end(); }
   });
-  let output = "";
-  for await (const chunk of server.stdout) {
-    output += chunk;
-    const port = /puerto (\d+)/.exec(output)?.[1];
-    if (port) return `http://127.0.0.1:${port}`;
-  }
-  const [code] = await once(server, "exit");
-  throw new Error(`El servidor terminó antes de escuchar (código ${code})`);
+  const port = await listeningPort(server);
+  return `http://127.0.0.1:${port}`;
 }
 
 function client(base) {
