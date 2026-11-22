@@ -1,8 +1,13 @@
+import { QueryClientProvider } from "@tanstack/react-query"
 import { createBrowserRouter, Navigate, Outlet } from "react-router"
 import { RouterProvider } from "react-router/dom"
 
 import { AppLayout, type RouteHandle } from "@/components/app-layout"
 import { FullScreenMessage } from "@/components/full-screen-message"
+import { ThemeProvider, useTheme } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/sonner"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { queryClient } from "@/lib/query"
 import { SessionProvider } from "@/lib/session"
 import { WindowProvider } from "@/lib/window"
 
@@ -140,8 +145,22 @@ const router = createBrowserRouter([
   },
 ])
 
+function ThemedToaster() {
+  const { theme } = useTheme()
+  return <Toaster theme={theme} position="bottom-right" />
+}
+
 export function App() {
-  return <RouterProvider router={router} />
+  return (
+    <ThemeProvider defaultTheme="dark" storageKey="sideband-admin-theme">
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider delayDuration={300}>
+          <RouterProvider router={router} />
+          <ThemedToaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
+  )
 }
 
 export default App
