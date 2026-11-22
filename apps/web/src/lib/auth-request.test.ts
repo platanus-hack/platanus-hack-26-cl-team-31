@@ -25,3 +25,13 @@ it("conserva los recursos de la solicitud firmada y presenta cada permiso una ve
 
   expect(request).toEqual({ clientId, signedQuery: signed.toString(), scopes: ["sideband:status", "sideband:ask"] });
 });
+
+it("devuelve null cuando el enlace de consentimiento llega sin firma", async () => {
+  const request = await getOAuthRequest({
+    client_id: "agente-de-prueba",
+    exp: String(Math.floor(Date.now() / 1000) + 60),
+    scope: "sideband:status",
+  });
+
+  expect(request).toBeNull();
+});
