@@ -1,4 +1,7 @@
 import { generateKeyPairSync } from "node:crypto"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { verifyServiceToken } from "@team-31/auth/service"
 import { createTelemetry, memorySink } from "@team-31/telemetry"
 import { jwtVerify, type JWK } from "jose"
@@ -41,7 +44,7 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     events: async ({ afterId }) => (afterId ? [] : [telemetryEvent("2"), telemetryEvent("1")]),
   })
 
-  function buildApp(overrides: { devAuth?: boolean; queries?: AdminQueries; live?: LiveOptions; audit?: AuditLog } = {}) {
+  function buildApp(overrides: { devAuth?: boolean; queries?: AdminQueries; live?: LiveOptions; audit?: AuditLog; spaRoot?: string } = {}) {
     const telemetry = createTelemetry({ service: "admin", sink, heartbeatMs: 0, lifecycle: false })
     const tokens = createPgTokenStore(pool)
     return createAdminApp({
@@ -59,7 +62,8 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
       freshSeconds: 600,
       devAuth: overrides.devAuth ?? false,
       trustProxy: false,
-      serveSpa: false,
+      serveSpa: overrides.spaRoot !== undefined,
+      spaRoot: overrides.spaRoot,
       live: { pollMs: 20, heartbeatMs: 1_000, ...overrides.live },
     })
   }
@@ -107,6 +111,27 @@ describe.skipIf(!TEST_DATABASE_URL)("API del admin (Postgres)", () => {
     const response = await buildApp().request("/healthz")
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ok: true, service: "admin" })
+  })
+
+  it("sirve la SPA en rutas del panel y reserva /api para respuestas JSON", async ({ onTestFinished }) => {
+    const spaRoot = await mkdtemp(join(tmpdir(), "admin-spa-"))
+    onTestFinished(() => rm(spaRoot, { recursive: true, force: true }))
+    await mkdir(join(spaRoot, "assets"))
+    await writeFile(join(spaRoot, "assets", "panel.abc.css"), "body {}")
+    await writeFile(join(spaRoot, "index.html"), "<html>Admin</html>")
+    const app = buildApp({ spaRoot })
+
+    const asset = await app.request("/assets/panel.abc.css")
+    expect(asset.status).toBe(200)
+    expect(await asset.text()).toBe("body {}")
+
+    const page = await app.request("/flujo")
+    expect(page.status).toBe(200)
+    expect(await page.text()).toBe("<html>Admin</html>")
+
+    const missing = await app.request("/api/desconocida")
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "not_found" } })
   })
 
   it("401 sin sesión, con no-store y ErrorBody", async () => {
