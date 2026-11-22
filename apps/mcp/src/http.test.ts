@@ -29,7 +29,7 @@ function testPort(): AgentPort {
     connect: vi.fn(),
     searchPublicProfiles: vi.fn(), capabilities: vi.fn(),
     vaultCatalog: vi.fn(), vaultMembers: vi.fn(), changeVault: vi.fn(), queryVault: vi.fn(),
-    uploadVaultDocument: vi.fn(), downloadVaultDocument: vi.fn(),
+    uploadVaultDocument: vi.fn(), downloadVaultDocument: vi.fn(), vaultVisits: vi.fn(),
     networkUsers: vi.fn(), tags: vi.fn(), changeTag: vi.fn(),
     ask: vi.fn(),
     inbox: vi.fn(),
@@ -152,6 +152,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   const ownCategory = { id: "health", name: "Salud", description: "Alergias y tratamientos.", visibility: "private", tags: [], entries: [{ label: "Alergia", value: "Maní" }], members: [] };
   const sharedCategory = { id: tagId, name: "Plan de salud", visibility: "private", canRead: true };
   const requests: unknown[] = [];
+  const visits = { readers: 1, visits: [{ reader: pending.to, categoryId: "health", categoryName: "Salud", kind: "entries", at: "2026-11-21T15:00:00.000Z" }] };
   const replies: Record<string, unknown> = {
     "POST /v1/agent/ask": pending,
     "GET /v1/agent/inbox": { items: [inbox] },
@@ -163,6 +164,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     [`GET /v1/agent/vault/members?categoryId=${tagId}`]: { members: [pending.to] },
     "POST /v1/agent/vault/query": { categories: [sharedCategory] },
     "GET /v1/agent/vault?categoryId=health": { categories: [ownCategory] },
+    "GET /v1/agent/vault/visits": visits,
   };
 
   const broker = await listen(createServer(async (req, res) => {
@@ -195,6 +197,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     ["search_public_profiles", true], ["sideband_network_users", true], ["sideband_tags", true], ["sideband_tag_change", undefined],
     ["sideband_vault_catalog", true], ["sideband_vault_members", true], ["sideband_vault_access", true], ["sideband_vault_change", undefined],
     ["sideband_vault_upload", undefined], ["sideband_vault_download", true], ["sideband_vault_query", true],
+    ["sideband_vault_visits", true],
     ["sideband_vault_request_access", undefined],
   ]);
   expect(tools[0]?.inputSchema.required).toEqual(["to", "tool", "args"]);
@@ -227,6 +230,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   expect((await ana.callTool({ name: "sideband_tags" })).structuredContent).toEqual(tags);
   expect((await ana.callTool({ name: "sideband_network_users" })).structuredContent).toEqual({ addresses: [pending.to] });
   expect((await ana.callTool({ name: "sideband_vault_members", arguments: { categoryId: tagId } })).structuredContent).toEqual({ members: [pending.to] });
+  expect((await ana.callTool({ name: "sideband_vault_visits" })).structuredContent).toEqual(visits);
   expect((await ana.callTool({ name: "sideband_vault_access", arguments: { to: pending.to } })).structuredContent)
     .toEqual({ categories: [sharedCategory] });
   expect((await ana.callTool({ name: "sideband_vault_catalog", arguments: { categoryId: "health" } })).structuredContent)
@@ -241,6 +245,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     { path: "GET /v1/agent/tags", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "GET /v1/agent/network/users", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: `GET /v1/agent/vault/members?categoryId=${tagId}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "GET /v1/agent/vault/visits", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "POST /v1/agent/vault/query", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: { to: pending.to } },
     { path: "GET /v1/agent/vault?categoryId=health", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
   ]);
