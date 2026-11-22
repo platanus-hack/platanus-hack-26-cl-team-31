@@ -47,16 +47,18 @@ export function runStoreContractTests(makeStore: () => Store | Promise<Store>): 
     it("pages network addresses once per holder with connection history, including revoked agents", async () => {
       await store.tx(async tx => {
         const agent = { agentId: "old", label: "Bot", wakeTarget: { kind: "none" }, createdAt: now } as const;
-        expect(await tx.networkAddresses(undefined, 2)).toEqual([]);
+        expect(await tx.networkAddresses({}, 2)).toEqual([]);
         await tx.upsertAgentConnection({ ...agent, userId: "alice", revokedAt: now });
         await tx.upsertAgentConnection({ ...agent, userId: "bruno", revokedAt: now });
         await tx.upsertAgentConnection({ ...agent, userId: "bruno", agentId: "new" });
         await tx.upsertAgentConnection({ ...agent, userId: "no-address" });
-        expect(await tx.networkAddresses(undefined, 1)).toEqual([fromAddress]);
-        expect(await tx.networkAddresses(fromAddress, 2)).toEqual([toAddress]);
-        expect(await tx.networkAddresses(undefined, 1, "run")).toEqual([toAddress]);
-        expect(await tx.networkAddresses(undefined, 2, "%")).toEqual([]);
-        expect(await tx.networkAddresses(toAddress, 2)).toEqual([]);
+        expect(await tx.networkAddresses({}, 1)).toEqual([fromAddress]);
+        expect(await tx.networkAddresses({ after: fromAddress }, 2)).toEqual([toAddress]);
+        expect(await tx.networkAddresses({ q: "run" }, 1)).toEqual([toAddress]);
+        expect(await tx.networkAddresses({ q: fromAddress }, 2)).toEqual([fromAddress]);
+        expect(await tx.networkAddresses({ after: fromAddress, q: fromAddress }, 2)).toEqual([]);
+        expect(await tx.networkAddresses({ q: "%" }, 2)).toEqual([]);
+        expect(await tx.networkAddresses({ after: toAddress }, 2)).toEqual([]);
       });
     });
 

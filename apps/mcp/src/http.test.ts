@@ -173,6 +173,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     "POST /v1/agent/tags": { tagId },
     "GET /v1/agent/tags": tags,
     "GET /v1/agent/network/users": { addresses: [pending.to] },
+    "GET /v1/agent/network/users?q=bob%40sideband.app": { addresses: [pending.to] },
     [`GET /v1/agent/vault/members?categoryId=${tagId}`]: { members: [pending.to] },
     "POST /v1/agent/vault/query": { categories: [sharedCategory] },
     "GET /v1/agent/vault?categoryId=health": { categories: [ownCategory] },
@@ -252,6 +253,8 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
   expect((await ana.callTool({ name: "sideband_tag_change", arguments: { change: createTag } })).structuredContent).toEqual({ tagId });
   expect((await ana.callTool({ name: "sideband_tags" })).structuredContent).toEqual(tags);
   expect((await ana.callTool({ name: "sideband_network_users" })).structuredContent).toEqual({ addresses: [pending.to] });
+  expect((await ana.callTool({ name: "sideband_network_users", arguments: { q: pending.to } })).structuredContent)
+    .toEqual({ addresses: [pending.to] });
   expect((await ana.callTool({ name: "sideband_vault_members", arguments: { categoryId: tagId } })).structuredContent).toEqual({ members: [pending.to] });
   expect((await ana.callTool({ name: "sideband_vault_access", arguments: { to: pending.to } })).structuredContent)
     .toEqual({ categories: [sharedCategory] });
@@ -270,6 +273,7 @@ it("ejecuta ask → inbox → reply → check por HTTP y propaga la identidad de
     { path: "POST /v1/agent/tags", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: createTag },
     { path: "GET /v1/agent/tags", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "GET /v1/agent/network/users", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
+    { path: "GET /v1/agent/network/users?q=bob%40sideband.app", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: `GET /v1/agent/vault/members?categoryId=${tagId}`, userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },
     { path: "POST /v1/agent/vault/query", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: { to: pending.to } },
     { path: "GET /v1/agent/vault?categoryId=health", userId: "ana", agentId: "ana-bot", scopes: Scope.options, body: undefined },

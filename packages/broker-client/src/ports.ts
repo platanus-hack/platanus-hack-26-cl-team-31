@@ -1,4 +1,4 @@
-import type { ActivityQuery } from "@team-31/protocol/http";
+import type { ActivityQuery, NetworkUsersQuery } from "@team-31/protocol/http";
 import type {
   ActivityItem,
   TagChange, TagsView, Tag, TagInput, TagUpdate, OwnerVault, VaultCatalog, VaultChange, VaultQuery, VaultReceipt, VaultResult,
@@ -32,7 +32,7 @@ import type {
 // capabilities, inbox, status and contacts when they succeed with no items.
 export interface AgentPort {
   searchPublicProfiles(p: Principal, query: string): Promise<PublicProfile[]>;
-  networkUsers(p: Principal, after?: Address, q?: string): Promise<{ addresses: Address[]; nextCursor?: Address }>;
+  networkUsers(p: Principal, query?: NetworkUsersQuery): Promise<{ addresses: Address[]; nextCursor?: Address }>;
   connect(p: Principal): Promise<void>;
   tags(p: Principal): Promise<TagsView>;
   changeTag(p: Principal, input: TagChange): Promise<{ tagId: string }>;
