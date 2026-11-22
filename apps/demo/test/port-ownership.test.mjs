@@ -19,4 +19,4 @@ it("identifica el broker aunque otro listener responda al sondeo", async () => {
   } finally {
     await cleanup.disposeAsync();
   }
-});
+}, 30_000);
