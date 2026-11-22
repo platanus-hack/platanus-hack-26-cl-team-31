@@ -8,12 +8,15 @@ import { expect, it } from "vitest";
 
 const execute = promisify(execFile);
 const entry = fileURLToPath(new URL("./index.ts", import.meta.url));
+// En CI, cargar la CLI con tsx puede tomar más de 15 s mientras corren los demás paquetes.
+const startupTimeoutMs = 60_000;
+const testTimeoutMs = startupTimeoutMs + 5_000;
 
 async function expectStartupFailure(env: NodeJS.ProcessEnv, args: string[], diagnostic: string) {
   const startup = execute(process.execPath, ["--conditions=@team-31/source", "--import", "tsx", entry, ...args], {
     cwd: fileURLToPath(new URL("..", import.meta.url)),
     env: { PATH: process.env.PATH, TELEMETRY_SINK: "off", ...env },
-    timeout: 15_000,
+    timeout: startupTimeoutMs,
     killSignal: "SIGKILL",
   });
   await expect(startup).rejects.toMatchObject({
@@ -24,21 +27,21 @@ async function expectStartupFailure(env: NodeJS.ProcessEnv, args: string[], diag
 it("rechaza la autenticación de desarrollo en producción antes de configurar el transporte", async () => {
   await expectStartupFailure({ NODE_ENV: "production", MCP_DEV_AUTH: "1" }, ["--stdio"],
     "MCP_DEV_AUTH no se puede activar en producción.");
-}, 20_000);
+}, testTimeoutMs);
 
 it("requiere autenticación de desarrollo al seleccionar stdio", async () => {
   await expectStartupFailure({}, ["--stdio"], "Error de arranque. El modo stdio requiere MCP_DEV_AUTH=1.");
-}, 20_000);
+}, testTimeoutMs);
 
 it("acepta stdio en desarrollo e identifica la variable inválida sin imprimir su valor", async () => {
   await expectStartupFailure({ MCP_DEV_AUTH: "1", BROKER_URL: "valor-privado-de-prueba" }, ["--stdio"],
     "Error de arranque. Revisa el valor de BROKER_URL.");
-}, 20_000);
+}, testTimeoutMs);
 
 it("identifica una clave de servicio mal configurada sin mostrar su contenido", async () => {
   await expectStartupFailure({ BROKER_URL: "http://localhost", MCP_SERVICE_PRIVATE_KEY: "valor-de-prueba" }, [],
     "Error de arranque. MCP_SERVICE_PRIVATE_KEY debe contener una JWK privada Ed25519.");
-}, 20_000);
+}, testTimeoutMs);
 
 it("presenta un diagnóstico genérico si el puerto HTTP está ocupado", async () => {
   await using occupied = createServer();
@@ -56,4 +59,4 @@ it("presenta un diagnóstico genérico si el puerto HTTP está ocupado", async (
     AUTH_ISSUER: origin,
     AUTH_JWKS_URL: `${origin}/jwks`,
   }, [], "Error de arranque. Revisa la configuración y la disponibilidad del puerto.");
-}, 20_000);
+}, testTimeoutMs);
