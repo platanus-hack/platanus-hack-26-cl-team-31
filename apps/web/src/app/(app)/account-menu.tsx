@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { reportBrowserFailure } from "@/lib/browser-feedback";
 import { loadAuthClient } from "@/lib/load-auth-client";
 
 type Account = { name: string; address: string; email: string; image?: string | null };
@@ -18,7 +19,7 @@ function Avatar({ account, size }: { account: Account; size: string }) {
 
 export function AccountMenu({ account, compact = false }: { account: Account; compact?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "manual">("idle");
   const [leaving, setLeaving] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -36,10 +37,24 @@ export function AccountMenu({ account, compact = false }: { account: Account; co
     };
   }, [open]);
 
+  useEffect(() => {
+    if (copyState !== "copied") return;
+    const timer = setTimeout(() => setCopyState("idle"), 1500);
+    return () => clearTimeout(timer);
+  }, [copyState]);
+
   async function copy() {
-    await navigator.clipboard.writeText(account.address).catch(() => undefined);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    if (!navigator.clipboard) {
+      setCopyState("manual");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(account.address);
+      setCopyState("copied");
+    } catch {
+      setCopyState("manual");
+      void reportBrowserFailure("copy_address").catch(() => undefined);
+    }
   }
 
   async function signOut() {
@@ -78,7 +93,12 @@ export function AccountMenu({ account, compact = false }: { account: Account; co
             <p className="truncate text-xs text-muted">{account.email}</p>
           </div>
           <div className="my-1 h-px bg-line" />
-          <button type="button" role="menuitem" onClick={copy} className={item}>{copied ? "Dirección copiada" : "Copiar dirección"}</button>
+          <button type="button" role="menuitem" onClick={copy} className={item}>{copyState === "copied" ? "Dirección copiada" : "Copiar dirección"}</button>
+          {copyState === "manual" && (
+            <p role="status" className="px-2.5 py-1 text-xs text-muted">
+              Selecciona la dirección para copiarla: <span className="select-all break-all">{account.address}</span>
+            </p>
+          )}
           <Link role="menuitem" href="/profile" onClick={() => setOpen(false)} className={item}>Perfil</Link>
           <Link role="menuitem" href="/agents" onClick={() => setOpen(false)} className={item}>Agentes conectados</Link>
           <div className="my-1 h-px bg-line" />

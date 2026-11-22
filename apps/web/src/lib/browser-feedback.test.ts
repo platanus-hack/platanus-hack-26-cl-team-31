@@ -15,7 +15,7 @@ beforeEach(() => {
   getSession.mockReset();
 });
 
-it.each(["copy_invite", "share_invite", "copy_connection", "start_google"] as const)(
+it.each(["copy_invite", "share_invite", "copy_address", "copy_connection", "start_google"] as const)(
   "links the error ID for %s to the browser operation and its session",
   async (operation) => {
     const session = operation === "start_google" ? null : { user: { id: "owner-1" } };
