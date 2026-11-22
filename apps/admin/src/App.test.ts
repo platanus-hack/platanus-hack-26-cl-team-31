@@ -1,12 +1,9 @@
 // @vitest-environment happy-dom
-import { QueryClientProvider } from "@tanstack/react-query"
 import { act, createElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import App from "./App"
-import { ThemeProvider } from "@/components/theme-provider"
-import { TooltipProvider } from "@/components/ui/tooltip"
 import { errorQuery } from "@/lib/queries"
 import { queryClient } from "@/lib/query"
 import { errorEvents } from "@/mocks/fixtures"
@@ -42,16 +39,7 @@ async function openApp(path: string) {
   await act(() => {
     window.history.replaceState(null, "", path)
     window.dispatchEvent(new PopStateEvent("popstate"))
-    root.render(
-      createElement(ThemeProvider, {
-        children: createElement(QueryClientProvider, {
-          client: queryClient,
-          children: createElement(TooltipProvider, {
-            children: createElement(App),
-          }),
-        }),
-      })
-    )
+    root.render(createElement(App))
   })
 }
 
@@ -172,6 +160,7 @@ it("copia los atributos del evento seleccionado en En vivo y abre su solicitud",
   )!
   await act(() => copy.click())
   expect(write).toHaveBeenCalledExactlyOnceWith(attrs)
+  await waitForView(() => expect(host.textContent).toContain("Copiado"))
 
   const request = Array.from(dialog.querySelectorAll("a")).find(
     (link) => link.textContent === "Solicitud"
